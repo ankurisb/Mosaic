@@ -1,0 +1,19 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f0f; --bg2: #181818; --bg3: #222; --bg4: #2a2a2a;
+  --border: #2e2e2e; --border2: #3a3a3a;
+  --text: #e8e6e0; --text2: #9a9890; --text3: #5a5856;
+  --green: #1D9E75; --gbg: #0b2e22; --gt: #5DCAA5;
+  --red: #E24B4A; --rbg: #2e1212; --rt: #ff6b6b;
+  --amber: #EF9F27; --abg: #2e2200; --at: #EF9F27;
+  --blue: #378ADD; --bbg: #0d1e30; --bt: #378ADD;
+  --purple: #7F77DD; --pbg: #1a1830; --pt: #7F77DD;
+  --font: 'IBM Plex Mono', 'Courier New', monospace;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+input, textarea, button, select { font-family: inherit; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
