@@ -1,5 +1,5 @@
 [README.md](https://github.com/user-attachments/files/26871972/README.md)
-# Mosaic — Developer Handoff
+# Mosaic - Developer Guide
 
 Mosaic is a local-first industrial AI platform by UGX Systems. It connects to existing factory data infrastructure (SQL databases, time-series stores, Airbyte pipelines, file servers, REST APIs) and provides a conversational AI interface powered by Anthropic's Claude.
 
