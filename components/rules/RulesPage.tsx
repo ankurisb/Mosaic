@@ -1,0 +1,407 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import type { SessionUser } from '@/lib/auth'
+
+// -- Types -----------------------------------------------------
+interface Condition {
+  id: string; source_type: string; source_id: string
+  field: string; op: string; value: number; logic: string
+}
+interface RuleAction {
+  type: string; channel_id: string | null; channel_type: string
+  label: string; recipients: Recipient[]
+  message_template: string; service_id: string; path: string
+  payload_template: string; rca_context: string; assignee_role: string
+  query: string; query_source_type: string; query_source_id: string
+  query_on_complete: string
+}
+interface Recipient { type: string; label: string; address?: string; number?: string; role?: string; group_id?: string }
+interface Controls { cooldown_sec: number; active_hours: string; max_per_day: number; consecutive: number }
+interface Trigger   { type: string; interval_sec?: number }
+interface RuleGroup {
+  id: string; name: string; description: string; active: boolean; logic: string
+  trigger: Trigger; conditions: Condition[]; controls: Controls
+  actions: RuleAction[]; recipients: Recipient[]; message_template: string
+  last_fired_at: string | null; fire_count_today: number; created_at: string
+}
+
+const EMPTY_GROUP: Omit<RuleGroup, 'id' | 'created_at' | 'last_fired_at' | 'fire_count_today'> = {
+  name: '', description: '', active: true, logic: 'OR',
+  trigger: { type: 'schedule', interval_sec: 300 },
+  conditions: [], controls: { cooldown_sec: 7200, active_hours: '06:00-22:00', max_per_day: 5, consecutive: 1 },
+  actions: [], recipients: [], message_template: '',
+}
+const TRIGGER_LABELS: Record<string, string> = { schedule: 'Scheduled', threshold: 'Threshold', rca_complete: 'RCA completed', manual: 'Manual' }
+const OP_LABELS: Record<string, string> = { '<': '<', '<=': '', '>': '>', '>=': '', '==': '=', '!=': '' }
+
+function fmtInterval(sec: number) {
+  if (sec >= 86400) return `${Math.floor(sec / 86400)}d`
+  if (sec >= 3600)  return `${Math.floor(sec / 3600)}h`
+  if (sec >= 60)    return `${Math.floor(sec / 60)}m`
+  return `${sec}s`
+}
+function fmtDate(iso: string | null) {
+  if (!iso) return 'never'
+  return new Date(iso).toLocaleDateString() + ' ' + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// -- Shared input style ----------------------------------------
+const INP: React.CSSProperties = { width: '100%', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '8px 11px', fontSize: 13, color: 'var(--text)', outline: 'none', fontFamily: 'inherit' }
+const SEL: React.CSSProperties = { ...INP, cursor: 'pointer' }
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }
+
+import React from 'react'
+
+export default function RulesPage({ user }: { user: SessionUser }) {
+  const router = useRouter()
+  const [groups,    setGroups]    = useState<RuleGroup[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [view,      setView]      = useState<'list' | 'builder' | 'detail'>('list')
+  const [activeId,  setActiveId]  = useState<string | null>(null)
+  const [form,      setForm]      = useState<typeof EMPTY_GROUP>({ ...EMPTY_GROUP })
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving,    setSaving]    = useState(false)
+  const [toast,     setToast]     = useState('')
+
+  useEffect(() => { load() }, [])
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/rules')
+      const d = await r.json()
+      setGroups(d.groups || [])
+    } finally { setLoading(false) }
+  }, [])
+
+  async function saveGroup() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    try {
+      const action = editingId ? 'update' : 'create'
+      const body = { action, ...form, ...(editingId ? { id: editingId } : {}) }
+      const r = await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await r.json()
+      setToast(editingId ? 'Group updated' : 'Group created')
+      setView('list'); setEditingId(null); setForm({ ...EMPTY_GROUP })
+      await load()
+      if (!editingId && d.id) { setActiveId(d.id); setView('detail') }
+    } finally { setSaving(false) }
+  }
+
+  async function toggleGroup(id: string) {
+    await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'toggle', id }) })
+    setGroups(p => p.map(g => g.id === id ? { ...g, active: !g.active } : g))
+  }
+
+  async function deleteGroup(id: string, name: string) {
+    if (!confirm(`Delete "${name}"?`)) return
+    await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) })
+    setGroups(p => p.filter(g => g.id !== id))
+    if (activeId === id) { setActiveId(null); setView('list') }
+    setToast('Group deleted')
+  }
+
+  function startEdit(g: RuleGroup) {
+    setEditingId(g.id)
+    setForm({ name: g.name, description: g.description, active: g.active, logic: g.logic, trigger: g.trigger, conditions: g.conditions, controls: g.controls, actions: g.actions, recipients: g.recipients, message_template: g.message_template })
+    setView('builder')
+  }
+
+  function startNew() {
+    setEditingId(null)
+    setForm({ ...EMPTY_GROUP })
+    setView('builder')
+  }
+
+  const active = groups.find(g => g.id === activeId)
+  const isAdmin = user.role === 'admin'
+
+  // -- Header --------------------------------------------------
+  const topbar = (
+    <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+      <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M9 2L4 6.5l5 4.5"/></svg>
+        Chat
+      </button>
+      <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />
+      {view !== 'list' && (
+        <button onClick={() => { setView('list'); setActiveId(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L3 6l5 4"/></svg>
+          Rules
+        </button>
+      )}
+      {view !== 'list' && <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />}
+      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>
+        {view === 'list' ? 'Rules' : view === 'builder' ? (editingId ? 'Edit rule group' : 'New rule group') : active?.name}
+      </span>
+      {view === 'list' && isAdmin && (
+        <button onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+          + New group
+        </button>
+      )}
+      {view === 'detail' && active && isAdmin && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => toggleGroup(active.id)} style={{ padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text2)' }}>
+            {active.active ? 'Pause' : 'Resume'}
+          </button>
+          <button onClick={() => startEdit(active)} style={{ padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text2)' }}>Edit</button>
+          <button onClick={() => deleteGroup(active.id, active.name)} style={{ padding: '5px 12px', background: 'var(--red-bg)', border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--red-t)' }}>Delete</button>
+        </div>
+      )}
+    </div>
+  )
+
+  // -- List view ------------------------------------------------
+  const listView = (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 24 }}>
+        {[['Groups', String(groups.length), ''], ['Active', String(groups.filter(g => g.active).length), 'monitoring'], ['Fired today', String(groups.reduce((s,g) => s + g.fire_count_today, 0)), 'notifications']].map(([l,v,s]) => (
+          <div key={l} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', boxShadow: 'var(--shadow)' }}>
+            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: 4 }}>{l}</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', letterSpacing: '-.02em' }}>{v}</div>
+            {s && <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>{s}</div>}
+          </div>
+        ))}
+      </div>
+
+      {loading ? <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3)', fontSize: 13 }}>Loading...</div>
+      : groups.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)', marginBottom: 6 }}>No rule groups yet</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Create a group to start automating responses to your plant data.</div>
+          {isAdmin && <button onClick={startNew} style={{ padding: '8px 20px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Create first group</button>}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {groups.map(g => (
+            <div key={g.id} onClick={() => { setActiveId(g.id); setView('detail') }}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', cursor: 'pointer', boxShadow: 'var(--shadow)', transition: 'box-shadow .15s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-md)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4, background: g.active ? (g.fire_count_today > 0 ? '#dc2626' : '#16a34a') : '#d0d0d0' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{g.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: g.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: g.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1px solid ${g.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}` }}>{g.logic}</span>
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)' }}>{TRIGGER_LABELS[g.trigger?.type] ?? g.trigger?.type}</span>
+                  </div>
+                  {g.description && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 5 }}>{g.description}</div>}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--text3)' }}>
+                    <span>{g.conditions.length} condition{g.conditions.length !== 1 ? 's' : ''}</span>
+                    <span>{g.actions.length} action{g.actions.length !== 1 ? 's' : ''}</span>
+                    <span>Last fired: {fmtDate(g.last_fired_at)}</span>
+                    {g.fire_count_today > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>{g.fire_count_today} today</span>}
+                  </div>
+                </div>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text4)" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 4 }}><path d="M4 2l4 4-4 4"/></svg>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  // -- Detail view ----------------------------------------------
+  const detailView = active ? (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+      {/* Conditions */}
+      <Section title="Conditions">
+        {active.conditions.length === 0
+          ? <div style={{ fontSize: 12, color: 'var(--text4)' }}>Always fires on trigger</div>
+          : active.conditions.map((c, ci) => (
+            <div key={c.id}>
+              {ci > 0 && (
+                <div style={{ fontSize: 9, fontWeight: 700, padding: '2px 0 2px 8px', letterSpacing: '.06em', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8' }}>{c.logic}</div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 7, marginBottom: 3 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: c.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8', flexShrink: 0 }}>IF</span>
+                <code style={{ fontSize: 12, flex: 1 }}>{c.field} {OP_LABELS[c.op] ?? c.op} {c.value}</code>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{c.source_type}</span>
+              </div>
+            </div>
+          ))
+        }
+      </Section>
+
+      {/* Controls */}
+      <Section title="Controls">
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {[
+            [`Cooldown: ${fmtInterval(active.controls?.cooldown_sec ?? 0)}`],
+            [`Hours: ${active.controls?.active_hours}`],
+            [`Max ${active.controls?.max_per_day}/day`],
+            active.controls?.consecutive > 1 ? [`${active.controls.consecutive} consecutive`] : null,
+          ].filter(Boolean).map((items, i) => (
+            <span key={i} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)' }}>{(items as string[])[0]}</span>
+          ))}
+        </div>
+      </Section>
+
+      {/* Actions */}
+      <Section title="Actions">
+        {active.actions.map((a, i) => {
+          const cls = { notify: '#f0fdf4', api_call: '#eff6ff', rca: '#f5f3ff', query: '#fff7ed' }[a.type] ?? 'var(--bg)'
+          const border = { notify: 'rgba(22,163,74,.2)', api_call: 'rgba(37,99,235,.2)', rca: 'rgba(109,40,217,.2)', query: 'rgba(194,65,12,.2)' }[a.type] ?? 'var(--border)'
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: cls, border: `1px solid ${border}`, borderRadius: 7, marginBottom: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>{i + 1}.</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1 }}>{a.type.replace('_', ' ')} {a.label ? ` ${a.label}` : ''}</span>
+            </div>
+          )
+        })}
+      </Section>
+
+      {/* Notifications */}
+      <Section title="Notifications">
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+          {active.recipients.map((r, i) => {
+            const bg = r.type === 'group' ? '#f5f3ff' : r.type === 'role' ? '#eff6ff' : 'var(--bg3)'
+            const co = r.type === 'group' ? '#6d28d9' : r.type === 'role' ? '#1d4ed8' : 'var(--text2)'
+            return <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: bg, color: co, border: `1px solid ${co}30` }}>{r.label}</span>
+          })}
+        </div>
+        {active.message_template && (
+          <code style={{ display: 'block', fontSize: 11, background: 'var(--bg3)', padding: '6px 10px', borderRadius: 6, color: 'var(--text2)', lineHeight: 1.5 }}>{active.message_template}</code>
+        )}
+      </Section>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)' }}>
+        <span>Last fired: {fmtDate(active.last_fired_at)}</span>
+        <span style={{ color: active.fire_count_today > 0 ? '#dc2626' : 'var(--text4)' }}>{active.fire_count_today} fire{active.fire_count_today !== 1 ? 's' : ''} today</span>
+      </div>
+    </div>
+  ) : null
+
+  // -- Builder view ---------------------------------------------
+  const builderView = (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%' }}>
+      {/* Identity */}
+      <Section title="Identity">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+          <div><label style={LBL}>Group name *</label><input style={INP} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Line A quality watch" /></div>
+          <div><label style={LBL}>Status</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+              <div onClick={() => setForm(p => ({ ...p, active: !p.active }))} style={{ width: 36, height: 20, borderRadius: 10, background: form.active ? 'var(--accent-bg)' : 'var(--bg4)', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                <div style={{ position: 'absolute', top: 2, left: form.active ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: form.active ? 'var(--accent-fg)' : 'var(--text3)', transition: 'left .2s' }} />
+              </div>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>{form.active ? 'Active' : 'Paused'}</span>
+            </div>
+          </div>
+        </div>
+        <div><label style={LBL}>Description</label><input style={INP} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="What does this group monitor?" /></div>
+      </Section>
+
+      {/* Trigger */}
+      <Section title="Trigger">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div><label style={LBL}>Type</label>
+            <select style={SEL} value={form.trigger.type} onChange={e => setForm(p => ({ ...p, trigger: { ...p.trigger, type: e.target.value } }))}>
+              {Object.entries(TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          {form.trigger.type === 'schedule' && (
+            <div><label style={LBL}>Check every</label>
+              <select style={SEL} value={form.trigger.interval_sec ?? 300} onChange={e => setForm(p => ({ ...p, trigger: { ...p.trigger, interval_sec: Number(e.target.value) } }))}>
+                {[[60,'1 min'],[300,'5 min'],[900,'15 min'],[1800,'30 min'],[3600,'1 hr']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Conditions */}
+      <Section title={<span>Conditions <button onClick={() => setForm(p => ({ ...p, logic: p.logic === 'AND' ? 'OR' : 'AND' }))} style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 99, background: form.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: form.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1.5px solid ${form.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{form.logic} -- click to toggle</button></span>}>
+        {form.conditions.map((c, ci) => (
+          <div key={c.id}>
+            {ci > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 0 2px 8px' }}>
+                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, logic: x.logic === 'AND' ? 'OR' : 'AND' } : x) }))} style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: c.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1.5px solid ${c.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{c.logic}</button>
+                <span style={{ fontSize: 10, color: 'var(--text4)' }}>click to toggle</span>
+              </div>
+            )}
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', marginBottom: 4 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                <select style={{ ...SEL, width: 110, fontSize: 11 }} value={c.source_type} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, source_type: e.target.value, source_id: '', field: '' } : x) }))}>
+                  <option value="database">Database</option>
+                  <option value="api">API</option>
+                </select>
+                <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.source_id} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, source_id: e.target.value } : x) }))}>
+                  <option value="">Select connection...</option>
+                </select>
+                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.filter((_, i) => i !== ci) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 16, padding: '0 4px', flexShrink: 0, lineHeight: 1 }}></button>
+              </div>
+              <div style={{ display: 'flex', gap: 8, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
+                <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name" />
+                <select style={{ ...SEL, width: 58, fontSize: 12 }} value={c.op} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, op: e.target.value } : x) }))}>
+                  {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
+                </select>
+                <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
+              </div>
+            </div>
+          </div>
+        ))}
+        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+          + Add condition
+        </button>
+      </Section>
+
+      {/* Controls */}
+      <Section title="Controls">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+          <div><label style={LBL}>Cooldown</label>
+            <select style={SEL} value={form.controls.cooldown_sec} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, cooldown_sec: Number(e.target.value) } }))}>
+              {[[0,'None'],[1800,'30m'],[3600,'1h'],[7200,'2h'],[14400,'4h'],[86400,'1d']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div><label style={LBL}>Active hours</label><input style={{ ...INP, fontSize: 12 }} value={form.controls.active_hours} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, active_hours: e.target.value } }))} placeholder="06:00-22:00" /></div>
+          <div><label style={LBL}>Max/day</label><input style={{ ...INP, fontSize: 12 }} type="number" value={form.controls.max_per_day} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, max_per_day: Number(e.target.value) } }))} /></div>
+          <div><label style={LBL}>Consecutive</label>
+            <select style={SEL} value={form.controls.consecutive} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, consecutive: Number(e.target.value) } }))}>
+              {[1,2,3,5].map(n => <option key={n} value={n}>{n === 1 ? 'Every breach' : `${n} in a row`}</option>)}
+            </select>
+          </div>
+        </div>
+      </Section>
+
+      {/* Notifications */}
+      <Section title="Notification template">
+        <div><label style={LBL}>Message template</label>
+          <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 5 }}>Variables: {'{{group_name}} {{value}} {{threshold}} {{date}} {{time}}'}</div>
+          <textarea style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11, resize: 'vertical' as const, minHeight: 48 }} value={form.message_template} onChange={e => setForm(p => ({ ...p, message_template: e.target.value }))} placeholder=" {{group_name}} triggered -- value {{value}}, threshold {{threshold}}" />
+        </div>
+      </Section>
+
+      {/* Save */}
+      <div style={{ display: 'flex', gap: 8, paddingTop: 16, paddingBottom: 32 }}>
+        <button onClick={saveGroup} disabled={saving || !form.name.trim()} style={{ padding: '8px 20px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: saving || !form.name.trim() ? 'not-allowed' : 'pointer', opacity: saving || !form.name.trim() ? 0.5 : 1, fontFamily: 'inherit' }}>
+          {saving ? 'Saving...' : editingId ? 'Update group' : 'Create group'}
+        </button>
+        <button onClick={() => { setView('list'); setEditingId(null) }} style={{ padding: '8px 16px', background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      {topbar}
+      {view === 'list'    && listView}
+      {view === 'detail'  && detailView}
+      {view === 'builder' && builderView}
+      {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>}
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: 10, boxShadow: 'var(--shadow)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>{title}</div>
+      {children}
+    </div>
+  )
+}

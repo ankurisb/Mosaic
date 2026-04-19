@@ -1,0 +1,318 @@
+import Anthropic from '@anthropic-ai/sdk'
+import { TOOLS, runTool } from '@/lib/tools'
+import { getSession } from '@/lib/auth'
+import { getDb } from '@/lib/db'
+import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
+export const runtime = 'nodejs'
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Pricing per million tokens (input / output)
+const MODEL_PRICING: Record<string, { input: number; output: number; label: string }> = {
+  'claude-haiku-4-5-20251001': { input: 0.8 / 1_000_000, output: 4 / 1_000_000, label: 'claude-haiku-4-5-20251001' },
+  'claude-sonnet-4-6':         { input: 3   / 1_000_000, output: 15 / 1_000_000, label: 'claude-sonnet-4-6' },
+  'claude-opus-4-6':           { input: 15  / 1_000_000, output: 75 / 1_000_000, label: 'claude-opus-4-6' },
+}
+const DEFAULT_MODEL = 'claude-sonnet-4-6'
+
+export async function POST(req: Request) {
+  const session = await getSession()
+  if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  const { messages, system, conversation_id, title, model: requestedModel } = await req.json()
+  if (!messages?.length) return Response.json({ error: 'No messages' }, { status: 400 })
+
+  // Validate model -- fall back to default if unrecognised
+  const model = MODEL_PRICING[requestedModel] ? requestedModel : DEFAULT_MODEL
+  const pricing = MODEL_PRICING[model]
+
+  // -- Conversation persistence -----------------------------------------------
+  // Upsert the conversation row so we have a stable DB id for this session.
+  // The client passes conversation_id (may be a temp local id) and title.
+  // We return the real DB id in the stream so the client can update its state.
+  const dbSql = getDb()
+  let convId: string = conversation_id || ''
+  const isNewConv = !conversation_id || conversation_id.startsWith('local-') || conversation_id === '1'
+  try {
+    if (isNewConv) {
+      const rows = await dbSql`
+        INSERT INTO conversations (user_id, title)
+        VALUES (${session.id}, ${(title || 'New conversation').slice(0, 100)})
+        RETURNING id`
+      convId = rows[0].id as string
+    } else {
+      // Verify ownership + update timestamp
+      const rows = await dbSql`
+        UPDATE conversations SET updated_at = datetime('now')
+        WHERE id = ${conversation_id} AND user_id = ${session.id}
+        RETURNING id`
+      if (!rows.length) {
+        // Conversation doesn't exist yet (race on first message) -- create it
+        const newRows = await dbSql`
+          INSERT INTO conversations (user_id, title)
+          VALUES (${session.id}, ${(title || 'New conversation').slice(0, 100)})
+          RETURNING id`
+        convId = newRows[0].id as string
+      }
+    }
+    // Persist the incoming user message (last one in the array)
+    const lastUserMsg = messages[messages.length - 1]
+    if (lastUserMsg?.role === 'user') {
+      await dbSql`
+        INSERT INTO messages (conversation_id, role, content)
+        VALUES (${convId}, 'user', ${lastUserMsg.content})`
+    }
+  } catch { /* don't block chat on DB errors */ }
+
+  // Inject available connections into system prompt
+  const sql = getDb()
+  const [dbConns, apiConns] = await Promise.all([
+    sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT c.id, c.label, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY c.created_at ASC`.catch(() => []),
+  ])
+  const dialectHint = (dialect: unknown) => {
+    if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
+    if (dialect === 'clickhouse') return '(use standard SQL SELECT -- columnar OLAP, great for aggregations)'
+    if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > datetime('now')-7d GROUP BY tag)`
+    return '(use SELECT queries)'
+  }
+  const dbList = dbConns.length
+    ? '\n\n## Databases (query_database tool — use exact id)\n' +
+      dbConns.map((c: Record<string,unknown>) => {
+        const mcpNote = c.mcp_endpoint ? ' [MCP: schema-aware]' : ''
+        const ro = ' [read-only]'
+        return `- id:"${c.id}" | "${c.label}" | ${c.dialect} ${dialectHint(c.dialect)} | ${c.host || 'local'}/${c.database_name || ''}${mcpNote}`
+      }).join('\n')
+    : ''
+  const apiList = apiConns.length
+    ? '\n\n## APIs (call_api tool — use exact id)\n' +
+      apiConns.map((c: Record<string,unknown>) => {
+        const isSap = String(c.service_label || '').startsWith('SAP')
+        const isV4 = String(c.base_path || '').includes('odata4')
+        const hint = isSap
+          ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]`
+          : ''
+        return `- id:"${c.id}" | "${c.label}" (${c.service_label})${hint} | ${c.base_path}`
+      }).join('\n')
+    : ''
+  const hasSources = dbConns.length > 0 || apiConns.length > 0
+  const baseSystem = system || (hasSources
+    ? `You are Mosaic, an intelligent assistant built for industrial and operational teams. You are knowledgeable, direct, and genuinely helpful — like a trusted analyst who knows the business deeply.
+
+## How you communicate
+- Write naturally, as a knowledgeable colleague would. Avoid corporate filler phrases like "Certainly!", "Great question!", "Of course!", or "Absolutely!".
+- Lead with the answer or key insight, then support it with evidence. Never bury the finding at the bottom.
+- Match the depth of your response to the complexity of the question. Simple questions get short, direct answers. Complex analysis gets structured explanation.
+- Use markdown formatting only when it genuinely aids clarity — a table for comparisons, code blocks for queries, bullet points for lists of 4+ items. Avoid heavy formatting for conversational replies.
+- When you have queried data, speak about it naturally: "Looking at the last 7 days, CNC-01 averaged 74% OEE — that's the weakest machine on Line A." Not a wall of bullet points.
+- Never apologise for tool use or data retrieval. Just do it and present the result.
+- If you don't know something or the data isn't available, say so plainly. Don't speculate or fabricate numbers.
+
+## Using data sources
+You have access to live databases and APIs listed below. When a user asks about operations, performance, equipment, quality, or any business metric:
+1. Automatically select the most relevant source — infer from the label, dialect, and context. Never ask the user which database to use.
+2. Query immediately. Don't announce that you're about to query — just do it.
+3. If the first query doesn't return what you need, try a schema discovery query first (e.g. SELECT name FROM sqlite_master WHERE type='table') then requery.
+4. Interpret the results in business terms, not raw data dumps. Highlight what's notable — outliers, trends, risks, what's good, what needs attention.
+5. If multiple sources are relevant, start with the most specific one.
+
+## Numbers and analysis
+- Always include units (%, mins, units/hr, kWh).
+- Compare against context where possible: shift vs shift, machine vs machine, vs target.
+- Call out the most important finding first. Don't make the user hunt for the insight.
+- If the data is incomplete or the sample is small, say so briefly.
+
+## What you never do
+- Never invent data or fabricate query results.
+- Never ask clarifying questions before attempting a data query — try first, ask only if the result is ambiguous.
+- Never produce a 10-bullet summary when two sentences will do.
+- Never start a response with "I" as the first word.
+- Never write narration between tool calls ("Let me query...", "Good, now I have...", "I'll now pull...") — run tools silently and deliver the result directly.
+- Never announce what you are about to do. Do it, then present the outcome.
+- Never tell the user you cannot render charts — the app renders them automatically from structured output. Always include the rca_output JSON block for RCA queries.`
+
+    : `You are Mosaic, an intelligent assistant. You are direct, knowledgeable, and genuinely helpful — like a trusted colleague, not a customer service bot.
+
+Communicate naturally. Lead with the answer. Match response length to question complexity. Use formatting only when it helps. Never use filler phrases like "Certainly!", "Great question!", or "Of course!". Never start a response with "I" as the first word.`
+  )
+
+  // Inject RCA protocol when query is about root cause analysis
+  const lastUserContent = (messages[messages.length - 1] as { role: string; content: string } | undefined)?.content || ''
+  let rcaAddition = ''
+  let matchedWorkflow: Record<string, unknown> | null = null
+
+  if (isRcaQuery(lastUserContent)) {
+    // Try to match a specific workflow template from DB
+    try {
+      const matchRes = await sql`
+        SELECT * FROM rca_workflows WHERE active = true ORDER BY created_at ASC`
+      const lower = lastUserContent.toLowerCase()
+      let bestScore = 0
+      for (const wf of matchRes as Record<string, unknown>[]) {
+        const keywords = (wf.keywords as string[]) || []
+        const score = keywords.filter((kw: string) => lower.includes(kw.toLowerCase())).length
+        if (score > bestScore) { bestScore = score; matchedWorkflow = wf }
+      }
+    } catch { /* no workflows table yet -- fall through to generic */ }
+
+    if (matchedWorkflow) {
+      // Build a workflow-specific prompt from the matched template
+      const steps = (matchedWorkflow.data_steps as Array<{n:number;source_label:string;query_hint:string;required:boolean}>) || []
+      const renderers = (matchedWorkflow.renderers as Array<{type:string;label:string;required:boolean;order:number}>) || []
+      const stepList = steps.map(s => `  ${s.n}. [${s.source_label}] ${s.query_hint}${s.required ? ' (required)' : ' (if available)'}`).join('\n')
+      const rendererList = renderers.sort((a,b) => a.order - b.order).map(r => `  ${r.label}${r.required ? ' *' : ''}`).join('\n')
+      rcaAddition = RCA_SYSTEM_PROMPT + `
+
+## Active workflow template: "${matchedWorkflow.name}"
+Problem type: ${matchedWorkflow.problem_type}
+
+Follow these data collection steps IN ORDER before analysis:
+${stepList}
+
+Produce these renderers in this order (* = required, always include):
+${rendererList}
+
+Output title template: ${(matchedWorkflow.output as {title:string}).title || 'RCA . {problem} . {date}'}
+`
+    } else {
+      // Generic RCA -- no matched template
+      rcaAddition = RCA_SYSTEM_PROMPT
+    }
+  }
+
+  const fullSystem = baseSystem + dbList + apiList + rcaAddition
+  // Fix #7: per-user rate limit -- max 50 requests per hour per user
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const recentCalls = await sql`SELECT COUNT(*) as cnt FROM usage_events WHERE user_id=${session.id} AND created_at > ${oneHourAgo}`
+    const count = Number(recentCalls[0]?.cnt || 0)
+    if (count >= 50) {
+      return Response.json({ error: 'Rate limit exceeded. You have reached 50 requests per hour. Please wait before sending more messages.' }, { status: 429 })
+    }
+  } catch { /* don't block on rate limit check failure */ }
+
+  // Fix #9: truncate message history to last 40 messages to prevent context overflow
+  const MAX_HISTORY = 40
+  const trimmedMessages = messages.length > MAX_HISTORY
+    ? messages.slice(messages.length - MAX_HISTORY)
+    : messages
+
+  const enc = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      const send = (o: object) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'))
+      try {
+        let history: Anthropic.MessageParam[] = trimmedMessages.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        let totalInput = 0, totalOutput = 0
+        // Send real DB conversation ID to client so it can sync local state
+        if (convId) send({ type: 'conv_id', id: convId })
+        // Track full assistant response for persistence
+        let finalText = ''
+        const finalToolCalls: Array<{ name: string; input: unknown; result?: unknown }> = []
+        while (true) {
+          const resp = await anthropic.messages.create({
+            model, max_tokens: 4096,
+            system: fullSystem,
+            tools: TOOLS, messages: history, stream: true,
+          })
+          let text = '', stopReason = ''
+          const toolBlocks: Anthropic.ToolUseBlock[] = []
+          let activeTool: { id: string; name: string; json: string } | null = null
+          // isToolTurn: true when this API call is not the final one (has tool use)
+          // We don't know this until message_delta, so we buffer text and decide after
+          const textChunks: string[] = []
+          for await (const evt of resp) {
+            if (evt.type === 'content_block_start' && evt.content_block.type === 'tool_use') {
+              activeTool = { id: evt.content_block.id, name: evt.content_block.name, json: '' }
+            } else if (evt.type === 'content_block_delta') {
+              if (evt.delta.type === 'text_delta') {
+                text += evt.delta.text
+                textChunks.push(evt.delta.text)
+              } else if (evt.delta.type === 'input_json_delta' && activeTool) {
+                activeTool.json += evt.delta.partial_json
+              }
+            } else if (evt.type === 'content_block_stop' && activeTool) {
+              const block: Anthropic.ToolUseBlock = { type: 'tool_use', id: activeTool.id, name: activeTool.name, input: JSON.parse(activeTool.json || '{}') }
+              toolBlocks.push(block)
+              send({ type: 'tool_start', name: block.name, input: block.input })
+              activeTool = null
+            } else if (evt.type === 'message_delta') {
+              stopReason = evt.delta.stop_reason || ''
+              if (evt.usage) totalOutput += evt.usage.output_tokens
+            } else if (evt.type === 'message_start') {
+              if (evt.message?.usage) totalInput += evt.message.usage.input_tokens
+            }
+          }
+          // Now we know if this was an intermediate turn (has tool calls) or the final turn
+          const isIntermediateTurn = stopReason === 'tool_use' && toolBlocks.length > 0
+          if (isIntermediateTurn) {
+            // Send as intermediate narration — client shows this inside the tool pill, not inline
+            if (text.trim()) send({ type: 'intermediate_text', text })
+          } else {
+            // Final response — stream it token by token for the typewriter effect
+            for (const chunk of textChunks) {
+              send({ type: 'text', text: chunk })
+            }
+          }
+          if (text) finalText += text
+          if (stopReason !== 'tool_use' || !toolBlocks.length) break
+          const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
+            try {
+              const result = await runTool(block.name, block.input as Record<string, unknown>)
+              send({ type: 'tool_result', name: block.name, result })
+              finalToolCalls.push({ name: block.name, input: block.input, result })
+              return { type: 'tool_result' as const, tool_use_id: block.id, content: JSON.stringify(result) }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Tool failed'
+              send({ type: 'tool_result', name: block.name, result: { error: msg } })
+              finalToolCalls.push({ name: block.name, input: block.input, result: { error: msg } })
+              return { type: 'tool_result' as const, tool_use_id: block.id, content: 'Error: ' + msg }
+            }
+          }))
+          history = [...history, { role: 'assistant', content: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks] }, { role: 'user', content: toolResults }]
+        }
+        // Persist assistant message + update conversation timestamp
+        let rcaBlock: unknown = null
+        try {
+          if (convId && finalText) {
+            const persistSql = getDb()
+            // Extract rca_block from finalText if present
+            const rcaMatch = finalText.match(/<rca_output>([\s\S]*?)<\/rca_output>/)
+            rcaBlock = rcaMatch ? (() => { try { return JSON.parse(rcaMatch[1].trim()) } catch { return null } })() : null
+            const cleanText = finalText.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
+            await persistSql`
+              INSERT INTO messages (conversation_id, role, content, tool_calls, rca_block)
+              VALUES (${convId}, 'assistant', ${cleanText}, ${finalToolCalls.length ? JSON.stringify(finalToolCalls) : null}, ${rcaBlock ? JSON.stringify(rcaBlock) : null})`
+            await persistSql`UPDATE conversations SET updated_at = datetime('now') WHERE id = ${convId}`
+          }
+        } catch { /* don't block on persistence failure */ }
+
+        // Save RCA session if an rca_block was produced
+        try {
+          if (convId && rcaBlock && matchedWorkflow) {
+            const sessionSql = getDb()
+            await sessionSql`
+              INSERT INTO rca_sessions (workflow_id, conversation_id, problem, renderers_used, rca_block, created_by)
+              VALUES (
+                ${(matchedWorkflow as Record<string,unknown>).id as string},
+                ${convId},
+                ${lastUserContent.slice(0, 200)},
+                ${JSON.stringify((rcaBlock as {renderers?: unknown[]}).renderers?.map((r: unknown) => (r as {type:string}).type) || [])},
+                ${JSON.stringify(rcaBlock)},
+                ${session.id}
+              )`.catch(() => {}) // non-blocking -- sessions table may not exist yet
+          }
+        } catch { /* don't block on session save failure */ }
+
+        // Log usage
+        try {
+          const cost = totalInput * pricing.input + totalOutput * pricing.output
+          const usageSql = getDb()
+          await usageSql`INSERT INTO usage_events(user_id,user_email,type,model,input_tokens,output_tokens,cost_usd) VALUES(${session.id},${session.email},'chat',${model},${totalInput},${totalOutput},${cost})`
+        } catch {}
+        send({ type: 'done' })
+      } catch (err) {
+        send({ type: 'error', message: err instanceof Error ? err.message : 'Something went wrong' })
+      } finally { ctrl.close() }
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })
+}

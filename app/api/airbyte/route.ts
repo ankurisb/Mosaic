@@ -1,0 +1,495 @@
+// app/api/airbyte/route.ts
+// Full Airbyte OSS API integration.
+// Public API:  GET/POST http://localhost:8000/api/public/v1/...
+// Config API:  POST     http://localhost:8000/api/v1/...  (fallback)
+
+import { getSession }        from '@/lib/auth'
+import { getDb }             from '@/lib/db'
+import { encrypt, decrypt }  from '@/lib/encrypt'
+export const runtime = 'nodejs'
+
+// ── OAuth2 token cache ────────────────────────────────────────
+const tokenCache = new Map<string, { token: string; expiresAt: number }>()
+
+async function getOAuthToken(base: string, clientId: string, clientSecret: string): Promise<string> {
+  const cacheKey = `${base}:${clientId}`
+  const cached = tokenCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now() + 30000) return cached.token
+
+  // abctl uses /api/v1/applications/token (NOT /api/public/v1/)
+  const urls = [
+    `${base}/api/v1/applications/token`,
+    `${base}/api/public/v1/applications/token`,
+  ]
+  let lastErr = ''
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) {
+        const data = await res.json() as { access_token: string; expires_in?: number }
+        const expiresAt = Date.now() + ((data.expires_in || 840) * 1000) // 14 min default (tokens expire in 15)
+        tokenCache.set(cacheKey, { token: data.access_token, expiresAt })
+        return data.access_token
+      }
+      const errTxt = await res.text().catch(() => '')
+      lastErr = `${res.status} from ${url}: ${errTxt.slice(0, 100)}`
+    } catch (e) {
+      lastErr = (e as Error).message
+    }
+  }
+  throw new Error(`OAuth token exchange failed: ${lastErr}`)
+}
+
+// ── Dual-API client ───────────────────────────────────────────
+// Supports both:
+//   1. abctl/Kubernetes: OAuth2 client credentials (client_id + client_secret stored as username + password)
+//   2. Docker Compose: Basic auth (airbyte:password)
+// Tries public API first, falls back to legacy config API
+async function ab(
+  inst: { url: string; username: string; password_enc?: string | null; client_id?: string | null; client_secret_enc?: string | null },
+  publicPath: string,
+  configPath: string,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
+  body?: unknown
+): Promise<unknown> {
+  const base     = inst.url.replace(/\/$/, '')
+  const password = inst.password_enc ? decrypt(inst.password_enc) : 'password'
+
+  // Detect abctl mode: if password looks like a long random string (not 'password')
+  // and we have a client_id, use OAuth2. Otherwise use Basic auth.
+  // We store client_id in the username field and client_secret in password for abctl mode
+  // OR: detect by trying OAuth2 token endpoint first
+  let authHeader: string
+
+  // Try OAuth2 if credentials look like abctl (long random password, email-style username)
+  const looksLikeAbctl = inst.username.includes('@') || (password.length > 20 && password !== 'password')
+  
+  if (looksLikeAbctl) {
+    try {
+      // For abctl: username = email (not used for OAuth), 
+      // we need client_id and client_secret
+      // Store them: client_id in inst.client_id, or derive from known field
+      // For now, try to exchange using the stored credentials as client credentials
+      const clientId = (inst as any).client_id || inst.username
+      const clientSecret = (inst as any).client_secret_enc ? decrypt((inst as any).client_secret_enc) : password
+      const token = await getOAuthToken(base, clientId, clientSecret)
+      authHeader = `Bearer ${token}`
+    } catch {
+      // Fall back to basic auth
+      authHeader = `Basic ${Buffer.from(`${inst.username}:${password}`).toString('base64')}`
+    }
+  } else {
+    authHeader = `Basic ${Buffer.from(`${inst.username}:${password}`).toString('base64')}`
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': authHeader,
+  }
+
+  const attempts = [
+    { url: `${base}/api/public/v1${publicPath}`, method },
+    { url: `${base}/api/v1${configPath}`,        method: 'POST' as const },
+  ]
+
+  let lastErr = ''
+  for (const a of attempts) {
+    try {
+      const hasBody = ['POST','PUT','PATCH'].includes(a.method) && body !== undefined
+      const res = await fetch(a.url, {
+        method: a.method,
+        headers,
+        body: hasBody ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(15000),
+      })
+      if (res.ok) {
+        const txt = await res.text()
+        return txt ? JSON.parse(txt) : {}
+      }
+      const errTxt = await res.text().catch(() => '')
+      lastErr = `${res.status} ${res.statusText}${errTxt ? ': ' + errTxt.slice(0, 120) : ''}`
+    } catch (e) {
+      lastErr = (e as Error).message
+    }
+  }
+  throw new Error(lastErr || 'Airbyte unreachable')
+}
+
+// ── Table setup ───────────────────────────────────────────────
+async function ensureTable() {
+  const sql = getDb()
+  await sql`CREATE TABLE IF NOT EXISTS airbyte_instances (
+    id                TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    label             TEXT NOT NULL DEFAULT 'Local Airbyte',
+    url               TEXT NOT NULL DEFAULT 'http://localhost:8000',
+    username          TEXT NOT NULL DEFAULT 'airbyte',
+    password_enc      TEXT,
+    client_id         TEXT,
+    client_secret_enc TEXT,
+    workspace_id      TEXT,
+    active            INTEGER NOT NULL DEFAULT 1,
+    last_synced       TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+  // Add new columns if upgrading from older schema
+  await sql`ALTER TABLE airbyte_instances ADD COLUMN client_id TEXT`.catch(() => {})
+  await sql`ALTER TABLE airbyte_instances ADD COLUMN client_secret_enc TEXT`.catch(() => {})
+  return sql
+}
+
+// ── Instance helpers ──────────────────────────────────────────
+async function getInstance(sql: ReturnType<typeof getDb>, id: string) {
+  const rows = await sql`SELECT * FROM airbyte_instances WHERE id = ${id}`
+  if (!rows.length) throw new Error('Instance not found')
+  return rows[0] as Record<string, unknown>
+}
+
+async function getWorkspaceId(sql: ReturnType<typeof getDb>, inst: Record<string, unknown>): Promise<string> {
+  if (inst.workspace_id) return inst.workspace_id as string
+  const data = await ab(inst as any, '/workspaces', '/workspaces/list', 'GET') as any
+  const ws = data.data || data.workspaces || []
+  const wsId = (ws[0]?.workspaceId || ws[0]?.id || '') as string
+  if (wsId) {
+    await sql`UPDATE airbyte_instances SET workspace_id = ${wsId} WHERE id = ${inst.id}`
+    inst.workspace_id = wsId
+  }
+  return wsId
+}
+
+// ── GET ───────────────────────────────────────────────────────
+export async function GET(req: Request) {
+  const session = await getSession()
+  if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const action = searchParams.get('action') || 'list'
+  const id     = searchParams.get('id')
+  const sql    = await ensureTable()
+
+  // ── List instances
+  if (action === 'list') {
+    const rows = await sql`SELECT id, label, url, username, workspace_id, active, last_synced, created_at FROM airbyte_instances ORDER BY created_at ASC`
+    return Response.json({ instances: rows })
+  }
+
+  // All other actions need an instance id
+  if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  let inst: Record<string, unknown>
+  try { inst = await getInstance(sql, id) }
+  catch { return Response.json({ error: 'Not found' }, { status: 404 }) }
+
+  // ── Health check using /health endpoint
+  if (action === 'ping') {
+    try {
+      // Use workspaces as health check - /health may not require auth but workspaces confirms full auth works
+      const wsData = await ab(inst, '/workspaces', '/workspaces/list', 'GET') as any
+      const ws = wsData.data || wsData.workspaces || []
+      // Auto-cache workspace_id if we got one
+      if (ws.length > 0 && !inst.workspace_id) {
+        const wsId = ws[0].workspaceId || ws[0].id
+        await sql`UPDATE airbyte_instances SET workspace_id = ${wsId} WHERE id = ${id}`
+      }
+      return Response.json({ ok: true, workspaceCount: ws.length })
+    } catch (e) {
+      return Response.json({ ok: false, error: (e as Error).message })
+    }
+  }
+
+  // ── Sources list
+  if (action === 'sources') {
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+      const data = await ab(inst, `/sources?workspaceIds=${wsId}&limit=100`, '/sources/list', 'GET', { workspaceId: wsId }) as any
+      return Response.json({ sources: data.data || data.sources || [] })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Source detail
+  if (action === 'source' && searchParams.get('sourceId')) {
+    try {
+      const srcId = searchParams.get('sourceId')
+      const data = await ab(inst, `/sources/${srcId}`, '/sources/get', 'GET', { sourceId: srcId }) as any
+      return Response.json({ source: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Source definitions (connector catalog from live Airbyte instance)
+  if (action === 'source_definitions') {
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+      const data = await ab(inst,
+        '/source_definitions',
+        '/source_definitions/list_for_workspace',
+        'GET',
+        { workspaceId: wsId }
+      ) as any
+      const defs = data.data || data.sourceDefinitions || []
+      return Response.json({ definitions: defs })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Source definition spec (config schema for a connector type)
+  if (action === 'source_spec' && searchParams.get('definitionId')) {
+    try {
+      const defId = searchParams.get('definitionId')
+      const data = await ab(inst,
+        `/source_definitions/${defId}/specification`,
+        '/source_definition_specifications/get',
+        'GET',
+        { sourceDefinitionId: defId }
+      ) as any
+      return Response.json({ spec: data.connectionSpecification || data.spec || data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Destinations list
+  if (action === 'destinations') {
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+      const data = await ab(inst, `/destinations?workspaceIds=${wsId}&limit=100`, '/destinations/list', 'GET', { workspaceId: wsId }) as any
+      return Response.json({ destinations: data.data || data.destinations || [] })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Connections list
+  if (action === 'connections') {
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+      const data = await ab(inst, `/connections?workspaceIds=${wsId}&limit=100`, '/connections/list', 'GET', { workspaceId: wsId }) as any
+      return Response.json({ connections: data.data || data.connections || [] })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Connection detail
+  if (action === 'connection' && searchParams.get('connectionId')) {
+    try {
+      const cid = searchParams.get('connectionId')
+      const data = await ab(inst, `/connections/${cid}`, '/connections/get', 'GET', { connectionId: cid }) as any
+      return Response.json({ connection: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Stream schema for a source
+  if (action === 'streams' && searchParams.get('sourceId')) {
+    try {
+      const srcId = searchParams.get('sourceId')
+      const data = await ab(inst,
+        `/streams?sourceId=${srcId}`,
+        '/sources/discover_schema',
+        'GET',
+        { sourceId: srcId }
+      ) as any
+      // Public API returns array of stream properties
+      // Config API returns { catalog: { streams: [...] } }
+      const streams = data.data || data.catalog?.streams || data.streams || []
+      return Response.json({ streams })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Jobs list
+  if (action === 'jobs') {
+    try {
+      const cid = searchParams.get('connectionId')
+      const publicQ = cid ? `/jobs?limit=20&connectionId=${cid}` : `/jobs?limit=20`
+      const data = await ab(inst, publicQ, '/jobs/list', 'GET',
+        { configTypes: ['sync'], pagination: { pageSize: 20, rowOffset: 0 },
+          ...(cid ? { connectionId: cid } : {}) }) as any
+      return Response.json({ jobs: data.data || data.jobs || [] })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Single job status
+  if (action === 'job' && searchParams.get('jobId')) {
+    try {
+      const jobId = searchParams.get('jobId')
+      const data = await ab(inst, `/jobs/${jobId}`, '/jobs/get', 'GET', { id: Number(jobId) }) as any
+      return Response.json({ job: data.job || data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  return Response.json({ error: 'Unknown action' }, { status: 400 })
+}
+
+// ── POST ──────────────────────────────────────────────────────
+export async function POST(req: Request) {
+  const session = await getSession()
+  if (!session || session.role !== 'admin')
+    return Response.json({ error: 'Admin only' }, { status: 403 })
+
+  const sql  = await ensureTable()
+  const body = await req.json() as any
+  const { action } = body
+
+  // ── Create instance
+  if (action === 'create_instance') {
+    const enc    = body.password?.trim()       ? encrypt(body.password.trim())       : null
+    const csEnc  = body.client_secret?.trim()  ? encrypt(body.client_secret.trim())  : null
+    await sql`INSERT INTO airbyte_instances (label, url, username, password_enc, client_id, client_secret_enc)
+      VALUES (${body.label || 'Local Airbyte'}, ${body.url || 'http://localhost:8000'},
+              ${body.username || 'airbyte'}, ${enc}, ${body.client_id || null}, ${csEnc})`
+    return Response.json({ ok: true })
+  }
+
+  // ── Update instance
+  if (action === 'update_instance') {
+    await sql`UPDATE airbyte_instances SET label=${body.label}, url=${body.url}, username=${body.username},
+      client_id=${body.client_id || null} WHERE id=${body.id}`
+    if (body.password?.trim())
+      await sql`UPDATE airbyte_instances SET password_enc=${encrypt(body.password.trim())} WHERE id=${body.id}`
+    if (body.client_secret?.trim())
+      await sql`UPDATE airbyte_instances SET client_secret_enc=${encrypt(body.client_secret.trim())} WHERE id=${body.id}`
+    return Response.json({ ok: true })
+  }
+
+  // ── Delete instance
+  if (action === 'delete_instance') {
+    await sql`DELETE FROM airbyte_instances WHERE id=${body.id}`
+    return Response.json({ ok: true })
+  }
+
+  // ── Discover workspace
+  if (action === 'discover_workspace') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.id) }
+    catch { return Response.json({ error: 'Not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, '/workspaces', '/workspaces/list', 'GET') as any
+      const ws = data.data || data.workspaces || []
+      if (!ws.length) return Response.json({ ok: false, error: 'No workspaces found' })
+      const wsId = ws[0].workspaceId || ws[0].id
+      await sql`UPDATE airbyte_instances SET workspace_id=${wsId} WHERE id=${body.id}`
+      return Response.json({ ok: true, workspaceId: wsId, count: ws.length })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Create source in Airbyte
+  if (action === 'create_source') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+      const data = await ab(inst, '/sources', '/sources/create', 'POST', {
+        workspaceId: wsId,
+        name: body.name,
+        sourceDefinitionId: body.definitionId,
+        connectionConfiguration: body.config,
+      }) as any
+      return Response.json({ ok: true, sourceId: data.sourceId || data.id, source: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Update source in Airbyte
+  if (action === 'update_source') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, `/sources/${body.sourceId}`, '/sources/update', 'PATCH', {
+        sourceId: body.sourceId,
+        name: body.name,
+        connectionConfiguration: body.config,
+      }) as any
+      return Response.json({ ok: true, source: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Delete source in Airbyte
+  if (action === 'delete_source') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      await ab(inst, `/sources/${body.sourceId}`, '/sources/delete', 'DELETE', { sourceId: body.sourceId })
+      return Response.json({ ok: true })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Create connection in Airbyte
+  if (action === 'create_connection') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, '/connections', '/connections/create', 'POST', {
+        sourceId: body.sourceId,
+        destinationId: body.destinationId,
+        name: body.name,
+        status: 'active',
+        schedule: body.schedule || { scheduleType: 'manual' },
+        syncCatalog: body.syncCatalog,
+      }) as any
+      return Response.json({ ok: true, connectionId: data.connectionId || data.id, connection: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Update connection (pause/resume/reschedule)
+  if (action === 'update_connection') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, `/connections/${body.connectionId}`, '/connections/update', 'PATCH', {
+        connectionId: body.connectionId,
+        ...(body.status   !== undefined ? { status: body.status } : {}),
+        ...(body.schedule !== undefined ? { schedule: body.schedule } : {}),
+        ...(body.name     !== undefined ? { name: body.name } : {}),
+      }) as any
+      return Response.json({ ok: true, connection: data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Delete connection
+  if (action === 'delete_connection') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      await ab(inst, `/connections/${body.connectionId}`, '/connections/delete', 'DELETE', { connectionId: body.connectionId })
+      return Response.json({ ok: true })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Trigger sync job
+  if (action === 'trigger_sync') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, '/jobs', '/connections/sync', 'POST',
+        { type: 'sync', connectionId: body.connectionId, connectionId: body.connectionId }) as any
+      await sql`UPDATE airbyte_instances SET last_synced=datetime('now') WHERE id=${body.instanceId}`
+      return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Trigger reset job
+  if (action === 'trigger_reset') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      const data = await ab(inst, '/jobs', '/connections/reset', 'POST',
+        { type: 'reset', connectionId: body.connectionId, connectionId: body.connectionId }) as any
+      return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Cancel a running job
+  if (action === 'cancel_job') {
+    let inst: Record<string, unknown>
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    try {
+      await ab(inst, `/jobs/${body.jobId}`, '/jobs/cancel', 'DELETE', { id: body.jobId })
+      return Response.json({ ok: true })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  return Response.json({ error: 'Unknown action' }, { status: 400 })
+}

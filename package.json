@@ -1,0 +1,41 @@
+{
+  "name": "mosaic",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@neondatabase/serverless": "^0.10.4",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.6",
+    "next": "15.3.9",
+    "pg": "^8.13.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "mysql2": "^3.11.3",
+    "mssql": "^11.0.1",
+    "mongodb": "^6.12.0",
+    "better-sqlite3": "^9.6.0",
+    "nodemailer": "^6.9.9"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.11",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "@types/mssql": "^9.1.5",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/nodemailer": "^6.4.14"
+  },
+  "optionalDependencies": {
+    "ssh2": "^1.16.0",
+    "mssql": "^10.0.4"
+  },
+  "description": "Mosaic \u2014 industrial AI platform by UGX Systems"
+}

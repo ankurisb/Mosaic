@@ -1,0 +1,215 @@
+# ── Mosaic — Full Stack Docker Compose ───────────────────────
+# Starts: Mosaic + Airbyte + Apache Superset
+#
+# Usage:
+#   docker compose up -d          # start all services
+#   docker compose down           # stop all services
+#   docker compose logs -f mosaic # tail Mosaic logs
+#
+# First run pulls ~4-5GB of images. Requires Docker Desktop
+# with at least 6GB RAM allocated (Docker → Settings → Resources).
+#
+# All services use a shared internal network. Only Mosaic (3001),
+# Airbyte (8000), and Superset (8088) are exposed to the host.
+
+version: '3.8'
+
+services:
+
+  # ── Mosaic ──────────────────────────────────────────────────
+  mosaic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mosaic
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Copy from .env or set directly here
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mosaic.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - ADMIN_NAME=${ADMIN_NAME:-Admin}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - CRON_SECRET=${CRON_SECRET:-}
+      # SQLite path inside container
+      - SQLITE_PATH=/data/mosaic.db
+      # Superset (internal Docker network URL)
+      - SUPERSET_URL=http://superset:8088
+      - SUPERSET_ADMIN_USER=admin
+      - SUPERSET_ADMIN_PASSWORD=${SUPERSET_ADMIN_PASSWORD:-Admin1234!}
+      # Airbyte (internal Docker network URL)
+      - AIRBYTE_URL=http://airbyte-proxy:8000
+      - AIRBYTE_USER=airbyte
+      - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}
+      # SMTP (optional)
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    volumes:
+      - mosaic-data:/data
+    depends_on:
+      superset:
+        condition: service_healthy
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Airbyte ─────────────────────────────────────────────────
+  # Uses Airbyte's official Docker Compose services
+  # Auth: basic (airbyte / password) — Mosaic detects this automatically
+
+  airbyte-db:
+    image: airbyte/db:dev
+    container_name: airbyte-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=docker
+      - POSTGRES_PASSWORD=docker
+      - DATABASE_USER=docker
+      - DATABASE_PASSWORD=docker
+      - DATABASE_DB=airbyte
+    volumes:
+      - airbyte-db-data:/var/lib/postgresql/data
+    networks:
+      - mosaic-net
+
+  airbyte-server:
+    image: airbyte/server:latest
+    container_name: airbyte-server
+    restart: unless-stopped
+    environment:
+      - AIRBYTE_VERSION=latest
+      - DATABASE_USER=docker
+      - DATABASE_PASSWORD=docker
+      - DATABASE_HOST=airbyte-db
+      - DATABASE_PORT=5432
+      - DATABASE_DB=airbyte
+      - WORKSPACE_ROOT=/tmp/workspace
+      - WORKER_ENVIRONMENT=docker
+      - SECRET_PERSISTENCE=NONE
+      - INTERNAL_API_HOST=airbyte-server:8001
+      - BASIC_AUTH_USERNAME=${AIRBYTE_USER:-airbyte}
+      - BASIC_AUTH_PASSWORD=${AIRBYTE_PASSWORD:-password}
+    volumes:
+      - airbyte-workspace:/tmp/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - airbyte-db
+    networks:
+      - mosaic-net
+
+  airbyte-proxy:
+    image: airbyte/proxy:latest
+    container_name: airbyte-proxy
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    environment:
+      - BASIC_AUTH_USERNAME=${AIRBYTE_USER:-airbyte}
+      - BASIC_AUTH_PASSWORD=${AIRBYTE_PASSWORD:-password}
+      - PROXY_PASS_WEB=airbyte-webapp:80
+      - PROXY_PASS_API=airbyte-server:8001
+      - PROXY_PASS_CONNECTOR_BUILDER_SERVER=airbyte-connector-builder-server:80
+      - CONNECTOR_BUILDER_SERVER_API_HOST=airbyte-connector-builder-server
+    depends_on:
+      - airbyte-server
+    networks:
+      - mosaic-net
+
+  # ── Superset ────────────────────────────────────────────────
+  superset-db:
+    image: postgres:15-alpine
+    container_name: superset-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=superset
+      - POSTGRES_USER=superset
+      - POSTGRES_PASSWORD=${SUPERSET_DB_PASSWORD:-superset}
+    volumes:
+      - superset-db-data:/var/lib/postgresql/data
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  superset-redis:
+    image: redis:7-alpine
+    container_name: superset-redis
+    restart: unless-stopped
+    networks:
+      - mosaic-net
+
+  superset:
+    image: apache/superset:3.1.3
+    container_name: superset
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:-change-me-to-random-string}
+      - DATABASE_URL=postgresql+psycopg2://superset:${SUPERSET_DB_PASSWORD:-superset}@superset-db/superset
+      - REDIS_URL=redis://superset-redis:6379/0
+      - SUPERSET_WEBSERVER_PORT=8088
+      # First-run admin (matches Mosaic admin)
+      - ADMIN_USERNAME=admin
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mosaic.local}
+      - ADMIN_PASSWORD=${SUPERSET_ADMIN_PASSWORD:-Admin1234!}
+      - ADMIN_FIRSTNAME=Mosaic
+      - ADMIN_LASTNAME=Admin
+      # Embedding
+      - FEATURE_FLAGS={"EMBEDDED_SUPERSET":true,"DASHBOARD_RBAC":true}
+    volumes:
+      - superset-data:/app/superset_home
+    depends_on:
+      superset-db:
+        condition: service_healthy
+      superset-redis:
+        condition: service_started
+    networks:
+      - mosaic-net
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin
+          --firstname Mosaic
+          --lastname Admin
+          --email ${ADMIN_EMAIL:-admin@mosaic.local}
+          --password ${SUPERSET_ADMIN_PASSWORD:-Admin1234!} 2>/dev/null || true &&
+        superset init &&
+        superset run -p 8088 --with-threads --reload --debugger
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+# ── Volumes ─────────────────────────────────────────────────
+volumes:
+  mosaic-data:
+  airbyte-db-data:
+  airbyte-workspace:
+  superset-db-data:
+  superset-data:
+
+# ── Network ──────────────────────────────────────────────────
+networks:
+  mosaic-net:
+    driver: bridge

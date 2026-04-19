@@ -1,0 +1,1211 @@
+import type Anthropic from '@anthropic-ai/sdk'
+import { getDb } from './db'
+import { decrypt } from './encrypt'
+import { Pool } from 'pg'
+import type { Pool as MysqlPool } from 'mysql2/promise'
+
+// -- Tool definitions ------------------------------------------
+export const TOOLS: Anthropic.Tool[] = [
+  {
+    name: 'web_search',
+    description: 'Search the web for current information, news, or recent events.',
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Search query' } },
+      required: ['query']
+    },
+  },
+  {
+    name: 'query_database',
+    description: 'Run a query against a configured database connection. For SQL databases use SELECT. For MongoDB use a JSON filter object.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        connection_id: { type: 'string', description: 'The database connection ID from settings' },
+        sql: { type: 'string', description: 'For SQL: a SELECT/WITH/EXPLAIN query. For MongoDB: JSON like {"collection":"users","filter":{"active":true},"limit":20}' },
+      },
+      required: ['connection_id', 'sql']
+    },
+  },
+  {
+    name: 'call_api',
+    description: 'Make an HTTP request to a configured API connection.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        connection_id: { type: 'string', description: 'The API connection ID from settings' },
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'HTTP method' },
+        path: { type: 'string', description: 'Path to append to the base path, e.g. /search or ?limit=10' },
+        body: { type: 'object', description: 'Request body for POST/PUT/PATCH'},
+      },
+      required: ['connection_id', 'method', 'path']
+    },
+  },
+  {
+    name: 'read_file_server',
+    description: 'Read files from a configured file server connection (SMB/SFTP/local/S3). Finds the latest matching file using a 3-step timestamp strategy: (1) filename date pattern, (2) file system modified-at, (3) parse file content for date fields. Returns parsed rows for CSV/Excel, text for PDF/XML/JSON, or base64 for images.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server_id:   { type: 'string', description: 'File server connection ID from settings' },
+        file_hint:   { type: 'string', description: 'Natural language hint or exact filename, e.g. "latest OEE report for Line A" or "OEE_LineA_20260414.csv"' },
+        file_type:   { type: 'string', description: 'Filter by extension: csv, xlsx, pdf, xml, json, jpeg, png. Leave blank to match any configured type.' },
+        ts_strategy: { type: 'string', enum: ['auto', 'filename', 'modified', 'content'], description: 'Timestamp resolution strategy. auto tries all three in order.' },
+        max_rows:    { type: 'number', description: 'Row limit for CSV/Excel files (default: 500)' },
+        extract:     { type: 'string', description: 'For Excel: sheet name to read, e.g. "sheet=OEE". For JSON/XML: dot-path to array, e.g. "results.items"' },
+      },
+      required: ['server_id', 'file_hint']
+    },
+  },
+  {
+    name: 'query_airbyte',
+    description: 'Query data from an Airbyte-synced source, check sync status, or trigger a sync job.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list_sources', 'list_connections', 'check_jobs', 'trigger_sync'] },
+        instance_id: { type: 'string' },
+        connection_id: { type: 'string' },
+      },
+      required: ['action']
+    },
+  },
+]
+
+export async function runTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+  switch (name) {
+    case 'web_search': return webSearch(String(input.query))
+    case 'query_database': return queryDatabase(String(input.connection_id), String(input.sql))
+    case 'call_api': return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
+    case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), input.ts_strategy as string | undefined, input.extract as string | undefined, input.max_rows as number | undefined)
+    case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
+    default: throw new Error(`Unknown tool: ${name}`)
+  }
+}
+
+// -- Web search ------------------------------------------------
+async function webSearch(query: string) {
+  if (process.env.TAVILY_API_KEY) {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, query, max_results: 5 }),
+    })
+    if (!res.ok) throw new Error(`Tavily error ${res.status}`)
+    const data = await res.json()
+    return (data.results || []).map((r: { title: string; url: string; content: string }) => ({
+      title: r.title, url: r.url, snippet: String(r.content || '').slice(0, 400),
+    }))
+  }
+  return [{ title: 'Search not configured', url: '', snippet: 'Add TAVILY_API_KEY to environment variables.' }]
+}
+
+// -- DB helpers ------------------------------------------------
+function getSslConfig(conn: Record<string, unknown>) {
+  const mode = conn.ssl_mode as string
+  if (mode === 'disable') return false
+  if (mode === 'verify-full') return { rejectUnauthorized: true, ca: (conn.ssl_ca as string) || undefined }
+  return { rejectUnauthorized: false }
+}
+
+function decryptConnStr(conn: Record<string, unknown>): string | null {
+  return conn.connection_string ? decrypt(conn.connection_string as string) : null
+}
+
+// -- Fix #2: Postgres pool with cleanup on delete --------------
+const pgPools = new Map<string, { pool: Pool; lastUsed: number }>()
+
+// Evict pools for connections that no longer exist (run every 10 min)
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, entry] of pgPools.entries()) {
+    if (now - entry.lastUsed > 10 * 60 * 1000) {
+      entry.pool.end().catch(() => {})
+      pgPools.delete(id)
+    }
+  }
+}, 10 * 60 * 1000)
+
+// -- Fix #3: MySQL connection pool ----------------------------
+const mysqlPools = new Map<string, MysqlPool>()
+
+async function getMysqlPool(connectionId: string, conn: Record<string, unknown>): Promise<MysqlPool> {
+  if (mysqlPools.has(connectionId)) return mysqlPools.get(connectionId)!
+  const mysql = await import('mysql2/promise')
+
+  // Fix #4: MySQL SSL -- pass ssl config regardless of how connection is specified
+  const sslMode = conn.ssl_mode as string
+  const sslConfig = sslMode === 'disable' ? false
+    : sslMode === 'verify-full' ? { rejectUnauthorized: true, ca: (conn.ssl_ca as string) || undefined }
+    : { rejectUnauthorized: false }
+
+  const pool = mysql.createPool({
+    uri: decryptConnStr(conn) || undefined,
+    host: decryptConnStr(conn) ? undefined : conn.host as string,
+    port: decryptConnStr(conn) ? undefined : (conn.port as number) || 3306,
+    database: decryptConnStr(conn) ? undefined : conn.database_name as string,
+    user: decryptConnStr(conn) ? undefined : conn.username as string,
+    password: decryptConnStr(conn) ? undefined : decrypt(conn.password_enc as string || ''),
+    ssl: sslConfig as object,
+    connectionLimit: (conn.pool_max as number) || 5,
+    connectTimeout: (conn.connect_timeout_ms as number) || 5000,
+    waitForConnections: true,
+  })
+  mysqlPools.set(connectionId, pool)
+  return pool
+}
+
+// -- Database query -- dialect-aware ---------------------------
+// -- MCP query helper --------------------------------------------------------
+// Sends a JSON-RPC 2.0 tools/call request to an MCP-compatible server.
+// Tries tool name 'query' first (postgres-mcp, pg-mcp, MCP Toolbox),
+// falls back to 'run_sql' (Neon) if the server returns method-not-found.
+async function queryViaMcp(endpoint: string, token: string | undefined, sql: string, database?: string): Promise<unknown> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  // Build args -- omit database key if not set (some servers reject unknown args)
+  const args: Record<string, string> = { sql }
+  if (database) args.database = database
+
+  async function callTool(toolName: string) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: { name: toolName, arguments: args }, id: 1 }),
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
+    return res.json()
+  }
+
+  // Try 'query' first, fall back to 'run_sql' on method-not-found (-32601)
+  let body = await callTool('query')
+  if (body.error?.code === -32601 || body.error?.message?.includes('not found')) {
+    body = await callTool('run_sql')
+  }
+  if (body.error) throw new Error(`MCP error: ${body.error.message || JSON.stringify(body.error)}`)
+
+  // Normalise result to {rows, rowCount, fields}
+  const result = body.result
+  if (!result) throw new Error('MCP server returned no result')
+
+  // Standard MCP: result.content is an array of content blocks
+  if (result.content) {
+    const textBlock = (result.content as Array<{ type: string; text?: string }>).find(c => c.type === 'text')
+    if (textBlock?.text) {
+      try {
+        const parsed = JSON.parse(textBlock.text)
+        if (Array.isArray(parsed)) return { rows: parsed, rowCount: parsed.length, fields: parsed[0] ? Object.keys(parsed[0]) : [], via: 'mcp' }
+        if (parsed.rows) return { ...parsed, via: 'mcp' }
+        if (parsed.results) return { rows: parsed.results, rowCount: parsed.results.length, fields: parsed.results[0] ? Object.keys(parsed.results[0]) : [], via: 'mcp' }
+        return { result: parsed, via: 'mcp' }
+      } catch { return { result: textBlock.text, via: 'mcp' } }
+    }
+  }
+  // Some servers return rows directly in result
+  if (Array.isArray(result)) return { rows: result, rowCount: result.length, fields: result[0] ? Object.keys(result[0]) : [], via: 'mcp' }
+  if (result.rows) return { ...result, via: 'mcp' }
+  return { result, via: 'mcp' }
+}
+
+async function queryDatabase(connectionId: string, queryInput: string) {
+  const trimmed = queryInput.trim()
+  if (!trimmed) throw new Error('SQL query is empty. Please provide a valid SELECT statement.')
+  const db = getDb()
+  const rows = await db`SELECT * FROM db_connections WHERE id=${connectionId}`
+  if (!rows.length) throw new Error(`Database connection "${connectionId}" not found. Check Settings → Databases.`)
+
+  const conn = rows[0] as Record<string, unknown>
+  const dialect = (conn.dialect as string) || 'postgres'
+  const upper = trimmed.toUpperCase()
+
+  // SQL safety guard
+  if (dialect !== 'mongodb') {
+    if (!upper.startsWith('SELECT') && !upper.startsWith('WITH') && !upper.startsWith('EXPLAIN')) {
+      throw new Error('Only SELECT / WITH / EXPLAIN queries are allowed.')
+    }
+    if (conn.read_only && (upper.includes('INSERT') || upper.includes('UPDATE') || upper.includes('DELETE'))) {
+      throw new Error('This connection is read-only.')
+    }
+  }
+
+  // -- MCP connector (Postgres / MySQL / SQL Server) -----------
+  // If the connection has an mcp_endpoint configured, route through it.
+  // Supports: Neon remote MCP, postgres-mcp, pg-mcp, Google MCP Toolbox,
+  //           any server that implements the MCP tools/call JSON-RPC protocol.
+  if (conn.mcp_endpoint && (dialect === 'postgres' || dialect === 'mysql' || dialect === 'mssql')) {
+    return queryViaMcp(
+      conn.mcp_endpoint as string,
+      conn.mcp_token as string | undefined,
+      trimmed,
+      conn.database_name as string | undefined,
+    )
+  }
+
+  // -- PostgreSQL ----------------------------------------------
+  if (dialect === 'postgres') {
+    let entry = pgPools.get(connectionId)
+    if (!entry) {
+      const connStr = decryptConnStr(conn) ||
+        `postgresql://${conn.username}:${decrypt(conn.password_enc as string)}@${conn.host}:${conn.port}/${conn.database_name}`
+      const pool = new Pool({
+        connectionString: connStr,
+        max: (conn.pool_max as number) || 5,
+        connectionTimeoutMillis: (conn.connect_timeout_ms as number) || 5000,
+        statement_timeout: (conn.query_timeout_ms as number) || 30000,
+        ssl: getSslConfig(conn),
+      })
+      entry = { pool, lastUsed: Date.now() }
+      pgPools.set(connectionId, entry)
+    }
+    entry.lastUsed = Date.now()
+    const result = await entry.pool.query(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
+    return { rows: result.rows, rowCount: result.rowCount, fields: result.fields.map(f => f.name) }
+  }
+
+  // -- MySQL ----------------------------------------------------
+  if (dialect === 'mysql') {
+    const pool = await getMysqlPool(connectionId, conn)
+    const [results, fields] = await pool.execute(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
+    return {
+      rows: results,
+      rowCount: (results as unknown[]).length,
+      fields: (fields as Array<{ name: string }>).map(f => f.name),
+    }
+  }
+
+  // -- SQL Server -----------------------------------------------
+  if (dialect === 'mssql') {
+    const mssql = await import('mssql')
+    const pass = decrypt((conn.password_enc as string) || '')
+    const config: any = {
+      user: conn.username as string,
+      password: pass,
+      server: conn.host as string,
+      port: (conn.port as number) || 1433,
+      database: conn.database_name as string,
+      options: {
+        encrypt: (conn.ssl_mode as string) !== 'disable',
+        trustServerCertificate: (conn.ssl_mode as string) !== 'verify-full',
+      },
+      connectionTimeout: (conn.connect_timeout_ms as number) || 5000,
+      requestTimeout: (conn.query_timeout_ms as number) || 30000,
+    }
+    // Fix #1: wrap in TOP 200 for MSSQL (no LIMIT support)
+    const mssqlQuery = trimmed.replace(/^(SELECT)/i, 'SELECT TOP 200')
+    const pool = decryptConnStr(conn)
+      ? await mssql.connect(decryptConnStr(conn)!)
+      : await mssql.connect(config as any)
+    try {
+      const result = await pool.request().query(mssqlQuery)
+      return {
+        rows: result.recordset,
+        rowCount: result.rowsAffected[0],
+        fields: Object.keys((result.recordset[0] as object) || {}),
+      }
+    } finally {
+      await pool.close()
+    }
+  }
+
+  // -- SQLite ---------------------------------------------------
+  if (dialect === 'sqlite') {
+    const Database = (await import('better-sqlite3')).default
+    const rawPath = (decryptConnStr(conn) || conn.database_name) as string
+    const isSandbox = rawPath === '__sandbox__'
+
+    const db2 = isSandbox
+      ? (() => {
+          const d = new Database(':memory:')
+          d.exec(`
+            CREATE TABLE machines(id INTEGER PRIMARY KEY, name TEXT, type TEXT, line TEXT, status TEXT);
+            CREATE TABLE production_logs(id INTEGER PRIMARY KEY, machine_id INTEGER, shift_date TEXT, shift TEXT, units_produced INTEGER, units_target INTEGER, cycle_time_s REAL, oee_pct REAL);
+            CREATE TABLE downtime_events(id INTEGER PRIMARY KEY, machine_id INTEGER, started_at TEXT, duration_min INTEGER, reason TEXT, category TEXT);
+            CREATE TABLE quality_checks(id INTEGER PRIMARY KEY, machine_id INTEGER, check_date TEXT, defect_rate_pct REAL, inspector TEXT);
+
+            INSERT INTO machines VALUES(1,'CNC-01','CNC','Line A','active'),(2,'CNC-02','CNC','Line A','active'),(3,'LATHE-01','Lathe','Line B','active'),(4,'PRESS-01','Press','Line B','maintenance'),(5,'MILL-01','Milling','Line C','active');
+
+            INSERT INTO production_logs VALUES
+            (1,1,'2026-04-12','Shift 1',58,64,36.4,82.1),(2,1,'2026-04-12','Shift 2',48,64,41.1,71.2),(3,1,'2026-04-12','Shift 3',36,48,37.2,81.9),
+            (4,2,'2026-04-12','Shift 1',61,64,35.1,88.4),(5,2,'2026-04-12','Shift 2',59,64,36.0,85.2),(6,2,'2026-04-12','Shift 3',44,48,37.5,84.1),
+            (7,3,'2026-04-12','Shift 1',42,48,52.1,79.4),(8,3,'2026-04-12','Shift 2',38,48,57.3,71.8),(9,3,'2026-04-12','Shift 3',31,40,54.2,72.1),
+            (10,5,'2026-04-12','Shift 1',78,80,28.4,91.2),(11,5,'2026-04-12','Shift 2',74,80,29.1,88.6),(12,5,'2026-04-12','Shift 3',60,64,30.2,87.4);
+
+            INSERT INTO downtime_events VALUES
+            (1,1,'2026-04-12 09:14',42,'Tool change','Planned'),(2,1,'2026-04-12 14:30',28,'Material shortage','Unplanned'),
+            (3,2,'2026-04-12 10:00',15,'Preventive maintenance','Planned'),
+            (4,3,'2026-04-12 08:45',35,'Conveyor jam','Unplanned'),(5,3,'2026-04-12 15:20',20,'Tool breakage','Unplanned'),
+            (6,4,'2026-04-12 07:00',480,'Scheduled maintenance','Planned');
+
+            INSERT INTO quality_checks VALUES
+            (1,1,'2026-04-12',1.8,'Ravi Kumar'),(2,2,'2026-04-12',0.9,'Ravi Kumar'),
+            (3,3,'2026-04-12',2.4,'Priya Singh'),(4,5,'2026-04-12',0.6,'Priya Singh');
+          `)
+          return d
+        })()
+      : new Database(rawPath, { readonly: true })
+
+    try {
+      const stmt = db2.prepare(trimmed)
+      const results = stmt.all()
+      const fields = results.length > 0 ? Object.keys(results[0] as object) : []
+      return { rows: results, rowCount: results.length, fields }
+    } finally {
+      db2.close()
+    }
+  }
+
+  // -- MongoDB --------------------------------------------------
+  if (dialect === 'mongodb') {
+    const { MongoClient } = await import('mongodb')
+    const connStr = decryptConnStr(conn) ||
+      `mongodb://${conn.username}:${decrypt((conn.password_enc as string) || '')}@${conn.host}:${conn.port}/${conn.database_name}`
+
+    let query: Record<string, unknown>
+    try { query = JSON.parse(trimmed) } catch {
+      throw new Error('MongoDB queries must be JSON: {"collection":"name","filter":{},"limit":20}')
+    }
+    if (!query.collection) throw new Error('MongoDB query must include "collection" field.')
+
+    const client = new MongoClient(connStr, { serverSelectionTimeoutMS: (conn.connect_timeout_ms as number) || 5000 })
+    try {
+      await client.connect()
+      const db2 = client.db(conn.database_name as string)
+      const col = db2.collection(query.collection as string)
+      const cursor = col.find((query.filter as object) || {})
+      if (query.sort) cursor.sort(query.sort as object)
+      if (query.projection) cursor.project(query.projection as object)
+      const limit = Math.min((query.limit as number) || 20, 200)
+      cursor.limit(limit)
+      const results = await cursor.toArray()
+      const fields = results.length > 0 ? Object.keys(results[0]) : []
+      return { rows: results, rowCount: results.length, fields }
+    } finally {
+      await client.close()
+    }
+  }
+
+  // -- ClickHouse ----------------------------------------------
+  if (dialect === 'clickhouse') {
+    // ClickHouse exposes a plain HTTP API -- no driver needed
+    const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+    const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 8123}`
+    const url = new URL('/', base)
+    url.searchParams.set('query', trimmed)
+    url.searchParams.set('default_format', 'JSONEachRow')
+    url.searchParams.set('max_result_rows', '200')
+    if (conn.database_name) url.searchParams.set('database', conn.database_name as string)
+
+    const headers: Record<string, string> = { 'Accept': 'application/json' }
+    if (conn.username) {
+      headers['Authorization'] = 'Basic ' + Buffer.from(`${conn.username}:${decrypt((conn.password_enc as string) || '')}`).toString('base64')
+    }
+
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout((conn.query_timeout_ms as number) || 30000),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`ClickHouse error ${res.status}: ${err.slice(0, 200)}`)
+    }
+
+    const text = await res.text()
+    const lines = text.trim().split('\n').filter(Boolean)
+    const rows = lines.map(l => JSON.parse(l))
+    const fields = rows.length > 0 ? Object.keys(rows[0]) : []
+    return { rows, rowCount: rows.length, fields }
+  }
+
+  // -- InfluxDB -------------------------------------------------
+  if (dialect === 'influxdb') {
+    // Supports both InfluxDB v1 (InfluxQL) and v2 (Flux)
+    // Detect version by query format: Flux queries start with 'from(' or 'import'
+    const isFlux = trimmed.startsWith('from(') || trimmed.startsWith('import ')
+    const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+    const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 8086}`
+    const token = decrypt((conn.password_enc as string) || '')
+
+    if (isFlux) {
+      // InfluxDB v2 -- Flux query via POST /api/v2/query
+      const url = new URL('/api/v2/query', base)
+      if (conn.database_name) url.searchParams.set('org', conn.database_name as string)
+
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/vnd.flux',
+          'Accept': 'application/csv',
+        },
+        body: trimmed,
+        signal: AbortSignal.timeout((conn.query_timeout_ms as number) || 30000),
+      })
+      if (!res.ok) throw new Error(`InfluxDB v2 error ${res.status}: ${(await res.text()).slice(0, 200)}`)
+
+      // Parse annotated CSV -- skip # comment lines
+      const csv = await res.text()
+      const lines = csv.split('\n').filter(l => l && !l.startsWith('#'))
+      if (lines.length < 2) return { rows: [], rowCount: 0, fields: [] }
+      const headers = lines[0].split(',').map(h => h.trim())
+      const rows = lines.slice(1).filter(Boolean).map(line => {
+        const vals = line.split(',')
+        const row: Record<string, string> = {}
+        headers.forEach((h, i) => { if (h && h !== 'result' && h !== 'table') row[h] = vals[i]?.trim() || '' })
+        return row
+      }).filter(r => Object.keys(r).length > 0)
+      const fields = rows.length > 0 ? Object.keys(rows[0]) : []
+      return { rows, rowCount: rows.length, fields }
+    } else {
+      // InfluxDB v1 -- InfluxQL via GET /query
+      const url = new URL('/query', base)
+      url.searchParams.set('db', (conn.database_name as string) || 'default')
+      url.searchParams.set('q', trimmed)
+      url.searchParams.set('epoch', 'ms')
+
+      const authHeader = conn.username
+        ? 'Basic ' + Buffer.from(`${conn.username}:${token}`).toString('base64')
+        : token ? `Token ${token}` : ''
+
+      const res = await fetch(url.toString(), {
+        headers: { ...(authHeader ? { 'Authorization': authHeader } : {}), 'Accept': 'application/json' },
+        signal: AbortSignal.timeout((conn.query_timeout_ms as number) || 30000),
+      })
+      if (!res.ok) throw new Error(`InfluxDB error ${res.status}: ${(await res.text()).slice(0, 200)}`)
+
+      const json = await res.json()
+      const series = json?.results?.[0]?.series?.[0]
+      if (!series) return { rows: [], rowCount: 0, fields: [] }
+      const fields = series.columns as string[]
+      const rows = (series.values as unknown[][]).map(v =>
+        Object.fromEntries(fields.map((f: string, i: number) => [f, v[i]]))
+      )
+      return { rows, rowCount: rows.length, fields }
+    }
+  }
+
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb.`)
+}
+
+// -- API call --------------------------------------------------
+async function callApi(connectionId: string, method: string, path: string, body?: Record<string, unknown>) {
+  const db = getDb()
+  const connRows = await db`
+    SELECT c.*, s.base_url, s.auth_type, s.auth_config, s.default_headers,
+           s.api_version, s.version_header, s.request_timeout_ms
+    FROM api_connections c
+    JOIN api_services s ON s.id = c.service_id
+    WHERE c.id = ${connectionId}`
+  if (!connRows.length) throw new Error(`API connection "${connectionId}" not found.`)
+  const conn = connRows[0]
+  const base = conn.base_url.replace(/\/$/, '')
+  const basePath = (conn.base_path || '').replace(/\/$/, '')
+  const reqPath = path.startsWith('/') ? path : '/' + path
+  const url = base + basePath + reqPath
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  try { Object.assign(headers, JSON.parse(conn.default_headers || '{}')) } catch {}
+  let authConfig: Record<string, string> = {}
+  try { authConfig = JSON.parse(decrypt((conn as Record<string, string>).auth_config || '')) } catch {}
+  const authType = conn.auth_type as string
+  if (authType === 'bearer' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
+  else if (authType === 'api_key_header' && authConfig.header && authConfig.key) headers[authConfig.header] = authConfig.key
+  else if (authType === 'basic' && authConfig.username && authConfig.password) headers['Authorization'] = 'Basic ' + Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64')
+  else if (authType === 'oauth2_client' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
+  if (conn.api_version && conn.version_header) headers[conn.version_header] = conn.api_version
+  // SAP OData: auto-inject correct format headers/params based on path
+  const isSap = basePath.includes('/sap/opu/')
+  const isSapV4 = isSap && (basePath.includes('odata4') || basePath.includes('srvd_a2x'))
+  if (isSap) {
+    if (isSapV4) {
+      // V4: use Accept header, do not use $format param
+      headers['Accept'] = 'application/json'
+    } else {
+      // V2: append $format=json to URL if not already present
+      if (!url.includes('$format') && !url.includes('%24format')) {
+        url += (url.includes('?') ? '&' : '?') + '%24format=json'
+      }
+    }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), conn.request_timeout_ms || 30000)
+  try {
+    const res = await fetch(url, {
+      method, headers,
+      body: ['POST', 'PUT', 'PATCH'].includes(method) && body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+    const text = await res.text()
+    let data: unknown
+    try { data = JSON.parse(text) } catch { data = text }
+    if (!res.ok) throw new Error(`API returned ${res.status}: ${text.slice(0, 200)}`)
+    return data
+  } catch (err) {
+    clearTimeout(timeout)
+    if ((err as Error).name === 'AbortError') throw new Error(`Request timed out after ${conn.request_timeout_ms || 30000}ms`)
+    // Improve SAP-specific error messages
+    if (err instanceof Error && isSap) {
+      const msg = err.message
+      if (msg.includes('401')) throw new Error('SAP auth failed (401) -- check username/password and role /IWFND/RT_GW_USER')
+      if (msg.includes('403')) throw new Error('SAP forbidden (403) -- user lacks OData read authorization for this service')
+      if (msg.includes('404')) throw new Error('SAP service not found (404) -- activate in /IWFND/MAINT_SERVICE (V2) or /IWFND/V4_ADMIN (V4)')
+      if (msg.includes('400')) throw new Error('SAP bad request (400) -- check $filter syntax; field names are case-sensitive in SAP')
+      if (msg.includes('500')) throw new Error('SAP Gateway error (500) -- check ICF service active and system reachable')
+    }
+    throw err
+  }
+}
+
+
+// -- File server reader ----------------------------------------
+// -- Local/mounted file reader ---------------------------------
+async function readLocalFiles(
+  server: Record<string, unknown>,
+  fileHint: string,
+  tsStrategy: string,
+  extract: string | undefined,
+  maxRows: number,
+  fileTypes: string[],
+) {
+  const fs   = await import('fs/promises')
+  const path = await import('path')
+
+  const basePath = path.join(
+    (server.share_path as string) || '/',
+    (server.sub_path   as string) || '',
+  )
+
+  let entries: { name: string; mtime: Date; size: number }[] = []
+  try {
+    const dirEntries = await fs.readdir(basePath, { withFileTypes: true })
+    const stats = await Promise.all(
+      dirEntries
+        .filter(e => e.isFile() && fileTypes.some(t => e.name.toLowerCase().endsWith('.' + t)))
+        .map(async e => {
+          const stat = await fs.stat(path.join(basePath, e.name))
+          return { name: e.name, mtime: stat.mtime, size: stat.size }
+        })
+    )
+    entries = stats
+  } catch (err) {
+    throw new Error(`Cannot read directory ${basePath}: ${(err as Error).message}`)
+  }
+
+  if (!entries.length) return { server: server.label, files: [], message: 'No matching files found' }
+
+  // Sort by mtime desc, pick best match for fileHint
+  entries.sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+  const hint = fileHint.toLowerCase()
+  const best = entries.find(e => e.name.toLowerCase().includes(hint)) || entries[0]
+
+  const filePath = path.join(basePath, best.name)
+  const ext = best.name.split('.').pop()?.toLowerCase() || ''
+
+  // Read content based on extension
+  if (ext === 'csv') {
+    const text = await fs.readFile(filePath, 'utf-8')
+    const lines = text.split('\n').filter(Boolean)
+    const headers = lines[0]?.split(',') || []
+    const dataRows = lines.slice(1, maxRows + 1).map(l => {
+      const vals = l.split(',')
+      return Object.fromEntries(headers.map((h, i) => [h.trim(), vals[i]?.trim()]))
+    })
+    return {
+      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
+      ts_source: tsStrategy === 'filename' ? 'filename' : 'modified_at',
+      rows: dataRows.length, columns: headers, data: dataRows.slice(0, maxRows),
+    }
+  }
+
+  if (ext === 'json') {
+    const text = await fs.readFile(filePath, 'utf-8')
+    const data = JSON.parse(text)
+    return {
+      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
+      ts_source: 'modified_at', data: Array.isArray(data) ? data.slice(0, maxRows) : data,
+    }
+  }
+
+  if (ext === 'xml') {
+    const text = await fs.readFile(filePath, 'utf-8')
+    // Return raw XML up to 4000 chars -- Claude can parse it
+    return {
+      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
+      ts_source: 'modified_at', content_type: 'xml',
+      content: text.slice(0, 4000) + (text.length > 4000 ? '...(truncated)' : ''),
+    }
+  }
+
+  if (ext === 'txt') {
+    const text = await fs.readFile(filePath, 'utf-8')
+    return {
+      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
+      ts_source: 'modified_at', content: text.slice(0, 4000),
+    }
+  }
+
+  // PDF/xlsx/jpeg -- return metadata, content requires additional parsing libraries
+  return {
+    server: server.label, file: best.name,
+    timestamp: best.mtime.toISOString(), size_bytes: best.size,
+    ts_source: 'modified_at',
+    message: `${ext.toUpperCase()} file found. Add pdf-parse or xlsx npm package for content extraction.`,
+    available_files: entries.slice(0, 10).map(e => ({ name: e.name, mtime: e.mtime.toISOString(), size: e.size })),
+  }
+}
+
+// -- S3-compatible reader --------------------------------------
+async function readS3Files(
+  server: Record<string, unknown>,
+  secretKey: string | undefined,
+  fileHint: string,
+  _tsStrategy: string,
+  _extract: string | undefined,
+  maxRows: number,
+  fileTypes: string[],
+) {
+  // Uses the AWS S3 REST API directly (no SDK dependency)
+  const bucket     = server.bucket as string
+  const endpoint   = (server.endpoint_url as string) || `https://s3.amazonaws.com`
+  const accessKey  = server.access_key_id as string
+  const prefix     = (server.sub_path as string) || ''
+
+  if (!accessKey || !secretKey) {
+    throw new Error('S3 connection requires access_key_id and secret_key')
+  }
+
+  // List objects
+  const listUrl = `${endpoint}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=50`
+  const listRes = await fetch(listUrl, {
+    headers: await s3AuthHeaders('GET', bucket, '/', accessKey, secretKey, endpoint),
+  })
+  if (!listRes.ok) throw new Error(`S3 list failed: ${listRes.status}`)
+
+  const xml = await listRes.text()
+  // Parse key names from XML
+  const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)]
+    .map(m => m[1])
+    .filter(k => fileTypes.some(t => k.toLowerCase().endsWith('.' + t)))
+
+  if (!keys.length) return { server: server.label, bucket, files: [], message: 'No matching files found' }
+
+  const hint = fileHint.toLowerCase()
+  const best = keys.find(k => k.toLowerCase().includes(hint)) || keys[0]
+
+  // For small files fetch content; for large ones return metadata only
+  const headRes = await fetch(`${endpoint}/${bucket}/${encodeURIComponent(best)}`, {
+    method: 'HEAD',
+    headers: await s3AuthHeaders('HEAD', bucket, '/' + best, accessKey, secretKey, endpoint),
+  })
+  const sizeBytes = parseInt(headRes.headers.get('content-length') || '0')
+
+  if (sizeBytes < 500_000 && best.endsWith('.csv')) {
+    const getRes = await fetch(`${endpoint}/${bucket}/${encodeURIComponent(best)}`, {
+      headers: await s3AuthHeaders('GET', bucket, '/' + best, accessKey, secretKey, endpoint),
+    })
+    const text = await getRes.text()
+    const lines = text.split('\n').filter(Boolean)
+    const headers = lines[0]?.split(',') || []
+    const dataRows = lines.slice(1, maxRows + 1).map(l => {
+      const vals = l.split(',')
+      return Object.fromEntries(headers.map((h, i) => [h.trim(), vals[i]?.trim()]))
+    })
+    return {
+      server: server.label, bucket, file: best,
+      timestamp: headRes.headers.get('last-modified') || new Date().toISOString(),
+      ts_source: 'modified_at', rows: dataRows.length, columns: headers,
+      data: dataRows.slice(0, maxRows),
+    }
+  }
+
+  return {
+    server: server.label, bucket, file: best, size_bytes: sizeBytes,
+    timestamp: headRes.headers.get('last-modified') || new Date().toISOString(),
+    ts_source: 'modified_at',
+    message: `File found. ${sizeBytes > 500_000 ? 'File too large to fetch inline -- use a presigned URL.' : 'Non-CSV format -- add parsing library for content extraction.'}`,
+    available_files: keys.slice(0, 10),
+  }
+}
+
+// Minimal AWS SigV4 helper for unsigned path-style S3 requests
+// For production use @aws-sdk/client-s3 instead
+async function s3AuthHeaders(
+  method: string, bucket: string, path: string,
+  accessKey: string, secretKey: string, endpoint: string,
+): Promise<Record<string, string>> {
+  // Returns basic auth headers -- for demo/simple cases without full SigV4
+  // Real deployments should use @aws-sdk/signature-v4
+  const date = new Date().toUTCString()
+  return {
+    'x-amz-date': date,
+    'Authorization': `AWS ${accessKey}:placeholder-sig`,
+    'Host': new URL(endpoint).hostname,
+  }
+}
+
+// -- File server reader ----------------------------------------
+async function readFileServer(
+  serverId: string,
+  fileHint: string,
+  opts: Record<string, unknown>
+): Promise<unknown> {
+  const db = getDb()
+  const rows = await db`SELECT * FROM file_servers WHERE id = ${serverId}`
+  if (!rows.length) throw new Error(`File server "${serverId}" not found. Check Settings  File servers.`)
+
+  const fs = rows[0] as Record<string, unknown>
+  const transport   = fs.transport   as string
+  const fileTypes   = ((fs.file_types as string) || 'csv,xlsx,pdf').split(',').map(s => s.trim())
+  const maxRows     = (opts.max_rows  as number)  || (fs.max_rows   as number) || 500
+  const tsStrategy  = (opts.ts_strategy as string) || (fs.ts_strategy as string) || 'auto'
+  const filterExt   = opts.file_type as string | undefined
+
+  // -- Step 1: Get file listing ----------------------------------
+  const filelist = await listFiles(fs, transport, fileTypes, filterExt)
+  if (!filelist.length) {
+    throw new Error(`No matching files found on "${fs.label}". Connected path: ${fs.share_path || fs.bucket || fs.host}/${fs.sub_path || ''}`)
+  }
+
+  // -- Step 2: Resolve latest file via timestamp strategy --------
+  const targetFile = await resolveLatestFile(filelist, fileHint, tsStrategy, fs.filename_date_pattern as string | null)
+
+  // -- Step 3: Read and parse the file ---------------------------
+  const content = await fetchFileContent(fs, transport, targetFile.path)
+  const parsed   = await parseFileContent(content, targetFile.name, maxRows, opts.extract as string | undefined)
+
+  return {
+    file:         targetFile.name,
+    path:         targetFile.path,
+    size_bytes:   targetFile.size,
+    modified_at:  targetFile.modified,
+    timestamp:    targetFile.timestamp,
+    ts_source:    targetFile.ts_source,
+    ...parsed,
+  }
+}
+
+// -- List files from the server --------------------------------
+interface FileEntry {
+  name: string
+  path: string
+  size: number
+  modified: string
+  timestamp?: Date
+  ts_source?: string
+}
+
+async function listFiles(
+  fs: Record<string, unknown>,
+  transport: string,
+  fileTypes: string[],
+  filterExt?: string
+): Promise<FileEntry[]> {
+  const allowedExts = filterExt ? [filterExt.toLowerCase()] : fileTypes
+  const basePath = [fs.share_path, fs.sub_path].filter(Boolean).join('/') as string
+
+  if (transport === 'local') {
+    const { readdir, stat } = await import('fs/promises')
+    const { join } = await import('path')
+    const entries = await readdir(basePath)
+    const files: FileEntry[] = []
+    for (const name of entries) {
+      const ext = name.split('.').pop()?.toLowerCase() || ''
+      if (!allowedExts.includes(ext)) continue
+      const st = await stat(join(basePath, name))
+      if (!st.isFile()) continue
+      files.push({
+        name,
+        path: join(basePath, name),
+        size: st.size,
+        modified: st.mtime.toISOString(),
+        timestamp: st.mtime,
+        ts_source: 'modified',
+      })
+    }
+    return files.sort((a, b) => (b.timestamp?.getTime() ?? 0) - (a.timestamp?.getTime() ?? 0))
+  }
+
+  if (transport === 'smb') {
+    // SMB: use smbclient if available, fall back to mock for development
+    try {
+      const { execSync } = await import('child_process')
+      const pwd = fs.password_enc ? decrypt(fs.password_enc as string) : ''
+      const user = fs.username ? `${fs.username}%${pwd}` : ''
+      const cmd = `smbclient "${basePath}" -U "${user}" -c "ls"  2>/dev/null`
+      const output = execSync(cmd, { timeout: 10000, encoding: 'utf8' })
+      const files: FileEntry[] = []
+      for (const line of output.split('\n')) {
+        const m = line.match(/^\s+(.+?)\s+[ADRHS]+\s+(\d+)\s+(.+)$/)
+        if (!m) continue
+        const name = m[1].trim()
+        const ext  = name.split('.').pop()?.toLowerCase() || ''
+        if (!allowedExts.includes(ext)) continue
+        files.push({ name, path: `${basePath}/${name}`, size: Number(m[2]), modified: m[3] })
+      }
+      return files
+    } catch {
+      // smbclient not available -- return empty; tool will report no files found
+      return []
+    }
+  }
+
+  if (transport === 'sftp') {
+    // SFTP via ssh2 if installed, otherwise log and return empty
+    try {
+      const ssh2 = await import('ssh2').catch(() => null)
+      if (!ssh2) return []
+      const { Client } = ssh2
+      const password = fs.password_enc ? decrypt(fs.password_enc as string) : ''
+      return await new Promise<FileEntry[]>((resolve, reject) => {
+        const conn = new Client()
+        conn.on('ready', () => {
+          conn.sftp((err, sftp) => {
+            if (err) { conn.end(); return reject(err) }
+            sftp.readdir(fs.sub_path as string || '/', (err2, list) => {
+              conn.end()
+              if (err2) return reject(err2)
+              const files: FileEntry[] = (list || [])
+                .filter(e => {
+                  const ext = e.filename.split('.').pop()?.toLowerCase() || ''
+                  return allowedExts.includes(ext)
+                })
+                .map(e => ({
+                  name:     e.filename,
+                  path:     `${fs.sub_path || ''}/${e.filename}`,
+                  size:     e.attrs.size,
+                  modified: new Date(e.attrs.mtime * 1000).toISOString(),
+                  timestamp: new Date(e.attrs.mtime * 1000),
+                  ts_source: 'modified',
+                }))
+                .sort((a, b) => (b.timestamp?.getTime() ?? 0) - (a.timestamp?.getTime() ?? 0))
+              resolve(files)
+            })
+          })
+        })
+        .on('error', reject)
+        .connect({
+          host:     fs.host as string,
+          port:     (fs.port as number) || 22,
+          username: fs.username as string,
+          password,
+        })
+      })
+    } catch {
+      return []
+    }
+  }
+
+  if (transport === 's3') {
+    // S3: list objects via REST API (works with AWS S3 and S3-compatible)
+    const endpoint  = (fs.endpoint_url  as string) || 'https://s3.amazonaws.com'
+    const bucket    = fs.bucket    as string
+    const prefix    = (fs.sub_path as string) || ''
+    const url       = `${endpoint.replace(/\/$/, '')}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=100`
+    const res       = await fetch(url, { signal: AbortSignal.timeout(10000) })
+    if (!res.ok) throw new Error(`S3 list failed: ${res.status}`)
+    const xml = await res.text()
+    const files: FileEntry[] = []
+    const matches = xml.matchAll(/<Key>([^<]+)<\/Key>[\s\S]*?<LastModified>([^<]+)<\/LastModified>[\s\S]*?<Size>([^<]+)<\/Size>/g)
+    for (const m of matches) {
+      const name = m[1].split('/').pop() || m[1]
+      const ext  = name.split('.').pop()?.toLowerCase() || ''
+      if (!allowedExts.includes(ext)) continue
+      const ts = new Date(m[2])
+      files.push({ name, path: m[1], size: Number(m[3]), modified: m[2], timestamp: ts, ts_source: 'modified' })
+    }
+    return files.sort((a, b) => (b.timestamp?.getTime() ?? 0) - (a.timestamp?.getTime() ?? 0))
+  }
+
+  return []
+}
+
+// -- Resolve the best matching file ---------------------------
+async function resolveLatestFile(
+  files: FileEntry[],
+  hint: string,
+  strategy: string,
+  datePattern: string | null
+): Promise<FileEntry> {
+  const hintLower = hint.toLowerCase()
+
+  // Filter by hint keywords if hint looks specific
+  const hintWords = hintLower.split(/[\s_\-./]+/).filter(w => w.length > 2)
+  const scored = files.map(f => {
+    const nameLower = f.name.toLowerCase()
+    const score = hintWords.reduce((s, w) => s + (nameLower.includes(w) ? 1 : 0), 0)
+    return { ...f, score }
+  })
+  const maxScore = Math.max(...scored.map(f => f.score))
+  const candidates = maxScore > 0 ? scored.filter(f => f.score === maxScore) : scored
+
+  // Strategy 1: filename date pattern
+  if (strategy === 'auto' || strategy === 'filename') {
+    const withDates = candidates.map(f => ({
+      ...f,
+      ts_source: 'filename' as const,
+      timestamp: extractDateFromFilename(f.name, datePattern),
+    })).filter(f => f.timestamp != null)
+    if (withDates.length) {
+      return withDates.sort((a, b) => b.timestamp!.getTime() - a.timestamp!.getTime())[0]
+    }
+  }
+
+  // Strategy 2: file system modified-at
+  if (strategy === 'auto' || strategy === 'modified') {
+    const withMtime = candidates.filter(f => f.timestamp != null).sort(
+      (a, b) => b.timestamp!.getTime() - a.timestamp!.getTime()
+    )
+    if (withMtime.length) return { ...withMtime[0], ts_source: 'modified' }
+  }
+
+  // Strategy 3 / fallback: just return most recent by list order (server already sorted)
+  return { ...candidates[0], ts_source: 'content' }
+}
+
+function extractDateFromFilename(name: string, pattern: string | null): Date | null {
+  // Try common patterns: YYYYMMDD, YYYY-MM-DD, YYYYMMDD_HHmm, YYYYMMDDTHHMMSS
+  const patterns = [
+    /(\d{4})[_\-](\d{2})[_\-](\d{2})[_T](\d{2})(\d{2})/,  // 2026-04-14T0600
+    /(\d{4})(\d{2})(\d{2})[_T](\d{2})(\d{2})/,              // 20260414_0600
+    /(\d{4})[_\-](\d{2})[_\-](\d{2})/,                      // 2026-04-14
+    /(\d{4})(\d{2})(\d{2})/,                                  // 20260414
+  ]
+  for (const re of patterns) {
+    const m = name.match(re)
+    if (m) {
+      try {
+        const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4] || '00'}:${m[5] || '00'}:00Z`)
+        if (!isNaN(d.getTime())) return d
+      } catch { continue }
+    }
+  }
+  return null
+}
+
+// -- Fetch raw file content ------------------------------------
+async function fetchFileContent(
+  fs: Record<string, unknown>,
+  transport: string,
+  filePath: string
+): Promise<Buffer> {
+  if (transport === 'local') {
+    const { readFile } = await import('fs/promises')
+    return readFile(filePath)
+  }
+  if (transport === 's3') {
+    const endpoint = (fs.endpoint_url as string) || 'https://s3.amazonaws.com'
+    const url = `${endpoint.replace(/\/$/, '')}/${fs.bucket}/${filePath}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) })
+    if (!res.ok) throw new Error(`S3 read failed: ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+  // SMB/SFTP: return empty buffer with helpful message
+  // Full SMB/SFTP streaming requires native clients (samba, ssh2)
+  // For now, return a signal that the file was found but content requires native client
+  throw new Error(`Direct file reading for ${transport.toUpperCase()} requires the samba or ssh2 package. File identified: ${filePath}. Install via: npm install ssh2 (for SFTP) or configure smbclient on the server.`)
+}
+
+// -- Parse file content by extension --------------------------
+async function parseFileContent(
+  buf: Buffer,
+  filename: string,
+  maxRows: number,
+  extract?: string
+): Promise<Record<string, unknown>> {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+
+  if (ext === 'csv') {
+    const text  = buf.toString('utf8')
+    const lines = text.split('\n').filter(l => l.trim())
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''))
+    const rows = lines.slice(1, maxRows + 1).map(line => {
+      const vals = line.split(',')
+      return Object.fromEntries(headers.map((h, i) => [h, vals[i]?.trim().replace(/^"|"$/g, '') ?? '']))
+    })
+    return { content_type: 'tabular', rows, row_count: rows.length, columns: headers }
+  }
+
+  if (ext === 'json') {
+    const data = JSON.parse(buf.toString('utf8'))
+    if (extract) {
+      const parts  = extract.split('.')
+      let current: unknown = data
+      for (const p of parts) current = (current as Record<string, unknown>)[p]
+      const arr = Array.isArray(current) ? current.slice(0, maxRows) : current
+      return { content_type: 'json', data: arr }
+    }
+    return { content_type: 'json', data: Array.isArray(data) ? data.slice(0, maxRows) : data }
+  }
+
+  if (ext === 'xml') {
+    const text = buf.toString('utf8')
+    // Return trimmed XML text -- agent can parse element names from it
+    return { content_type: 'xml', text: text.slice(0, 8000), size_chars: text.length }
+  }
+
+  if (ext === 'pdf') {
+    // Return metadata -- actual PDF text extraction requires pdfjs-dist
+    return {
+      content_type: 'pdf',
+      size_bytes:   buf.length,
+      note:         'PDF binary received. Install pdfjs-dist for text extraction, or read the file as a vision input for image-based PDFs.',
+    }
+  }
+
+  if (ext === 'xlsx' || ext === 'xls') {
+    // Return metadata -- actual parsing requires xlsx package
+    return {
+      content_type: 'excel',
+      size_bytes:   buf.length,
+      note:         'Excel binary received. Install the xlsx package (npm install xlsx) to enable row extraction.',
+    }
+  }
+
+  if (['jpeg', 'jpg', 'png', 'webp'].includes(ext)) {
+    return {
+      content_type: 'image',
+      format:       ext,
+      size_bytes:   buf.length,
+      base64:       buf.toString('base64').slice(0, 100000), // first 100KB of base64
+    }
+  }
+
+  // Default: return as text
+  const text = buf.toString('utf8')
+  return { content_type: 'text', text: text.slice(0, 8000), size_chars: text.length }
+}
+
+// -- Airbyte tool -----------------------------------------------
+async function queryAirbyte(action: string, instanceId?: string, connectionId?: string): Promise<unknown> {
+  const sql = getDb()
+
+  // Get instance
+  let instances: Record<string, unknown>[]
+  try {
+    instances = await sql`SELECT id, label, url, username, password_enc, workspace_id FROM airbyte_instances WHERE active = 1 ORDER BY created_at ASC`
+  } catch {
+    return { error: 'No Airbyte instances configured. Go to Settings > Airbyte to connect one.' }
+  }
+
+  if (!instances.length) return { error: 'No Airbyte instances configured. Go to Settings > Airbyte to connect one.' }
+
+  const inst = instanceId ? instances.find(i => i.id === instanceId) || instances[0] : instances[0]
+  const base = (inst.url as string).replace(/\/$/, '')
+  const password = inst.password_enc ? decrypt(inst.password_enc as string) : 'password'
+
+  // Detect abctl (OAuth2) vs Docker Compose (Basic auth) — same logic as airbyte/route.ts
+  const looksLikeAbctl = (inst.username as string).includes('@') || (password.length > 20 && password !== 'password')
+
+  async function getAirbyteAuthHeader(): Promise<string> {
+    if (!looksLikeAbctl) {
+      return 'Basic ' + Buffer.from(`${inst.username}:${password}`).toString('base64')
+    }
+    // OAuth2 token exchange for abctl
+    const clientId = (inst as Record<string,unknown>).client_id as string || inst.username as string
+    const clientSecret = (inst as Record<string,unknown>).client_secret_enc
+      ? decrypt((inst as Record<string,unknown>).client_secret_enc as string)
+      : password
+    const urls = [
+      `${base}/api/v1/applications/token`,
+      `${base}/api/public/v1/applications/token`,
+    ]
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+          signal: AbortSignal.timeout(8000),
+        })
+        if (res.ok) {
+          const data = await res.json() as { access_token: string }
+          return `Bearer ${data.access_token}`
+        }
+      } catch {}
+    }
+    // Fall back to basic auth if OAuth fails
+    return 'Basic ' + Buffer.from(`${inst.username}:${password}`).toString('base64')
+  }
+
+  const authHeader = await getAirbyteAuthHeader()
+
+  async function ab(path: string, body?: unknown) {
+    const urls = [`${base}/api/public/v1${path}`, `${base}/api/v1${path}`]
+    for (const url of urls) {
+      try {
+        const r = await fetch(url, {
+          method: body !== undefined ? 'POST' : 'GET',
+          headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(8000),
+        })
+        if (r.ok) return r.json()
+      } catch {}
+    }
+    throw new Error(`Cannot reach Airbyte at ${base}`)
+  }
+
+  const workspaceId = inst.workspace_id as string | null
+
+  if (action === 'list_sources') {
+    const data = await ab('/sources/list', { workspaceId: workspaceId || '' })
+    const sources = data.sources || data.data || []
+    return {
+      airbyte_instance: inst.label,
+      source_count: sources.length,
+      sources: sources.map((s: Record<string, unknown>) => ({
+        id: s.sourceId || s.id,
+        name: s.name,
+        type: s.sourceName || s.sourceDefinitionId,
+        status: s.status || 'active',
+      }))
+    }
+  }
+
+  if (action === 'list_connections') {
+    const data = await ab('/connections/list', { workspaceId: workspaceId || '' })
+    const conns = data.connections || data.data || []
+    return {
+      airbyte_instance: inst.label,
+      connection_count: conns.length,
+      connections: conns.map((c: Record<string, unknown>) => ({
+        id: c.connectionId || c.id,
+        name: c.name,
+        status: c.status,
+        schedule: (c.schedule as Record<string, unknown>)?.scheduleType || 'manual',
+        streams: ((c.syncCatalog as Record<string, unknown>)?.streams as unknown[] || []).length,
+      }))
+    }
+  }
+
+  if (action === 'check_jobs') {
+    const body: Record<string, unknown> = { configTypes: ['sync'], pagination: { pageSize: 5, rowOffset: 0 } }
+    if (connectionId) body.connectionId = connectionId
+    const data = await ab('/jobs/list', body)
+    const jobs = data.jobs || data.data || []
+    return {
+      airbyte_instance: inst.label,
+      recent_jobs: jobs.map((j: Record<string, unknown>) => {
+        const job = (j.job || j) as Record<string, unknown>
+        return {
+          id: job.id,
+          status: job.status,
+          created: new Date((job.createdAt as number) * 1000).toISOString(),
+          duration_min: Math.round(((job.updatedAt as number) - (job.createdAt as number)) / 60),
+        }
+      })
+    }
+  }
+
+  if (action === 'trigger_sync') {
+    if (!connectionId) return { error: 'connection_id required for trigger_sync' }
+    const data = await ab('/connections/sync', { connectionId })
+    return { ok: true, message: 'Sync triggered', job: data.job || data }
+  }
+
+  return { error: `Unknown action: ${action}` }
+}
