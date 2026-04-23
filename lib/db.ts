@@ -43,14 +43,15 @@ export function getDb(): SqlQuery {
       strings.forEach((s, i) => {
         sql += s
         if (i < values.length) {
-          params.push(values[i])
+          const v = values[i]
+          params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
           sql += '?'
         }
       })
       try {
         const stmt = db.prepare(sql)
         // SELECT returns rows; INSERT/UPDATE/DELETE returns info
-        if (/^\s*(select|pragma|with)/i.test(sql)) {
+        if (/^\s*(select|pragma|with)/i.test(sql) || /\breturning\b/i.test(sql)) {
           return stmt.all(...params) as SqlRow[]
         } else {
           stmt.run(...params)

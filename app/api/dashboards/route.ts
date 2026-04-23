@@ -21,6 +21,7 @@ export async function GET() {
 
 // -- POST -- create / update / delete dashboard or panel --------
 export async function POST(req: Request) {
+  try {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const sql  = getDb()
@@ -139,4 +140,8 @@ export async function POST(req: Request) {
   }
 
   return Response.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (err) {
+    console.error('POST /api/dashboards failed:', err)
+    return Response.json({ error: (err as Error).message }, { status: 500 })
+  }
 }
