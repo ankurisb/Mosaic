@@ -12,6 +12,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env*.backup*
 # .env.example IS tracked as a safe template
 
 # TypeScript

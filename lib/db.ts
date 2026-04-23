@@ -17,6 +17,13 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 type SqlRow   = Record<string, unknown>
 type SqlQuery = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<SqlRow[]>
 
+// Columns that store free-form user text that may coincidentally look like
+// JSON (e.g. pasted objects in chat). Skip auto-parse to preserve string type.
+const SKIP_AUTO_PARSE = new Set([
+  'content',          // messages.content — chat message bodies
+  'message_template', // rule_groups / integration_rules — notification templates
+])
+
 let _client: SqlQuery | null = null
 
 export function getDb(): SqlQuery {
@@ -52,7 +59,20 @@ export function getDb(): SqlQuery {
         const stmt = db.prepare(sql)
         // SELECT returns rows; INSERT/UPDATE/DELETE returns info
         if (/^\s*(select|pragma|with)/i.test(sql) || /\breturning\b/i.test(sql)) {
-          return stmt.all(...params) as SqlRow[]
+          const rows = stmt.all(...params) as SqlRow[]
+          // SQLite stores JSON as TEXT; parse values that look like JSON
+          // arrays/objects so handlers see the same shape as Postgres/Neon.
+          return rows.map(row => {
+            const out: SqlRow = { ...row }
+            for (const [k, v] of Object.entries(out)) {
+              if (typeof v === 'string' && v.length > 0 &&
+                  (v[0] === '[' || v[0] === '{') &&
+                  !SKIP_AUTO_PARSE.has(k)) {
+                try { out[k] = JSON.parse(v) } catch { /* leave as-is */ }
+              }
+            }
+            return out
+          })
         } else {
           stmt.run(...params)
           return []
