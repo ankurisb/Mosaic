@@ -48,8 +48,27 @@ export async function POST(req: Request) {
       return Response.json({ id: rows[0].id })
     } else {
       await sql`
-        UPDATE db_connections SET label=${label},dialect=${dialect},environment=${environment},host=${host||null},port=${port||5432},database_name=${database_name||null},username=${username||null},${passwordEnc ? sql`password_enc=${passwordEnc},` : sql``}${connStrEnc ? sql`connection_string=${connStrEnc},` : sql``}${mcpTokenEnc ? sql`mcp_token=${mcpTokenEnc},` : sql``}schema_name=${schema_name||'public'},ssl_mode=${ssl_mode||'prefer'},ssl_ca=${ssl_ca||null},pool_min=${pool_min||1},pool_max=${pool_max||5},connect_timeout_ms=${connect_timeout_ms||5000},query_timeout_ms=${query_timeout_ms||30000},read_only=${read_only||false},mcp_endpoint=${mcp_endpoint||null}
-        WHERE id=${id}`
+        UPDATE db_connections SET
+          label              = ${label},
+          dialect            = ${dialect},
+          environment        = ${environment},
+          host               = ${host || null},
+          port               = ${port || 5432},
+          database_name      = ${database_name || null},
+          username           = ${username || null},
+          password_enc       = COALESCE(${passwordEnc},  password_enc),
+          connection_string  = COALESCE(${connStrEnc},   connection_string),
+          mcp_token          = COALESCE(${mcpTokenEnc},  mcp_token),
+          schema_name        = ${schema_name || 'public'},
+          ssl_mode           = ${ssl_mode || 'prefer'},
+          ssl_ca             = ${ssl_ca || null},
+          pool_min           = ${pool_min || 1},
+          pool_max           = ${pool_max || 5},
+          connect_timeout_ms = ${connect_timeout_ms || 5000},
+          query_timeout_ms   = ${query_timeout_ms || 30000},
+          read_only          = ${read_only || false},
+          mcp_endpoint       = ${mcp_endpoint || null}
+        WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)
       return Response.json({ ok: true })
