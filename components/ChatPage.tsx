@@ -213,7 +213,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
   async function send(text: string) {
     if (!text.trim() || streaming) return
-    const cid = activeId
+    let cid = activeId
     const isFirstMsg = (convs.find(c => c.id === cid)?.messages.length ?? 0) === 0
     const newTitle = isFirstMsg ? text.slice(0, 42) : undefined
     setConvs(p => p.map(c => {
@@ -251,9 +251,19 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           try {
             const e = JSON.parse(line.slice(6))
             if (e.type === 'conv_id' && e.id && cid !== e.id) {
-              // Server created a new DB conversation -- swap local temp id for real UUID
-              setConvs(p => p.map(c => c.id === cid ? { ...c, id: e.id } : c))
-              setActiveId(e.id)
+              // Server created a new DB conversation -- swap local temp id for real UUID.
+              // Bug 4.3 has two parts:
+              //  (a) reassign cid so subsequent updateLast(cid, ...) calls in
+              //      this stream loop target the renamed conversation;
+              //  (b) capture cid into a local const BEFORE scheduling the
+              //      setConvs setter — JS closures capture by reference, so if
+              //      we used `cid` directly inside the setter callback it would
+              //      see the value AFTER the reassignment on the line below.
+              const oldId = cid
+              const newId = e.id
+              setConvs(p => p.map(c => c.id === oldId ? { ...c, id: newId } : c))
+              setActiveId(newId)
+              cid = newId
             }
             else if (e.type === 'text') updateLast(cid, m => ({ ...m, content: m.content + e.text }))
             else if (e.type === 'intermediate_text') updateLast(cid, m => ({ ...m, narration: (m.narration || '') + e.text }))
