@@ -247,10 +247,16 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
                 <rect x={x-42} y="30" width="84" height="24" rx="5" fill={col.light} stroke={col.stroke} strokeWidth="1.5" />
                 <text x={x} y="46" textAnchor="middle" fontFamily="sans-serif" fontSize="11" fontWeight="600" fill={col.stroke}>{bone.name}</text>
                 {bone.causes.map((c, ci) => {
-                  const offsets = [-50, 0, 50], cx = x + offsets[ci], cy = 112 - ci * 24
+                  // Bug 5b: spread N causes evenly across +/- 60 px instead of
+                  // a fixed 3-entry array. With >3 causes the old code read
+                  // offsets[3]=undefined and emitted NaN coordinates.
+                  const span = 60
+                  const N = bone.causes.length
+                  const offset = N === 1 ? 0 : -span + (ci * 2 * span) / (N - 1)
+                  const cx = x + offset, cy = 112 - ci * 24
                   return (
                     <g key={c}>
-                      <line x1={x + offsets[ci] * 0.38} y1="190" x2={cx} y2={cy} stroke={col.stroke} strokeWidth="1.2" opacity="0.65" />
+                      <line x1={x + offset * 0.38} y1="190" x2={cx} y2={cy} stroke={col.stroke} strokeWidth="1.2" opacity="0.65" />
                       <text x={cx} y={cy - 4} textAnchor={cx < x - 8 ? 'end' : cx > x + 8 ? 'start' : 'middle'} fontFamily="sans-serif" fontSize="9.5" fill={col.stroke} opacity="0.9">{c}</text>
                     </g>
                   )
@@ -266,10 +272,13 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
                 <rect x={x-42} y="283" width="84" height="24" rx="5" fill={col.light} stroke={col.stroke} strokeWidth="1.5" />
                 <text x={x} y="299" textAnchor="middle" fontFamily="sans-serif" fontSize="11" fontWeight="600" fill={col.stroke}>{bone.name}</text>
                 {bone.causes.map((c, ci) => {
-                  const offsets = [-50, 0, 50], cx = x + offsets[ci], cy = 196 + ci * 24
+                  const span = 60
+                  const N = bone.causes.length
+                  const offset = N === 1 ? 0 : -span + (ci * 2 * span) / (N - 1)
+                  const cx = x + offset, cy = 196 + ci * 24
                   return (
                     <g key={c}>
-                      <line x1={x + offsets[ci] * 0.38} y1="190" x2={cx} y2={cy} stroke={col.stroke} strokeWidth="1.2" opacity="0.65" />
+                      <line x1={x + offset * 0.38} y1="190" x2={cx} y2={cy} stroke={col.stroke} strokeWidth="1.2" opacity="0.65" />
                       <text x={cx} y={cy + 12} textAnchor={cx < x - 8 ? 'end' : cx > x + 8 ? 'start' : 'middle'} fontFamily="sans-serif" fontSize="9.5" fill={col.stroke} opacity="0.9">{c}</text>
                     </g>
                   )
