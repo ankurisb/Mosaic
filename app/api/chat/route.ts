@@ -217,11 +217,31 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         // Track full assistant response for persistence
         let finalText = ''
         const finalToolCalls: Array<{ name: string; input: unknown; result?: unknown }> = []
+        // Bug 5: tool-call budget + forced synthesis to make RCA queries finish.
+        // Without these, RCA workflows ran ~25 tool calls and then the stream cut
+        // off mid-investigation with no synthesis text and no rca_output JSON.
+        // Three causes: (a) max_tokens=4096 truncated the synthesis turn,
+        // (b) no upper bound on tool calls, (c) stop_reason='max_tokens' was
+        // treated identically to 'end_turn' so a truncated turn looked like
+        // success to the loop.
+        const TOOL_CALL_BUDGET = 20
+        let toolCallsUsed = 0
+        let forceSynthesis = false
         while (true) {
+          // When the budget is exhausted or the previous turn ran out of tokens
+          // mid-synthesis, force a final no-tools turn with a synthesis nudge
+          // and generous max_tokens so the model can produce the rca_output JSON.
+          const synthesisNudge = forceSynthesis
+            ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
+            : ''
           const resp = await anthropic.messages.create({
-            model, max_tokens: 4096,
-            system: fullSystem,
-            tools: TOOLS, messages: history, stream: true,
+            model,
+            max_tokens: 16384,
+            system: fullSystem + synthesisNudge,
+            tools: TOOLS,
+            messages: history,
+            stream: true,
+            ...(forceSynthesis ? { tool_choice: { type: 'none' as const } } : {}),
           })
           let text = '', stopReason = ''
           const toolBlocks: Anthropic.ToolUseBlock[] = []
@@ -263,7 +283,25 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             }
           }
           if (text) finalText += text
+
+          // Loop exit conditions:
+          //  - stop_reason 'end_turn' / 'stop_sequence' / etc with no tool calls -> done
+          //  - stop_reason 'max_tokens' on a forced-synthesis turn -> done (best effort)
+          //  - stop_reason 'max_tokens' on a regular turn -> retry with forced synthesis
+          if (stopReason === 'max_tokens' && !forceSynthesis) {
+            // Truncated mid-output. Replay as a forced-synthesis turn so the
+            // model can finish coherently with no tools and 16k tokens of room.
+            forceSynthesis = true
+            continue
+          }
           if (stopReason !== 'tool_use' || !toolBlocks.length) break
+
+          // We have tool calls to execute. Bump the counter and decide whether
+          // the NEXT turn should be a forced synthesis.
+          toolCallsUsed += toolBlocks.length
+          if (toolCallsUsed >= TOOL_CALL_BUDGET) {
+            forceSynthesis = true
+          }
           const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
             try {
               const result = await runTool(block.name, block.input as Record<string, unknown>)

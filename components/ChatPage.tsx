@@ -15,7 +15,7 @@ interface DataSource {
 }
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; narration?: string }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; narration?: string; startedAt?: number }
 interface Conv { id: string; title: string; messages: Message[] }
 
 const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
@@ -25,9 +25,58 @@ const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
   { icon: '✏️', label: 'Write something', prompt: 'Write a professional email template for a product launch' },
 ]
 
+// Phase indicator shown above the tool pill while streaming.
+// Derived purely from message state (tools.length, content.length) — no
+// extra event types from the server needed.
+function PhaseIndicator({ tools, hasText }: { tools: Array<{ result?: unknown }>; hasText: boolean }) {
+  const phase = hasText
+    ? { label: 'Synthesizing', step: 3 }
+    : tools.length === 0
+      ? { label: 'Starting', step: 1 }
+      : { label: 'Gathering data', step: 2 }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 11, color: 'var(--text3)' }}>
+      <span style={{ fontWeight: 500 }}>{phase.label}</span>
+      <span style={{ display: 'inline-flex', gap: 3 }}>
+        {[1, 2, 3].map(n => (
+          <span key={n} style={{ width: 5, height: 5, borderRadius: '50%', background: n <= phase.step ? 'var(--accent-bg)' : 'var(--border2)' }} />
+        ))}
+      </span>
+    </div>
+  )
+}
+
+// Live elapsed seconds since `since`, ticking once per second. Re-renders only
+// this component, not the whole chat.
+function useElapsed(since: number | undefined, active: boolean): number {
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    if (!active || !since) return
+    const i = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(i)
+  }, [active, since])
+  if (!since) return 0
+  return Math.max(0, Math.floor((now - since) / 1000))
+}
+
 // Collapsible tool calls component
-function ToolCalls({ tools, msgIdx, narration }: { tools: Array<{name: string; input: unknown; result?: unknown}>; msgIdx: number; narration?: string }) {
+function ToolCalls({
+  tools,
+  msgIdx,
+  narration,
+  streaming,
+  startedAt,
+  dataSources,
+}: {
+  tools: Array<{name: string; input: unknown; result?: unknown}>
+  msgIdx: number
+  narration?: string
+  streaming?: boolean
+  startedAt?: number
+  dataSources?: DataSource[]
+}) {
   const [open, setOpen] = React.useState(false)
+  const elapsed = useElapsed(startedAt, !!streaming)
   const toolLabel: Record<string, string> = {
     web_search: 'Web search',
     query_database: 'Database query',
@@ -39,14 +88,42 @@ function ToolCalls({ tools, msgIdx, narration }: { tools: Array<{name: string; i
   const uniqueNames = [...new Set(names)]
   const allOk = tools.every(t => t.result !== undefined && !String(JSON.stringify(t.result)).includes('"error"'))
 
+  // The "currently running" tool is the most recent one without a result.
+  const running = streaming ? [...tools].reverse().find(t => t.result === undefined) : undefined
+
+  // Friendly status line: "Querying Plant Operations…" / "Reading hydraulic pressure…"
+  function describeRunning(t: { name: string; input: unknown }): string {
+    const inp = (t.input || {}) as Record<string, unknown>
+    if (t.name === 'query_database') {
+      const cid = inp.connection_id as string | undefined
+      const ds = dataSources?.find(d => d.id === cid)
+      return ds ? `Querying ${ds.label}…` : 'Querying database…'
+    }
+    if (t.name === 'web_search') return `Searching the web for "${String(inp.query || '').slice(0, 40)}"…`
+    if (t.name === 'call_api') return 'Calling API…'
+    if (t.name === 'read_file_server') return 'Reading file…'
+    if (t.name === 'query_airbyte') return 'Querying Airbyte…'
+    return `Running ${t.name}…`
+  }
+
+  // Streaming pill suffix: "· 7 calls · 23s"
+  const streamingSuffix = streaming
+    ? ` · ${tools.length} call${tools.length === 1 ? '' : 's'}${elapsed > 0 ? ` · ${elapsed}s` : ''}`
+    : ''
+
   return (
     <div style={{ marginBottom: 8 }}>
       <button onClick={() => setOpen(o => !o)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', fontSize: 11, color: 'var(--text3)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s' }}>
-        <span style={{ color: allOk ? 'var(--green-t)' : 'var(--amber-t)', fontSize: 9 }}>●</span>
-        {uniqueNames.join(' · ')}
+        <span style={{ color: streaming ? 'var(--accent-bg)' : (allOk ? 'var(--green-t)' : 'var(--amber-t)'), fontSize: 9, animation: streaming ? 'blink 1s step-end infinite' : 'none' }}>●</span>
+        {uniqueNames.join(' · ')}{streamingSuffix}
         <span style={{ fontSize: 9, opacity: 0.6 }}>{open ? '▲' : '▼'}</span>
       </button>
+      {running && (
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, marginLeft: 2, fontStyle: 'italic' }}>
+          {describeRunning(running)}
+        </div>
+      )}
       {open && (
         <div style={{ marginTop: 6, padding: '10px 12px', background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
           {narration && (
@@ -218,7 +295,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     const newTitle = isFirstMsg ? text.slice(0, 42) : undefined
     setConvs(p => p.map(c => {
       if (c.id !== cid) return c
-      return { ...c, title: isFirstMsg ? text.slice(0, 42) : c.title, messages: [...c.messages, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }] }
+      return { ...c, title: isFirstMsg ? text.slice(0, 42) : c.title, messages: [...c.messages, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [], startedAt: Date.now() }] }
     }))
     setInput(''); setStreaming(true)
     if (taRef.current) { taRef.current.style.height = 'auto' }
@@ -535,9 +612,21 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     {msg.role === 'user' ? 'You' : 'Mosaic'}
                   </div>
 
+                  {/* Phase indicator while streaming */}
+                  {msg.role === 'assistant' && isLastStreaming(i) && (
+                    <PhaseIndicator tools={msg.tools || []} hasText={!!msg.content} />
+                  )}
+
                   {/* Tool calls — collapsed by default, expand on click */}
-                  {Array.isArray(msg.tools) && msg.tools.length > 0 && (
-                    <ToolCalls tools={msg.tools} msgIdx={i} narration={msg.narration} />
+                  {((Array.isArray(msg.tools) && msg.tools.length > 0) || (msg.role === 'assistant' && isLastStreaming(i))) && (
+                    <ToolCalls
+                      tools={msg.tools || []}
+                      msgIdx={i}
+                      narration={msg.narration}
+                      streaming={isLastStreaming(i)}
+                      startedAt={msg.startedAt}
+                      dataSources={dataSources}
+                    />
                   )}
 
                   {/* Message bubble */}
