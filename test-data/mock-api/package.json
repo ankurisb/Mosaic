@@ -1,0 +1,10 @@
+{
+  "name": "mock-sap-odata",
+  "version": "1.0.0",
+  "description": "Minimal mock of SAP S/4HANA OData V2 endpoints for Mosaic testing",
+  "private": true,
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

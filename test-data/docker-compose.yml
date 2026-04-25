@@ -1,0 +1,248 @@
+# Mosaic Test Data Harness
+# ------------------------
+# Spins up Postgres, MySQL, SQL Server, InfluxDB v1, MongoDB, MinIO (S3),
+# SFTP, and a Mock SAP OData API on localhost. All seeded on first start.
+#
+# Usage:
+#   docker compose up -d              # start everything
+#   docker compose down               # stop (keep data)
+#   docker compose down -v            # stop and wipe data
+#   docker compose logs -f <service>  # tail logs
+#
+# Ports exposed (all on 127.0.0.1 only):
+#   postgres        5433   (avoids clash with any local dev Postgres on 5432)
+#   mysql           3307
+#   mssql           1434
+#   influxdb        8087
+#   mongodb         27018
+#   minio api       9000
+#   minio console   9001
+#   sftp            2222
+#   mock-sap-api    4001
+
+services:
+  # ─── PostgreSQL: "Plant Operations" ────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mosaic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mosaic
+      POSTGRES_PASSWORD: mosaic_pw
+      POSTGRES_DB: plant_ops
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./seed/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mosaic -d plant_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── MySQL: "ERP Lite" ─────────────────────────────────────────────
+  mysql:
+    image: mysql:8.3
+    container_name: mosaic-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pw
+      MYSQL_DATABASE: erp_lite
+      MYSQL_USER: mosaic
+      MYSQL_PASSWORD: mosaic_pw
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./seed/mysql:/docker-entrypoint-initdb.d:ro
+    command: --default-authentication-plugin=caching_sha2_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-umosaic", "-pmosaic_pw"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ─── SQL Server: "Maintenance CMMS" ────────────────────────────────
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mosaic-mssql
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Mosaic_Strong_Pw_1"   # must meet complexity rules
+      MSSQL_PID: Developer
+    ports:
+      - "127.0.0.1:1434:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+      - ./seed/mssql:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Mosaic_Strong_Pw_1 -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # Runs once after mssql is healthy, loads the seed SQL, then exits.
+  mssql-seed:
+    image: mcr.microsoft.com/mssql-tools:latest
+    container_name: mosaic-mssql-seed
+    depends_on:
+      mssql:
+        condition: service_healthy
+    volumes:
+      - ./seed/mssql:/seed:ro
+    entrypoint: >
+      bash -c "
+        echo 'Seeding SQL Server...';
+        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P Mosaic_Strong_Pw_1 -i /seed/01_schema.sql -i /seed/02_data.sql;
+        echo 'SQL Server seed complete.';
+      "
+    restart: "no"
+
+  # ─── InfluxDB v1: "Sensor Telemetry" ───────────────────────────────
+  # v1 chosen because Mosaic's default path is InfluxQL; v2 Flux also works
+  # but v1 is simpler to seed and is the more common on-prem install.
+  influxdb:
+    image: influxdb:1.8
+    container_name: mosaic-influxdb
+    restart: unless-stopped
+    environment:
+      INFLUXDB_DB: telemetry
+      INFLUXDB_ADMIN_USER: mosaic
+      INFLUXDB_ADMIN_PASSWORD: mosaic_pw
+      INFLUXDB_HTTP_AUTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8087:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+      - ./seed/influxdb:/seed:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8086/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+
+
+  influxdb-seed:
+    image: alpine:3.19
+    container_name: mosaic-influxdb-seed
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - ./seed/influxdb:/seed:ro
+    entrypoint: >
+      sh -c "
+        apk add --no-cache curl coreutils >/dev/null;
+        echo 'Seeding InfluxDB (chunked)...';
+        split -l 5000 /seed/telemetry.lp /tmp/lp_chunk_;
+        n=0;
+        for f in /tmp/lp_chunk_*; do
+          curl -sf -u mosaic:mosaic_pw -XPOST 'http://influxdb:8086/write?db=telemetry&precision=ns' --data-binary @$$f || { echo \"Failed on $$f\"; exit 1; };
+          n=$$((n+1));
+        done;
+        echo \"InfluxDB seed complete ($$n chunks).\";
+      "
+    restart: "no"
+
+  # ─── MongoDB: "Event Logs" ─────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: mosaic-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mosaic
+      MONGO_INITDB_ROOT_PASSWORD: mosaic_pw
+      MONGO_INITDB_DATABASE: event_logs
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongodb-data:/data/db
+      - ./seed/mongodb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── MinIO: S3-compatible file server ──────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: mosaic-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: mosaic
+      MINIO_ROOT_PASSWORD: mosaic_pw_12   # must be >= 8 chars
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Creates the bucket and uploads the sample files on first run.
+  minio-seed:
+    image: minio/mc:latest
+    container_name: mosaic-minio-seed
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./files:/files:ro
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 mosaic mosaic_pw_12;
+        mc mb -p local/mosaic-test || true;
+        mc cp --recursive /files/ local/mosaic-test/;
+        echo 'MinIO seed complete. Bucket: mosaic-test';
+        mc ls local/mosaic-test;
+      "
+    restart: "no"
+
+  # ─── SFTP: file server over SSH ────────────────────────────────────
+  # User: mosaic  /  Password: mosaic_pw
+  # Drops you in /home/mosaic/upload which maps to ./sftp-data
+  sftp:
+    image: atmoz/sftp:alpine
+    container_name: mosaic-sftp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:2222:22"
+    volumes:
+      - ./sftp-data:/home/mosaic/upload
+      - ./files:/home/mosaic/upload/initial:ro  # initial sample files
+    command: mosaic:mosaic_pw:1001
+
+  # ─── Mock SAP OData API ────────────────────────────────────────────
+  # Minimal Express server that mimics SAP S/4HANA OData V2 endpoints
+  # for Production Orders, Equipment, and Maintenance Notifications.
+  mock-sap-api:
+    image: node:20-alpine
+    container_name: mosaic-mock-sap
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./mock-api:/app
+    ports:
+      - "127.0.0.1:4001:4001"
+    command: sh -c "npm install --silent --no-audit --no-fund && node server.js"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  mysql-data:
+  mssql-data:
+  influxdb-data:
+  mongodb-data:
+  minio-data:

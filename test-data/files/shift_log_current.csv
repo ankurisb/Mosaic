@@ -1,0 +1,6 @@
+timestamp,machine,operator,event,notes
+2026-04-22 06:05,PRESS-01,Ahmed Hassan,shift_start,Handover: pressure nominal 185 bar
+2026-04-22 07:45,CNC-03,Ravi Kumar,quality_hold,DIM-01 on sample 20 - raised WO-2026-0202
+2026-04-22 09:10,HVAC-01,David Lee,alarm,HV-008 cycling abnormal
+2026-04-22 10:20,CNC-01,Ravi Kumar,tool_change,"Planned, T-42, SP-TL-001"
+2026-04-22 11:50,MILL-02,Lena Müller,production_complete,"B20260422-201, 62 units, 485 min"

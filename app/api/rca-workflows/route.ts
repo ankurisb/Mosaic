@@ -21,14 +21,52 @@ export async function POST(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
 
+  const sql  = getDb()
+  const body = await req.json()
+  const { action } = body
+
+  // -- LIST (read-only, all users) -------------------------------
+  if (action === 'list') {
+    const rows = await sql`
+      SELECT id, name, description, problem_type, active, color,
+             keywords, data_steps, renderers, output_config,
+             sort_order, created_by, created_at, updated_at
+      FROM   rca_workflows
+      ORDER  BY sort_order ASC, created_at ASC`
+    const parseJson = (s: unknown, fallback: unknown) => {
+      if (typeof s !== 'string') return s ?? fallback
+      try { return JSON.parse(s) } catch { return fallback }
+    }
+    const flatten = (arr: unknown): string[] => {
+      if (!Array.isArray(arr)) return []
+      return arr.map((x: unknown) => {
+        if (typeof x === "string") return x
+        if (x && typeof x === "object") {
+          const o = x as Record<string, unknown>
+          return String(o.label ?? o.type ?? o.name ?? "")
+        }
+        return String(x ?? "")
+      }).filter(Boolean)
+    }
+    const workflows = (rows as Array<Record<string, unknown>>).map(r => {
+      const kw = parseJson(r.keywords, [])
+      const rd = parseJson(r.renderers, [])
+      return {
+        ...r,
+        trigger_keywords: flatten(kw),
+        keywords: flatten(kw),
+        data_steps: parseJson(r.data_steps, []),
+        renderers: flatten(rd),
+        output_config: parseJson(r.output_config, {}),
+      }
+    })
+    return Response.json({ workflows })
+  }
+
   // All writes are admin-only
   if (session.role !== 'admin') {
     return Response.json({ error: 'Admin access required' }, { status: 403 })
   }
-
-  const sql  = getDb()
-  const body = await req.json()
-  const { action } = body
 
   // -- CREATE ----------------------------------------------------
   if (action === 'create') {

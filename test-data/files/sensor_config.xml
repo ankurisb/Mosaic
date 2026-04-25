@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sensor_configuration version="2.4" plant="1000" generated="2026-04-01T08:00:00Z">
+  <defaults>
+    <sampling_rate_hz>1</sampling_rate_hz>
+    <unit_system>metric</unit_system>
+    <retention_days>365</retention_days>
+  </defaults>
+  <sensors>
+    <sensor id="TMP-PRESS-01" machine="PRESS-01" type="temperature" unit="C">
+      <calibration date="2026-01-15" offset="0.2" slope="1.000" />
+      <alarm_thresholds high="95" high_high="110" />
+    </sensor>
+    <sensor id="VIB-PRESS-01" machine="PRESS-01" type="vibration" unit="mm/s">
+      <calibration date="2026-01-15" offset="0.0" slope="1.000" />
+      <alarm_thresholds high="4.0" high_high="6.0" />
+    </sensor>
+    <sensor id="PRS-PRESS-01" machine="PRESS-01" type="pressure" unit="bar">
+      <calibration date="2026-03-02" offset="-0.5" slope="1.000" />
+      <alarm_thresholds low="170" low_low="150" high="200" high_high="215" />
+    </sensor>
+    <sensor id="TMP-CNC-03" machine="CNC-03" type="temperature" unit="C">
+      <calibration date="2026-02-10" offset="0.1" slope="1.000" />
+      <alarm_thresholds high="75" high_high="85" />
+    </sensor>
+    <sensor id="VIB-CNC-03" machine="CNC-03" type="vibration" unit="mm/s">
+      <calibration date="2026-02-10" offset="0.0" slope="1.000" />
+      <alarm_thresholds high="2.5" high_high="3.5" />
+    </sensor>
+  </sensors>
+</sensor_configuration>

@@ -220,10 +220,21 @@ async function queryDatabase(connectionId: string, queryInput: string) {
   const dialect = (conn.dialect as string) || 'postgres'
   const upper = trimmed.toUpperCase()
 
-  // SQL safety guard
+  // SQL safety guard -- dialect-aware whitelist for read-only commands
   if (dialect !== 'mongodb') {
-    if (!upper.startsWith('SELECT') && !upper.startsWith('WITH') && !upper.startsWith('EXPLAIN')) {
-      throw new Error('Only SELECT / WITH / EXPLAIN queries are allowed.')
+    const baseAllowed = ['SELECT', 'WITH', 'EXPLAIN']
+    const dialectExtras: Record<string, string[]> = {
+      influxdb:  ['SHOW'],
+      mysql:     ['SHOW', 'DESCRIBE', 'DESC'],
+      mssql:     ['SHOW', 'DESCRIBE'],
+      clickhouse:['SHOW', 'DESCRIBE', 'DESC'],
+      sqlite:    ['PRAGMA'],
+      postgres:  [],
+    }
+    const allowed = [...baseAllowed, ...(dialectExtras[dialect] || [])]
+    const ok = allowed.some(v => upper.startsWith(v))
+    if (!ok) {
+      throw new Error(`Only ${allowed.join(' / ')} queries are allowed for ${dialect}.`)
     }
     if (conn.read_only && (upper.includes('INSERT') || upper.includes('UPDATE') || upper.includes('DELETE'))) {
       throw new Error('This connection is read-only.')

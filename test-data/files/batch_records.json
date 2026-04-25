@@ -1,0 +1,66 @@
+{
+  "batch_id": "B20260421-147",
+  "product": "SKU-B300",
+  "machine": "CNC-03",
+  "started_at": "2026-04-21T06:00:00Z",
+  "completed_at": "2026-04-21T13:45:00Z",
+  "units": {
+    "planned": 48,
+    "produced": 44,
+    "rejected": 4,
+    "yield_pct": 91.67
+  },
+  "process_parameters": {
+    "spindle_rpm": 2400,
+    "feed_rate_mm_min": 180,
+    "coolant_temp_C": 22.5,
+    "tool_id": "T-42"
+  },
+  "quality_checks": [
+    {
+      "sample": 1,
+      "dim_a_mm": 24.98,
+      "dim_b_mm": 50.01,
+      "pass": true
+    },
+    {
+      "sample": 10,
+      "dim_a_mm": 25.01,
+      "dim_b_mm": 50.02,
+      "pass": true
+    },
+    {
+      "sample": 20,
+      "dim_a_mm": 25.06,
+      "dim_b_mm": 50.03,
+      "pass": false,
+      "defect_code": "DIM-01"
+    },
+    {
+      "sample": 30,
+      "dim_a_mm": 25.08,
+      "dim_b_mm": 50.04,
+      "pass": false,
+      "defect_code": "DIM-01"
+    },
+    {
+      "sample": 40,
+      "dim_a_mm": 25.07,
+      "dim_b_mm": 50.02,
+      "pass": false,
+      "defect_code": "DIM-01"
+    }
+  ],
+  "sign_off": {
+    "operator": {
+      "code": "E1001",
+      "name": "Ravi Kumar"
+    },
+    "inspector": {
+      "code": "Q-014",
+      "name": "Priya Singh"
+    },
+    "signed_at": "2026-04-21T14:10:00Z"
+  },
+  "notes": "Recurring DIM-01 late in shift \u2014 tool wear suspected, CMMS WO-2026-0202 raised."
+}

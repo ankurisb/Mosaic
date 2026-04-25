@@ -170,7 +170,7 @@ ${stepList}
 Produce these renderers in this order (* = required, always include):
 ${rendererList}
 
-Output title template: ${(matchedWorkflow.output as {title:string}).title || 'RCA . {problem} . {date}'}
+Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.output_config as string) || '{}').title; } catch { return null; } })() || 'RCA . {problem} . {date}'}
 `
     } else {
       // Generic RCA -- no matched template

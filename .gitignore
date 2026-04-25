@@ -40,3 +40,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Test-data harness runtime data (do not commit)
+/test-data/sftp-data/
+/test-data/minio-data/
+/test-data/mock-api/node_modules/
+/test-data/mock-api/package-lock.json
