@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { syncToSuperset } from '@/lib/superset-sync'
 import { Pool } from 'pg'
+import { invalidateSchema, refreshSchemaInBackground } from '@/lib/tools'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -43,17 +44,28 @@ export async function POST(req: Request) {
         ssl_mode: ssl_mode || undefined,
         schema_name: schema_name || undefined,
       }).catch(() => {})
+      refreshSchemaInBackground(rows[0].id)
       return Response.json({ id: rows[0].id })
     } else {
       await sql`
         UPDATE db_connections SET label=${label},dialect=${dialect},environment=${environment},host=${host||null},port=${port||5432},database_name=${database_name||null},username=${username||null},${passwordEnc ? sql`password_enc=${passwordEnc},` : sql``}${connStrEnc ? sql`connection_string=${connStrEnc},` : sql``}${mcpTokenEnc ? sql`mcp_token=${mcpTokenEnc},` : sql``}schema_name=${schema_name||'public'},ssl_mode=${ssl_mode||'prefer'},ssl_ca=${ssl_ca||null},pool_min=${pool_min||1},pool_max=${pool_max||5},connect_timeout_ms=${connect_timeout_ms||5000},query_timeout_ms=${query_timeout_ms||30000},read_only=${read_only||false},mcp_endpoint=${mcp_endpoint||null}
         WHERE id=${id}`
+      invalidateSchema(id)
+      refreshSchemaInBackground(id)
       return Response.json({ ok: true })
     }
   }
 
   if (action === 'delete') {
     await sql`DELETE FROM db_connections WHERE id=${body.id}`
+    await invalidateSchema(body.id)
+    return Response.json({ ok: true })
+  }
+
+  if (action === 'refresh_schema') {
+    if (!body.id) return Response.json({ error: 'id required' }, { status: 400 })
+    await invalidateSchema(body.id)
+    refreshSchemaInBackground(body.id)
     return Response.json({ ok: true })
   }
 

@@ -1220,3 +1220,477 @@ async function queryAirbyte(action: string, instanceId?: string, connectionId?: 
 
   return { error: `Unknown action: ${action}` }
 }
+
+// ============================================================
+// Schema cache + introspection (Bug 4.5 fix)
+// ============================================================
+//
+// Pre-computes a lightweight schema summary per connection so the chat
+// system prompt can include table/column hints — eliminating the 3-7
+// schema-discovery tool calls Claude used to burn at the start of every
+// conversation.
+//
+// Storage: app DB table `connection_schemas (connection_id TEXT PK,
+// schema_json TEXT, fetched_at TEXT)` (created in lib/setup.ts).
+//
+// Refresh policy:
+//   - Lazy: chat route calls getOrFetchSchema(); if stale (>24h) it
+//     kicks off a background refresh and returns the stale copy.
+//   - Eager: connections route calls refreshSchemaInBackground() on
+//     create/update.
+//   - Invalidation: connections route calls invalidateSchema() on
+//     update/delete.
+
+export type CachedSchema = {
+  connection_id: string
+  dialect: string
+  fetched_at: string
+  tables?: Array<{
+    schema?: string
+    name: string
+    columns: Array<{ name: string; type: string; pk?: boolean }>
+  }>
+  measurements?: Array<{ name: string; tag_keys: string[]; field_keys: Array<{ name: string; type: string }> }>
+  collections?: Array<{ name: string; sample_keys: Array<{ name: string; type: string }> }>
+  truncated?: boolean
+  error?: string
+}
+
+const SCHEMA_TTL_MS    = 24 * 60 * 60 * 1000
+const MAX_TABLES       = 40
+const MAX_COLS_PER_TBL = 30
+const MAX_MEASUREMENTS = 30
+const MAX_COLLECTIONS  = 30
+const MAX_TAG_KEYS     = 20
+const MAX_FIELD_KEYS   = 30
+
+// Track in-flight refreshes so concurrent chat requests don't all kick
+// off the same introspection.
+const inFlight = new Map<string, Promise<CachedSchema>>()
+
+export async function getCachedSchema(connectionId: string): Promise<CachedSchema | null> {
+  const sql = getDb()
+  try {
+    const rows = await sql`SELECT schema_json, fetched_at FROM connection_schemas WHERE connection_id = ${connectionId}`
+    if (!rows.length) return null
+    const r = rows[0] as { schema_json: string | CachedSchema; fetched_at: string }
+    // lib/db.ts auto-parses TEXT columns that look like JSON on the SQLite path,
+    // so schema_json may arrive as a string (Postgres/Neon) or a pre-parsed
+    // object (SQLite local). Handle both.
+    try {
+      const parsed = (typeof r.schema_json === 'string'
+        ? JSON.parse(r.schema_json)
+        : r.schema_json) as CachedSchema
+      parsed.fetched_at = r.fetched_at
+      return parsed
+    } catch { return null }
+  } catch { return null }
+}
+
+async function saveCachedSchema(schema: CachedSchema): Promise<void> {
+  const sql = getDb()
+  const payload = JSON.stringify(schema)
+  const now = new Date().toISOString()
+  // Portable upsert (works in SQLite + Neon): delete then insert.
+  try {
+    await sql`DELETE FROM connection_schemas WHERE connection_id = ${schema.connection_id}`
+    await sql`INSERT INTO connection_schemas (connection_id, schema_json, fetched_at) VALUES (${schema.connection_id}, ${payload}, ${now})`
+  } catch { /* table might not exist yet */ }
+}
+
+export async function invalidateSchema(connectionId: string): Promise<void> {
+  const sql = getDb()
+  try { await sql`DELETE FROM connection_schemas WHERE connection_id = ${connectionId}` }
+  catch { /* ignore */ }
+  inFlight.delete(connectionId)
+}
+
+function isFresh(s: CachedSchema | null): boolean {
+  if (!s || !s.fetched_at) return false
+  const ts = Date.parse(s.fetched_at)
+  if (isNaN(ts)) return false
+  return Date.now() - ts < SCHEMA_TTL_MS
+}
+
+/**
+ * Returns the cached schema if fresh; otherwise returns the stale copy
+ * (or null) and kicks off a background refresh. Never blocks the caller
+ * for long. Safe to call from request hot paths.
+ */
+export async function getOrFetchSchema(connectionId: string): Promise<CachedSchema | null> {
+  const cached = await getCachedSchema(connectionId)
+  if (isFresh(cached)) return cached
+
+  // Stale or missing — kick off background refresh (deduped).
+  if (!inFlight.has(connectionId)) {
+    const p = introspectSchema(connectionId)
+      .then(async s => { await saveCachedSchema(s); return s })
+      .catch(e => ({
+        connection_id: connectionId,
+        dialect: 'unknown',
+        fetched_at: new Date().toISOString(),
+        error: String(e?.message || e),
+      } as CachedSchema))
+      .finally(() => { inFlight.delete(connectionId) })
+    inFlight.set(connectionId, p)
+  }
+  // Return whatever we have (stale or null) — don't block the chat request.
+  return cached
+}
+
+/**
+ * Eager refresh — fire-and-forget. Called from the connections route on
+ * create/update so the cache is warm by the time the user opens chat.
+ */
+export function refreshSchemaInBackground(connectionId: string): void {
+  if (inFlight.has(connectionId)) return
+  const p = introspectSchema(connectionId)
+    .then(async s => { await saveCachedSchema(s); return s })
+    .catch(e => ({
+      connection_id: connectionId,
+      dialect: 'unknown',
+      fetched_at: new Date().toISOString(),
+      error: String(e?.message || e),
+    } as CachedSchema))
+    .finally(() => { inFlight.delete(connectionId) })
+  inFlight.set(connectionId, p)
+}
+
+/**
+ * Discover the schema of a single connection. Dispatches per dialect using
+ * the same connection-loading conventions as queryDatabase().
+ */
+export async function introspectSchema(connectionId: string): Promise<CachedSchema> {
+  const db = getDb()
+  const rows = await db`SELECT * FROM db_connections WHERE id=${connectionId}`
+  if (!rows.length) {
+    return {
+      connection_id: connectionId, dialect: 'unknown',
+      fetched_at: new Date().toISOString(), error: 'connection not found',
+    }
+  }
+  const conn = rows[0] as Record<string, unknown>
+  const dialect = (conn.dialect as string) || 'postgres'
+  const stamp = () => new Date().toISOString()
+
+  try {
+    // -- PostgreSQL ---------------------------------------------
+    if (dialect === 'postgres') {
+      let entry = pgPools.get(connectionId)
+      if (!entry) {
+        const connStr = decryptConnStr(conn) ||
+          `postgresql://${conn.username}:${decrypt(conn.password_enc as string)}@${conn.host}:${conn.port}/${conn.database_name}`
+        const pool = new Pool({
+          connectionString: connStr,
+          max: (conn.pool_max as number) || 5,
+          connectionTimeoutMillis: (conn.connect_timeout_ms as number) || 5000,
+          statement_timeout: (conn.query_timeout_ms as number) || 30000,
+          ssl: getSslConfig(conn),
+        })
+        entry = { pool, lastUsed: Date.now() }
+        pgPools.set(connectionId, entry)
+      }
+      entry.lastUsed = Date.now()
+      const schemaName = (conn.schema_name as string) || 'public'
+      const tables = await entry.pool.query(
+        `SELECT table_schema, table_name
+           FROM information_schema.tables
+          WHERE table_type='BASE TABLE'
+            AND table_schema NOT IN ('pg_catalog','information_schema')
+            AND ($1='*' OR table_schema=$1)
+          ORDER BY table_schema, table_name LIMIT ${MAX_TABLES + 1}`,
+        [schemaName],
+      )
+      const truncated = tables.rows.length > MAX_TABLES
+      const out: CachedSchema['tables'] = []
+      for (const t of tables.rows.slice(0, MAX_TABLES)) {
+        const cols = await entry.pool.query(
+          `SELECT c.column_name, c.data_type,
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage kcu
+                      ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
+                    WHERE tc.constraint_type='PRIMARY KEY'
+                      AND tc.table_schema=c.table_schema AND tc.table_name=c.table_name
+                      AND kcu.column_name=c.column_name
+                  ) AS is_pk
+             FROM information_schema.columns c
+            WHERE c.table_schema=$1 AND c.table_name=$2
+            ORDER BY c.ordinal_position LIMIT ${MAX_COLS_PER_TBL}`,
+          [t.table_schema, t.table_name],
+        )
+        out.push({
+          schema: t.table_schema, name: t.table_name,
+          columns: cols.rows.map((r: { column_name: string; data_type: string; is_pk: boolean }) => ({
+            name: r.column_name, type: r.data_type, pk: !!r.is_pk,
+          })),
+        })
+      }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated }
+    }
+
+    // -- MySQL --------------------------------------------------
+    if (dialect === 'mysql') {
+      const pool = await getMysqlPool(connectionId, conn)
+      const dbName = conn.database_name as string
+      const [tRowsRaw] = await pool.execute(
+        `SELECT TABLE_NAME FROM information_schema.tables
+          WHERE TABLE_SCHEMA = ? AND TABLE_TYPE='BASE TABLE'
+          ORDER BY TABLE_NAME LIMIT ${MAX_TABLES + 1}`,
+        [dbName],
+      )
+      const tRows = tRowsRaw as Array<{ TABLE_NAME: string }>
+      const truncated = tRows.length > MAX_TABLES
+      const out: CachedSchema['tables'] = []
+      for (const t of tRows.slice(0, MAX_TABLES)) {
+        const [cRowsRaw] = await pool.execute(
+          `SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY
+             FROM information_schema.columns
+            WHERE TABLE_SCHEMA=? AND TABLE_NAME=?
+            ORDER BY ORDINAL_POSITION LIMIT ${MAX_COLS_PER_TBL}`,
+          [dbName, t.TABLE_NAME],
+        )
+        const cRows = cRowsRaw as Array<{ COLUMN_NAME: string; DATA_TYPE: string; COLUMN_KEY: string }>
+        out.push({
+          schema: dbName, name: t.TABLE_NAME,
+          columns: cRows.map(c => ({ name: c.COLUMN_NAME, type: c.DATA_TYPE, pk: c.COLUMN_KEY === 'PRI' })),
+        })
+      }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated }
+    }
+
+    // -- SQL Server ---------------------------------------------
+    if (dialect === 'mssql') {
+      const mssql = await import('mssql')
+      const pass = decrypt((conn.password_enc as string) || '')
+      const config = {
+        user: conn.username as string, password: pass,
+        server: conn.host as string, port: (conn.port as number) || 1433,
+        database: conn.database_name as string,
+        options: {
+          encrypt: (conn.ssl_mode as string) !== 'disable',
+          trustServerCertificate: (conn.ssl_mode as string) !== 'verify-full',
+        },
+        connectionTimeout: (conn.connect_timeout_ms as number) || 5000,
+        requestTimeout: (conn.query_timeout_ms as number) || 30000,
+      }
+      const pool = decryptConnStr(conn)
+        ? await mssql.connect(decryptConnStr(conn)!)
+        : await mssql.connect(config as Parameters<typeof mssql.connect>[0])
+      try {
+        const tRes = await pool.request().query(
+          `SELECT TOP ${MAX_TABLES + 1} TABLE_SCHEMA, TABLE_NAME
+             FROM information_schema.tables
+            WHERE TABLE_TYPE='BASE TABLE'
+            ORDER BY TABLE_SCHEMA, TABLE_NAME`,
+        )
+        const tRows = tRes.recordset as Array<{ TABLE_SCHEMA: string; TABLE_NAME: string }>
+        const truncated = tRows.length > MAX_TABLES
+        const out: CachedSchema['tables'] = []
+        for (const t of tRows.slice(0, MAX_TABLES)) {
+          const cRes = await pool.request()
+            .input('s', t.TABLE_SCHEMA).input('n', t.TABLE_NAME)
+            .query(
+              `SELECT TOP ${MAX_COLS_PER_TBL} COLUMN_NAME, DATA_TYPE
+                 FROM information_schema.columns
+                WHERE TABLE_SCHEMA=@s AND TABLE_NAME=@n
+                ORDER BY ORDINAL_POSITION`,
+            )
+          const cRows = cRes.recordset as Array<{ COLUMN_NAME: string; DATA_TYPE: string }>
+          out.push({
+            schema: t.TABLE_SCHEMA, name: t.TABLE_NAME,
+            columns: cRows.map(c => ({ name: c.COLUMN_NAME, type: c.DATA_TYPE })),
+          })
+        }
+        return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated }
+      } finally { await pool.close() }
+    }
+
+    // -- SQLite -------------------------------------------------
+    if (dialect === 'sqlite') {
+      const Database = (await import('better-sqlite3')).default
+      const rawPath = (decryptConnStr(conn) || conn.database_name) as string
+      // Skip introspecting the in-memory sandbox — it's regenerated per-query
+      // and its schema is already implicit in the system prompt.
+      if (rawPath === '__sandbox__') {
+        return {
+          connection_id: connectionId, dialect, fetched_at: stamp(),
+          tables: [
+            { name: 'machines',         columns: [{ name: 'id', type: 'INTEGER', pk: true }, { name: 'name', type: 'TEXT' }, { name: 'type', type: 'TEXT' }, { name: 'line', type: 'TEXT' }, { name: 'status', type: 'TEXT' }] },
+            { name: 'production_logs',  columns: [{ name: 'id', type: 'INTEGER', pk: true }, { name: 'machine_id', type: 'INTEGER' }, { name: 'shift_date', type: 'TEXT' }, { name: 'shift', type: 'TEXT' }, { name: 'units_produced', type: 'INTEGER' }, { name: 'units_target', type: 'INTEGER' }, { name: 'cycle_time_s', type: 'REAL' }, { name: 'oee_pct', type: 'REAL' }] },
+            { name: 'downtime_events',  columns: [{ name: 'id', type: 'INTEGER', pk: true }, { name: 'machine_id', type: 'INTEGER' }, { name: 'started_at', type: 'TEXT' }, { name: 'duration_min', type: 'INTEGER' }, { name: 'reason', type: 'TEXT' }, { name: 'category', type: 'TEXT' }] },
+            { name: 'quality_checks',   columns: [{ name: 'id', type: 'INTEGER', pk: true }, { name: 'machine_id', type: 'INTEGER' }, { name: 'check_date', type: 'TEXT' }, { name: 'defect_rate_pct', type: 'REAL' }, { name: 'inspector', type: 'TEXT' }] },
+          ],
+        }
+      }
+      const db2 = new Database(rawPath, { readonly: true })
+      try {
+        const tRows = db2.prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT ${MAX_TABLES + 1}`
+        ).all() as Array<{ name: string }>
+        const truncated = tRows.length > MAX_TABLES
+        const out: CachedSchema['tables'] = []
+        for (const t of tRows.slice(0, MAX_TABLES)) {
+          const cRows = db2.prepare(`PRAGMA table_info("${t.name.replace(/"/g, '""')}")`).all() as Array<{ name: string; type: string; pk: number }>
+          out.push({
+            name: t.name,
+            columns: cRows.slice(0, MAX_COLS_PER_TBL).map(c => ({ name: c.name, type: c.type || 'ANY', pk: !!c.pk })),
+          })
+        }
+        return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated }
+      } finally { db2.close() }
+    }
+
+    // -- MongoDB ------------------------------------------------
+    if (dialect === 'mongodb') {
+      const { MongoClient } = await import('mongodb')
+      const connStr = decryptConnStr(conn) ||
+        `mongodb://${conn.username}:${decrypt((conn.password_enc as string) || '')}@${conn.host}:${conn.port}/${conn.database_name}`
+      const client = new MongoClient(connStr, { serverSelectionTimeoutMS: (conn.connect_timeout_ms as number) || 5000 })
+      try {
+        await client.connect()
+        const db2 = client.db(conn.database_name as string)
+        const cols = await db2.listCollections({}, { nameOnly: true }).toArray()
+        const truncated = cols.length > MAX_COLLECTIONS
+        const out: CachedSchema['collections'] = []
+        for (const c of cols.slice(0, MAX_COLLECTIONS)) {
+          // Sample one doc per collection to extract top-level keys + types.
+          const sample = await db2.collection(c.name).findOne({})
+          const sample_keys = sample
+            ? Object.entries(sample).slice(0, MAX_COLS_PER_TBL).map(([k, v]) => ({
+                name: k,
+                type: Array.isArray(v) ? 'array' : (v === null ? 'null' : typeof v),
+              }))
+            : []
+          out.push({ name: c.name, sample_keys })
+        }
+        return { connection_id: connectionId, dialect, fetched_at: stamp(), collections: out, truncated }
+      } finally { await client.close() }
+    }
+
+    // -- ClickHouse ---------------------------------------------
+    if (dialect === 'clickhouse') {
+      const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+      const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 8123}`
+      const headers: Record<string, string> = { 'Accept': 'application/json' }
+      if (conn.username) {
+        headers['Authorization'] = 'Basic ' + Buffer.from(`${conn.username}:${decrypt((conn.password_enc as string) || '')}`).toString('base64')
+      }
+      const dbName = (conn.database_name as string) || 'default'
+      const runQ = async (q: string) => {
+        const url = new URL('/', base)
+        url.searchParams.set('query', q)
+        url.searchParams.set('default_format', 'JSONEachRow')
+        const res = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(10000) })
+        if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${(await res.text()).slice(0, 200)}`)
+        return (await res.text()).trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+      }
+      const tRows = await runQ(
+        `SELECT name FROM system.tables WHERE database='${dbName.replace(/'/g, "''")}' ORDER BY name LIMIT ${MAX_TABLES + 1}`,
+      ) as Array<{ name: string }>
+      const truncated = tRows.length > MAX_TABLES
+      const out: CachedSchema['tables'] = []
+      for (const t of tRows.slice(0, MAX_TABLES)) {
+        const cRows = await runQ(
+          `SELECT name, type FROM system.columns WHERE database='${dbName.replace(/'/g, "''")}' AND table='${t.name.replace(/'/g, "''")}' ORDER BY position LIMIT ${MAX_COLS_PER_TBL}`,
+        ) as Array<{ name: string; type: string }>
+        out.push({ schema: dbName, name: t.name, columns: cRows.map(c => ({ name: c.name, type: c.type })) })
+      }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated }
+    }
+
+    // -- InfluxDB v1 --------------------------------------------
+    if (dialect === 'influxdb') {
+      // We only introspect v1 (InfluxQL). v2/Flux schema discovery is more
+      // involved (buckets, schema.measurements()) — skip for now and rely on
+      // the dialectHint in the system prompt for v2.
+      const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+      const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 8086}`
+      const token = decrypt((conn.password_enc as string) || '')
+      const dbName = (conn.database_name as string) || 'default'
+      const auth = conn.username
+        ? 'Basic ' + Buffer.from(`${conn.username}:${token}`).toString('base64')
+        : token ? `Token ${token}` : ''
+      const runQ = async (q: string) => {
+        const url = new URL('/query', base)
+        url.searchParams.set('db', dbName)
+        url.searchParams.set('q', q)
+        const res = await fetch(url.toString(), {
+          headers: { ...(auth ? { 'Authorization': auth } : {}), 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!res.ok) throw new Error(`Influx ${res.status}: ${(await res.text()).slice(0, 200)}`)
+        const j = await res.json() as { results?: Array<{ series?: Array<{ values: unknown[][] }> }> }
+        return j.results?.[0]?.series?.[0]?.values || []
+      }
+      const measRows = await runQ('SHOW MEASUREMENTS') as Array<[string]>
+      const truncated = measRows.length > MAX_MEASUREMENTS
+      const out: CachedSchema['measurements'] = []
+      for (const [name] of measRows.slice(0, MAX_MEASUREMENTS)) {
+        const safe = String(name).replace(/"/g, '\\"')
+        const tagRows = await runQ(`SHOW TAG KEYS FROM "${safe}"`) as Array<[string]>
+        const fldRows = await runQ(`SHOW FIELD KEYS FROM "${safe}"`) as Array<[string, string]>
+        out.push({
+          name: String(name),
+          tag_keys:    tagRows.slice(0, MAX_TAG_KEYS).map(r => String(r[0])),
+          field_keys:  fldRows.slice(0, MAX_FIELD_KEYS).map(r => ({ name: String(r[0]), type: String(r[1]) })),
+        })
+      }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), measurements: out, truncated }
+    }
+
+    return {
+      connection_id: connectionId, dialect,
+      fetched_at: stamp(),
+      error: `dialect ${dialect} not supported by schema introspection`,
+    }
+  } catch (e) {
+    return {
+      connection_id: connectionId, dialect,
+      fetched_at: stamp(),
+      error: String((e as Error)?.message || e),
+    }
+  }
+}
+
+/**
+ * Render a cached schema into a compact string for injection into the chat
+ * system prompt. One line per table/measurement/collection; truncated where
+ * needed to stay under a reasonable token budget per connection.
+ */
+export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxChars?: number } = {}): string {
+  if (!schema) return ''
+  if (schema.error) return `    schema: (introspection failed: ${schema.error})`
+  const max = opts.maxChars ?? 2500
+  const lines: string[] = []
+
+  if (schema.tables?.length) {
+    lines.push(`    tables (${schema.tables.length}${schema.truncated ? '+' : ''}):`)
+    for (const t of schema.tables) {
+      const cols = t.columns.map(c => c.pk ? `${c.name}*:${c.type}` : `${c.name}:${c.type}`).join(', ')
+      const qualified = t.schema && t.schema !== 'public' && t.schema !== schema.dialect ? `${t.schema}.${t.name}` : t.name
+      lines.push(`      ${qualified}(${cols})`)
+    }
+  }
+  if (schema.measurements?.length) {
+    lines.push(`    measurements (${schema.measurements.length}${schema.truncated ? '+' : ''}):`)
+    for (const m of schema.measurements) {
+      const fields = m.field_keys.map(f => `${f.name}:${f.type}`).join(',')
+      const tags = m.tag_keys.join(',')
+      lines.push(`      ${m.name} | tags=[${tags}] fields=[${fields}]`)
+    }
+  }
+  if (schema.collections?.length) {
+    lines.push(`    collections (${schema.collections.length}${schema.truncated ? '+' : ''}):`)
+    for (const c of schema.collections) {
+      const keys = c.sample_keys.map(k => `${k.name}:${k.type}`).join(', ')
+      lines.push(`      ${c.name}(${keys})`)
+    }
+  }
+
+  let out = lines.join('\n')
+  if (out.length > max) {
+    out = out.slice(0, max - 20) + '\n      … (truncated)'
+  }
+  return out
+}

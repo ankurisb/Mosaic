@@ -389,6 +389,12 @@ export async function setupDatabase() {
     created_at  TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
 
+  await sql`CREATE TABLE IF NOT EXISTS connection_schemas (
+    connection_id TEXT PRIMARY KEY,
+    schema_json   TEXT NOT NULL,
+    fetched_at    TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
   // -- Indexes ---------------------------------------------------
   await sql`CREATE INDEX IF NOT EXISTS idx_messages_conv     ON messages(conversation_id, created_at)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_convs_user        ON conversations(user_id, updated_at DESC)`.catch(() => {})

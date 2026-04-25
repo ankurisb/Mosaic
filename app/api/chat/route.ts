@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { TOOLS, runTool } from '@/lib/tools'
+import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
@@ -76,11 +76,21 @@ export async function POST(req: Request) {
   }
   const dbList = dbConns.length
     ? '\n\n## Databases (query_database tool — use exact id)\n' +
-      dbConns.map((c: Record<string,unknown>) => {
+      (await Promise.all(dbConns.map(async (c: Record<string,unknown>) => {
         const mcpNote = c.mcp_endpoint ? ' [MCP: schema-aware]' : ''
-        const ro = ' [read-only]'
-        return `- id:"${c.id}" | "${c.label}" | ${c.dialect} ${dialectHint(c.dialect)} | ${c.host || 'local'}/${c.database_name || ''}${mcpNote}`
-      }).join('\n')
+        const header = `- id:"${c.id}" | "${c.label}" | ${c.dialect} ${dialectHint(c.dialect)} | ${c.host || 'local'}/${c.database_name || ''}${mcpNote}`
+        // Bug 4.5: inject cached schema so Claude doesn't burn 3-7 tool calls
+        // rediscovering tables/columns. Cache is populated on connection
+        // create/update; this call is non-blocking (returns stale on miss
+        // and refreshes in the background).
+        try {
+          const schema = await getOrFetchSchema(c.id as string)
+          const block = formatSchemaForPrompt(schema)
+          return block ? `${header}\n${block}` : header
+        } catch {
+          return header
+        }
+      }))).join('\n')
     : ''
   const apiList = apiConns.length
     ? '\n\n## APIs (call_api tool — use exact id)\n' +
