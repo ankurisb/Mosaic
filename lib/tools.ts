@@ -210,7 +210,9 @@ async function queryViaMcp(endpoint: string, token: string | undefined, sql: str
 }
 
 async function queryDatabase(connectionId: string, queryInput: string) {
-  const trimmed = queryInput.trim()
+  // Bug 4.6: strip trailing semicolons (and any whitespace after them) so they
+  // don't break the `SELECT * FROM (${q}) _q LIMIT 200` wrap below.
+  const trimmed = queryInput.trim().replace(/;+\s*$/, '')
   if (!trimmed) throw new Error('SQL query is empty. Please provide a valid SELECT statement.')
   const db = getDb()
   const rows = await db`SELECT * FROM db_connections WHERE id=${connectionId}`
