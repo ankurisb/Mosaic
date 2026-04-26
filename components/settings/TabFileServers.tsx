@@ -99,7 +99,7 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginTop: 16, marginBottom: 16 }}>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>{editing ? 'Edit file server' : 'Add file server'}</div>
           <Grid cols={2}>
-            <Field label="Label *"><input style={INP} type="text" value={form.label} onChange={e => f('label', v)} placeholder="Plant A SMB Share" /></Field>
+            <Field label="Label *"><input style={INP} type="text" value={form.label} onChange={e => f('label', e.target.value)} placeholder="Plant A SMB Share" /></Field>
             <Field label="Transport">
               <select style={SEL} value={form.transport} onChange={e => f('transport', e.target.value)}>{TRANSPORTS.map(t => ({ value: t, label: t.toUpperCase() })).map((o: {value:string;label:string}) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
             </Field>
@@ -110,40 +110,40 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
 
           {(t === 'smb' || t === 'sftp') && (
             <Grid cols={2}>
-              <Field label="Host"><input style={INP} type="text" value={form.host} onChange={e => f('host', v)} placeholder="192.168.1.100" /></Field>
+              <Field label="Host"><input style={INP} type="text" value={form.host} onChange={e => f('host', e.target.value)} placeholder="192.168.1.100" /></Field>
               <Field label="Port"><input style={INP} type="text" value={form.port} onChange={e => f('port', e.target.value)} placeholder={t === 'smb' ? '445' : '22'} /></Field>
-              {t === 'smb' && <Field label="Share path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', v)} placeholder="\\share\\reports" /></Field>}
-              {t === 'sftp' && <Field label="Remote path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', v)} placeholder="/home/reports" /></Field>}
-              <Field label="Username"><input style={INP} type="text" value={form.username} onChange={e => f('username', v)} placeholder="domain\\user" /></Field>
+              {t === 'smb' && <Field label="Share path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', e.target.value)} placeholder="\\share\\reports" /></Field>}
+              {t === 'sftp' && <Field label="Remote path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', e.target.value)} placeholder="/home/reports" /></Field>}
+              <Field label="Username"><input style={INP} type="text" value={form.username} onChange={e => f('username', e.target.value)} placeholder="domain\\user" /></Field>
               <Field label={t === 'sftp' ? 'Password or leave blank' : 'Password'}><input style={INP} type="password" value={form.password} onChange={e => f('password', e.target.value)} placeholder={editing ? '(unchanged)' : 'password'} /></Field>
-              {t === 'sftp' && <Field label="SSH private key (optional)"><input style={INP} type="text" value={form.ssh_key} onChange={e => f('ssh_key', v)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" /></Field>}
+              {t === 'sftp' && <Field label="SSH private key (optional)"><input style={INP} type="text" value={form.ssh_key} onChange={e => f('ssh_key', e.target.value)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" /></Field>}
             </Grid>
           )}
 
           {t === 'local' && (
             <Grid cols={2}>
-              <Field label="Directory path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', v)} placeholder="/data/reports or C:\Reports" /></Field>
+              <Field label="Directory path"><input style={INP} type="text" value={form.share_path} onChange={e => f('share_path', e.target.value)} placeholder="/data/reports or C:\Reports" /></Field>
             </Grid>
           )}
 
           {t === 's3' && (
             <Grid cols={2}>
-              <Field label="Bucket"><input style={INP} type="text" value={form.bucket} onChange={e => f('bucket', v)} placeholder="my-reports-bucket" /></Field>
-              <Field label="Prefix (optional)"><input style={INP} type="text" value={form.sub_path} onChange={e => f('sub_path', v)} placeholder="plant-a/oee/" /></Field>
-              <Field label="Endpoint URL (optional)"><input style={INP} type="text" value={form.endpoint_url} onChange={e => f('endpoint_url', v)} placeholder="https://s3.eu-west-1.amazonaws.com" /></Field>
-              <Field label="Access key ID"><input style={INP} type="text" value={form.access_key_id} onChange={e => f('access_key_id', v)} placeholder="AKIA..." /></Field>
+              <Field label="Bucket"><input style={INP} type="text" value={form.bucket} onChange={e => f('bucket', e.target.value)} placeholder="my-reports-bucket" /></Field>
+              <Field label="Prefix (optional)"><input style={INP} type="text" value={form.sub_path} onChange={e => f('sub_path', e.target.value)} placeholder="plant-a/oee/" /></Field>
+              <Field label="Endpoint URL (optional)"><input style={INP} type="text" value={form.endpoint_url} onChange={e => f('endpoint_url', e.target.value)} placeholder="https://s3.eu-west-1.amazonaws.com" /></Field>
+              <Field label="Access key ID"><input style={INP} type="text" value={form.access_key_id} onChange={e => f('access_key_id', e.target.value)} placeholder="AKIA..." /></Field>
               <Field label="Secret key"><input style={INP} type="password" value={form.secret_key} onChange={e => f('secret_key', e.target.value)} placeholder={editing ? '(unchanged)' : 'secret'} /></Field>
             </Grid>
           )}
 
           <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
           <Grid cols={2}>
-            <Field label="File types" hint="Comma-separated: csv, xlsx, pdf, xml, json"><input style={INP} type="text" value={form.file_types} onChange={e => f('file_types', v)} placeholder="csv,xlsx,pdf" /></Field>
-            <Field label="Max rows per file"><input style={INP} type="text" value={form.max_rows} onChange={e => f('max_rows', v)} placeholder="500" /></Field>
+            <Field label="File types" hint="Comma-separated: csv, xlsx, pdf, xml, json"><input style={INP} type="text" value={form.file_types} onChange={e => f('file_types', e.target.value)} placeholder="csv,xlsx,pdf" /></Field>
+            <Field label="Max rows per file"><input style={INP} type="text" value={form.max_rows} onChange={e => f('max_rows', e.target.value)} placeholder="500" /></Field>
             <Field label="Timestamp strategy" hint="How to determine file recency">
               <select style={SEL} value={form.ts_strategy} onChange={e => f('ts_strategy', e.target.value)}>{TS_STRATS.map(s => ({ value: s, label: s })).map((o: {value:string;label:string}) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
             </Field>
-            <Field label="Sub-path filter (optional)" hint="Only look in this subfolder"><input style={INP} type="text" value={form.sub_path} onChange={e => f('sub_path', v)} placeholder="weekly-reports/" /></Field>
+            <Field label="Sub-path filter (optional)" hint="Only look in this subfolder"><input style={INP} type="text" value={form.sub_path} onChange={e => f('sub_path', e.target.value)} placeholder="weekly-reports/" /></Field>
           </Grid>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
