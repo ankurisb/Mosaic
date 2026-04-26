@@ -64,9 +64,10 @@ export async function POST(req: Request) {
 
   // Inject available connections into system prompt
   const sql = getDb()
-  const [dbConns, apiConns] = await Promise.all([
+  const [dbConns, apiConns, fileServers] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT c.id, c.label, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY c.created_at ASC`.catch(() => []),
+    sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
   ])
   const dialectHint = (dialect: unknown) => {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
@@ -188,7 +189,26 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     }
   }
 
-  const fullSystem = baseSystem + dbList + apiList + rcaAddition
+  // Bug 4.11: file servers were never injected into the system prompt, so
+  // when the user said "read from Plant Files (S3)" the model invented a
+  // server_id from the label (e.g. "plant-files-s3") and the read_file_server
+  // tool failed with "not found". Mirror the dbList/apiList shape: use the
+  // exact UUID, include transport + a hint of where files live + file types.
+  const fileServerList = fileServers.length
+    ? '\n\n## File servers (read_file_server tool — use exact id)\n' +
+      fileServers.map((f: Record<string, unknown>) => {
+        const transport = String(f.transport || '').toLowerCase()
+        const where = transport === 's3'
+          ? `bucket:${f.bucket || '?'}`
+          : (transport === 'sftp' || transport === 'smb' || transport === 'local')
+            ? `path:${f.share_path || '?'}`
+            : ''
+        const types = f.file_types ? ` | parses:${f.file_types}` : ''
+        return `- id:"${f.id}" | "${f.label}" | ${transport} | ${where}${types}`
+      }).join('\n')
+    : ''
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition
   // Fix #7: per-user rate limit -- max 50 requests per hour per user
   try {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
