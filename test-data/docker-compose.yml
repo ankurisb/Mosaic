@@ -98,7 +98,7 @@ services:
         /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P Mosaic_Strong_Pw_1 -i /seed/01_schema.sql -i /seed/02_data.sql;
         echo 'SQL Server seed complete.';
       "
-    restart: "no"
+    restart: on-failure
 
   # ─── InfluxDB v1: "Sensor Telemetry" ───────────────────────────────
   # v1 chosen because Mosaic's default path is InfluxQL; v2 Flux also works
@@ -145,7 +145,7 @@ services:
         done;
         echo \"InfluxDB seed complete ($$n chunks).\";
       "
-    restart: "no"
+    restart: on-failure
 
   # ─── MongoDB: "Event Logs" ─────────────────────────────────────────
   mongodb:
@@ -186,6 +186,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   # Creates the bucket and uploads the sample files on first run.
   minio-seed:
@@ -204,7 +205,7 @@ services:
         echo 'MinIO seed complete. Bucket: mosaic-test';
         mc ls local/mosaic-test;
       "
-    restart: "no"
+    restart: on-failure
 
   # ─── SFTP: file server over SSH ────────────────────────────────────
   # User: mosaic  /  Password: mosaic_pw
