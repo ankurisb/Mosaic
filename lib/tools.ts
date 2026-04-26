@@ -77,7 +77,7 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
     case 'web_search': return webSearch(String(input.query))
     case 'query_database': return queryDatabase(String(input.connection_id), String(input.sql))
     case 'call_api': return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
-    case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), input.ts_strategy as string | undefined, input.extract as string | undefined, input.max_rows as number | undefined)
+    case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
     default: throw new Error(`Unknown tool: ${name}`)
   }
