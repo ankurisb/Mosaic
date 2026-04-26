@@ -1101,20 +1101,85 @@ async function parseFileContent(
   }
 
   if (ext === 'pdf') {
-    // Return metadata -- actual PDF text extraction requires pdfjs-dist
-    return {
-      content_type: 'pdf',
-      size_bytes:   buf.length,
-      note:         'PDF binary received. Install pdfjs-dist for text extraction, or read the file as a vision input for image-based PDFs.',
+    // Real PDF text extraction via pdf-parse 1.x. We import 'pdf-parse/lib/pdf-parse.js'
+    // directly to bypass the package's index.js, which has a debug block that
+    // tries to read a hardcoded test PDF when module.parent is undefined
+    // (always the case under dynamic import / bundled environments). Going
+    // straight to lib/pdf-parse.js gives us the parser function with no init
+    // side effects, no worker file resolution, and no native bindings — runs
+    // identically in local dev, Docker, and Vercel.
+    try {
+      const pdfParseMod = await import('pdf-parse/lib/pdf-parse.js').catch(() => null) as { default?: (b: Buffer) => Promise<{ text: string; numpages: number }> } | null
+      const pdfParse = pdfParseMod?.default
+      if (!pdfParse) throw new Error('pdf-parse not installed')
+      const result = await pdfParse(buf)
+      const text = (result.text || '').trim()
+      if (!text) {
+        return {
+          content_type: 'pdf',
+          size_bytes:   buf.length,
+          page_count:   result.numpages,
+          note:         'PDF parsed but no extractable text found — likely an image-only / scanned PDF.',
+        }
+      }
+      return {
+        content_type: 'pdf',
+        size_bytes:   buf.length,
+        page_count:   result.numpages,
+        text:         text.slice(0, 12000),
+        text_truncated: text.length > 12000,
+        size_chars:   text.length,
+      }
+    } catch (e) {
+      return {
+        content_type: 'pdf',
+        size_bytes:   buf.length,
+        note:         `PDF text extraction failed: ${e instanceof Error ? e.message : String(e)}`,
+      }
     }
   }
 
   if (ext === 'xlsx' || ext === 'xls') {
-    // Return metadata -- actual parsing requires xlsx package
-    return {
-      content_type: 'excel',
-      size_bytes:   buf.length,
-      note:         'Excel binary received. Install the xlsx package (npm install xlsx) to enable row extraction.',
+    // Real Excel parsing via SheetJS xlsx. Returns up to maxRows from each
+    // sheet, with header inference. Multi-sheet workbooks return a sheets[]
+    // array; single-sheet workbooks return rows/columns directly for
+    // simpler downstream handling.
+    try {
+      const xlsxMod = await import('xlsx').catch(() => null) as typeof import('xlsx') | null
+      if (!xlsxMod) throw new Error('xlsx package not installed')
+      const wb = xlsxMod.read(buf, { type: 'buffer', cellDates: true })
+      const sheetNames = wb.SheetNames
+      const sheets = sheetNames.map(name => {
+        const ws = wb.Sheets[name]
+        const json = xlsxMod.utils.sheet_to_json(ws, { defval: null, raw: false }) as Record<string, unknown>[]
+        const capped = json.slice(0, maxRows)
+        const columns = capped.length ? Object.keys(capped[0]) : []
+        return { sheet: name, row_count: json.length, columns, rows: capped, truncated: json.length > maxRows }
+      })
+      if (sheets.length === 1) {
+        const only = sheets[0]
+        return {
+          content_type: 'excel',
+          size_bytes:   buf.length,
+          sheet:        only.sheet,
+          row_count:    only.row_count,
+          columns:      only.columns,
+          rows:         only.rows,
+          truncated:    only.truncated,
+        }
+      }
+      return {
+        content_type: 'excel',
+        size_bytes:   buf.length,
+        sheet_count:  sheets.length,
+        sheets,
+      }
+    } catch (e) {
+      return {
+        content_type: 'excel',
+        size_bytes:   buf.length,
+        note:         `Excel parsing failed: ${e instanceof Error ? e.message : String(e)}`,
+      }
     }
   }
 
