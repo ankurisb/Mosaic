@@ -172,9 +172,9 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
                     {s.label} <Badge label={s.environment} color={ENV_COLOR(s.environment)} />
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {s.host ? `${s.host}${s.share_path ? '/' + s.share_path : ''}` : (s.bucket || s.share_path || '—')} · {s.file_types}
+                    {s.transport === 's3' ? (s.endpoint_url ? `${s.endpoint_url}/${s.bucket || ''}` : (s.bucket || '—')) : s.host ? `${s.host}${s.share_path ? '/' + s.share_path : ''}` : (s.share_path || '—')} · {s.file_types}
                   </div>
-                  {tr && <div style={{ fontSize: 11, color: tr.ok ? 'var(--green-t)' : 'var(--red-t)', marginTop: 3 }}>{tr.ok ? `✓ Connected · ${tr.latencyMs}ms` : `✗ ${tr.message}`}</div>}
+                  {tr && <div style={{ fontSize: 11, color: tr.ok ? 'var(--green-t)' : 'var(--red-t)', marginTop: 3 }}>{tr.ok ? (tr.latencyMs != null ? `✓ Connected · ${tr.latencyMs}ms` : '✓ Connected') : `✗ ${tr.message}`}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <Btn size="sm" onClick={() => test(s.id)} disabled={testing === s.id}>{testing === s.id ? <Spinner size={11} /> : 'Test'}</Btn>
