@@ -1017,7 +1017,24 @@ async function resolveLatestFile(
 }
 
 function extractDateFromFilename(name: string, pattern: string | null): Date | null {
-  // Try common patterns: YYYYMMDD, YYYY-MM-DD, YYYYMMDD_HHmm, YYYYMMDDTHHMMSS
+  // Bug 4.10: try user-supplied pattern first (from file_servers.
+  // filename_date_pattern). Capture groups must be (YYYY)(MM)(DD), with
+  // optional (HH)(MM) for time. Invalid regex / no match falls through to the
+  // hardcoded fallbacks below — same behavior as before this fix.
+  if (pattern && pattern.trim()) {
+    try {
+      const re = new RegExp(pattern)
+      const m = name.match(re)
+      if (m && m[1] && m[2] && m[3]) {
+        const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4] || '00'}:${m[5] || '00'}:00Z`)
+        if (!isNaN(d.getTime())) return d
+      }
+    } catch {
+      // bad regex — fall through to hardcoded fallbacks
+    }
+  }
+
+  // Hardcoded fallbacks: YYYYMMDD, YYYY-MM-DD, YYYYMMDD_HHmm, YYYYMMDDTHHMMSS
   const patterns = [
     /(\d{4})[_\-](\d{2})[_\-](\d{2})[_T](\d{2})(\d{2})/,  // 2026-04-14T0600
     /(\d{4})(\d{2})(\d{2})[_T](\d{2})(\d{2})/,              // 20260414_0600
