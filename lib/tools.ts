@@ -1,6 +1,40 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { getDb } from './db'
 import { decrypt } from './encrypt'
+import * as aws4 from 'aws4'
+
+// Bug 4.13: S3 reader was sending unauthenticated requests against private
+// buckets, and the legacy stub helper hard-coded "placeholder-sig". MinIO and
+// real AWS S3 both reject this with 403. Use aws4 to compute proper SigV4
+// auth headers. Works against AWS S3 (default region us-east-1) and any
+// S3-compatible endpoint like MinIO when an explicit endpoint_url is set.
+async function s3SignedFetch(
+  method: string,
+  url: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  body?: Buffer,
+): Promise<Response> {
+  const u = new URL(url)
+  // For S3-compatible servers (MinIO) the region defaults to 'us-east-1' and
+  // the service is 's3'. Bucket lives in the path (path-style addressing),
+  // matching the URLs we already construct.
+  const opts: aws4.Request = {
+    host:    u.host,
+    method,
+    path:    u.pathname + u.search,
+    service: 's3',
+    region:  'us-east-1',
+    body,
+  }
+  aws4.sign(opts, { accessKeyId, secretAccessKey })
+  return fetch(url, {
+    method,
+    headers: opts.headers as Record<string, string>,
+    body,
+    signal: AbortSignal.timeout(30000),
+  })
+}
 import { Pool } from 'pg'
 import type { Pool as MysqlPool } from 'mysql2/promise'
 
@@ -918,7 +952,10 @@ async function listFiles(
     const bucket    = fs.bucket    as string
     const prefix    = (fs.sub_path as string) || ''
     const url       = `${endpoint.replace(/\/$/, '')}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=100`
-    const res       = await fetch(url, { signal: AbortSignal.timeout(10000) })
+    const accessKey = fs.access_key_id as string
+    const secretKey = fs.secret_key_enc ? decrypt(fs.secret_key_enc as string) : ''
+    if (!accessKey || !secretKey) throw new Error('S3 list failed: missing access_key_id or secret_key on file server')
+    const res       = await s3SignedFetch('GET', url, accessKey, secretKey)
     if (!res.ok) throw new Error(`S3 list failed: ${res.status}`)
     const xml = await res.text()
     const files: FileEntry[] = []
@@ -1010,9 +1047,12 @@ async function fetchFileContent(
     return readFile(filePath)
   }
   if (transport === 's3') {
-    const endpoint = (fs.endpoint_url as string) || 'https://s3.amazonaws.com'
-    const url = `${endpoint.replace(/\/$/, '')}/${fs.bucket}/${filePath}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(30000) })
+    const endpoint  = (fs.endpoint_url as string) || 'https://s3.amazonaws.com'
+    const url       = `${endpoint.replace(/\/$/, '')}/${fs.bucket}/${filePath}`
+    const accessKey = fs.access_key_id as string
+    const secretKey = fs.secret_key_enc ? decrypt(fs.secret_key_enc as string) : ''
+    if (!accessKey || !secretKey) throw new Error('S3 read failed: missing access_key_id or secret_key on file server')
+    const res = await s3SignedFetch('GET', url, accessKey, secretKey)
     if (!res.ok) throw new Error(`S3 read failed: ${res.status}`)
     return Buffer.from(await res.arrayBuffer())
   }
