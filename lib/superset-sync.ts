@@ -50,7 +50,9 @@ async function getSupersetToken(): Promise<string | null> {
   }
 }
 
-async function getCsrfToken(accessToken: string): Promise<string | null> {
+type CsrfPair = { csrfToken: string; sessionCookie: string | null }
+
+async function getCsrfToken(accessToken: string): Promise<CsrfPair | null> {
   try {
     const res = await fetch(`${SUPERSET_URL}/api/v1/security/csrf_token/`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -58,7 +60,24 @@ async function getCsrfToken(accessToken: string): Promise<string | null> {
     })
     if (!res.ok) return null
     const data = await res.json()
-    return data.result || null
+    if (!data.result) return null
+
+    // Bug 4.4: Superset 3.x+ binds the CSRF token to the Flask session cookie
+    // set on this same response. Bearer auth alone is not enough — the POST
+    // that uses the CSRF token must also forward the matching session cookie.
+    // node fetch's Headers.getSetCookie() exposes Set-Cookie values for
+    // server-to-server requests (no CORS filtering). Extract the 'session='
+    // pair specifically; ignore other cookies the server may set.
+    const setCookies = res.headers.getSetCookie?.() || []
+    const sessionCookie = setCookies
+      .map(c => c.split(';')[0])
+      .find(c => c.startsWith('session=')) || null
+
+    if (!sessionCookie) {
+      console.warn('[superset-sync] CSRF response had no session cookie. setCookies count=' + setCookies.length)
+    }
+
+    return { csrfToken: data.result, sessionCookie }
   } catch {
     return null
   }
@@ -111,11 +130,12 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
       return
     }
 
-    const csrfToken = await getCsrfToken(accessToken)
-    if (!csrfToken) {
+    const csrf = await getCsrfToken(accessToken)
+    if (!csrf) {
       console.warn('[superset-sync] Could not get CSRF token from Superset')
       return
     }
+    const { csrfToken, sessionCookie } = csrf
 
     const body = {
       database_name: conn.label,
@@ -137,6 +157,7 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
         Authorization: `Bearer ${accessToken}`,
         'X-CSRFToken': csrfToken,
         Referer: SUPERSET_URL,
+        ...(sessionCookie ? { Cookie: sessionCookie } : {}),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
