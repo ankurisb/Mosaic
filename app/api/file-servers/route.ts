@@ -87,9 +87,6 @@ export async function POST(req: Request) {
         share_path = ${share_path || null},
         sub_path = ${sub_path || null},
         username = ${username || null},
-        ${passwordEnc  ? sql`password_enc  = ${passwordEnc},`  : sql``}
-        ${sshKeyEnc    ? sql`ssh_key_enc   = ${sshKeyEnc},`    : sql``}
-        ${secretKeyEnc ? sql`secret_key_enc = ${secretKeyEnc},` : sql``}
         bucket = ${bucket || null},
         endpoint_url = ${endpoint_url || null},
         access_key_id = ${access_key_id || null},
@@ -100,6 +97,18 @@ export async function POST(req: Request) {
         filename_date_pattern = ${filename_date_pattern || null},
         ts_strategy = ${ts_strategy || 'auto'}
       WHERE id = ${id}`
+
+    // Update encrypted credentials only when new values are supplied;
+    // null/undefined means "leave existing value alone".
+    if (passwordEnc !== null) {
+      await sql`UPDATE file_servers SET password_enc = ${passwordEnc} WHERE id = ${id}`
+    }
+    if (sshKeyEnc !== null) {
+      await sql`UPDATE file_servers SET ssh_key_enc = ${sshKeyEnc} WHERE id = ${id}`
+    }
+    if (secretKeyEnc !== null) {
+      await sql`UPDATE file_servers SET secret_key_enc = ${secretKeyEnc} WHERE id = ${id}`
+    }
     return Response.json({ ok: true })
   }
 
