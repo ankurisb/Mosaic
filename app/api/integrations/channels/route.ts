@@ -9,15 +9,31 @@ export async function GET() {
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const sql = getDb()
   const rows = await sql`
-    SELECT id, name, type, active, created_at,
-           -- Return config but mask secrets
-           jsonb_set(
-             jsonb_set(config, '{smtp_pass_enc}', '"[hidden]"', false),
-             '{webhook_url}', '"[hidden]"', false
-           ) AS config_masked
+    SELECT id, name, type, active, config, created_at
     FROM   integration_channels
     ORDER  BY created_at ASC`
-  return Response.json({ channels: rows })
+  // Mask secrets in JS so the query stays portable across SQLite + Neon
+  // (Postgres jsonb_set is not supported by SQLite).
+  const SECRET_KEYS = ['smtp_pass_enc', 'webhook_url', 'auth_token', 'api_key']
+  const channels = (rows as Array<Record<string, unknown>>).map(r => {
+    let config: Record<string, unknown> = {}
+    try {
+      config = typeof r.config === 'string' ? JSON.parse(r.config) : (r.config as Record<string, unknown>) || {}
+    } catch { config = {} }
+    const config_masked = { ...config }
+    for (const k of SECRET_KEYS) {
+      if (k in config_masked) config_masked[k] = '[hidden]'
+    }
+    return {
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      active: r.active,
+      created_at: r.created_at,
+      config_masked,
+    }
+  })
+  return Response.json({ channels })
 }
 
 // -- POST -- create / update / delete / test --------------------
