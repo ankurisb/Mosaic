@@ -47,8 +47,10 @@ async function sendSlack(
   message: string,
   start: number
 ): Promise<NotifyResult> {
-  const webhookUrl = config.webhook_url as string
-  if (!webhookUrl) return { ok: false, error: 'No webhook_url configured', latency_ms: Date.now() - start }
+  const webhookUrlEnc = config.webhook_url as string
+  if (!webhookUrlEnc) return { ok: false, error: 'No webhook_url configured', latency_ms: Date.now() - start }
+  // webhook_url is stored encrypted by buildConfig in channels/route.ts; decrypt before use.
+  const webhookUrl = decrypt(webhookUrlEnc)
 
   const res = await fetch(webhookUrl, {
     method:  'POST',
@@ -66,8 +68,10 @@ async function sendTeams(
   message: string,
   start: number
 ): Promise<NotifyResult> {
-  const webhookUrl = config.webhook_url as string
-  if (!webhookUrl) return { ok: false, error: 'No webhook_url configured', latency_ms: Date.now() - start }
+  const webhookUrlEnc = config.webhook_url as string
+  if (!webhookUrlEnc) return { ok: false, error: 'No webhook_url configured', latency_ms: Date.now() - start }
+  // webhook_url is stored encrypted by buildConfig in channels/route.ts; decrypt before use.
+  const webhookUrl = decrypt(webhookUrlEnc)
 
   // Teams uses the Adaptive Card / MessageCard format
   const body = {
