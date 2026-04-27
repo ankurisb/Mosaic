@@ -824,7 +824,10 @@ async function listFiles(
         conn.on('ready', () => {
           conn.sftp((err, sftp) => {
             if (err) { conn.end(); return reject(err) }
-            sftp.readdir(fs.sub_path as string || '/', (err2, list) => {
+            const share = (fs.share_path as string || '').replace(/^\/+|\/+$/g, '')
+            const sub   = (fs.sub_path   as string || '').replace(/^\/+|\/+$/g, '')
+            const dirPath = '/' + [share, sub].filter(Boolean).join('/')
+            sftp.readdir(dirPath, (err2, list) => {
               conn.end()
               if (err2) return reject(err2)
               const files: FileEntry[] = (list || [])
@@ -834,7 +837,7 @@ async function listFiles(
                 })
                 .map(e => ({
                   name:     e.filename,
-                  path:     `${fs.sub_path || ''}/${e.filename}`,
+                  path:     `${dirPath}/${e.filename}`,
                   size:     e.attrs.size,
                   modified: new Date(e.attrs.mtime * 1000).toISOString(),
                   timestamp: new Date(e.attrs.mtime * 1000),
@@ -985,10 +988,34 @@ async function fetchFileContent(
     if (!res.ok) throw new Error(`S3 read failed: ${res.status}`)
     return Buffer.from(await res.arrayBuffer())
   }
-  // SMB/SFTP: return empty buffer with helpful message
-  // Full SMB/SFTP streaming requires native clients (samba, ssh2)
-  // For now, return a signal that the file was found but content requires native client
-  throw new Error(`Direct file reading for ${transport.toUpperCase()} requires the samba or ssh2 package. File identified: ${filePath}. Install via: npm install ssh2 (for SFTP) or configure smbclient on the server.`)
+  if (transport === 'sftp') {
+    const ssh2 = await import('ssh2').catch(() => null)
+    if (!ssh2) throw new Error('SFTP read failed: ssh2 package not installed')
+    const { Client } = ssh2
+    const password = fs.password_enc ? decrypt(fs.password_enc as string) : ''
+    return await new Promise<Buffer>((resolve, reject) => {
+      const conn = new Client()
+      conn.on('ready', () => {
+        conn.sftp((err, sftp) => {
+          if (err) { conn.end(); return reject(err) }
+          const chunks: Buffer[] = []
+          const stream = sftp.createReadStream(filePath)
+          stream.on('data', (c: Buffer) => chunks.push(c))
+          stream.on('end', () => { conn.end(); resolve(Buffer.concat(chunks)) })
+          stream.on('error', (e: Error) => { conn.end(); reject(e) })
+        })
+      })
+      .on('error', reject)
+      .connect({
+        host:     fs.host as string,
+        port:     (fs.port as number) || 22,
+        username: fs.username as string,
+        password,
+      })
+    })
+  }
+  // SMB still unimplemented
+  throw new Error(`Direct file reading for ${transport.toUpperCase()} requires native client (samba/smbclient).`)
 }
 
 // -- Parse file content by extension --------------------------
