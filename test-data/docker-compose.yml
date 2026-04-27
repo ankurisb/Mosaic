@@ -235,7 +235,7 @@ services:
       - "127.0.0.1:4001:4001"
     command: sh -c "npm install --silent --no-audit --no-fund && node server.js"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      test: ["CMD", "wget", "-q", "--spider", "--header=Authorization: Bearer testtoken", "http://127.0.0.1:4001/sap/opu/odata/sap/API_EQUIPMENT_SRV/Equipment?$$top=1&$$format=json"]
       interval: 10s
       timeout: 5s
       retries: 10
