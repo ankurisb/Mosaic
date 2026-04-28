@@ -293,3 +293,45 @@ mosaic-testdata/
     ├── influxdb/       telemetry.lp (110k line-protocol points)
     └── mongodb/        01_seed.js
 ```
+
+---
+
+## Known issues and workarounds
+
+### MinIO seed container stuck in `Created` state
+
+**Symptom:** After `docker compose up -d`, `docker ps -a` shows `mosaic-minio-seed` with status `Created` rather than `Exited (0)`. The `mosaic-test` bucket exists but is empty.
+
+**Cause:** Docker Compose creates the seed container on first `up` but does not automatically start it on subsequent `up` calls if the container already exists in `Created` state. The `restart: on-failure` policy only applies after the container has run at least once.
+
+**Workaround:**
+```bash
+docker start mosaic-minio-seed
+docker logs mosaic-minio-seed   # should end with "MinIO seed complete. Bucket: mosaic-test"
+```
+
+**Permanent fix (if needed):** Replace `restart: on-failure` with a one-shot approach using `docker compose run --rm minio-seed`, or add `--force-recreate` to the `up` invocation:
+```bash
+docker compose up -d --force-recreate minio-seed
+```
+
+---
+
+### SFTP nested bind-mount shadow
+
+**Symptom:** After `docker compose up -d`, the SFTP container starts but connecting and listing `/upload` returns an empty directory, even though `./sftp-data/` on the host has files.
+
+**Cause:** The `atmoz/sftp` image creates the user home directory structure at container startup. If the host `./sftp-data/` directory was populated *after* the container started, or if a nested bind mount shadows the inner path, the files are not visible inside the container.
+
+**Workaround:**
+```bash
+# Force-recreate the SFTP container after files are confirmed present on host
+docker compose up -d --force-recreate sftp
+# Verify files are visible
+docker exec mosaic-sftp ls -la /home/mosaic/upload/
+```
+
+**Sequence that reliably works:**
+1. Confirm `./sftp-data/` is populated on the host before starting
+2. Run `docker compose up -d`
+3. If SFTP listing is empty: `docker compose up -d --force-recreate sftp`
