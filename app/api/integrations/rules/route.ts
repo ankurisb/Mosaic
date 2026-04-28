@@ -28,6 +28,25 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { action } = body
 
+  // -- Source validation (shared by create + update) -------------
+  // Threshold and schedule rules MUST have a valid source bound; otherwise
+  // the scheduler silently skips them (see app/api/integrations/scheduler/route.ts).
+  // rca_complete rules don't run a query, so they're exempt.
+  const VALID_SOURCE_TYPES = ['database', 'api', 'file_server'] as const
+  function validateSource(triggerType: string, srcType: unknown, srcId: unknown, q: unknown) {
+    if (triggerType !== 'threshold' && triggerType !== 'schedule') return null
+    if (!srcId || typeof srcId !== 'string' || !srcId.trim()) {
+      return 'Source is required for threshold and schedule rules'
+    }
+    if (!srcType || !VALID_SOURCE_TYPES.includes(srcType as typeof VALID_SOURCE_TYPES[number])) {
+      return `Source type must be one of: ${VALID_SOURCE_TYPES.join(', ')}`
+    }
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      return 'Query is required for threshold and schedule rules'
+    }
+    return null
+  }
+
   // -- CREATE ----------------------------------------------------
   if (action === 'create') {
     const {
@@ -37,6 +56,8 @@ export async function POST(req: Request) {
     if (!name?.trim())        return Response.json({ error: 'Name required' },         { status: 400 })
     if (!trigger_type)        return Response.json({ error: 'Trigger type required' },  { status: 400 })
     if (!channel_id)          return Response.json({ error: 'Channel required' },       { status: 400 })
+    const srcErr = validateSource(trigger_type, source_type, source_id, query)
+    if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
 
     // Compute initial next_run_at for schedule rules
     const nextRun = computeNextRun(trigger_type, condition || {})
@@ -60,6 +81,8 @@ export async function POST(req: Request) {
       query, condition, channel_id, message_template,
     } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
+    const srcErr = validateSource(trigger_type, source_type, source_id, query)
+    if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
     const nextRun = computeNextRun(trigger_type, condition || {})
     await sql`
       UPDATE integration_rules SET

@@ -25,7 +25,7 @@ interface NotifGroup {
 }
 
 const CHAN_EMPTY = { name: '', type: 'slack', active: true, webhook_url: '', smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '', from_address: '', to_address: '', url: '', account_sid: '', auth_token: '', from_number: '', to_number: '', template_sid: '', content_variables: '' }
-const RULE_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600' }
+const RULE_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
 const GROUP_EMPTY = { name: '', description: '', members: [] as NotifGroup['members'] }
 
 const CHANNEL_TYPES = [
@@ -84,6 +84,11 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
   const [showRuleForm, setShowRuleForm] = useState(false)
   const [ruleEditing,  setRuleEditing]  = useState<string | null>(null)
   const [ruleForm,     setRuleForm]     = useState({ ...RULE_EMPTY })
+
+  // Source pickers — populated alongside channels in load()
+  const [dbConnections, setDbConnections] = useState<Array<{ id: string; label: string }>>([])
+  const [apiServices,   setApiServices]   = useState<Array<{ id: string; label: string }>>([])
+  const [fileServers,   setFileServers]   = useState<Array<{ id: string; label: string }>>([])
   const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({})
   const [runLogs,      setRunLogs]      = useState<Record<string, Run[]>>({})
 
@@ -100,14 +105,20 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
   async function load() {
     setLoading(true)
     try {
-      const [cr, rr, gr] = await Promise.all([
+      const [cr, rr, gr, dbr, apr, fsr] = await Promise.all([
         fetch('/api/integrations/channels').then(r => r.json()),
         fetch('/api/integrations/rules').then(r => r.json()),
         fetch('/api/integrations/groups').then(r => r.json()).catch(() => ({ groups: [] })),
+        fetch('/api/connections').then(r => r.json()).catch(() => ({ connections: [] })),
+        fetch('/api/services').then(r => r.json()).catch(() => ({ services: [] })),
+        fetch('/api/file-servers').then(r => r.json()).catch(() => ({ file_servers: [] })),
       ])
       setChannels(cr.channels || [])
       setRules(rr.rules || [])
       setGroups(gr.groups || [])
+      setDbConnections(dbr.connections || [])
+      setApiServices(apr.services || [])
+      setFileServers(fsr.file_servers || [])
     } finally { setLoading(false) }
   }
 
@@ -152,6 +163,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
       const condition: Record<string, unknown> = {}
       if (ruleForm.trigger_type === 'threshold') { condition.operator = ruleForm.op; condition.value = Number(ruleForm.threshold); condition.column = ruleForm.column }
       if (ruleForm.trigger_type === 'schedule')  { condition.interval_sec = Number(ruleForm.interval) }
+      if (ruleForm.source_type === 'file_server' && ruleForm.trigger_type !== 'rca_complete') { condition.file_format = ruleForm.file_format }
       const body: Record<string, unknown> = { action, name: ruleForm.name.trim(), active: ruleForm.active, trigger_type: ruleForm.trigger_type, source_type: ruleForm.source_type, source_id: ruleForm.source_id || null, query: ruleForm.query || null, condition, channel_id: ruleForm.channel_id, message_template: ruleForm.message_template }
       if (ruleEditing) body.id = ruleEditing
       await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -313,6 +325,48 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
             <Field label="Rule name" required><input style={INP_S} value={ruleForm.name} onChange={e => setRuleForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. OEE below 75% alert" /></Field>
             <Field label="Trigger type"><select style={SEL_S} value={ruleForm.trigger_type} onChange={e => setRuleForm(p => ({ ...p, trigger_type: e.target.value }))}>{TRIGGER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></Field>
           </Grid>
+          {(ruleForm.trigger_type === 'threshold' || ruleForm.trigger_type === 'schedule') && (
+            <Grid cols={2}>
+              <Field label="Source *" hint="The data source the query runs against">
+                <select
+                  style={SEL_S}
+                  value={ruleForm.source_id ? `${ruleForm.source_type}:${ruleForm.source_id}` : ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    if (!v) { setRuleForm(p => ({ ...p, source_type: 'database', source_id: '' })); return }
+                    const [stype, ...rest] = v.split(':')
+                    const sid = rest.join(':')
+                    setRuleForm(p => ({ ...p, source_type: stype, source_id: sid }))
+                  }}
+                >
+                  <option value="">Select source...</option>
+                  {dbConnections.length > 0 && (
+                    <optgroup label="Databases">
+                      {dbConnections.map(c => <option key={c.id} value={`database:${c.id}`}>{c.label}</option>)}
+                    </optgroup>
+                  )}
+                  {apiServices.length > 0 && (
+                    <optgroup label="API services">
+                      {apiServices.map(c => <option key={c.id} value={`api:${c.id}`}>{c.label}</option>)}
+                    </optgroup>
+                  )}
+                  {fileServers.length > 0 && (
+                    <optgroup label="File servers">
+                      {fileServers.map(c => <option key={c.id} value={`file_server:${c.id}`}>{c.label}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+              </Field>
+              {ruleForm.source_type === 'file_server' ? (
+                <Field label="File format *" hint="Only row-bearing formats can be thresholded">
+                  <select style={SEL_S} value={ruleForm.file_format} onChange={e => setRuleForm(p => ({ ...p, file_format: e.target.value }))}>
+                    <option value="csv">CSV</option>
+                    <option value="xlsx">Excel (xlsx)</option>
+                  </select>
+                </Field>
+              ) : <div />}
+            </Grid>
+          )}
           {ruleForm.trigger_type === 'threshold' && (
             <>
               <Grid cols={3}>
@@ -320,13 +374,32 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
                 <Field label="Operator"><select style={SEL_S} value={ruleForm.op} onChange={e => setRuleForm(p => ({ ...p, op: e.target.value }))}>{['<','<=','>','>=','=='].map(op => <option key={op} value={op}>{op}</option>)}</select></Field>
                 <Field label="Value *"><input style={INP_S} type="number" value={ruleForm.threshold} onChange={e => setRuleForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" /></Field>
               </Grid>
-              <Field label="SQL query" hint="Runs against the selected data source"><input style={MONO} value={ruleForm.query || ''} onChange={e => setRuleForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT avg(oee_pct) as oee_pct FROM oee_hourly WHERE time > now()-5m" /></Field>
+              <Field
+                label={ruleForm.source_type === 'api' ? 'API path *' : ruleForm.source_type === 'file_server' ? 'File hint *' : 'SQL query *'}
+                hint={ruleForm.source_type === 'api' ? 'Relative path on the selected service' : ruleForm.source_type === 'file_server' ? 'Filename or pattern (e.g. oee_*.csv)' : 'Runs against the selected data source'}
+              >
+                <input
+                  style={MONO}
+                  value={ruleForm.query || ''}
+                  onChange={e => setRuleForm(p => ({ ...p, query: e.target.value }))}
+                  placeholder={ruleForm.source_type === 'api' ? '/ProductionOrders?$top=1&$orderby=Date desc' : ruleForm.source_type === 'file_server' ? 'oee_latest.csv' : 'SELECT avg(oee_pct) as oee_pct FROM oee_hourly WHERE time > now()-5m'}
+                />
+              </Field>
             </>
           )}
           {ruleForm.trigger_type === 'schedule' && (
             <Grid cols={2}>
               <Field label="Run every"><select style={SEL_S} value={ruleForm.interval} onChange={e => setRuleForm(p => ({ ...p, interval: e.target.value }))}>{INTERVAL_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></Field>
-              <Field label="SQL query"><input style={MONO} value={ruleForm.query || ''} onChange={e => setRuleForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT line, avg(oee_pct) FROM oee_daily GROUP BY line" /></Field>
+              <Field
+                label={ruleForm.source_type === 'api' ? 'API path *' : ruleForm.source_type === 'file_server' ? 'File hint *' : 'SQL query *'}
+              >
+                <input
+                  style={MONO}
+                  value={ruleForm.query || ''}
+                  onChange={e => setRuleForm(p => ({ ...p, query: e.target.value }))}
+                  placeholder={ruleForm.source_type === 'api' ? '/ProductionOrders?$top=1' : ruleForm.source_type === 'file_server' ? 'oee_*.csv' : 'SELECT line, avg(oee_pct) FROM oee_daily GROUP BY line'}
+                />
+              </Field>
             </Grid>
           )}
           {ruleForm.trigger_type === 'rca_complete' && (
@@ -337,7 +410,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
             <Field label="Message template" hint="Variables: {value} {threshold} {column} {source} {title} {date} {time} {table}"><input style={INP_S} value={ruleForm.message_template} onChange={e => setRuleForm(p => ({ ...p, message_template: e.target.value }))} placeholder="OEE dropped to {value}% on {date}" /></Field>
           </Grid>
           <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)', marginTop: 4 }}>
-            <Btn variant="primary" onClick={saveRule} disabled={saving || !ruleForm.name.trim() || !ruleForm.channel_id}>{saving ? 'Saving...' : ruleEditing ? 'Update' : 'Save rule'}</Btn>
+            <Btn variant="primary" onClick={saveRule} disabled={saving || !ruleForm.name.trim() || !ruleForm.channel_id || ((ruleForm.trigger_type === 'threshold' || ruleForm.trigger_type === 'schedule') && (!ruleForm.source_id || !(ruleForm.query || '').trim()))}>{saving ? 'Saving...' : ruleEditing ? 'Update' : 'Save rule'}</Btn>
             <Btn onClick={() => { setShowRuleForm(false); setRuleEditing(null) }}>Cancel</Btn>
           </div>
         </div>
@@ -366,7 +439,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   {isAdmin && <>
                     <Btn size="sm" onClick={() => toggleRule(rule.id)}>{rule.active ? 'Pause' : 'Resume'}</Btn>
-                    <Btn size="sm" onClick={() => { setRuleEditing(rule.id); setRuleForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600) }); setShowRuleForm(true) }}>Edit</Btn>
+                    <Btn size="sm" onClick={() => { setRuleEditing(rule.id); setRuleForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowRuleForm(true) }}>Edit</Btn>
                     <Btn size="sm" variant="danger" onClick={() => deleteRule(rule.id, rule.name)}>Delete</Btn>
                   </>}
                 </div>
