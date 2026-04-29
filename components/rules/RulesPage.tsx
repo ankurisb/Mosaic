@@ -6,7 +6,7 @@ import type { SessionUser } from '@/lib/auth'
 // -- Types -----------------------------------------------------
 interface Condition {
   id: string; source_type: string; source_id: string
-  field: string; op: string; value: number; logic: string
+  field: string; op: string; value: number; logic: string; query: string
 }
 interface RuleAction {
   type: string; channel_id: string | null; channel_type: string
@@ -63,6 +63,9 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving,    setSaving]    = useState(false)
   const [toast,     setToast]     = useState('')
+  const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
+  const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
+  const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
 
   useEffect(() => { load() }, [])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
@@ -70,9 +73,16 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/rules')
-      const d = await r.json()
-      setGroups(d.groups || [])
+      const [rd, dbr, apr, chr] = await Promise.all([
+        fetch('/api/rules').then(r => r.json()),
+        fetch('/api/connections').then(r => r.json()).catch(() => ({ connections: [] })),
+        fetch('/api/services').then(r => r.json()).catch(() => ({ services: [] })),
+        fetch('/api/integrations/channels').then(r => r.json()).catch(() => ({ channels: [] })),
+      ])
+      setGroups(rd.groups || [])
+      setDbConns(dbr.connections || [])
+      setApiSvcs(apr.services || [])
+      setChannels(chr.channels || [])
     } finally { setLoading(false) }
   }, [])
 
@@ -330,23 +340,59 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                   <option value="database">Database</option>
                   <option value="api">API</option>
                 </select>
-                <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.source_id} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, source_id: e.target.value } : x) }))}>
-                  <option value="">Select connection...</option>
+                <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.source_id ? `${c.source_type}:${c.source_id}` : ''} onChange={e => {
+                    const v = e.target.value
+                    if (!v) { setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, source_type: 'database', source_id: '' } : x) })); return }
+                    const [stype, ...rest] = v.split(':'); const sid = rest.join(':')
+                    setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, source_type: stype, source_id: sid } : x) }))
+                  }}>
+                  <option value="">Select source...</option>
+                  {dbConns.length > 0 && <optgroup label="Databases">{dbConns.map(c => <option key={c.id} value={`database:${c.id}`}>{c.label}</option>)}</optgroup>}
+                  {apiSvcs.length > 0 && <optgroup label="API services">{apiSvcs.map(c => <option key={c.id} value={`api:${c.id}`}>{c.label}</option>)}</optgroup>}
                 </select>
-                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.filter((_, i) => i !== ci) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 16, padding: '0 4px', flexShrink: 0, lineHeight: 1 }}></button>
+                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.filter((_, i) => i !== ci) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: '0 6px', flexShrink: 0, lineHeight: 1 }}>×</button>
               </div>
               <div style={{ display: 'flex', gap: 8, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
-                <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name" />
+                <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name (result column to compare)" />
                 <select style={{ ...SEL, width: 58, fontSize: 12 }} value={c.op} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, op: e.target.value } : x) }))}>
                   {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
                 </select>
                 <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
               </div>
+              <div style={{ marginTop: 6, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
+                <input style={{ ...INP, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.query || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, query: e.target.value } : x) }))} placeholder={c.source_type === 'api' ? '/endpoint?param=value' : 'SELECT avg(oee_pct) as oee_pct FROM oee_hourly WHERE machine_id = 6'} />
+              </div>
             </div>
           </div>
         ))}
-        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND', query: '' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
           + Add condition
+        </button>
+      </Section>
+
+      {/* Actions */}
+      <Section title="Actions">
+        {form.actions.map((a, ai) => (
+          <div key={ai} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', flexShrink: 0 }}>{ai + 1}.</span>
+            <select style={{ ...SEL, width: 110, fontSize: 11 }} value={a.type} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, type: e.target.value } : x) }))}>
+              <option value="notify">Notify</option>
+              <option value="api_call">API call</option>
+            </select>
+            {a.type === 'notify' && (
+              <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={a.channel_id || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, channel_id: e.target.value } : x) }))}>
+                <option value="">Select channel...</option>
+                {channels.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
+              </select>
+            )}
+            {a.type === 'api_call' && (
+              <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={a.path || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, path: e.target.value } : x) }))} placeholder="/webhook/trigger" />
+            )}
+            <button onClick={() => setForm(p => ({ ...p, actions: p.actions.filter((_, i) => i !== ai) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>
+          </div>
+        ))}
+        <button onClick={() => setForm(p => ({ ...p, actions: [...p.actions, { type: 'notify', channel_id: null, channel_type: '', label: '', recipients: [], message_template: '', service_id: '', path: '', payload_template: '', rca_context: '', assignee_role: '', query: '', query_source_type: '', query_source_id: '', query_on_complete: '' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+          + Add action
         </button>
       </Section>
 

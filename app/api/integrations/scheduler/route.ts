@@ -278,16 +278,18 @@ export async function POST(req: Request) {
           const op      = cond.op          as string || '<'
           const thr     = Number(cond.value)
 
-          if (!srcId || !field) { results.push(false); continue }
+          if (!srcId || !field) { console.log('[rulegroup] skip: no srcId or field', { srcId, field }); results.push(false); continue }
 
           try {
             let data: unknown
             if (srcType === 'database') {
-              // Auto-generate a simple query if none specified
-              const query = `SELECT ${field} FROM (SELECT ${field} FROM pg_stat_activity LIMIT 1) _q`
-              data = await runTool('query_database', { connection_id: srcId, sql: `SELECT avg(${field}) as ${field} FROM measurements WHERE time > datetime('now')-5m` })
+              // Use the condition's own query if configured; fall back to a simple avg query
+              const condQuery = (cond.query as string | undefined)?.trim()
+              const sql = condQuery || `SELECT avg(${field}) as ${field} FROM ${field}`
+              data = await runTool('query_database', { connection_id: srcId, sql })
             } else if (srcType === 'api') {
-              data = await runTool('call_api', { connection_id: srcId, method: 'GET', path: `/${field}` })
+              const condPath = (cond.query as string | undefined)?.trim() || `/${field}`
+              data = await runTool('call_api', { connection_id: srcId, method: 'GET', path: condPath })
             }
 
             const rows     = (data as Record<string, unknown>)?.rows as Record<string, unknown>[] | undefined
