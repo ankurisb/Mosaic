@@ -24,7 +24,7 @@ interface NotifGroup {
   members: Array<{ type: string; address?: string; role?: string; number?: string; group_id?: string; label?: string }>
 }
 
-const CHAN_EMPTY = { name: '', type: 'slack', active: true, webhook_url: '', smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '', from_address: '', to_address: '', url: '', account_sid: '', auth_token: '', from_number: '', to_number: '', template_sid: '', content_variables: '' }
+const CHAN_EMPTY = { name: '', type: 'slack', active: true, webhook_url: '', smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '', from_address: '', recipients: '', url: '', account_sid: '', auth_token: '', from_number: '', to_number: '', template_sid: '', content_variables: '' }
 const RULE_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
 const GROUP_EMPTY = { name: '', description: '', members: [] as NotifGroup['members'] }
 
@@ -131,7 +131,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
       const config: Record<string, unknown> = {}
       if (chanForm.type === 'slack' || chanForm.type === 'teams') config.webhook_url = chanForm.webhook_url
       if (chanForm.type === 'webhook') config.url = chanForm.url
-      if (chanForm.type === 'email') { config.smtp_host = chanForm.smtp_host; config.smtp_port = Number(chanForm.smtp_port); config.smtp_user = chanForm.smtp_user; config.from_address = chanForm.from_address; if (chanForm.smtp_pass) config.smtp_pass = chanForm.smtp_pass }
+      if (chanForm.type === 'email') { config.smtp_host = chanForm.smtp_host; config.smtp_port = Number(chanForm.smtp_port); config.smtp_user = chanForm.smtp_user; config.from_address = chanForm.from_address; config.recipients = chanForm.recipients.split(',').map((r: string) => r.trim()).filter(Boolean); if (chanForm.smtp_pass) config.smtp_pass = chanForm.smtp_pass }
       if (chanForm.type === 'twilio_sms' || chanForm.type === 'twilio_whatsapp') { config.account_sid = chanForm.account_sid; config.from_number = chanForm.from_number; config.to_number = chanForm.to_number; if (chanForm.auth_token) config.auth_token = chanForm.auth_token; if (chanForm.type === 'twilio_whatsapp') { config.template_sid = chanForm.template_sid; try { config.content_variables = JSON.parse(chanForm.content_variables || '{}') } catch { config.content_variables = {} } } }
       const body: Record<string, unknown> = { action, name: chanForm.name.trim(), type: chanForm.type, active: chanForm.active, config }
       if (chanEditing) body.id = chanEditing
@@ -260,6 +260,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
               <Grid cols={2}><Field label="SMTP host" required><input style={INP_S} value={chanForm.smtp_host} onChange={e => setChanForm(p => ({ ...p, smtp_host: e.target.value }))} placeholder="smtp.gmail.com" /></Field><Field label="SMTP port"><input style={INP_S} type="number" value={chanForm.smtp_port} onChange={e => setChanForm(p => ({ ...p, smtp_port: e.target.value }))} /></Field></Grid>
               <Grid cols={2}><Field label="From address" required><input style={INP_S} value={chanForm.from_address} onChange={e => setChanForm(p => ({ ...p, from_address: e.target.value }))} placeholder="alerts@company.com" /></Field><Field label="SMTP username"><input style={INP_S} value={chanForm.smtp_user} onChange={e => setChanForm(p => ({ ...p, smtp_user: e.target.value }))} /></Field></Grid>
               <Field label="SMTP password" hint="Stored encrypted"><input style={{ ...INP_S }} type="password" value={chanForm.smtp_pass} onChange={e => setChanForm(p => ({ ...p, smtp_pass: e.target.value }))} placeholder="Stored encrypted" /></Field>
+              <Field label="Recipients *" hint="Comma-separated email addresses"><input style={INP_S} value={chanForm.recipients} onChange={e => setChanForm(p => ({ ...p, recipients: e.target.value }))} placeholder="ops@company.com, manager@company.com" /></Field>
             </>
           )}
           {(chanForm.type === 'twilio_sms' || chanForm.type === 'twilio_whatsapp') && (
@@ -301,7 +302,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <Btn size="sm" onClick={() => testChan(ch.id)}>Test</Btn>
                 {isAdmin && <>
-                  <Btn size="sm" onClick={() => { setChanEditing(ch.id); setChanForm({ name: ch.name, type: ch.type, active: ch.active, webhook_url: String(ch.config.webhook_url || ''), smtp_host: String(ch.config.smtp_host || ''), smtp_port: String(ch.config.smtp_port || 587), smtp_user: String(ch.config.smtp_user || ''), smtp_pass: '', from_address: String(ch.config.from_address || ''), to_address: String(ch.config.to_address || ''), url: String(ch.config.url || ''), account_sid: String(ch.config.account_sid || ''), auth_token: '', from_number: String(ch.config.from_number || ''), to_number: String(ch.config.to_number || ''), template_sid: String(ch.config.template_sid || ''), content_variables: ch.config.content_variables ? JSON.stringify(ch.config.content_variables) : '' }); setShowChanForm(true) }}>Edit</Btn>
+                  <Btn size="sm" onClick={() => { setChanEditing(ch.id); setChanForm({ name: ch.name, type: ch.type, active: ch.active, webhook_url: String(ch.config.webhook_url || ''), smtp_host: String(ch.config.smtp_host || ''), smtp_port: String(ch.config.smtp_port || 587), smtp_user: String(ch.config.smtp_user || ''), smtp_pass: '', from_address: String(ch.config.from_address || ''), recipients: Array.isArray(ch.config.recipients) ? (ch.config.recipients as string[]).join(', ') : String(ch.config.recipients || ''), url: String(ch.config.url || ''), account_sid: String(ch.config.account_sid || ''), auth_token: '', from_number: String(ch.config.from_number || ''), to_number: String(ch.config.to_number || ''), template_sid: String(ch.config.template_sid || ''), content_variables: ch.config.content_variables ? JSON.stringify(ch.config.content_variables) : '' }); setShowChanForm(true) }}>Edit</Btn>
                   <Btn size="sm" variant="danger" onClick={() => deleteChan(ch.id, ch.name)}>Delete</Btn>
                 </>}
               </div>

@@ -133,10 +133,14 @@ async function sendEmail(
   const user = config.smtp_user as string
   const passEnc = config.smtp_pass_enc as string
   const from = config.from_address as string
-  const to   = config.to_address   as string
+  // recipients is an array (e.g. ["ops@acme.com","mgr@acme.com"]); join for nodemailer
+  const recipientsRaw = config.recipients
+  const to = Array.isArray(recipientsRaw)
+    ? recipientsRaw.join(", ")
+    : (recipientsRaw as string || "")
 
   if (!host || !from || !to) {
-    return { ok: false, error: 'Missing smtp_host, from_address or to_address', latency_ms: Date.now() - start }
+    return { ok: false, error: 'Missing smtp_host, from_address or recipients', latency_ms: Date.now() - start }
   }
 
   const pass = passEnc ? decrypt(passEnc) : ''
