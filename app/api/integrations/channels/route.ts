@@ -30,7 +30,7 @@ export async function GET() {
       type: r.type,
       active: r.active,
       created_at: r.created_at,
-      config_masked,
+      config: config_masked,
     }
   })
   return Response.json({ channels })
