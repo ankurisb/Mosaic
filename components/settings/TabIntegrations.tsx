@@ -408,7 +408,23 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
           )}
           <Grid cols={2}>
             <Field label="Channel *"><select style={SEL_S} value={ruleForm.channel_id} onChange={e => setRuleForm(p => ({ ...p, channel_id: e.target.value }))}><option value="">Select channel...</option>{channels.map(c => <option key={c.id} value={c.id}>{c.name} ({channelTypeLabel(c.type)})</option>)}</select></Field>
-            <Field label="Message template" hint="Variables: {value} {threshold} {column} {source} {title} {date} {time} {table}"><input style={INP_S} value={ruleForm.message_template} onChange={e => setRuleForm(p => ({ ...p, message_template: e.target.value }))} placeholder="OEE dropped to {value}% on {date}" /></Field>
+            {(() => {
+              const hints: Record<string, string> = {
+                threshold:    'Variables: {value} {threshold} {column} {source} {date} {time}',
+                schedule:     'Variables: {name} {rows} {table} {date} {time}',
+                rca_complete: 'Variables: {title} {summary} {count} {date} {time}',
+              }
+              const placeholders: Record<string, string> = {
+                threshold:    'OEE dropped to {value}% on {date}',
+                schedule:     'Scheduled report: {name} — {rows} rows at {time}',
+                rca_complete: 'RCA complete: {title} ({count} session(s))',
+              }
+              return (
+                <Field label="Message template" hint={hints[ruleForm.trigger_type] || hints.threshold}>
+                  <input style={INP_S} value={ruleForm.message_template} onChange={e => setRuleForm(p => ({ ...p, message_template: e.target.value }))} placeholder={placeholders[ruleForm.trigger_type] || placeholders.threshold} />
+                </Field>
+              )
+            })()}
           </Grid>
           <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)', marginTop: 4 }}>
             <Btn variant="primary" onClick={saveRule} disabled={saving || !ruleForm.name.trim() || !ruleForm.channel_id || ((ruleForm.trigger_type === 'threshold' || ruleForm.trigger_type === 'schedule') && (!ruleForm.source_id || !(ruleForm.query || '').trim()))}>{saving ? 'Saving...' : ruleEditing ? 'Update' : 'Save rule'}</Btn>
