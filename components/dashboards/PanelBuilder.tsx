@@ -80,7 +80,32 @@ export default function PanelBuilder({
         ? apis.find(a => a.id === form.source_id)
         : files.find(f => f.id === form.source_id)
       const sourceLabel = (source as { label?: string })?.label || form.source_id
-      const prompt = `Write a ${form.source_type === 'database' ? 'SQL SELECT query' : form.source_type === 'api' ? 'OData URL path' : 'file search hint'} to answer: "${aiQuery}"\n\nSource: ${sourceLabel}\n\nReturn ONLY the query, no explanation, no markdown fences.`
+
+      // Level 2: fetch schema + sample rows before generating query
+      let schemaContext = ''
+      if (form.source_type === 'database' && form.source_id) {
+        try {
+          const sr = await fetch('/api/connections/schema-preview', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ connection_id: form.source_id }),
+          })
+          if (sr.ok) {
+            const spData = await sr.json()
+            const tbls = (spData?.schema?.tables || []).slice(0, 8)
+            const lines = tbls.map((t: Record<string,unknown>) => {
+              const cols = (t.columns as Array<Record<string,unknown>>)
+                .map((c: Record<string,unknown>) => c.name + ' ' + c.type + (c.pk ? ' PK' : '')).join(', ')
+              const fullName = t.schema ? t.schema + '.' + t.name : t.name as string
+              const sRows = spData?.samples?.[fullName]
+              const sStr = sRows?.length ? '\n    Sample: ' + JSON.stringify(sRows[0]).slice(0, 200) : ''
+              return '  ' + fullName + '(' + cols + ')' + sStr
+            })
+            if (lines.length) schemaContext = '\n\nDatabase schema:\n' + lines.join('\n')
+          }
+        } catch { /* proceed without schema */ }
+      }
+
+      const prompt = `Write a ${form.source_type === 'database' ? 'SQL SELECT query' : form.source_type === 'api' ? 'OData URL path' : 'file search hint'} to answer: "${aiQuery}"\n\nSource: ${sourceLabel}${schemaContext}\n\nReturn ONLY the query, no explanation, no markdown fences.`
       const r = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

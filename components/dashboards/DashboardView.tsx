@@ -16,6 +16,16 @@ interface Panel {
 interface PanelResult { panel_id: string; ok: boolean; data?: unknown; error?: string; latency_ms: number }
 interface Dashboard { id: string; name: string; description: string; refresh_sec: number; is_public: boolean; owner_id: string }
 
+const TIME_WINDOW_OPTS = [
+  { label: "Today", value: "today" },
+  { label: "Last 15m", value: "15m" },
+  { label: "Last 1h", value: "1h" },
+  { label: "Last 6h", value: "6h" },
+  { label: "Last 24h", value: "24h" },
+  { label: "Last 7d", value: "7d" },
+  { label: "Last 30d", value: "30d" },
+  { label: "Custom range…", value: "custom" },
+]
 const REFRESH_OPTS = [
   { label: 'Manual', value: 0 }, { label: '1 min', value: 60 },
   { label: '5 min', value: 300 }, { label: '15 min', value: 900 },
@@ -72,6 +82,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [lastFetch, setLastFetch] = useState<Date | null>(null)
   const [showBuilder, setShowBuilder] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
+  const [timeWindow, setTimeWindow] = useState('today')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo,   setCustomTo]   = useState('')
   const [toast, setToast] = useState('')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -90,14 +103,15 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const fetchData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setRefreshing(true)
     try {
-      const r = await fetch(`/api/dashboards/${id}/data`)
+      const tw = timeWindow === 'custom' && customFrom && customTo ? `custom&time_from=${encodeURIComponent(customFrom + 'T00:00:00')}&time_to=${encodeURIComponent(customTo + 'T23:59:59')}` : timeWindow
+      const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}`)
       const d = await r.json()
       const map: Record<string, PanelResult> = {}
       for (const res of (d.results || [])) map[res.panel_id] = res
       setResults(map)
       setLastFetch(new Date())
     } finally { setRefreshing(false) }
-  }, [id])
+  }, [id, timeWindow, customFrom, customTo])
 
   useEffect(() => {
     setLoading(true)
@@ -183,6 +197,25 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>{dashboard.name}</span>
 
+        {/* Time window selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}><rect x="1" y="2" width="10" height="9" rx="1"/><path d="M1 5h10M4 1v2M8 1v2"/></svg>
+          <select value={timeWindow} onChange={e => setTimeWindow(e.target.value)}
+            style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
+            {TIME_WINDOW_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {timeWindow === 'custom' ? (
+            <>
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>to</span>
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
+              <button onClick={() => fetchData(false)} disabled={!customFrom || !customTo} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: !customFrom || !customTo ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !customFrom || !customTo ? 0.5 : 1 }}>Apply</button>
+            </>
+          ) : (
+            <button onClick={() => fetchData(false)} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Apply</button>
+          )}
+        </div>
+
         {/* Refresh selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}>
@@ -264,7 +297,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 }}
                 onRefresh={() => {
                   // Refresh just this panel
-                  fetch(`/api/dashboards/${id}/data`)
+                  fetch(`/api/dashboards/${id}/data?time_window=${timeWindow === 'custom' && customFrom && customTo ? 'custom&time_from=' + encodeURIComponent(customFrom + 'T00:00:00') + '&time_to=' + encodeURIComponent(customTo + 'T23:59:59') : timeWindow}`)
                     .then(r => r.json())
                     .then(d => {
                       const r = (d.results || []).find((x: PanelResult) => x.panel_id === panel.id)
