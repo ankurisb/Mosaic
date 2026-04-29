@@ -90,7 +90,11 @@ export async function POST(req: Request) {
   if (action === 'test') {
     const rows = await sql`SELECT * FROM integration_channels WHERE id = ${body.id}`
     if (!rows.length) return Response.json({ ok: false, error: 'Channel not found' })
-    const channel = rows[0] as { id: string; name: string; type: string; config: Record<string, unknown> }
+    const raw = rows[0] as { id: string; name: string; type: string; config: unknown }
+    const parsedConfig: Record<string, unknown> = typeof raw.config === 'string'
+      ? (() => { try { return JSON.parse(raw.config as string) } catch { return {} } })()
+      : (raw.config as Record<string, unknown>) || {}
+    const channel = { ...raw, config: parsedConfig }
     const { sendNotification } = await import('@/lib/notify')
     const result = await sendNotification(channel, ` Test notification from Mosaic -- channel "${channel.name}" is working.`)
     return Response.json(result)
