@@ -27,6 +27,44 @@ interface RuleGroup {
   last_fired_at: string | null; fire_count_today: number; created_at: string
 }
 
+// -- Alert (integration_rules) types and constants ----------
+interface AlertRule {
+  id: string; name: string; active: boolean
+  trigger_type: string; source_type: string; source_id: string | null
+  query: string | null; condition: Record<string, unknown>
+  channel_id: string; channel_name: string; channel_type: string
+  message_template: string; last_run_at: string | null; next_run_at: string | null
+}
+interface AlertRun {
+  id: string; triggered_at: string; status: string
+  message_sent: string | null; error: string | null; latency_ms: number
+}
+const ALERT_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
+const TRIGGER_TYPE_OPTS = [
+  { value: 'threshold',    label: 'Threshold alert' },
+  { value: 'schedule',     label: 'Scheduled report' },
+  { value: 'rca_complete', label: 'RCA completed' },
+]
+const INTERVAL_OPTS_ALERT = [
+  { label: '5 minutes', value: 300 }, { label: '15 minutes', value: 900 },
+  { label: '1 hour', value: 3600 },   { label: '6 hours', value: 21600 },
+  { label: '1 day', value: 86400 },   { label: '1 week', value: 604800 },
+]
+const INP_A: React.CSSProperties = { width: '100%', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '9px 12px', fontSize: 13, color: 'var(--text)', outline: 'none', fontFamily: 'inherit' }
+const SEL_A: React.CSSProperties = { ...INP_A, cursor: 'pointer' }
+const MONO_A: React.CSSProperties = { ...INP_A, fontFamily: 'var(--font-mono)', fontSize: 12 }
+function fmtDateAlert(iso: string | null) {
+  if (!iso) return '--'
+  const d = new Date(iso)
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+function fmtIntervalAlert(sec: number) {
+  if (sec >= 86400) return `${Math.floor(sec / 86400)}d`
+  if (sec >= 3600)  return `${Math.floor(sec / 3600)}h`
+  if (sec >= 60)    return `${Math.floor(sec / 60)}m`
+  return `${sec}s`
+}
+
 const EMPTY_GROUP: Omit<RuleGroup, 'id' | 'created_at' | 'last_fired_at' | 'fire_count_today'> = {
   name: '', description: '', active: true, logic: 'OR',
   trigger: { type: 'schedule', interval_sec: 300 },
@@ -63,11 +101,20 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [form,      setForm]      = useState<typeof EMPTY_GROUP>({ ...EMPTY_GROUP })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving,    setSaving]    = useState(false)
+  const [activeTab, setActiveTab]  = useState<'alerts'|'workflow'>('alerts')
   const [toast,     setToast]     = useState('')
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
   const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
   const [notifGroups, setNotifGroups] = useState<Array<{id:string;name:string;members:unknown[]}>>([])  
+  // Alert (integration_rules) state
+  const [alerts,        setAlerts]        = useState<AlertRule[]>([])
+  const [showAlertForm, setShowAlertForm] = useState(false)
+  const [alertEditing,  setAlertEditing]  = useState<string | null>(null)
+  const [alertForm,     setAlertForm]     = useState({ ...ALERT_EMPTY })
+  const [expandedAlerts,setExpandedAlerts]= useState<Record<string, boolean>>({})
+  const [alertRunLogs,  setAlertRunLogs]  = useState<Record<string, AlertRun[]>>({})
+  const [alertSaving,   setAlertSaving]   = useState(false)
 
   useEffect(() => { load() }, [])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
@@ -75,20 +122,63 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [rd, dbr, apr, chr, ngr] = await Promise.all([
+      const [rd, dbr, apr, chr, ngr, alr] = await Promise.all([
         fetch('/api/rules').then(r => r.json()),
         fetch('/api/connections').then(r => r.json()).catch(() => ({ connections: [] })),
         fetch('/api/services').then(r => r.json()).catch(() => ({ services: [] })),
         fetch('/api/integrations/channels').then(r => r.json()).catch(() => ({ channels: [] })),
         fetch('/api/integrations/groups').then(r => r.json()).catch(() => ({ groups: [] })),
+        fetch('/api/integrations/rules').then(r => r.json()).catch(() => ({ rules: [] })),
       ])
       setGroups(rd.groups || [])
       setDbConns(dbr.connections || [])
       setApiSvcs(apr.services || [])
       setChannels(chr.channels || [])
       setNotifGroups(ngr.groups || [])
+      setAlerts(alr.rules || [])
     } finally { setLoading(false) }
   }, [])
+
+  // -- Alert (integration_rules) actions --------------------
+  async function saveAlert() {
+    if (!alertForm.name.trim() || !alertForm.channel_id) return
+    setAlertSaving(true)
+    try {
+      const action = alertEditing ? 'update' : 'create'
+      const condition: Record<string, unknown> = {}
+      if (alertForm.trigger_type === 'threshold') { condition.operator = alertForm.op; condition.value = Number(alertForm.threshold); condition.column = alertForm.column }
+      if (alertForm.trigger_type === 'schedule')  { condition.interval_sec = Number(alertForm.interval) }
+      if (alertForm.source_type === 'file_server' && alertForm.trigger_type !== 'rca_complete') { condition.file_format = alertForm.file_format }
+      const body: Record<string, unknown> = { action, name: alertForm.name.trim(), active: alertForm.active, trigger_type: alertForm.trigger_type, source_type: alertForm.source_type, source_id: alertForm.source_id || null, query: alertForm.query || null, condition, channel_id: alertForm.channel_id, message_template: alertForm.message_template }
+      if (alertEditing) body.id = alertEditing
+      await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      setShowAlertForm(false); setAlertEditing(null); setAlertForm({ ...ALERT_EMPTY })
+      setToast(alertEditing ? 'Alert updated' : 'Alert saved')
+      await load()
+    } finally { setAlertSaving(false) }
+  }
+  async function toggleAlert(id: string) {
+    await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'toggle', id }) })
+    setAlerts(p => p.map(r => r.id === id ? { ...r, active: !r.active } : r))
+  }
+  async function deleteAlert(id: string, name: string) {
+    if (!confirm(`Delete alert "${name}"?`)) return
+    await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) })
+    setAlerts(p => p.filter(r => r.id !== id)); setToast('Alert deleted')
+  }
+  async function loadAlertRuns(ruleId: string) {
+    const r = await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_runs', rule_id: ruleId }) })
+    const d = await r.json()
+    setAlertRunLogs(p => ({ ...p, [ruleId]: d.runs || [] }))
+  }
+  const triggerLabel = (t: string) => TRIGGER_TYPE_OPTS.find(x => x.value === t)?.label ?? t
+  const conditionSummary = (rule: AlertRule) => {
+    const c = rule.condition
+    if (rule.trigger_type === 'threshold')    return `When ${c.column} ${c.operator} ${c.value}`
+    if (rule.trigger_type === 'schedule')     return `Every ${fmtIntervalAlert(Number(c.interval_sec || 3600))}`
+    if (rule.trigger_type === 'rca_complete') return 'When an RCA session completes'
+    return ''
+  }
 
   async function saveGroup() {
     if (!form.name.trim()) return
@@ -149,13 +239,9 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       )}
       {view !== 'list' && <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />}
       <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>
-        {view === 'list' ? 'Rules' : view === 'builder' ? (editingId ? 'Edit rule group' : 'New rule group') : active?.name}
+        {activeTab === 'alerts' ? 'Alerts' : view === 'list' ? 'Workflow rules' : view === 'builder' ? (editingId ? 'Edit rule group' : 'New rule group') : active?.name}
       </span>
-      {view === 'list' && isAdmin && (
-        <button onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + New group
-        </button>
-      )}
+
       {view === 'detail' && active && isAdmin && (
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={() => toggleGroup(active.id)} style={{ padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text2)' }}>
@@ -165,6 +251,124 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           <button onClick={() => deleteGroup(active.id, active.name)} style={{ padding: '5px 12px', background: 'var(--red-bg)', border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--red-t)' }}>Delete</button>
         </div>
       )}
+    </div>
+  )
+
+  // -- Tab strip ------------------------------------------------
+  const tabStrip = (
+    <div style={{ display: 'flex', gap: 2, padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', marginTop: -1 }}>
+      {(['alerts', 'workflow'] as const).map(tab => (
+        <button key={tab} onClick={() => { setActiveTab(tab); setView('list') }} style={{ padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400, color: activeTab === tab ? 'var(--text)' : 'var(--text3)', background: 'none', border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent-fg)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1 }}>
+          {tab === 'alerts' ? 'Alerts' : 'Workflow rules'}
+        </button>
+      ))}
+    </div>
+  )
+
+  // -- Alerts view -----------------------------------------------
+  const alertsView = (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: 'var(--text3)' }}>{alerts.length} alert{alerts.length !== 1 ? 's' : ''} configured</div>
+        {isAdmin && !showAlertForm && <button onClick={() => { setShowAlertForm(true); setAlertEditing(null); setAlertForm({ ...ALERT_EMPTY }) }} style={{ padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ New alert</button>}
+      </div>
+      {showAlertForm && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 18, marginBottom: 14, boxShadow: 'var(--shadow-md)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{alertEditing ? 'Edit alert' : 'New alert'}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+            <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Alert name *</label><input style={INP_A} value={alertForm.name} onChange={e => setAlertForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. OEE below 75% alert" /></div>
+            <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Trigger type</label><select style={SEL_A} value={alertForm.trigger_type} onChange={e => setAlertForm(p => ({ ...p, trigger_type: e.target.value }))}>{TRIGGER_TYPE_OPTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+          </div>
+          {(alertForm.trigger_type === 'threshold' || alertForm.trigger_type === 'schedule') && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+              <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Source *</label>
+                <select style={SEL_A} value={alertForm.source_id ? `${alertForm.source_type}:${alertForm.source_id}` : ''} onChange={e => { const v = e.target.value; if (!v) { setAlertForm(p => ({ ...p, source_type: 'database', source_id: '' })); return }; const [stype, ...rest] = v.split(':'); setAlertForm(p => ({ ...p, source_type: stype, source_id: rest.join(':') })) }}>
+                  <option value="">Select source...</option>
+                  {dbConns.length > 0 && <optgroup label="Databases">{dbConns.map(c => <option key={c.id} value={`database:${c.id}`}>{c.label}</option>)}</optgroup>}
+                  {apiSvcs.length > 0 && <optgroup label="API services">{apiSvcs.map(c => <option key={c.id} value={`api:${c.id}`}>{c.label}</option>)}</optgroup>}
+                </select>
+              </div>
+              {alertForm.source_type === 'file_server' ? (
+                <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>File format *</label><select style={SEL_A} value={alertForm.file_format} onChange={e => setAlertForm(p => ({ ...p, file_format: e.target.value }))}><option value="csv">CSV</option><option value="xlsx">Excel (xlsx)</option></select></div>
+              ) : <div />}
+            </div>
+          )}
+          {alertForm.trigger_type === 'threshold' && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8 }}>
+                <input style={MONO_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))} placeholder="column name" />
+                <select style={{ ...SEL_A, width: 64 }} value={alertForm.op} onChange={e => setAlertForm(p => ({ ...p, op: e.target.value }))}>{['<','<=','>','>=','=='].map(op => <option key={op} value={op}>{op}</option>)}</select>
+                <input style={{ ...INP_A, width: 80 }} type="number" value={alertForm.threshold} onChange={e => setAlertForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" />
+              </div>
+              <input style={MONO_A} value={alertForm.query || ''} onChange={e => setAlertForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT avg(oee_pct) as oee_pct FROM oee_hourly" />
+            </div>
+          )}
+          {alertForm.trigger_type === 'schedule' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+              <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Run every</label><select style={SEL_A} value={alertForm.interval} onChange={e => setAlertForm(p => ({ ...p, interval: e.target.value }))}>{INTERVAL_OPTS_ALERT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>SQL query</label><input style={MONO_A} value={alertForm.query || ''} onChange={e => setAlertForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT line, avg(oee_pct) FROM oee_daily GROUP BY line" /></div>
+            </div>
+          )}
+          {alertForm.trigger_type === 'rca_complete' && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', marginBottom: 10 }}>Fires automatically when any RCA session produces a completed output. No query needed.</div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+            <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Channel *</label><select style={SEL_A} value={alertForm.channel_id} onChange={e => setAlertForm(p => ({ ...p, channel_id: e.target.value }))}><option value="">Select channel...</option>{channels.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}</select></div>
+            <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Message template</label><input style={INP_A} value={alertForm.message_template} onChange={e => setAlertForm(p => ({ ...p, message_template: e.target.value }))} placeholder="OEE dropped to {value}% on {date}" /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <button onClick={saveAlert} disabled={alertSaving || !alertForm.name.trim() || !alertForm.channel_id} style={{ padding: '7px 18px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: alertSaving || !alertForm.name.trim() || !alertForm.channel_id ? 0.5 : 1 }}>{alertSaving ? 'Saving...' : alertEditing ? 'Update' : 'Save alert'}</button>
+            <button onClick={() => { setShowAlertForm(false); setAlertEditing(null) }} style={{ padding: '7px 14px', background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {alerts.length === 0 && !showAlertForm ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text3)', fontSize: 13 }}>No alerts yet. Click + New alert to create one.</div>
+      ) : alerts.map(rule => {
+        const expanded = expandedAlerts[rule.id]
+        return (
+          <div key={rule.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginBottom: 8, boxShadow: 'var(--shadow)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 5, background: rule.active ? '#16a34a' : '#d0d0d0' }} />
+              <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { const next = { ...expandedAlerts, [rule.id]: !expanded }; setExpandedAlerts(next); if (!expanded && !alertRunLogs[rule.id]) loadAlertRuns(rule.id) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.trigger_type === 'threshold' ? '#fef2f2' : rule.trigger_type === 'schedule' ? '#eff6ff' : '#f5f3ff', color: rule.trigger_type === 'threshold' ? '#dc2626' : rule.trigger_type === 'schedule' ? '#1d4ed8' : '#7c3aed', border: `1px solid ${rule.trigger_type === 'threshold' ? 'rgba(220,38,38,.2)' : rule.trigger_type === 'schedule' ? 'rgba(29,78,216,.2)' : 'rgba(124,58,237,.2)'}`, fontWeight: 600 }}>{triggerLabel(rule.trigger_type)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{rule.name}</span>
+                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.active ? '#f0fdf4' : 'var(--bg3)', color: rule.active ? '#16a34a' : 'var(--text3)', border: `1px solid ${rule.active ? 'rgba(22,163,74,.2)' : 'var(--border)'}` }}>{rule.active ? 'Active' : 'Paused'}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 12 }}>
+                  <span>{conditionSummary(rule)}</span>
+                  <span>{rule.channel_name}</span>
+                  {rule.next_run_at && <span>Next: {fmtDateAlert(rule.next_run_at)}</span>}
+                </div>
+              </div>
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => toggleAlert(rule.id)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>{rule.active ? 'Pause' : 'Resume'}</button>
+                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+                  <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+                </div>
+              )}
+            </div>
+            {expanded && (
+              <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 5 }}>Recent runs</div>
+                {(alertRunLogs[rule.id] || []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text4)' }}>No runs yet</div>
+                ) : (alertRunLogs[rule.id] || []).map(run => (
+                  <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 11 }}>
+                    <span style={{ fontWeight: 600, color: run.status === 'sent' ? '#16a34a' : run.status === 'error' ? '#dc2626' : 'var(--text3)', flexShrink: 0 }}>{run.status}</span>
+                    <span style={{ color: 'var(--text3)', flexShrink: 0 }}>{fmtDateAlert(run.triggered_at)}</span>
+                    {run.message_sent && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>{run.message_sent}</span>}
+                    {run.error && <span style={{ color: '#dc2626', flex: 1 }}>{run.error}</span>}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text4)', flexShrink: 0 }}>{run.latency_ms}ms</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 
@@ -181,6 +385,11 @@ export default function RulesPage({ user }: { user: SessionUser }) {
         ))}
       </div>
 
+      {!loading && groups.length > 0 && isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ New group</button>
+        </div>
+      )}
       {loading ? <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3)', fontSize: 13 }}>Loading...</div>
       : groups.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -482,9 +691,11 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       {topbar}
-      {view === 'list'    && listView}
-      {view === 'detail'  && detailView}
-      {view === 'builder' && builderView}
+      {tabStrip}
+      {activeTab === 'alerts' && alertsView}
+      {activeTab === 'workflow' && view === 'list'    && listView}
+      {activeTab === 'workflow' && view === 'detail'  && detailView}
+      {activeTab === 'workflow' && view === 'builder' && builderView}
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>}
     </div>
   )
