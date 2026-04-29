@@ -23,6 +23,7 @@ interface RuleGroup {
   id: string; name: string; description: string; active: boolean; logic: string
   trigger: Trigger; conditions: Condition[]; controls: Controls
   actions: RuleAction[]; recipients: Recipient[]; message_template: string
+  email_channel_id?: string | null; sms_channel_id?: string | null
   last_fired_at: string | null; fire_count_today: number; created_at: string
 }
 
@@ -30,7 +31,7 @@ const EMPTY_GROUP: Omit<RuleGroup, 'id' | 'created_at' | 'last_fired_at' | 'fire
   name: '', description: '', active: true, logic: 'OR',
   trigger: { type: 'schedule', interval_sec: 300 },
   conditions: [], controls: { cooldown_sec: 7200, active_hours: '06:00-22:00', max_per_day: 5, consecutive: 1 },
-  actions: [], recipients: [], message_template: '',
+  actions: [], recipients: [], message_template: '', email_channel_id: '', sms_channel_id: '',
 }
 const TRIGGER_LABELS: Record<string, string> = { schedule: 'Scheduled', threshold: 'Threshold', rca_complete: 'RCA completed', manual: 'Manual' }
 const OP_LABELS: Record<string, string> = { '<': '<', '<=': '', '>': '>', '>=': '', '==': '=', '!=': '' }
@@ -66,6 +67,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
   const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
+  const [notifGroups, setNotifGroups] = useState<Array<{id:string;name:string;members:unknown[]}>>([])  
 
   useEffect(() => { load() }, [])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
@@ -73,16 +75,18 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [rd, dbr, apr, chr] = await Promise.all([
+      const [rd, dbr, apr, chr, ngr] = await Promise.all([
         fetch('/api/rules').then(r => r.json()),
         fetch('/api/connections').then(r => r.json()).catch(() => ({ connections: [] })),
         fetch('/api/services').then(r => r.json()).catch(() => ({ services: [] })),
         fetch('/api/integrations/channels').then(r => r.json()).catch(() => ({ channels: [] })),
+        fetch('/api/integrations/groups').then(r => r.json()).catch(() => ({ groups: [] })),
       ])
       setGroups(rd.groups || [])
       setDbConns(dbr.connections || [])
       setApiSvcs(apr.services || [])
       setChannels(chr.channels || [])
+      setNotifGroups(ngr.groups || [])
     } finally { setLoading(false) }
   }, [])
 
@@ -116,7 +120,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   function startEdit(g: RuleGroup) {
     setEditingId(g.id)
-    setForm({ name: g.name, description: g.description, active: g.active, logic: g.logic, trigger: g.trigger, conditions: g.conditions, controls: g.controls, actions: g.actions, recipients: g.recipients, message_template: g.message_template })
+    setForm({ name: g.name, description: g.description, active: g.active, logic: g.logic, trigger: g.trigger, conditions: g.conditions, controls: g.controls, actions: g.actions, recipients: g.recipients, message_template: g.message_template, email_channel_id: g.email_channel_id || '', sms_channel_id: g.sms_channel_id || '' })
     setView('builder')
   }
 
@@ -409,6 +413,49 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           <div><label style={LBL}>Consecutive</label>
             <select style={SEL} value={form.controls.consecutive} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, consecutive: Number(e.target.value) } }))}>
               {[1,2,3,5].map(n => <option key={n} value={n}>{n === 1 ? 'Every breach' : `${n} in a row`}</option>)}
+            </select>
+          </div>
+        </div>
+      </Section>
+
+      {/* Recipient groups */}
+      <Section title="Recipient groups">
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>Add notification groups — members receive alerts via the channels configured below.</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {(form.recipients as unknown as Array<Record<string,unknown>>).filter(r => r['type'] === 'group').map((r, i) => (
+            <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              {r.label as string}
+              <button onClick={() => setForm(p => ({ ...p, recipients: p.recipients.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <select style={{ ...SEL, flex: 1, fontSize: 11 }} onChange={e => {
+            const g = notifGroups.find(x => x.id === e.target.value)
+            if (!g) return
+            if ((form.recipients as unknown as Array<Record<string,unknown>>).some(r => r['type'] === 'group' && r['group_id'] === g.id)) return
+            setForm(p => ({ ...p, recipients: [...p.recipients, { type: 'group', group_id: g.id, label: g.name }] }))
+            e.target.value = ''
+          }}>
+            <option value="">+ Add recipient group...</option>
+            {notifGroups.map(g => <option key={g.id} value={g.id}>{g.name} ({(g.members as unknown[]).length} members)</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={LBL}>Email channel</label>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>Used to reach email members in groups</div>
+            <select style={SEL} value={form.email_channel_id || ''} onChange={e => setForm(p => ({ ...p, email_channel_id: e.target.value }))}>
+              <option value="">None</option>
+              {channels.filter(c => c.type === 'email').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LBL}>SMS channel</label>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>Used to reach phone members in groups</div>
+            <select style={SEL} value={form.sms_channel_id || ''} onChange={e => setForm(p => ({ ...p, sms_channel_id: e.target.value }))}>
+              <option value="">None</option>
+              {channels.filter(c => c.type === 'twilio_sms').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>

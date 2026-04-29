@@ -20,21 +20,22 @@ export async function POST(req: Request) {
   const { action } = body
 
   if (action === 'create') {
-    const { name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template } = body
+    const { name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template, email_channel_id, sms_channel_id } = body
     if (!name?.trim()) return Response.json({ error: 'Name required' }, { status: 400 })
     const rows = await sql`
-      INSERT INTO rule_groups (name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template, created_by)
+      INSERT INTO rule_groups (name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template, email_channel_id, sms_channel_id, created_by)
       VALUES (${name.trim()}, ${description ?? ''}, ${active ?? true}, ${logic ?? 'OR'},
               ${JSON.stringify(trigger ?? {})}, ${JSON.stringify(conditions ?? [])},
               ${JSON.stringify(controls ?? {})}, ${JSON.stringify(actions ?? [])},
               ${JSON.stringify(recipients ?? [])}, ${message_template ?? ''},
+              ${email_channel_id ?? null}, ${sms_channel_id ?? null},
               ${session.id})
       RETURNING id`
     return Response.json({ id: rows[0].id })
   }
 
   if (action === 'update') {
-    const { id, name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template } = body
+    const { id, name, description, active, logic, trigger, conditions, controls, actions, recipients, message_template, email_channel_id, sms_channel_id } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`
       UPDATE rule_groups SET
@@ -48,6 +49,8 @@ export async function POST(req: Request) {
         actions          = ${JSON.stringify(actions ?? [])},
         recipients       = ${JSON.stringify(recipients ?? [])},
         message_template = ${message_template ?? ''},
+        email_channel_id = ${email_channel_id ?? null},
+        sms_channel_id   = ${sms_channel_id ?? null},
         updated_at       = datetime('now')
       WHERE id = ${id}`
     return Response.json({ ok: true })

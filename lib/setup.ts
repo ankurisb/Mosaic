@@ -207,6 +207,8 @@ export async function setupDatabase() {
   )`
 
   await sql`CREATE INDEX IF NOT EXISTS idx_rule_groups_active ON rule_groups(active, updated_at DESC)`.catch(() => {})
+  await sql`ALTER TABLE rule_groups ADD COLUMN email_channel_id TEXT`.catch(() => {})
+  await sql`ALTER TABLE rule_groups ADD COLUMN sms_channel_id   TEXT`.catch(() => {})
 
   // -- Integration channels --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS integration_channels (

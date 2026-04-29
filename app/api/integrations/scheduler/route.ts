@@ -384,11 +384,15 @@ export async function POST(req: Request) {
             if (!chanRow) continue
 
             const ch     = chanRow as Record<string, unknown>
+            const chConfigRaw = ch.config
+            const chConfig: Record<string, unknown> = typeof chConfigRaw === 'string'
+              ? (() => { try { return JSON.parse(chConfigRaw) } catch { return {} } })()
+              : (chConfigRaw as Record<string, unknown>) || {}
             const channel: import('@/lib/notify').Channel = {
               id:     ch.id     as string,
               name:   ch.name   as string,
               type:   ch.type   as string,
-              config: ch.config as Record<string, unknown>,
+              config: chConfig,
             }
 
             const msgTemplate = (action.message_template as string) || (g.message_template as string) || '{{group_name}}: {{triggered_conditions}}'
@@ -406,6 +410,43 @@ export async function POST(req: Request) {
 
             if (result.ok) fired.push(`${groupId}:${actionType}`)
             else errors.push(`${groupId}/${channelId}: ${result.error}`)
+
+            // -- Dispatch to notification group members ----------
+            const emailChId = (g.email_channel_id as string | null) ?? null
+            const smsChId   = (g.sms_channel_id   as string | null) ?? null
+            // Use group-level recipients (not action-level) for group dispatch
+            const groupRecipients = recipients.filter(r => r.type === 'group')
+            for (const grpRef of groupRecipients) {
+              const grpId = grpRef.group_id as string
+              if (!grpId) continue
+              const [grpRow] = await sql`SELECT members FROM notification_groups WHERE id = ${grpId}`
+              if (!grpRow) continue
+              const members: Record<string, unknown>[] = typeof grpRow.members === 'string'
+                ? (() => { try { return JSON.parse(grpRow.members as string) } catch { return [] } })()
+                : (grpRow.members as Record<string, unknown>[]) || []
+              for (const member of members) {
+                const mtype = member.type as string
+                let mChId: string | null = null
+                if (mtype === 'email') mChId = emailChId
+                else if (mtype === 'phone') mChId = smsChId
+                if (!mChId) continue
+                const [mChanRow] = await sql`SELECT * FROM integration_channels WHERE id = ${mChId} AND active = true`
+                if (!mChanRow) continue
+                const mCh = mChanRow as Record<string, unknown>
+                const mChConfig: Record<string, unknown> = typeof mCh.config === 'string'
+                  ? (() => { try { return JSON.parse(mCh.config as string) } catch { return {} } })()
+                  : (mCh.config as Record<string, unknown>) || {}
+                const mChannel: import('@/lib/notify').Channel = {
+                  id: mCh.id as string, name: mCh.name as string,
+                  type: mCh.type as string, config: mChConfig,
+                }
+                // Override recipients field for SMS/email with individual member address
+                if (mtype === 'email' && member.address) mChannel.config = { ...mChConfig, recipients: [member.address] }
+                if (mtype === 'phone'  && member.number)  mChannel.config = { ...mChConfig, to_number: member.number }
+                const mResult = await sendNotification(mChannel, message)
+                if (!mResult.ok) errors.push(`${groupId}/group-member: ${mResult.error}`)
+              }
+            }
           }
 
           // -- API call action ------------------------------------
