@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
+import { SupersetLink } from './SupersetLink'
 
 interface Dashboard {
   id: string; name: string; description: string
@@ -97,10 +98,13 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
             <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 400, color: 'var(--text)', marginBottom: 4 }}>Analytics dashboards</h1>
             <p style={{ fontSize: 13, color: 'var(--text3)' }}>Self-service dashboards that query your connected data sources and auto-refresh.</p>
           </div>
-          <button onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <SupersetLink />
+            <button onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', flexShrink: 0 }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg>
             New dashboard
           </button>
+          </div>
         </div>
 
         {/* Create form */}
