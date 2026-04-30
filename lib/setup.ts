@@ -421,5 +421,116 @@ export async function setupDatabase() {
     }
   }
 
+  // -- Superset: set Public role permissions for embedded dashboards ----
+  // Fire-and-forget: never blocks Mosaic startup
+  initSupersetPublicRole().catch(() => {})
+
+  // -- Superset: set Public role permissions for embedded dashboards ----
+  // Fire-and-forget: never blocks Mosaic startup
+
   done = true
+}
+
+async function initSupersetPublicRole(): Promise<void> {
+  const supersetUrl = process.env.SUPERSET_URL
+  const supersetUser = process.env.SUPERSET_ADMIN_USER || 'admin'
+  const supersetPass = process.env.SUPERSET_ADMIN_PASSWORD
+  if (!supersetUrl || !supersetPass) return
+
+  try {
+    // Wait up to 30s for Superset to be ready
+    let ready = false
+    for (let i = 0; i < 6; i++) {
+      try {
+        const h = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(5000) })
+        if (h.ok) { ready = true; break }
+      } catch {}
+      await new Promise(r => setTimeout(r, 5000))
+    }
+    if (!ready) return
+
+    // Login
+    const loginRes = await fetch(`${supersetUrl}/api/v1/security/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: supersetUser, password: supersetPass, provider: 'db', refresh: false }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!loginRes.ok) return
+    const token = (await loginRes.json()).access_token
+    if (!token) return
+
+    // Get CSRF + session cookie
+    const csrfRes = await fetch(`${supersetUrl}/api/v1/security/csrf_token/`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!csrfRes.ok) return
+    const csrf = (await csrfRes.json()).result
+    const setCookies = csrfRes.headers.getSetCookie?.() || []
+    const sessionCookie = setCookies.map((c: string) => c.split(';')[0]).find((c: string) => c.startsWith('session=')) || null
+
+    // Get Public role ID
+    const rolesRes = await fetch(`${supersetUrl}/api/v1/security/roles/?q=(filters:!((col:name,opr:RoleNameFilter,val:Public)))`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const rolesData = await rolesRes.json()
+    const publicRole = rolesData.result?.find((r: { name: string }) => r.name === 'Public')
+    if (!publicRole) return
+    const roleId = publicRole.id
+
+    // Get current permissions on Public role
+    const permsRes = await fetch(`${supersetUrl}/api/v1/security/roles/${roleId}/permissions/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const permsData = await permsRes.json()
+    const existing = new Set((permsData.result || []).map((p: { permission_name: string; view_menu_name: string }) => `${p.permission_name}||${p.view_menu_name}`))
+
+    const needed = [
+      { permission_name: 'can read', view_menu_name: 'Dashboard' },
+      { permission_name: 'can read', view_menu_name: 'Chart' },
+      { permission_name: 'can read', view_menu_name: 'Dataset' },
+      { permission_name: 'can read', view_menu_name: 'Query' },
+      { permission_name: 'all database access', view_menu_name: 'all_database_access' },
+    ]
+
+    const missing = needed.filter(p => !existing.has(`${p.permission_name}||${p.view_menu_name}`))
+    if (missing.length === 0) {
+      console.log('[superset-init] Public role permissions already set')
+      return
+    }
+
+    // Get all permission-view pairs to find IDs
+    const allPermsRes = await fetch(`${supersetUrl}/api/v1/security/permissions-resources/?q=(page_size:1000)`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const allPermsData = await allPermsRes.json()
+    const allPerms = allPermsData.result || []
+
+    const toAdd = missing.map(p => {
+      const found = allPerms.find((ap: { permission_name: string; view_menu_name: string; id: number }) =>
+        ap.permission_name === p.permission_name && ap.view_menu_name === p.view_menu_name
+      )
+      return found?.id
+    }).filter(Boolean)
+
+    if (toAdd.length === 0) return
+
+    // Add missing permissions to Public role
+    await fetch(`${supersetUrl}/api/v1/security/roles/${roleId}/permissions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-CSRFToken': csrf,
+        'Content-Type': 'application/json',
+        Referer: supersetUrl,
+        ...(sessionCookie ? { Cookie: sessionCookie } : {}),
+      },
+      body: JSON.stringify({ permission_view_menu_ids: toAdd }),
+      signal: AbortSignal.timeout(10000),
+    })
+    console.log(`[superset-init] Added ${toAdd.length} permissions to Public role`)
+  } catch (err) {
+    console.warn('[superset-init] Non-fatal error setting Public role:', err)
+  }
 }
