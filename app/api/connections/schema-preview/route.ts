@@ -26,8 +26,9 @@ export async function POST(req: NextRequest) {
         connection_id,
         sql: `SELECT * FROM ${tableName} LIMIT 3`,
       })
-      if (result?.rows?.length > 0) {
-        samples[tableName] = result.rows
+      const r = result as { rows?: unknown[] } | null
+      if (r?.rows?.length) {
+        samples[tableName] = r.rows
       }
     } catch {
       // Skip tables that error

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc})
         RETURNING id`
       syncToSuperset({
-        id: rows[0].id,
+        id: (rows[0] as { id: string }).id,
         label,
         dialect: dialect || 'postgres',
         host: host || undefined,
@@ -44,8 +44,8 @@ export async function POST(req: Request) {
         ssl_mode: ssl_mode || undefined,
         schema_name: schema_name || undefined,
       }).catch(() => {})
-      refreshSchemaInBackground(rows[0].id)
-      return Response.json({ id: rows[0].id })
+      refreshSchemaInBackground((rows[0] as { id: string }).id)
+      return Response.json({ id: (rows[0] as { id: string }).id })
     } else {
       await sql`
         UPDATE db_connections SET

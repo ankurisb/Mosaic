@@ -27,11 +27,11 @@ async function s3SignedFetch(
     region:  'us-east-1',
     body,
   }
-  aws4.sign(opts, { accessKeyId, secretAccessKey })
+  aws4.sign(opts as any, { accessKeyId, secretAccessKey })
   return fetch(url, {
     method,
     headers: opts.headers as Record<string, string>,
-    body,
+    body: body as BodyInit,
     signal: AbortSignal.timeout(30000),
   })
 }
@@ -421,7 +421,7 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       const db2 = client.db(conn.database_name as string)
       const col = db2.collection(query.collection as string)
       const cursor = col.find((query.filter as object) || {})
-      if (query.sort) cursor.sort(query.sort as object)
+      if (query.sort) cursor.sort(query.sort as Record<string, 1 | -1>)
       if (query.projection) cursor.project(query.projection as object)
       const limit = Math.min((query.limit as number) || 20, 200)
       cursor.limit(limit)
@@ -547,21 +547,21 @@ async function callApi(connectionId: string, method: string, path: string, body?
     JOIN api_services s ON s.id = c.service_id
     WHERE c.id = ${connectionId}`
   if (!connRows.length) throw new Error(`API connection "${connectionId}" not found.`)
-  const conn = connRows[0]
-  const base = conn.base_url.replace(/\/$/, '')
-  const basePath = (conn.base_path || '').replace(/\/$/, '')
+  const conn = connRows[0] as Record<string, unknown>
+  const base = (conn.base_url as string).replace(/\/$/, '')
+  const basePath = ((conn.base_path as string) || '').replace(/\/$/, '')
   const reqPath = path.startsWith('/') ? path : '/' + path
-  const url = base + basePath + reqPath
+  let url = base + basePath + reqPath
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  try { Object.assign(headers, JSON.parse(conn.default_headers || '{}')) } catch {}
+  try { Object.assign(headers, JSON.parse((conn.default_headers as string) || '{}')) } catch {}
   let authConfig: Record<string, string> = {}
-  try { authConfig = JSON.parse(decrypt((conn as Record<string, string>).auth_config || '')) } catch {}
-  const authType = conn.auth_type as string
+  try { authConfig = JSON.parse(decrypt((conn.auth_config as string) || '')) } catch {}
+  const authType = (conn.auth_type as string) || ''
   if (authType === 'bearer' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
   else if (authType === 'api_key_header' && authConfig.header && authConfig.key) headers[authConfig.header] = authConfig.key
   else if (authType === 'basic' && authConfig.username && authConfig.password) headers['Authorization'] = 'Basic ' + Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64')
   else if (authType === 'oauth2_client' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
-  if (conn.api_version && conn.version_header) headers[conn.version_header] = conn.api_version
+  if (conn.api_version && conn.version_header) headers[conn.version_header as string] = conn.api_version as string
   // SAP OData: auto-inject correct format headers/params based on path
   const isSap = basePath.includes('/sap/opu/')
   const isSapV4 = isSap && (basePath.includes('odata4') || basePath.includes('srvd_a2x'))
@@ -578,7 +578,7 @@ async function callApi(connectionId: string, method: string, path: string, body?
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), conn.request_timeout_ms || 30000)
+  const timeout = setTimeout(() => controller.abort(), (conn.request_timeout_ms as number) || 30000)
   try {
     const res = await fetch(url, {
       method, headers,

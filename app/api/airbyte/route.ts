@@ -11,6 +11,17 @@ export const runtime = 'nodejs'
 // ── OAuth2 token cache ────────────────────────────────────────
 const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 
+type AirbyteInstance = {
+  id: string
+  url: string
+  username: string
+  password_enc?: string | null
+  client_id?: string | null
+  client_secret_enc?: string | null
+  workspace_id?: string | null
+  [key: string]: unknown
+}
+
 async function getOAuthToken(base: string, clientId: string, clientSecret: string): Promise<string> {
   const cacheKey = `${base}:${clientId}`
   const cached = tokenCache.get(cacheKey)
@@ -51,7 +62,7 @@ async function getOAuthToken(base: string, clientId: string, clientSecret: strin
 //   2. Docker Compose: Basic auth (airbyte:password)
 // Tries public API first, falls back to legacy config API
 async function ab(
-  inst: { url: string; username: string; password_enc?: string | null; client_id?: string | null; client_secret_enc?: string | null },
+  inst: AirbyteInstance,
   publicPath: string,
   configPath: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
@@ -146,10 +157,10 @@ async function ensureTable() {
 async function getInstance(sql: ReturnType<typeof getDb>, id: string) {
   const rows = await sql`SELECT * FROM airbyte_instances WHERE id = ${id}`
   if (!rows.length) throw new Error('Instance not found')
-  return rows[0] as Record<string, unknown>
+  return rows[0] as AirbyteInstance
 }
 
-async function getWorkspaceId(sql: ReturnType<typeof getDb>, inst: Record<string, unknown>): Promise<string> {
+async function getWorkspaceId(sql: ReturnType<typeof getDb>, inst: AirbyteInstance): Promise<string> {
   if (inst.workspace_id) return inst.workspace_id as string
   const data = await ab(inst as any, '/workspaces', '/workspaces/list', 'GET') as any
   const ws = data.data || data.workspaces || []
@@ -179,7 +190,7 @@ export async function GET(req: Request) {
 
   // All other actions need an instance id
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-  let inst: Record<string, unknown>
+  let inst: AirbyteInstance
   try { inst = await getInstance(sql, id) }
   catch { return Response.json({ error: 'Not found' }, { status: 404 }) }
 
@@ -354,7 +365,7 @@ export async function POST(req: Request) {
 
   // ── Discover workspace
   if (action === 'discover_workspace') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.id) }
     catch { return Response.json({ error: 'Not found' }, { status: 404 }) }
     try {
@@ -369,7 +380,7 @@ export async function POST(req: Request) {
 
   // ── Create source in Airbyte
   if (action === 'create_source') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -386,7 +397,7 @@ export async function POST(req: Request) {
 
   // ── Update source in Airbyte
   if (action === 'update_source') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -401,7 +412,7 @@ export async function POST(req: Request) {
 
   // ── Delete source in Airbyte
   if (action === 'delete_source') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -412,7 +423,7 @@ export async function POST(req: Request) {
 
   // ── Create connection in Airbyte
   if (action === 'create_connection') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -430,7 +441,7 @@ export async function POST(req: Request) {
 
   // ── Update connection (pause/resume/reschedule)
   if (action === 'update_connection') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -446,7 +457,7 @@ export async function POST(req: Request) {
 
   // ── Delete connection
   if (action === 'delete_connection') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
@@ -457,12 +468,12 @@ export async function POST(req: Request) {
 
   // ── Trigger sync job
   if (action === 'trigger_sync') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
       const data = await ab(inst, '/jobs', '/connections/sync', 'POST',
-        { type: 'sync', connectionId: body.connectionId, connectionId: body.connectionId }) as any
+        { type: 'sync', connectionId: body.connectionId }) as any
       await sql`UPDATE airbyte_instances SET last_synced=datetime('now') WHERE id=${body.instanceId}`
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
@@ -470,19 +481,19 @@ export async function POST(req: Request) {
 
   // ── Trigger reset job
   if (action === 'trigger_reset') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
       const data = await ab(inst, '/jobs', '/connections/reset', 'POST',
-        { type: 'reset', connectionId: body.connectionId, connectionId: body.connectionId }) as any
+        { type: 'reset', connectionId: body.connectionId }) as any
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }
 
   // ── Cancel a running job
   if (action === 'cancel_job') {
-    let inst: Record<string, unknown>
+    let inst: AirbyteInstance
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {

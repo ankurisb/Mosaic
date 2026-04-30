@@ -511,7 +511,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 }
 
 // ── AirbyteSection ───────────────────────────────────────────
-interface AbInstance { id: string; label: string; url: string; username: string; workspace_id: string | null; last_synced: string | null }
+interface AbInstance { id: string; label: string; url: string; username: string; workspace_id: string | null; last_synced: string | null; client_id?: string | null }
 interface AbSource   { sourceId?: string; id?: string; name: string; sourceName?: string; sourceType?: string; status?: string }
 interface AbDest     { destinationId?: string; id?: string; name: string; destinationType?: string; destinationName?: string }
 interface AbConn     { connectionId?: string; id?: string; name: string; status: string; schedule?: Record<string,unknown>; syncCatalog?: { streams?: unknown[] } }
@@ -566,7 +566,7 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
   const [instances, setInstances] = React.useState<AbInstance[]>([])
   const [loading, setLoading]     = React.useState(true)
   const [form, setForm]           = React.useState(AB_EMPTY)
-  const authMode = form.client_id || form.auth_mode === 'oauth' ? 'oauth' : 'basic'
+  const authMode = form.client_id ? 'oauth' : 'basic'
   const [editing, setEditing]     = React.useState<string | null>(null)
   const [saving, setSaving]       = React.useState(false)
   const [expanded, setExpanded]   = React.useState<string | null>(null)
@@ -724,7 +724,7 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
   }
 
   function openEdit(inst: AbInstance) {
-    setForm({ label: inst.label, url: inst.url, username: inst.username, password: '' })
+    setForm({ label: inst.label, url: inst.url, username: inst.username, password: '', client_id: inst.client_id || '', client_secret: '' })
     setEditing(inst.id); setShowForm(true)
   }
 
