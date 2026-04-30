@@ -423,8 +423,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         {/* Logo */}
         <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, color: 'var(--text)' }}>Mosaic</span>
-            <span style={{ fontSize: 10, color: 'var(--text4)', background: 'var(--bg3)', padding: '1px 6px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)' }}>v1.0.0</span>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)' }}>Mosaic</span>
           </div>
           <button onClick={newConv} title="New conversation"
             style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
@@ -477,6 +476,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                 <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
+                <div style={{ fontSize: 10, color: 'var(--text4)' }}>v1.0.0</div>
               </div>
             </button>
             {showUserMenu && (

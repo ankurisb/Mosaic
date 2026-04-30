@@ -138,8 +138,8 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
 
   return (
     <div>
-      <PageTitle>Integrations</PageTitle>
-      <PageSub>Connect Mosaic to Slack, Teams, email, SMS, and WhatsApp. Rules fire automatically via Vercel Cron (every minute).</PageSub>
+      <PageTitle>Notifications</PageTitle>
+      <PageSub>Connect Mosaic to Slack, Teams, email, SMS, and WhatsApp. Rules fire automatically every minute.</PageSub>
 
       {/* -- CHANNELS -------------------------------------------- */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

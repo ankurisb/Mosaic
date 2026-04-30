@@ -8,9 +8,7 @@ import TabAuth from './TabAuth'
 import TabUsers from './TabUsers'
 import TabUsage from './TabUsage'
 import TabMonitor from './TabMonitor'
-import TabDatabases from './TabDatabases'
-import TabAPIs from './TabAPIs'
-import TabFileServers from './TabFileServers'
+import TabDataSources from './TabDataSources'
 import TabAbout from './TabAbout'
 import TabRcaWorkflows from './TabRcaWorkflows'
 import TabIntegrations from './TabIntegrations'
@@ -20,12 +18,10 @@ const TABS = [
   { id: 'auth',          label: 'Authentication' },
   { id: 'users',         label: 'Users' },
   { id: 'usage',         label: 'Usage analytics' },
-  { id: 'monitor',       label: 'Monitoring' },
-  { id: 'databases',     label: 'Data sources' },
-  { id: 'apis',          label: 'API connections' },
-  { id: 'files',         label: 'File servers' },
+  { id: 'system-health', label: 'System health' },
+  { id: 'data-sources',  label: 'Data sources' },
   { id: 'rca-workflows', label: 'RCA workflows' },
-  { id: 'integrations',  label: 'Integrations' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'about',         label: 'About' },
 ]
 
@@ -37,7 +33,7 @@ function TabIcon({ id }: { id: string }) {
     case 'users':        return <svg {...p}><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/><path d="M11 8.5c1.4 0 2.5.9 2.5 2"/></svg>
     case 'usage':        return <svg {...p}><rect x="1" y="7" width="3" height="6" rx="0.5"/><rect x="5.5" y="4" width="3" height="9" rx="0.5"/><rect x="10" y="1" width="3" height="12" rx="0.5"/></svg>
     case 'monitor':      return <svg {...p}><rect x="1" y="2" width="12" height="8" rx="1.5"/><path d="M4 13h6M7 10v3"/><path d="M3 6l2 2 2-3 2 2 1.5-1.5"/></svg>
-    case 'databases':    return <svg {...p}><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
+    case 'data-sources': return <svg {...p}><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
     case 'apis':         return <svg {...p}><rect x="1" y="4" width="12" height="6" rx="1.5"/><path d="M3.5 7h2M8.5 7h2"/></svg>
     case 'files':        return <svg {...p}><path d="M2 3h4l1.5 2H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>
     case 'rca-workflows':return <svg {...p}><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="10" width="4" height="3" rx="1"/><rect x="9" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="10"/><line x1="3" y1="7" x2="9" y2="7"/></svg>
@@ -52,7 +48,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const validTabs = ['keys','auth','users','usage','monitor','databases','apis','files','rca-workflows','integrations','about']
+      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','notifications','about']
       if (validTabs.includes(hash)) return hash
     }
     return 'keys'
@@ -66,9 +62,8 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
 
         {/* Logo */}
         <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
-            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, color: 'var(--text)' }}>Mosaic</span>
-            <span style={{ fontSize: 10, color: 'var(--text4)', background: 'var(--bg3)', padding: '1px 6px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)' }}>v1.0.0</span>
+          <div style={{ marginBottom: 2 }}>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)' }}>Mosaic</span>
           </div>
           <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--text3)', cursor: 'pointer', padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
@@ -95,6 +90,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
             <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
+            <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>v1.0.0</div>
           </div>
           <ThemeToggle />
         </div>
@@ -107,13 +103,11 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}
           {tab === 'usage'     && <TabUsage user={user} />}
-          {tab === 'monitor'   && <TabMonitor />}
-          {tab === 'databases'  && <TabDatabases user={user} />}
-          {tab === 'apis'      && <TabAPIs user={user} />}
-          {tab === 'files'          && <TabFileServers user={user} />}
+          {tab === 'system-health' && <TabMonitor />}
+          {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
-          {tab === 'integrations'  && <TabIntegrations user={user} />}
+          {tab === 'notifications' && <TabIntegrations user={user} />}
         </div>
       </div>
     </div>
