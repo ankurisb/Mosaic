@@ -172,6 +172,7 @@ export async function setupDatabase() {
 
   await sql`CREATE INDEX IF NOT EXISTS idx_dashboards_owner ON dashboards(owner_id, updated_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_panels_dashboard ON dashboard_panels(dashboard_id, sort_order)`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN superset_embed_uuid TEXT`.catch(() => {})
 
 
 

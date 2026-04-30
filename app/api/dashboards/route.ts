@@ -9,7 +9,7 @@ export async function GET() {
   const sql = getDb()
   const rows = await sql`
     SELECT d.id, d.name, d.description, d.owner_id, d.is_public,
-           d.refresh_sec, d.created_at, d.updated_at,
+           d.refresh_sec, d.created_at, d.updated_at, d.superset_embed_uuid,
            COUNT(p.id) AS panel_count
     FROM   dashboards d
     LEFT JOIN dashboard_panels p ON p.dashboard_id = d.id

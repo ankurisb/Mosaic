@@ -127,3 +127,12 @@ input, textarea, button, select { font-family: inherit; }
 /* Show delete button on conversation hover */
 .conv-item:hover .conv-del-btn { opacity: 0.6 !important; }
 .conv-del-btn:hover { opacity: 1 !important; color: var(--red) !important; }
+
+/* Superset embedded dashboard iframe */
+[data-superset-embed] iframe,
+div[class*="superset"] iframe {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: calc(100vh - 52px) !important;
+  border: none !important;
+}

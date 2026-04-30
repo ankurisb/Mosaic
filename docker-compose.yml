@@ -173,6 +173,8 @@ services:
       - ADMIN_LASTNAME=Admin
       # Embedding
       - FEATURE_FLAGS={"EMBEDDED_SUPERSET":true,"DASHBOARD_RBAC":true}
+      - SUPERSET_CONFIG_PATH=/app/superset_home/superset_config.py
+      - SUPERSET_CONFIG_PATH=/app/superset_home/superset_config.py
     volumes:
       - superset-data:/app/superset_home
     depends_on:
@@ -192,7 +194,7 @@ services:
           --email ${ADMIN_EMAIL:-admin@mosaic.local}
           --password ${SUPERSET_ADMIN_PASSWORD:-Admin1234!} 2>/dev/null || true &&
         superset init &&
-        superset run -p 8088 --with-threads --reload --debugger
+        superset run -p 8088 -h 0.0.0.0 --with-threads --reload --debugger
       "
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8088/health"]

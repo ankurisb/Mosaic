@@ -6,6 +6,8 @@ import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
 import PanelChart from './PanelChart'
 import PanelBuilder from './PanelBuilder'
+import { SupersetLink } from './SupersetLink'
+import { SupersetEmbed } from './SupersetEmbed'
 
 interface Panel {
   id: string; title: string; subtitle: string
@@ -14,7 +16,7 @@ interface Panel {
   refresh_sec: number | null; col: number; row: number; w: number; h: number
 }
 interface PanelResult { panel_id: string; ok: boolean; data?: unknown; error?: string; latency_ms: number }
-interface Dashboard { id: string; name: string; description: string; refresh_sec: number; is_public: boolean; owner_id: string }
+interface Dashboard { id: string; name: string; description: string; refresh_sec: number; is_public: boolean; owner_id: string; superset_embed_uuid?: string }
 
 const TIME_WINDOW_OPTS = [
   { label: "Today", value: "today" },
@@ -86,9 +88,22 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [customFrom, setCustomFrom] = useState('')
   const [customTo,   setCustomTo]   = useState('')
   const [toast, setToast] = useState('')
+  const [guestToken, setGuestToken] = useState<string|null>(null)
+  const [guestTokenLoading, setGuestTokenLoading] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
+
+  const fetchGuestToken = async (dashboardId: string) => {
+    setGuestTokenLoading(true)
+    try {
+      const r = await fetch(`/api/superset/guest-token?dashboard_id=${dashboardId}`)
+      const d = await r.json()
+      if (d.token) setGuestToken(d.token)
+    } finally {
+      setGuestTokenLoading(false)
+    }
+  }
 
   // -- Load structure then data ----------------------------------
   const loadStructure = useCallback(async () => {
@@ -117,7 +132,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     setLoading(true)
     loadStructure().then(dash => {
       if (!dash) return
-      fetchData(true).finally(() => setLoading(false))
+      if (dash.superset_embed_uuid) {
+        fetchGuestToken(id).finally(() => setLoading(false))
+      } else {
+        fetchData(true).finally(() => setLoading(false))
+      }
       // Set up auto-refresh
       if (dash.refresh_sec > 0) {
         timerRef.current = setInterval(() => fetchData(false), dash.refresh_sec * 1000)
@@ -197,8 +216,8 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>{dashboard.name}</span>
 
-        {/* Time window selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Time window selector — hidden for Superset embeds */}
+        {!dashboard?.superset_embed_uuid && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}><rect x="1" y="2" width="10" height="9" rx="1"/><path d="M1 5h10M4 1v2M8 1v2"/></svg>
           <select value={timeWindow} onChange={e => setTimeWindow(e.target.value)}
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
@@ -214,9 +233,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           ) : (
             <button onClick={() => fetchData(false)} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Apply</button>
           )}
-        </div>
+        </div>}
 
-        {/* Refresh selector */}
+        {!dashboard?.superset_embed_uuid && <>{/* Refresh selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}>
             <circle cx="6" cy="6" r="5"/><path d="M6 3.5v3l2 1.5"/>
@@ -248,7 +267,8 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="5.5" y1="1" x2="5.5" y2="10"/><line x1="1" y1="5.5" x2="10" y2="5.5"/></svg>
             Add panel
           </button>
-        )}
+        )}</>}
+        <SupersetLink />
         <ThemeToggle />
       </div>
 
@@ -261,7 +281,22 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         />
       )}
 
-      {/* Dashboard grid */}
+      {/* Dashboard grid or Superset embed */}
+      {dashboard?.superset_embed_uuid ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {guestTokenLoading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading dashboard...</div>
+          ) : guestToken ? (
+            <SupersetEmbed
+              embedUuid={dashboard.superset_embed_uuid!}
+              guestToken={guestToken}
+              supersetUrl="http://localhost:8088"
+            />
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Failed to load dashboard</div>
+          )}
+        </div>
+      ) : (
       <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
         {panels.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12 }}>
@@ -310,6 +345,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         )}
       </div>
 
+      )}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>
       )}

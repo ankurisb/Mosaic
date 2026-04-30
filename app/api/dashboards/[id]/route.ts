@@ -13,7 +13,7 @@ export async function GET(
   const sql = getDb()
 
   const dash = await sql`
-    SELECT id, name, description, owner_id, is_public, refresh_sec, created_at, updated_at
+    SELECT id, name, description, owner_id, is_public, refresh_sec, created_at, updated_at, superset_embed_uuid
     FROM   dashboards
     WHERE  id = ${id} AND (owner_id = ${session.id} OR is_public = true)`
   if (!dash.length) return Response.json({ error: 'Not found' }, { status: 404 })

@@ -8,7 +8,7 @@ import { SupersetLink } from './SupersetLink'
 interface Dashboard {
   id: string; name: string; description: string
   owner_id: string; is_public: boolean; refresh_sec: number
-  panel_count: number; updated_at: string
+  panel_count: number; updated_at: string; superset_embed_uuid?: string
 }
 
 const REFRESH_OPTS = [
@@ -22,15 +22,59 @@ const REFRESH_OPTS = [
 
 export default function DashboardsPage({ user }: { user: SessionUser }) {
   const router = useRouter()
+  const isAdmin = user.role === 'admin'
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', is_public: false, refresh_sec: 300 })
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
+  const [supersetDashboards, setSupersetDashboards] = useState<{id:number,title:string}[]>([])
+  const [linkingId, setLinkingId] = useState<string|null>(null)
+  const [linkLoading, setLinkLoading] = useState(false)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); fetchSupersetDashboards() }, [])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
+
+  async function fetchSupersetDashboards() {
+    try {
+      const r = await fetch('/api/superset/dashboards')
+      const d = await r.json()
+      setSupersetDashboards(d.dashboards || [])
+    } catch {}
+  }
+
+  async function linkSuperset(mosaicId: string, supersetId: number) {
+    setLinkLoading(true)
+    try {
+      const r = await fetch('/api/superset/embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mosaic_dashboard_id: mosaicId, superset_dashboard_id: supersetId }),
+      })
+      const d = await r.json()
+      if (d.ok) {
+        showToast('Superset dashboard linked')
+        setLinkingId(null)
+        await load()
+      } else {
+        showToast('Failed to link: ' + (d.error || 'unknown error'))
+      }
+    } finally {
+      setLinkLoading(false)
+    }
+  }
+
+  async function unlinkSuperset(mosaicId: string) {
+    await fetch('/api/superset/embed', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mosaic_dashboard_id: mosaicId }),
+    })
+    showToast('Superset dashboard unlinked')
+    await load()
+  }
 
   async function load() {
     setLoading(true)
@@ -189,6 +233,46 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                   )}
                   <span style={{ fontSize: 11, color: 'var(--text4)', marginLeft: 'auto' }}>{timeAgo(d.updated_at)}</span>
                 </div>
+
+                {/* Superset link row */}
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={e => e.stopPropagation()}>
+                  {d.superset_embed_uuid ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" style={{ marginRight: 3, verticalAlign: 'middle', color: 'var(--green)' }}><polyline points="1.5 5 4 7.5 8.5 2.5"/></svg>
+                        Superset linked
+                      </span>
+                      {isAdmin && (
+                        <button onClick={() => unlinkSuperset(d.id)} style={{ fontSize: 10, color: 'var(--text4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>unlink</button>
+                      )}
+                    </div>
+                  ) : isAdmin ? (
+                    linkingId === d.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <select
+                          style={{ flex: 1, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '3px 6px', fontSize: 11, color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}
+                          defaultValue=""
+                          onChange={e => { if (e.target.value) linkSuperset(d.id, Number(e.target.value)) }}
+                          disabled={linkLoading}
+                        >
+                          <option value="" disabled>{linkLoading ? 'Linking...' : 'Select Superset dashboard'}</option>
+                          {supersetDashboards.map(s => (
+                            <option key={s.id} value={s.id}>{s.title}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => setLinkingId(null)} style={{ fontSize: 10, color: 'var(--text4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>cancel</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setLinkingId(d.id); if (supersetDashboards.length === 0) fetchSupersetDashboards() }}
+                        style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}
+                      >
+                        + Link Superset
+                      </button>
+                    )
+                  ) : null}
+                </div>
+
               </div>
             ))}
           </div>
