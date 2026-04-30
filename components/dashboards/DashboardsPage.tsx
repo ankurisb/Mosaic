@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
-import ThemeToggle from '@/components/ThemeToggle'
 import { SupersetLink } from './SupersetLink'
 
 interface Dashboard {
@@ -130,8 +129,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
           <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, color: 'var(--text)' }}>Dashboards</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ThemeToggle />
-          <button onClick={() => router.push('/settings')} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit' }}>Settings</button>
+
         </div>
       </div>
 
@@ -240,7 +238,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 11, color: 'var(--text3)' }}>
                         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" style={{ marginRight: 3, verticalAlign: 'middle', color: 'var(--green)' }}><polyline points="1.5 5 4 7.5 8.5 2.5"/></svg>
-                        Superset linked
+                        Mosaic Analytics linked
                       </span>
                       {isAdmin && (
                         <button onClick={() => unlinkSuperset(d.id)} style={{ fontSize: 10, color: 'var(--text4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>unlink</button>
@@ -267,7 +265,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                         onClick={() => { setLinkingId(d.id); if (supersetDashboards.length === 0) fetchSupersetDashboards() }}
                         style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}
                       >
-                        + Link Superset
+                        + Link Mosaic Analytics
                       </button>
                     )
                   ) : null}
