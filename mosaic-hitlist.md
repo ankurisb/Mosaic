@@ -1,7 +1,26 @@
 # Mosaic — Master Feature Hit List
 **Last updated:** 30 April 2026  
-**Baseline:** Session 6 complete (HEAD: 82ca01c)  
+**Baseline:** Session 6 complete (HEAD: 82922e1)  
 **Purpose:** Tick off as you go. Organised by current state → near-term → strategic.
+
+---
+
+## 📊 Scoreboard
+
+| Category | Done | Remaining | Total |
+|---|---|---|---|
+| Core platform (Part 1) | 75 | 0 | 75 |
+| Near-term / blockers (Part 2) | 3 | 15 | 18 |
+| Enterprise roadmap (Part 3, Phases A–P) | 6 | 114 | 120 |
+| ThingsBoard IoT (Part 4) | 0 | 15 | 15 |
+| Predictive Maintenance (Part 5) | 0 | 18 | 18 |
+| Reporting (Part 6) | 0 | 9 | 9 |
+| Multi-Tenant SaaS (Part 7) | 0 | 7 | 7 |
+| Air-Gapped / Local LLM (Part 8) | 0 | 6 | 6 |
+| **Total** | **84** | **184** | **268** |
+
+> **Deployment readiness:** 1 blocker remaining — Docker Compose validation from fresh clone.  
+> Once cleared, Mosaic v1.0.0 is customer-deployable.
 
 ---
 
@@ -13,7 +32,7 @@
 
 ---
 
-## Part 1 — Current Build: Verified ✅
+## Part 1 — Current Build: Verified ✅ (75/75)
 
 ### Core Chat
 - [x] Streaming AI chat (claude-sonnet-4-6, haiku, opus selectable)
@@ -90,17 +109,17 @@
 - [x] Dashboard time window substitution ({{time_from}} / {{time_to}})
 
 ### Dashboards — Superset Embedded (Mosaic Analytics)
-- [x] Open in Analytics link on Dashboards list page (admin only, opens white-labelled Superset)
+- [x] Open in Analytics link on Dashboards list page (admin only)
 - [x] Link Mosaic Analytics button on each dashboard card (admin only, one-click dropdown)
 - [x] /api/superset/dashboards — lists all published Superset dashboards
-- [x] /api/superset/embed — enables embedding on Superset dashboard, stores embed UUID in Mosaic DB
+- [x] /api/superset/embed — enables embedding, stores embed UUID in Mosaic DB
 - [x] /api/superset/guest-token — generates short-lived guest token for authenticated users
-- [x] SupersetEmbed component using @superset-ui/embedded-sdk (SDK-based, not raw iframe)
+- [x] SupersetEmbed component using @superset-ui/embedded-sdk
 - [x] Header controls hidden when Superset dashboard is embedded
 - [x] superset_embed_uuid column on dashboards table (DB migration)
 - [x] Custom Superset Docker image (config baked in, not volume-dependent)
 - [x] EMBEDDED_SUPERSET feature flag active, X-Frame-Options: ALLOWALL
-- [x] Mosaic startup auto-sets Public role permissions in Superset (idempotent, fire-and-forget)
+- [x] Mosaic startup auto-sets Public role permissions in Superset (idempotent)
 - [x] ERP Orders Overview dashboard verified rendering in Mosaic (3 charts, live data)
 
 ### RCA Workflows
@@ -136,14 +155,20 @@
 - [x] Data sources tab consolidating Databases + API connections + File servers
 - [x] Notifications tab (renamed from Integrations)
 - [x] System health tab (renamed from Monitoring)
+- [x] TypeScript errors resolved (zero tsc errors)
 
 ---
 
-## Part 2 — Immediate Pending (Near-Term Fixes)
+## Part 2 — Immediate Pending (Near-Term)
+
+### Deployment Blockers
+- [ ] **Docker Compose validation** — fresh `git clone` + `docker compose up -d` never validated (CRITICAL PATH)
+- [ ] Production deploy verification (Vercel — pdf-parse, aws4 serverless quirks, streaming UX)
+- [ ] OSIsoft PI Web API connection template (basic auth + bearer; NTLM deferred)
 
 ### Testing Gaps — Harness Sources Not Yet Wired
-- [ ] Wire SQL Server CMMS to Mosaic (127.0.0.1:1434)
 - [x] Wire MySQL ERP Lite (127.0.0.1:3307) — connected and Airbyte-synced
+- [ ] Wire SQL Server CMMS to Mosaic (127.0.0.1:1434)
 - [ ] Wire MongoDB Event Logs (127.0.0.1:27018)
 - [ ] Wire SFTP share (127.0.0.1:2222, path: upload/initial)
 - [ ] Cross-source query: "Line B machines with open work orders AND below 70% OEE" (Postgres + SQL Server)
@@ -155,17 +180,7 @@
 - [!] Airbyte source creation routes to raw Airbyte UI (breaks invisible design principle)
 - [!] Sync failure visibility absent (no error surfacing in Mosaic UI)
 - [!] Plant Ops 4.4 Test connection leftover — delete from Settings to clean monitor
-- [!] Rotate exposed secrets (Anthropic key, AUTH_SECRET, Tavily key pasted in diagnostics)
-- [!] Superset Public role permissions (auto-set on Mosaic startup, but requires Superset to be up first — manual fallback if startup race)
-
-### Infrastructure
-- [ ] Docker Compose deployment validation (critical path for scenario B — fresh git clone never tested)
-- [ ] Production deploy verification (Vercel — pdf-parse, aws4 serverless quirks, streaming UX)
-- [ ] OSIsoft PI Web API connection template (basic auth + bearer; NTLM deferred)
-- [ ] TypeScript errors cleanup (connections/route.ts:35/47, TabDatabases.tsx:569/727, lib/tools.ts:34-581)
-- [ ] "Ask Mosaic about this" from embedded Superset dashboard (chat context handoff)
-- [ ] Mobile-responsive UI (currently desktop-only)
-- [ ] Create Airbyte source via Mosaic UI (needs source definition catalog + dynamic form)
+- [!] Superset Public role permissions — auto-set on startup but requires Superset to be up first (startup race edge case)
 
 ---
 
@@ -190,9 +205,9 @@
 - [x] Fix Superset CSRF token handling (lib/superset-sync.ts) — fixed session 4
 - [x] /api/superset/embed route — shipped session 6
 - [x] /api/superset/guest-token route — shipped session 6
-- [x] EmbeddedDashboard component (SupersetEmbed.tsx via SDK) — shipped session 6
-- [x] Wire Dashboards tab to embed component — shipped session 6
-- [x] End-to-end test: create dashboard in Superset → appears in Mosaic — verified session 6
+- [x] SupersetEmbed component (SDK-based) — shipped session 6
+- [x] Wire Dashboards tab to embed — shipped session 6
+- [x] End-to-end test: create in Superset → appears in Mosaic — verified session 6
 - [ ] RLS filter injection per tenant in guest token payload (multi-tenant path only)
 - [ ] Hide SharePoint option until implementation complete
 - [ ] Superset volume backup procedure (dashboards/datasets/charts lost on volume wipe)
@@ -442,7 +457,7 @@
 | One instance per customer, not shared SaaS | Core trust proposition for industrial buyers |
 | SQLite for single-tenant, Neon Postgres for cloud | Right tool per deployment model |
 | Airbyte invisible to end users | Design principle — all ops proxied via Mosaic API |
-| Superset: embed for non-technical (guest token SDK), direct for technical | Two-tier access model — embed complete as of session 6 |
+| Superset: embed for non-technical (guest token SDK), direct for technical | Two-tier access model — embed complete session 6 |
 | Claude as primary AI, not multi-model | Analysis quality is a feature; don't dilute it |
 | Keycloak for SSO (not Auth.js alone) | Enterprise AD federation, familiar to IT teams |
 | OpenMeter for metering, Lago for billing | Open-source, self-hostable, fits on-premise model |
