@@ -6,7 +6,6 @@ import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
 import PanelChart from './PanelChart'
 import PanelBuilder from './PanelBuilder'
-import { SupersetLink } from './SupersetLink'
 import { SupersetEmbed } from './SupersetEmbed'
 
 interface Panel {
@@ -268,7 +267,6 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             Add panel
           </button>
         )}</>}
-        <SupersetLink />
         <ThemeToggle />
       </div>
 
