@@ -155,7 +155,10 @@ services:
       - mosaic-net
 
   superset:
-    image: apache/superset:3.1.3
+    build:
+      context: docker/superset
+      dockerfile: Dockerfile
+    image: mosaic-superset:3.1.3
     container_name: superset
     restart: unless-stopped
     ports:
@@ -173,8 +176,6 @@ services:
       - ADMIN_LASTNAME=Admin
       # Embedding
       - FEATURE_FLAGS={"EMBEDDED_SUPERSET":true,"DASHBOARD_RBAC":true}
-      - SUPERSET_CONFIG_PATH=/app/superset_home/superset_config.py
-      - SUPERSET_CONFIG_PATH=/app/superset_home/superset_config.py
     volumes:
       - superset-data:/app/superset_home
     depends_on:
@@ -184,18 +185,7 @@ services:
         condition: service_started
     networks:
       - mosaic-net
-    command: >
-      bash -c "
-        superset db upgrade &&
-        superset fab create-admin
-          --username admin
-          --firstname Mosaic
-          --lastname Admin
-          --email ${ADMIN_EMAIL:-admin@mosaic.local}
-          --password ${SUPERSET_ADMIN_PASSWORD:-Admin1234!} 2>/dev/null || true &&
-        superset init &&
-        superset run -p 8088 -h 0.0.0.0 --with-threads --reload --debugger
-      "
+    command: bash /app/pythonpath/init.sh
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
       interval: 30s
