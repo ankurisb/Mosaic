@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import RcaRenderer from './rca/RcaRenderer'
-import { parseRcaOutput } from '@/lib/rca'
-import type { RcaBlock } from '@/lib/rca'
+import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
+import type { RcaBlock, RcaAction } from '@/lib/rca'
 
 interface DataSource {
   id: string; label: string; type: 'db' | 'api' | 'airbyte'
@@ -15,7 +15,7 @@ interface DataSource {
 }
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; narration?: string; startedAt?: number }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; narration?: string; startedAt?: number }
 interface Conv { id: string; title: string; messages: Message[] }
 
 const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
@@ -251,7 +251,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 role: m.role as 'user' | 'assistant',
                 content: m.content,
                 tools: Array.isArray(m.tool_calls) ? m.tool_calls : (m.tool_calls ? JSON.parse(String(m.tool_calls)) : []),
-                ...(m.rca_block ? { rca: m.rca_block as import('@/lib/rca').RcaBlock } : {}),
+                ...(m.rca_block ? { rca: m.rca_block as import('@/lib/rca').RcaBlock, actions: (m.rca_block as import('@/lib/rca').RcaBlock).actions } : {}),
               })) }
             : c
           ))
@@ -288,7 +288,64 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     }))
   }
 
-  async function send(text: string) {
+  async function handleAction(action: import('@/lib/rca').RcaAction, conversationId: string) {
+    if (action.id === 'export_word') {
+      try {
+        // Capture all RCA renderer cards as images
+        const { default: html2canvas } = await import('html2canvas')
+        const cards = Array.from(document.querySelectorAll('[data-rca-card]')) as HTMLElement[]
+        const images: string[] = []
+        for (const card of cards) {
+          try {
+            const canvas = await html2canvas(card, { 
+              backgroundColor: '#1a1a2e',
+              scale: 2,
+              logging: false,
+              useCORS: true
+            })
+            images.push(canvas.toDataURL('image/png'))
+          } catch { /* skip failed cards */ }
+        }
+
+        const res = await fetch('/api/export/word', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: conversationId, chart_images: images }),
+        })
+        if (!res.ok) { alert('Export failed'); return }
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = res.headers.get('Content-Disposition')?.split('filename="')[1]?.replace('"', '') || 'RCA_Report.docx'
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (e) { console.error(e); alert('Export failed') }
+      return
+    }
+
+    if (action.id === 'export_pdf') {
+      send('Please export this analysis as a PDF summary I can save.')
+      return
+    }
+
+    if (action.id === 'mark_complete') {
+      send('Mark all corrective actions in this analysis as complete and confirm.')
+      return
+    }
+
+    if (action.id === 'share') {
+      const url = `${window.location.origin}/chat?conv=${conversationId}`
+      await navigator.clipboard.writeText(url).catch(() => {})
+      alert('Link copied to clipboard')
+      return
+    }
+
+    // Unknown action — route back to Claude as a follow-up message
+    send(action.label)
+  }
+
+    async function send(text: string) {
     if (!text.trim() || streaming) return
     let cid = activeId
     const isFirstMsg = (convs.find(c => c.id === cid)?.messages.length ?? 0) === 0
@@ -363,7 +420,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         const last = msgs[msgs.length - 1]
         if (last?.role === 'assistant' && last.content) {
           const { text, rca } = parseRcaOutput(last.content)
-          msgs[msgs.length - 1] = { ...last, content: text, ...(rca ? { rca } : {}) }
+          msgs[msgs.length - 1] = { ...last, content: text, ...(rca ? { rca, actions: rca.actions } : {}) }
         }
         return { ...c, messages: msgs }
       }))
@@ -637,7 +694,19 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   ) : (
                     <>
                       <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                        {msg.content}
+                        {msg.rca ? (() => {
+                          const lines = msg.content.split('\n')
+                          // Strip trailing lines that look like action button labels
+                          // (short lines under 60 chars with no sentence-ending punctuation)
+                          let end = lines.length
+                          while (end > 0) {
+                            const line = lines[end - 1].trim()
+                            if (line === '' || (line.length < 60 && !/[.!?:]$/.test(line) && !/^[A-Z].*[a-z]{3,}.*[.!?]/.test(line))) {
+                              end--
+                            } else break
+                          }
+                          return lines.slice(0, end).join('\n').trim()
+                        })() : msg.content}
                         {isLastStreaming(i) && (
                           <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text)', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', borderRadius: 1 }} />
                         )}
@@ -646,17 +715,22 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     </>
                   )}
 
-                  {/* Follow-up suggestions */}
+                  {/* Follow-up suggestions + RCA action buttons */}
                   {msg.role === 'assistant' && i === active.messages.length - 1 && !streaming && msg.content && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
-                      {['Go deeper', 'Simplify this', 'Give examples', 'What next?'].map(label => (
-                        <button key={label} onClick={() => send(label)}
-                          style={{ padding: '5px 13px', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', fontSize: 12, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', transition: 'background .12s' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
-                          {label}
-                        </button>
-                      ))}
+                      {(msg.actions && msg.actions.length > 0 ? msg.actions : [
+                          {id:'go_deeper',label:'Go deeper'},
+                          {id:'simplify',label:'Simplify this'},
+                          {id:'examples',label:'Give examples'},
+                          {id:'what_next',label:'What next?'}
+                        ]).map(action => (
+                          <button key={action.id} onClick={() => handleAction(action, active.id)}
+                            style={{ padding: '5px 13px', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', fontSize: 12, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', transition: 'background .12s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
+                            {action.label}
+                          </button>
+                        ))}
                     </div>
                   )}
                 </div>

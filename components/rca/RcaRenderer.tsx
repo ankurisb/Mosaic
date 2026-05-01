@@ -51,22 +51,8 @@ function Insight({ text }: { text: string }) {
     </div>
   )
 }
-
-function Actions({ items }: { items: string[] }) {
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-      {items.map(a => (
-        <button key={a} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', border: `1px solid ${V.border2}`, borderRadius: V.radiusPill, background: V.surface, fontSize: 11, fontWeight: 500, color: V.text2, cursor: 'pointer', fontFamily: V.sans }}>
-          {a}
-          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 8L8 2M4 2h4v4" /></svg>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: V.radius, boxShadow: V.shadow, overflow: 'hidden', marginBottom: 10, ...style }}>{children}</div>
+  return <div data-rca-card="true" style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: V.radius, boxShadow: V.shadow, overflow: 'hidden', marginBottom: 10, ...style }}>{children}</div>
 }
 
 function KpiGrid({ items }: { items: { label: string; value: string; sub?: string }[] }) {
@@ -155,8 +141,7 @@ function ParetoR({ data, insight }: { data: Extract<RendererPayload,{type:'paret
         </div>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Drill into top category', 'Show breakdown table', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -180,8 +165,7 @@ function BreakdownR({ data, insight }: { data: Extract<RendererPayload,{type:'br
         </Tbl>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Drill into top category', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -209,8 +193,7 @@ function SubcauseR({ data, insight }: { data: Extract<RendererPayload,{type:'sub
         </Tbl>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Run 5 Whys on top cause', 'Back to Pareto', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -289,8 +272,7 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
         </svg>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Run 5 Whys on top cause', 'View as Pareto', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -327,8 +309,7 @@ function FiveWhysR({ data, insight }: { data: Extract<RendererPayload,{type:'fiv
         ))}
       </div>
       {insight && <Insight text={insight} />}
-      <Actions items={['Generate corrective action plan', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -370,8 +351,7 @@ function CapR({ data, insight }: { data: Extract<RendererPayload,{type:'cap'}>['
         </Tbl>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Export as Word doc', 'Mark action complete', 'Change the problem']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -413,8 +393,7 @@ function SpcR({ data, insight }: { data: Extract<RendererPayload,{type:'spc'}>['
         </div>
       ))}
       {insight && <Insight text={insight} />}
-      <Actions items={['Show Range chart', 'Overlay on timeline', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -444,8 +423,7 @@ function FaultTreeR({ data, insight }: { data: Extract<RendererPayload,{type:'fa
         </div>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Expand sub-events', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -478,8 +456,7 @@ function EightDR({ data, insight }: { data: Extract<RendererPayload,{type:'8d'}>
         ))}
       </div>
       {insight && <Insight text={insight} />}
-      <Actions items={['Export as 8D Word report', 'Update action status', 'Send to customer']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -525,8 +502,7 @@ function TrendR({ data, insight }: { data: Extract<RendererPayload,{type:'trend'
         </div>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Extend timeframe', 'Add Cpk trend', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -562,8 +538,7 @@ function ScatterR({ data, insight }: { data: Extract<RendererPayload,{type:'scat
         </div>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Add to Ishikawa', 'Show residuals', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -595,8 +570,7 @@ function TimelineR({ data, insight }: { data: Extract<RendererPayload,{type:'tim
         </div>
       </Card>
       {insight && <Insight text={insight} />}
-      <Actions items={['Overlay on SPC chart', 'Add to 8D D3', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -636,8 +610,7 @@ function FmeaR({ data, insight }: { data: Extract<RendererPayload,{type:'fmea'}>
         </Card>
       </div>
       {insight && <Insight text={insight} />}
-      <Actions items={['Sort by RPN', 'Update after actions', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 
@@ -677,8 +650,7 @@ function ComparisonR({ data, insight }: { data: Extract<RendererPayload,{type:'c
         </Card>
       </div>
       {insight && <Insight text={insight} />}
-      <Actions items={['Add more periods', 'Chart trend', 'Export to Word']} />
-    </Wrap>
+</Wrap>
   )
 }
 

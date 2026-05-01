@@ -37,7 +37,13 @@ export type RendererPayload =
   | { type: 'comparison'; data: { title: string; cols: string[]; metrics: ComparisonMetric[] } }
 
 export type RcaRendererItem = RendererPayload & { insight?: string }
-export interface RcaBlock { renderers: RcaRendererItem[] }
+export interface RcaAction { id: string; label: string }
+export interface RcaBlock { renderers: RcaRendererItem[]; actions?: RcaAction[] }
+
+// -- Known action IDs (have real handlers in the UI) -----------------------
+// All other action IDs are routed back to Claude as a follow-up message
+export const KNOWN_ACTION_IDS = ['export_word', 'export_pdf', 'mark_complete', 'share'] as const
+export type KnownActionId = typeof KNOWN_ACTION_IDS[number]
 
 // -- Intent detection ------------------------------------------------------
 
@@ -91,7 +97,7 @@ When the user asks about root causes, defects, failures, downtime, quality issue
 - "Risk assessment"  fmea
 - "Formal investigation report"  8d
 
-**Step 3 -- Write your analysis** as normal conversational text.
+**Step 3 -- Write your analysis** as normal conversational text. Do NOT include any suggested next steps, action items, or options for the user to choose from in your text — these go exclusively in the actions array inside <rca_output>. End your text with a summary sentence only.
 
 **Step 4 -- Append a structured JSON block** at the very end, inside <rca_output> tags. This is parsed by the app and rendered as interactive charts -- do not describe the JSON in your text, just append it silently.
 
@@ -105,6 +111,10 @@ When the user asks about root causes, defects, failures, downtime, quality issue
       "insight": "One sentence key insight -- what this renderer reveals",
       "data": { ... }
     }
+  ],
+  "actions": [
+    { "id": "export_word", "label": "Export as Word doc" },
+    { "id": "overlay_spc", "label": "Overlay on SPC chart" }
   ]
 }
 </rca_output>
@@ -132,4 +142,5 @@ comparison   { title, cols:["Batch A","Batch B",...], metrics:[{name,vals:[...st
 - cap always comes last if included
 - All numeric values must be numbers not strings
 - fishbone bones: use exactly these names when applicable: Machine, Method, Material, Manpower, Measurement, Environment
+- Always include an "actions" array with 2-4 contextually relevant next steps. NEVER add any text after your analysis — no suggested next steps, no export options, no button labels in the text. All next steps go in the actions array only. Built-in IDs: export_word (always include), mark_complete (include when CAP is shown), share. For contextual actions use a short snake_case id and a clear label — unknown IDs route back to you as follow-up messages automatically. End your conversational text before the <rca_output> block — nothing after it.
 `
