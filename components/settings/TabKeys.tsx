@@ -213,6 +213,7 @@ export default function TabKeys({ user }: { user: SessionUser }) {
           {Object.entries(KEY_META).filter(([k]) => k.startsWith('N8N')).map(([key, meta], i, arr) => {
             const status = keys[key] || { configured: false, preview: '' }
             const isLast = i === arr.length - 1
+            const isMosaicKey = key === 'N8N_MOSAIC_API_KEY'
             return (
               <div key={key}>
                 <CardRow last={isLast && editing !== key}>
@@ -225,12 +226,24 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                     {status.configured && status.preview && (
                       <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>{status.preview}</div>
                     )}
+                    {isMosaicKey && vals['N8N_MOSAIC_API_KEY'] && editing === 'N8N_MOSAIC_API_KEY_show' && (
+                      <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border2)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Copy this key and paste into n8n as Bearer token:</div>
+                        <code style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text)', wordBreak: 'break-all' }}>{vals['N8N_MOSAIC_API_KEY']}</code>
+                      </div>
+                    )}
                   </div>
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <Btn size="sm" onClick={() => setEditing(editing === key ? null : key)}>
-                        {status.configured ? 'Update' : 'Set'}
-                      </Btn>
+                      {isMosaicKey ? (
+                        <Btn size="sm" variant="primary" onClick={generateMosaicKey} disabled={saving === 'N8N_MOSAIC_API_KEY'}>
+                          {saving === 'N8N_MOSAIC_API_KEY' ? 'Generating...' : status.configured ? 'Regenerate' : 'Generate'}
+                        </Btn>
+                      ) : (
+                        <Btn size="sm" onClick={() => setEditing(editing === key ? null : key)}>
+                          {status.configured ? 'Update' : 'Set'}
+                        </Btn>
+                      )}
                       {status.configured && <Btn size="sm" variant="danger" onClick={() => del(key)}>Remove</Btn>}
                     </div>
                   )}
