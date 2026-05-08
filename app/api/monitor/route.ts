@@ -158,6 +158,44 @@ export async function GET() {
     }
   }
 
+  // Check n8n
+  try {
+    let n8nUrl = process.env.N8N_URL || 'http://localhost:5678'
+    try {
+      const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'N8N_URL'`
+      if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); n8nUrl = decrypt(rows[0].value_enc as string) }
+    } catch {}
+    const start = Date.now()
+    const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(3000) })
+    results.push({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+  } catch {
+    results.push({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running' })
+  }
+
+  // Check Airbyte
+  try {
+    const airbytes = await sql`SELECT url FROM airbyte_instances WHERE active = true LIMIT 1`
+    if (airbytes.length) {
+      const start = Date.now()
+      const res = await fetch(`${airbytes[0].url}/api/v1/health`, { signal: AbortSignal.timeout(4000) })
+      results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+    } else {
+      results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
+    }
+  } catch {
+    results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'down', latencyMs: null })
+  }
+
+  // Check Superset
+  const supersetUrl = process.env.SUPERSET_URL || 'http://localhost:8088'
+  try {
+    const start = Date.now()
+    const res = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(4000) })
+    results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+  } catch {
+    results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null })
+  }
+
   const healthy = results.filter(r => r.status === 'healthy').length
   const degraded = results.filter(r => r.status === 'degraded').length
   const down = results.filter(r => r.status === 'down').length
