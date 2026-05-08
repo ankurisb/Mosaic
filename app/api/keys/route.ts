@@ -13,7 +13,7 @@ async function ensureTable() {
   )`.catch(() => {})
 }
 
-const KNOWN_KEYS = ['TAVILY_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN']
+const KNOWN_KEYS = ['TAVILY_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY']
 
 export async function GET() {
   const session = await getSession()
