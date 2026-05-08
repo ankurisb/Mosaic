@@ -11,6 +11,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   TWILIO_AUTH_TOKEN:  { label: 'Twilio Auth Token',  hint: 'Stored encrypted at rest . Paired with Account SID',                                           placeholder: 'Stored encrypted' },
   N8N_URL:            { label: 'n8n URL',            hint: 'Base URL of your n8n instance . Default: http://localhost:5678',                                   placeholder: 'http://localhost:5678' },
   N8N_API_KEY:        { label: 'n8n API Key',        hint: 'Generated in n8n Settings → API → Create API Key . Used by Mosaic to check status and import workflows', placeholder: 'n8n_...' },
+  N8N_MOSAIC_API_KEY: { label: 'Mosaic API Key (for n8n)', hint: 'Paste this into n8n as a Header Auth credential. n8n uses this to call Mosaic endpoints.', placeholder: 'Generate a key below' },
 }
 
 export default function TabKeys({ user }: { user: SessionUser }) {
@@ -56,6 +57,24 @@ export default function TabKeys({ user }: { user: SessionUser }) {
     await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', key }) })
     setKeys(p => ({ ...p, [key]: { configured: false, preview: '' } }))
     setToast('Key removed')
+  }
+
+  async function generateMosaicKey() {
+    const key = 'mk_' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2,'0')).join('')
+    setSaving('N8N_MOSAIC_API_KEY')
+    try {
+      const r = await fetch('/api/keys', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set', key: 'N8N_MOSAIC_API_KEY', value: key }),
+      })
+      const d = await r.json()
+      if (d.ok) {
+        setKeys(p => ({ ...p, N8N_MOSAIC_API_KEY: { configured: true, preview: d.preview } }))
+        setVals(p => ({ ...p, N8N_MOSAIC_API_KEY: key }))
+        setEditing('N8N_MOSAIC_API_KEY_show')
+        setToast('Key generated — copy it now')
+      }
+    } finally { setSaving(null) }
   }
 
   const isAdmin = user.role === 'admin'
