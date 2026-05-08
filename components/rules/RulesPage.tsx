@@ -101,7 +101,9 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [form,      setForm]      = useState<typeof EMPTY_GROUP>({ ...EMPTY_GROUP })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving,    setSaving]    = useState(false)
-  const [activeTab, setActiveTab]  = useState<'alerts'|'workflow'>('alerts')
+  const [activeTab, setActiveTab]  = useState<'alerts'|'workflow'|'automation'>('alerts')
+  const [n8nStatus, setN8nStatus]   = useState<null|Record<string,unknown>>(null)
+  const [n8nLoading, setN8nLoading] = useState(false)
   const [toast,     setToast]     = useState('')
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
@@ -178,6 +180,15 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     if (rule.trigger_type === 'schedule')     return `Every ${fmtIntervalAlert(Number(c.interval_sec || 3600))}`
     if (rule.trigger_type === 'rca_complete') return 'When an RCA session completes'
     return ''
+  }
+
+  async function loadN8nStatus() {
+    setN8nLoading(true)
+    try {
+      const r = await fetch('/api/n8n')
+      const d = await r.json()
+      setN8nStatus(d)
+    } catch { setN8nStatus(null) } finally { setN8nLoading(false) }
   }
 
   async function saveGroup() {
@@ -257,9 +268,9 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   // -- Tab strip ------------------------------------------------
   const tabStrip = (
     <div style={{ display: 'flex', gap: 2, padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', marginTop: -1 }}>
-      {(['alerts', 'workflow'] as const).map(tab => (
+      {(['alerts', 'workflow', 'automation'] as const).map(tab => (
         <button key={tab} onClick={() => { setActiveTab(tab); setView('list') }} style={{ padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400, color: activeTab === tab ? 'var(--text)' : 'var(--text3)', background: 'none', border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent-fg)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1 }}>
-          {tab === 'alerts' ? 'Alerts' : 'Workflow rules'}
+          {tab === 'alerts' ? 'Alerts' : tab === 'workflow' ? 'Workflow rules' : 'Automation'}
         </button>
       ))}
     </div>
@@ -369,6 +380,118 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           </div>
         )
       })}
+    </div>
+  )
+
+  // -- Automation view (n8n) ------------------------------------
+  const automationView = (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>n8n Workflow Automation</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>Connect Mosaic alerts and data to external systems via n8n workflows</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={loadN8nStatus} disabled={n8nLoading}
+            style={{ padding: '6px 14px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text2)' }}>
+            {n8nLoading ? 'Checking...' : 'Check status'}
+          </button>
+          {n8nStatus && (n8nStatus.n8nStatus as string) === 'online' && (
+            <a href={n8nStatus.n8nUrl as string} target="_blank" rel="noopener noreferrer"
+              style={{ padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              Open n8n Editor ↗
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Status card */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 14, boxShadow: 'var(--shadow)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>Status</div>
+        {!n8nStatus ? (
+          <div style={{ fontSize: 13, color: 'var(--text3)' }}>Click "Check status" to connect to your n8n instance</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>n8n instance</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: (n8nStatus.n8nStatus as string) === 'online' ? '#16a34a' : '#dc2626' }} />
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+                  {(n8nStatus.n8nStatus as string) === 'online' ? 'Online' : 'Offline'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{n8nStatus.n8nUrl as string}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Workflows</div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)' }}>{String(n8nStatus.workflowCount ?? '—')}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>API key</div>
+              <div style={{ fontSize: 13, color: (n8nStatus.apiKeyConfigured as boolean) ? '#16a34a' : '#dc2626', fontWeight: 500 }}>
+                {(n8nStatus.apiKeyConfigured as boolean) ? 'Configured' : 'Not set'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mosaic API credentials for n8n */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 14, boxShadow: 'var(--shadow)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>Mosaic API — paste into n8n credentials</div>
+        <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+          In n8n, create a new credential of type <strong>Header Auth</strong>. Set name to <code>Authorization</code> and value to <code>Bearer {'<your-n8n-api-key>'}</code>. Use the base URL below for all Mosaic HTTP nodes.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, fontSize: 12 }}>
+          <span style={{ color: 'var(--text3)', paddingTop: 2 }}>Base URL</span>
+          <code style={{ background: 'var(--bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border2)' }}>
+            {n8nStatus ? (n8nStatus.mosaicApiBase as string) : 'http://localhost:3001'}
+          </code>
+          <span style={{ color: 'var(--text3)', paddingTop: 2 }}>Query endpoint</span>
+          <code style={{ background: 'var(--bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border2)' }}>
+            POST /api/n8n  {"{"}"action":"query","connection_id":"...","sql":"SELECT ..."{"}"}
+          </code>
+          <span style={{ color: 'var(--text3)', paddingTop: 2 }}>Sync endpoint</span>
+          <code style={{ background: 'var(--bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border2)' }}>
+            POST /api/n8n  {"{"}"action":"sync","source_label":"ERP Lite"{"}"}
+          </code>
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text3)' }}>
+          Set API key in <strong>Settings → API Keys → n8n API Key</strong>. The same key goes into n8n as the Bearer token.
+        </div>
+      </div>
+
+      {/* Recent executions */}
+      {n8nStatus && (n8nStatus.recentExecutions as unknown[])?.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', boxShadow: 'var(--shadow)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>Recent executions</div>
+          {(n8nStatus.recentExecutions as Array<Record<string,string>>).map(ex => (
+            <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: ex.status === 'success' ? '#16a34a' : ex.status === 'running' ? '#2563eb' : '#dc2626' }} />
+              <span style={{ flex: 1, color: 'var(--text)', fontWeight: 500 }}>{ex.workflowName}</span>
+              <span style={{ color: 'var(--text3)' }}>{ex.status}</span>
+              <span style={{ color: 'var(--text4)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                {new Date(ex.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Setup guide */}
+      {(!n8nStatus || (n8nStatus.n8nStatus as string) === 'offline') && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', boxShadow: 'var(--shadow)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>Quick setup</div>
+          <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.8 }}>
+            <div><strong>1.</strong> n8n starts automatically with <code>docker compose up -d</code></div>
+            <div><strong>2.</strong> Open n8n at <code>http://localhost:5678</code> and create an account</div>
+            <div><strong>3.</strong> Go to n8n Settings → API → Create API Key</div>
+            <div><strong>4.</strong> Save the key in <strong>Settings → API Keys → n8n API Key</strong></div>
+            <div><strong>5.</strong> Come back here and click "Check status"</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -692,10 +815,11 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       {topbar}
       {tabStrip}
-      {activeTab === 'alerts' && alertsView}
-      {activeTab === 'workflow' && view === 'list'    && listView}
-      {activeTab === 'workflow' && view === 'detail'  && detailView}
-      {activeTab === 'workflow' && view === 'builder' && builderView}
+      {activeTab === 'alerts'     && alertsView}
+      {activeTab === 'workflow'    && view === 'list'    && listView}
+      {activeTab === 'workflow'    && view === 'detail'  && detailView}
+      {activeTab === 'workflow'    && view === 'builder' && builderView}
+      {activeTab === 'automation'  && automationView}
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>}
     </div>
   )

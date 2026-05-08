@@ -51,6 +51,9 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
+      # n8n integration
+      - N8N_URL=${N8N_URL:-http://localhost:5678}
+      - N8N_API_KEY=${N8N_API_KEY:-}
     volumes:
       - mosaic-data:/data
     depends_on:
@@ -193,6 +196,43 @@ services:
       retries: 5
       start_period: 60s
 
+  # ── n8n ─────────────────────────────────────────────────────
+  # Self-hosted workflow automation. Invisible to end users.
+  # Admin UI accessible at http://localhost:5678 (admin only)
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: mosaic-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      # n8n internal metadata stored in its own DB
+      - DB_TYPE=sqlite
+      - N8N_USER_MANAGEMENT_DISABLED=false
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-mosaic-n8n}
+      # Mosaic API base URL for n8n workflows to call back
+      - MOSAIC_URL=http://mosaic:3001
+      - MOSAIC_API_KEY=${N8N_MOSAIC_API_KEY:-}
+    volumes:
+      - n8n-data:/home/node/.n8n
+    depends_on:
+      - mosaic
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
   mosaic-data:
@@ -200,6 +240,7 @@ volumes:
   airbyte-workspace:
   superset-db-data:
   superset-data:
+  n8n-data:
 
 # ── Network ──────────────────────────────────────────────────
 networks:
