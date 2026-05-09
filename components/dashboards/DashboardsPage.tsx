@@ -1,4 +1,5 @@
 'use client'
+import AppShell from '@/components/AppShell'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -117,6 +118,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
   }
 
   return (
+    <AppShell user={user}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 32px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -282,5 +284,6 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>
       )}
     </div>
+    </AppShell>
   )
 }

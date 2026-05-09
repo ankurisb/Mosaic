@@ -1,4 +1,5 @@
 'use client'
+import AppShell from '@/components/AppShell'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -812,6 +813,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   )
 
   return (
+    <AppShell user={user}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       {topbar}
       {tabStrip}
@@ -822,6 +824,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       {activeTab === 'automation'  && automationView}
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>}
     </div>
+    </AppShell>
   )
 }
 
