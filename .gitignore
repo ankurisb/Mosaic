@@ -46,3 +46,11 @@ Thumbs.db
 /test-data/minio-data/
 /test-data/mock-api/node_modules/
 /test-data/mock-api/package-lock.json
+
+# Local debug scripts
+*-zoho.mjs
+*.tsx.save
+*.ts.save
+
+# Stray local DBs
+/mosaic.db
