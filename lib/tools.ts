@@ -551,8 +551,32 @@ async function callApi(connectionId: string, method: string, path: string, body?
   const conn = connRows[0] as Record<string, unknown>
   const base = (conn.base_url as string).replace(/\/$/, '')
   const basePath = ((conn.base_path as string) || '').replace(/\/$/, '')
-  const reqPath = path.startsWith('/') ? path : '/' + path
-  let url = base + basePath + reqPath
+
+  // Split basePath into path-portion and query-portion so we can merge
+  // query strings cleanly even if both basePath and the caller's path
+  // contribute params (e.g. base_path "/invoices?organization_id=X" and
+  // caller path "?per_page=10" -> "/invoices?organization_id=X&per_page=10").
+  const [basePathOnly, basePathQuery = ''] = basePath.split('?', 2)
+  let callerPath = path || ''
+  let callerQuery = ''
+  if (callerPath.startsWith('?')) {
+    callerQuery = callerPath.slice(1)
+    callerPath = ''
+  } else {
+    const qi = callerPath.indexOf('?')
+    if (qi !== -1) { callerQuery = callerPath.slice(qi + 1); callerPath = callerPath.slice(0, qi) }
+    if (callerPath && !callerPath.startsWith('/')) callerPath = '/' + callerPath
+  }
+  // Merge query strings, with caller's params overriding base_path's
+  // (so APIs that bake mandatory params in base_path can still be overridden
+  //  per-call, and we never send duplicate keys which some APIs reject).
+  const mergedParams = new URLSearchParams()
+  for (const qs of [basePathQuery, callerQuery]) {
+    if (!qs) continue
+    for (const [k, v] of new URLSearchParams(qs)) mergedParams.set(k, v)
+  }
+  const mergedQuery = mergedParams.toString()
+  let url = base + basePathOnly + callerPath + (mergedQuery ? '?' + mergedQuery : '')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   try { Object.assign(headers, JSON.parse((conn.default_headers as string) || '{}')) } catch {}
   const authConfig = parseAuthConfig(conn.auth_config as string)
