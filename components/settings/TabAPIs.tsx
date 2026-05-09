@@ -371,19 +371,31 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   async function saveSvc() {
     if (!svcForm.label || !svcForm.base_url) { setError('Label and base URL are required'); return }
     setSaving(true)
-    const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingSvc ? 'updateService' : 'createService', id: editingSvc, ...svcForm, auth_config: buildAuth() }) })
-    const d = await r.json()
-    if (!r.ok) { setError(d.error); setSaving(false); return }
-    setSaving(false); setShowSvcForm(false); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError(''); load()
+    try {
+      const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingSvc ? 'updateService' : 'createService', id: editingSvc, ...svcForm, auth_config: buildAuth() }) })
+      const d = await r.json().catch(() => ({ error: `Server returned ${r.status} ${r.statusText}` }))
+      if (!r.ok) { setError(d.error || 'Save failed'); return }
+      setShowSvcForm(false); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError(''); load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error - service may not have saved')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function saveConn(serviceId: string) {
     if (!connForm.label) { setError('Label is required'); return }
     setSaving(true)
-    const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingConn ? 'updateConnection' : 'createConnection', id: editingConn, service_id: serviceId, ...connForm }) })
-    const d = await r.json()
-    if (!r.ok) { setError(d.error); setSaving(false); return }
-    setSaving(false); setShowConnForm(null); setEditingConn(null); setConnForm(CONN_EMPTY); setError(''); load()
+    try {
+      const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingConn ? 'updateConnection' : 'createConnection', id: editingConn, service_id: serviceId, ...connForm }) })
+      const d = await r.json().catch(() => ({ error: `Server returned ${r.status} ${r.statusText}` }))
+      if (!r.ok) { setError(d.error || 'Save failed'); return }
+      setShowConnForm(null); setEditingConn(null); setConnForm(CONN_EMPTY); setError(''); load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error - connection may not have saved')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function delSvc(id: string, label: string) {
