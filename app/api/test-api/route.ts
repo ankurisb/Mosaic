@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { decrypt } from '@/lib/encrypt'
-import { getOAuth2AccessToken } from '@/lib/tools'
+import { getOAuth2AccessToken } from '@/lib/api-auth'
 export const runtime = 'nodejs'
 
 // Fix #6: validate path to prevent SSRF
