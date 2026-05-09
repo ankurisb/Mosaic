@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import ChartArtifact from '@/components/ChartArtifact'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -685,6 +686,12 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                       dataSources={dataSources}
                     />
                   )}
+
+                  {/* Chart artifacts from render_chart tool calls */}
+                  {Array.isArray(msg.tools) && msg.tools
+                    .filter(t => t.name === 'render_chart' && t.result && typeof t.result === 'object' && (t.result as { kind?: string }).kind === 'chart_artifact')
+                    .map((t, k) => <ChartArtifact key={k} spec={(t.result as { spec: import('@/lib/tools').ChartSpec }).spec} />)
+                  }
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (

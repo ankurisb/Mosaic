@@ -105,6 +105,25 @@ export const TOOLS: Anthropic.Tool[] = [
       required: ['action']
     },
   },
+  {
+    name: 'render_chart',
+    description: 'Render a chart inline in the chat to visualize data the user has asked about. Use this when the user asks for a chart, graph, visualization, breakdown, trend, or comparison; or when a visual summary would be more useful than a text response. Always fetch the underlying data first via call_api/query_database/etc., then summarise it into the right shape for the chart type below.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['bar', 'line', 'pie', 'kpi', 'table'], description: 'Chart type. bar = compare categories. line = trend over time. pie = parts of a whole. kpi = single headline number. table = formatted tabular data.' },
+        title: { type: 'string', description: 'Short chart title, sentence case.' },
+        subtitle: { type: 'string', description: 'Optional one-line context, e.g. units or total.' },
+        data: { type: 'array', description: "For bar/pie: array of {label, value}. For line: array of {x, y}. Omit for kpi/table.", items: { type: 'object' } },
+        value: { type: ['string', 'number'], description: 'For kpi only: the headline number or string.' },
+        label: { type: 'string', description: 'For kpi only: short caption under the number.' },
+        delta: { type: 'object', description: 'For kpi only: optional change indicator.', properties: { value: { type: 'number' }, direction: { type: 'string', enum: ['up', 'down'] }, label: { type: 'string' } } },
+        columns: { type: 'array', description: 'For table only: column definitions.', items: { type: 'object', properties: { key: { type: 'string' }, label: { type: 'string' }, format: { type: 'string', enum: ['number', 'currency', 'percent', 'text'] } } } },
+        rows: { type: 'array', description: 'For table only: array of row objects keyed by column key.', items: { type: 'object' } },
+      },
+      required: ['type', 'title']
+    },
+  },
 ]
 
 export async function runTool(name: string, input: Record<string, unknown>): Promise<unknown> {
@@ -114,6 +133,7 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
     case 'call_api': return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
     case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
+    case 'render_chart': return renderChart(input)
     default: throw new Error(`Unknown tool: ${name}`)
   }
 }
@@ -1778,4 +1798,41 @@ export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxCh
     out = out.slice(0, max - 20) + '\n      … (truncated)'
   }
   return out
+}
+
+
+// -- Chart artifact ---------------------------------------------
+//
+// renderChart is a pure passthrough -- it validates the input shape and
+// wraps it in a { kind: 'chart_artifact', spec } envelope. The chat UI
+// (components/ChartArtifact.tsx) recognises this envelope in tool results
+// and renders an actual chart instead of stringifying the JSON.
+//
+// We do NOT generate any chart server-side; the spec is the contract
+// between Claude and the renderer. Adding a new chart type means
+// updating both: this schema and the renderer component.
+
+export interface ChartSpec {
+  type: 'bar' | 'line' | 'pie' | 'kpi' | 'table'
+  title: string
+  subtitle?: string
+  data?: Array<Record<string, unknown>>
+  value?: string | number
+  label?: string
+  delta?: { value: number; direction: 'up' | 'down'; label?: string }
+  columns?: Array<{ key: string; label: string; format?: 'number' | 'currency' | 'percent' | 'text' }>
+  rows?: Array<Record<string, unknown>>
+}
+
+export interface ChartArtifact {
+  kind: 'chart_artifact'
+  spec: ChartSpec
+}
+
+function renderChart(input: Record<string, unknown>): ChartArtifact {
+  const spec = input as unknown as ChartSpec
+  if (!spec.type || !spec.title) {
+    throw new Error('render_chart requires type and title')
+  }
+  return { kind: 'chart_artifact', spec }
 }
