@@ -1,7 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
-import { decrypt } from '@/lib/encrypt'
-import { getOAuth2AccessToken } from '@/lib/api-auth'
+import { applyAuth, parseAuthConfig } from '@/lib/api-auth'
 export const runtime = 'nodejs'
 
 // Fix #6: validate path to prevent SSRF
@@ -67,20 +66,11 @@ export async function POST(req: Request) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' }
   try { Object.assign(headers, JSON.parse((svc.default_headers as string) || '{}')) } catch {}
 
-  let authConfig: Record<string, string> = {}
-  try { authConfig = JSON.parse(decrypt(svc.auth_config as string || '')) } catch {}
+  const authConfig = parseAuthConfig(svc.auth_config as string)
   const authType = svc.auth_type as string
-  if (authType === 'bearer' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
-  else if (authType === 'api_key_header' && authConfig.header && authConfig.key) headers[authConfig.header] = authConfig.key
-  else if (authType === 'basic' && authConfig.username && authConfig.password) headers['Authorization'] = 'Basic ' + Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64')
-  else if (authType === 'oauth2_client') {
-    const accessToken = await getOAuth2AccessToken(svc.id as string, authConfig)
-    if (accessToken) {
-      const prefix = authConfig.header_prefix || 'Bearer'
-      headers['Authorization'] = `${prefix} ${accessToken}`
-    } else {
-      return Response.json({ ok: false, error: 'OAuth2 token fetch failed. Check client_id, client_secret, token_url, and refresh_token.' }, { status: 400 })
-    }
+  const authResult = await applyAuth(svc.id as string, authType, authConfig, headers)
+  if (!authResult.ok) {
+    return Response.json({ ok: false, error: authResult.error }, { status: 400 })
   }
 
   if (svc.api_version && svc.version_header) headers[svc.version_header as string] = svc.api_version as string

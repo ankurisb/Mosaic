@@ -37,7 +37,7 @@ async function s3SignedFetch(
 }
 import { Pool } from 'pg'
 import type { Pool as MysqlPool } from 'mysql2/promise'
-import { getOAuth2AccessToken } from '@/lib/api-auth'
+import { applyAuth, parseAuthConfig } from '@/lib/api-auth'
 
 // -- Tool definitions ------------------------------------------
 export const TOOLS: Anthropic.Tool[] = [
@@ -555,19 +555,10 @@ async function callApi(connectionId: string, method: string, path: string, body?
   let url = base + basePath + reqPath
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   try { Object.assign(headers, JSON.parse((conn.default_headers as string) || '{}')) } catch {}
-  let authConfig: Record<string, string> = {}
-  try { authConfig = JSON.parse(decrypt((conn.auth_config as string) || '')) } catch {}
+  const authConfig = parseAuthConfig(conn.auth_config as string)
   const authType = (conn.auth_type as string) || ''
-  if (authType === 'bearer' && authConfig.token) headers['Authorization'] = `Bearer ${authConfig.token}`
-  else if (authType === 'api_key_header' && authConfig.header && authConfig.key) headers[authConfig.header] = authConfig.key
-  else if (authType === 'basic' && authConfig.username && authConfig.password) headers['Authorization'] = 'Basic ' + Buffer.from(`${authConfig.username}:${authConfig.password}`).toString('base64')
-  else if (authType === 'oauth2_client') {
-    const accessToken = await getOAuth2AccessToken(conn.service_id as string, authConfig)
-    if (accessToken) {
-      const prefix = authConfig.header_prefix || 'Bearer'
-      headers['Authorization'] = `${prefix} ${accessToken}`
-    }
-  }
+  const authResult = await applyAuth(conn.service_id as string, authType, authConfig, headers)
+  if (!authResult.ok) throw new Error(authResult.error)
   if (conn.api_version && conn.version_header) headers[conn.version_header as string] = conn.api_version as string
   // SAP OData: auto-inject correct format headers/params based on path
   const isSap = basePath.includes('/sap/opu/')
