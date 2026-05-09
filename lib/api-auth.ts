@@ -53,14 +53,29 @@ export function parseAuthConfig(encrypted: string | null | undefined): AuthConfi
 
 const oauth2TokenCache = new Map<string, { token: string; expiresAt: number }>()
 
+export type OAuth2TokenResult =
+  | { ok: true; token: string }
+  | { ok: false; error: string }
+
+/**
+ * Mints an OAuth2 access token. Returns ok:true with the token on success,
+ * or ok:false with a descriptive error from the upstream provider on failure.
+ *
+ * The error field tries to surface the most actionable info: for standard
+ * RFC 6749 errors (invalid_grant, invalid_client, etc.) it returns the
+ * error code with description; for non-standard responses it falls back
+ * to the raw response body.
+ */
 export async function getOAuth2AccessToken(
   serviceId: string,
   authConfig: AuthConfig
-): Promise<string | null> {
+): Promise<OAuth2TokenResult> {
   const cached = oauth2TokenCache.get(serviceId)
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token
+  if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token }
 
-  if (!authConfig.token_url || !authConfig.client_id || !authConfig.client_secret) return null
+  if (!authConfig.token_url || !authConfig.client_id || !authConfig.client_secret) {
+    return { ok: false, error: 'Missing required fields: client_id, client_secret, or token_url' }
+  }
 
   const params = new URLSearchParams()
   params.set('client_id', authConfig.client_id)
@@ -79,17 +94,29 @@ export async function getOAuth2AccessToken(
       body: params.toString(),
       signal: AbortSignal.timeout(10000),
     })
+    const bodyText = await res.text()
     if (!res.ok) {
-      console.error(`OAuth2 token fetch failed: ${res.status} ${await res.text()}`)
-      return null
+      // RFC 6749: error responses are JSON with 'error' and optional 'error_description'
+      let parsed: { error?: string; error_description?: string } | null = null
+      try { parsed = JSON.parse(bodyText) } catch {}
+      const errCode = parsed?.error || `HTTP ${res.status}`
+      const errDesc = parsed?.error_description ? `: ${parsed.error_description}` : ''
+      const truncated = !parsed && bodyText.length > 200 ? bodyText.slice(0, 200) + '...' : bodyText
+      const error = parsed ? `${errCode}${errDesc}` : `${errCode}: ${truncated}`
+      console.error(`OAuth2 token fetch failed (service=${serviceId}): ${error}`)
+      return { ok: false, error }
     }
-    const data = await res.json() as { access_token: string; expires_in?: number }
+    const data = JSON.parse(bodyText) as { access_token: string; expires_in?: number }
+    if (!data.access_token) {
+      return { ok: false, error: 'Token endpoint returned no access_token' }
+    }
     const expiresIn = (data.expires_in || 3600) * 1000
     oauth2TokenCache.set(serviceId, { token: data.access_token, expiresAt: Date.now() + expiresIn })
-    return data.access_token
+    return { ok: true, token: data.access_token }
   } catch (e) {
-    console.error('OAuth2 token fetch error:', e)
-    return null
+    const error = e instanceof Error ? e.message : 'Network error contacting token endpoint'
+    console.error(`OAuth2 token fetch error (service=${serviceId}):`, e)
+    return { ok: false, error }
   }
 }
 
@@ -128,15 +155,12 @@ export async function applyAuth(
   }
 
   if (authType === 'oauth2_client') {
-    const accessToken = await getOAuth2AccessToken(serviceId, authConfig)
-    if (!accessToken) {
-      return {
-        ok: false,
-        error: 'OAuth2 token fetch failed. Check client_id, client_secret, token_url, and refresh_token.'
-      }
+    const result = await getOAuth2AccessToken(serviceId, authConfig)
+    if (!result.ok) {
+      return { ok: false, error: `OAuth2 token fetch failed: ${result.error}` }
     }
     const prefix = authConfig.header_prefix || 'Bearer'
-    headers['Authorization'] = `${prefix} ${accessToken}`
+    headers['Authorization'] = `${prefix} ${result.token}`
     return { ok: true }
   }
 
