@@ -17,6 +17,7 @@
 //   - client_credentials (machine-to-machine, no user context)
 
 import { decrypt } from '@/lib/encrypt'
+import { getDb } from '@/lib/db'
 
 // -- Types -------------------------------------------------------
 
@@ -125,6 +126,22 @@ export async function getOAuth2AccessToken(
 export type ApplyAuthResult = { ok: true } | { ok: false; error: string }
 
 /**
+ * Records the result of an OAuth2 token-fetch attempt against api_services.
+ * Fire-and-forget: errors writing to the DB are swallowed so the auth flow
+ * is never blocked by status tracking.
+ */
+async function recordAuthStatus(serviceId: string, ok: boolean, error: string | null): Promise<void> {
+  try {
+    const sql = getDb()
+    const status = ok ? 'ok' : 'broken'
+    const now = Date.now()
+    await sql`UPDATE api_services SET auth_status=${status}, last_auth_error=${error}, last_auth_check=${now} WHERE id=${serviceId}`
+  } catch (e) {
+    console.error('Failed to record auth status:', e)
+  }
+}
+
+/**
  * Mutates `headers` to include authentication for the given service.
  * Returns ok:true on success, ok:false with an error message if auth could
  * not be applied (e.g. OAuth2 token fetch failed). Missing fields for an
@@ -157,8 +174,10 @@ export async function applyAuth(
   if (authType === 'oauth2_client') {
     const result = await getOAuth2AccessToken(serviceId, authConfig)
     if (!result.ok) {
+      void recordAuthStatus(serviceId, false, result.error)
       return { ok: false, error: `OAuth2 token fetch failed: ${result.error}` }
     }
+    void recordAuthStatus(serviceId, true, null)
     const prefix = authConfig.header_prefix || 'Bearer'
     headers['Authorization'] = `${prefix} ${result.token}`
     return { ok: true }

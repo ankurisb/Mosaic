@@ -82,6 +82,9 @@ export async function setupDatabase() {
     retry_count         INTEGER DEFAULT 3,
     created_at          TEXT DEFAULT (datetime('now'))
   )`
+  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS auth_status     TEXT DEFAULT 'unknown'`.catch(() => {})
+  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS last_auth_error TEXT`.catch(() => {})
+  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS last_auth_check INTEGER`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS api_connections (
     id                      TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

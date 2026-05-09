@@ -7,7 +7,7 @@ export async function GET() {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const sql = getDb()
-  const services = await sql`SELECT id,label,base_url,environment,auth_type,default_headers,api_version,version_header,rate_limit_rpm,connect_timeout_ms,request_timeout_ms,retry_count,created_at FROM api_services ORDER BY created_at ASC`
+  const services = await sql`SELECT id,label,base_url,environment,auth_type,default_headers,api_version,version_header,rate_limit_rpm,connect_timeout_ms,request_timeout_ms,retry_count,created_at,auth_status,last_auth_error,last_auth_check FROM api_services ORDER BY created_at ASC`
   const connections = await sql`SELECT id,service_id,label,description,base_path,pagination_style,pagination_limit_param,pagination_cursor_param,pagination_data_path,auth_override,created_at FROM api_connections ORDER BY created_at ASC`
   return Response.json({ services, connections })
 }
