@@ -1,8 +1,8 @@
 // OAuth2 token cache and fetcher for API services.
 //
 // Supports two grant flows:
-//   - refresh_token  (Zoho, Salesforce, Xero, QuickBooks, etc.)
-//   - client_credentials  (HubSpot, machine-to-machine OAuth)
+//   - refresh_token (long-lived refresh token mints short-lived access tokens)
+//   - client_credentials (machine-to-machine, no user context)
 //
 // Tokens are cached in-memory per serviceId until 60s before expiry.
 // Cache is process-local; in multi-instance deployments each instance
