@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   const sql = getDb()
   const [dbConns, apiConns, fileServers] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
-    sql`SELECT c.id, c.label, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY c.created_at ASC`.catch(() => []),
+    sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
     sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
   ])
   const dialectHint = (dialect: unknown) => {
@@ -93,16 +93,29 @@ export async function POST(req: Request) {
         }
       }))).join('\n')
     : ''
+  // Group apiConns by service, cap total at 50
+  const apiConnsCapped = apiConns.slice(0, 50)
+  const apiOverflow = apiConns.length > 50 ? apiConns.length - 50 : 0
+  const apiByService = apiConnsCapped.reduce((acc: Record<string, typeof apiConnsCapped>, conn: Record<string,unknown>) => {
+    const svc = String(conn.service_label || 'Unknown')
+    if (!acc[svc]) acc[svc] = []
+    acc[svc].push(conn)
+    return acc
+  }, {} as Record<string, typeof apiConnsCapped>)
   const apiList = apiConns.length
     ? '\n\n## APIs (call_api tool — use exact id)\n' +
-      apiConns.map((c: Record<string,unknown>) => {
-        const isSap = String(c.service_label || '').startsWith('SAP')
-        const isV4 = String(c.base_path || '').includes('odata4')
-        const hint = isSap
-          ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]`
-          : ''
-        return `- id:"${c.id}" | "${c.label}" (${c.service_label})${hint} | ${c.base_path}`
-      }).join('\n')
+      Object.entries(apiByService).map(([svcLabel, conns]: [string, any[]]) => {
+        const isSap = svcLabel.startsWith('SAP')
+        const isV4 = conns[0] && String(conns[0].base_path || '').includes('odata4')
+        const svcHint = isSap ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]` : ''
+        const endpointLines = conns.map((conn: Record<string,unknown>) => {
+          const method = String(conn.method || 'GET').toUpperCase()
+          const desc = conn.description ? ` -- ${String(conn.description).slice(0, 80)}` : ''
+          return `  - id:"${conn.id}" | ${method} ${conn.base_path}${desc}`
+        }).join('\n')
+        return `### ${svcLabel}${svcHint}\n${endpointLines}`
+      }).join('\n') +
+      (apiOverflow > 0 ? `\n(+${apiOverflow} more endpoints — ask to list them)` : '')
     : ''
   const hasSources = dbConns.length > 0 || apiConns.length > 0
   const baseSystem = system || (hasSources
