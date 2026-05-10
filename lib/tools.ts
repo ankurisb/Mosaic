@@ -632,6 +632,19 @@ async function callApi(connectionId: string, method: string, path: string, body?
     let data: unknown
     try { data = JSON.parse(text) } catch { data = text }
     if (!res.ok) throw new Error(`API returned ${res.status}: ${text.slice(0, 200)}`)
+    // Hard cap: never return more than 200 records to Claude's context
+    const MAX_RECORDS = 200
+    if (Array.isArray(data) && data.length > MAX_RECORDS) {
+      return { _capped: true, _total: data.length, _returned: MAX_RECORDS, data: data.slice(0, MAX_RECORDS) }
+    }
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>
+      for (const key of ['data', 'results', 'items', 'invoices', 'contacts', 'records', 'value']) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > MAX_RECORDS) {
+          return { ...obj, [key]: (obj[key] as unknown[]).slice(0, MAX_RECORDS), _capped: true, _total: (obj[key] as unknown[]).length, _returned: MAX_RECORDS }
+        }
+      }
+    }
     return data
   } catch (err) {
     clearTimeout(timeout)
