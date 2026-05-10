@@ -27,17 +27,31 @@ interface TryItResult {
   error?: string
 }
 
+// Postman v2.1 items are recursive: an item is either a folder
+// (has its own .item[]) or a leaf request (has .request). We walk the
+// tree and flatten to a list, recording the folder path of each leaf.
+interface PostmanRequest {
+  method: string
+  url: { raw: string; path?: string[] } | string
+  auth?: { type: string; bearer?: Array<{ key: string; value: string }> }
+  header?: Array<{ key: string; value: string }>
+}
+interface PostmanItem {
+  name: string
+  item?: PostmanItem[]
+  request?: PostmanRequest
+}
 interface PostmanCollection {
   info: { name: string }
-  item: Array<{
-    name: string
-    request: {
-      method: string
-      url: { raw: string; path?: string[] }
-      auth?: { type: string; bearer?: Array<{ key: string; value: string }> }
-      header?: Array<{ key: string; value: string }>
-    }
-  }>
+  item: PostmanItem[]
+}
+
+interface ImportConnection {
+  name: string         // leaf item name
+  path: string         // path portion of URL
+  method: string
+  folder: string       // folder path, e.g. "Invoices" or "Sales/Invoices"
+  selected: boolean    // user's checkbox state
 }
 
 interface ImportPreview {
@@ -45,7 +59,7 @@ interface ImportPreview {
   baseUrl: string
   authType: string
   token: string
-  connections: Array<{ name: string; path: string; method: string }>
+  connections: ImportConnection[]
 }
 
 const SVC_EMPTY = { label: '', base_url: '', environment: 'production', auth_type: 'bearer', token: '', header_name: '', header_value: '', username: '', password: '', client_id: '', client_secret: '', token_url: '', refresh_token: '', header_prefix: 'Bearer', custom_headers: '', api_version: '', version_header: '', rate_limit_rpm: '', request_timeout_ms: '30000', retry_count: '3' }
@@ -272,20 +286,46 @@ function tokenLooksExpired(token: string): { expired: boolean; warning?: boolean
   return { expired: false, reason: null }
 }
 
+// Walk a Postman item tree depth-first, flattening to a list of leaves.
+// folderPath is built as we descend; root items have folderPath = ''
+// and any request directly at root will land in folder 'Root'.
+function walkPostmanItems(items: PostmanItem[], folderPath: string): Array<{ folder: string; name: string; request: PostmanRequest }> {
+  const out: Array<{ folder: string; name: string; request: PostmanRequest }> = []
+  for (const it of items) {
+    if (it.item && Array.isArray(it.item)) {
+      // Folder -- recurse
+      const childPath = folderPath ? `${folderPath}/${it.name}` : it.name
+      out.push(...walkPostmanItems(it.item, childPath))
+    } else if (it.request) {
+      // Leaf
+      out.push({ folder: folderPath || 'Root', name: it.name, request: it.request })
+    }
+  }
+  return out
+}
+
+// Extract the raw URL string from a Postman url field, which can be
+// either a string or { raw: string }.
+function postmanUrlRaw(url: PostmanRequest['url']): string {
+  if (typeof url === 'string') return url
+  return url?.raw || ''
+}
+
 function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
   try {
-    const items = json.item?.filter(i => i.request?.url?.raw) ?? []
-    if (!items.length) return null
+    const leaves = walkPostmanItems(json.item || [], '')
+    const requests = leaves.filter(l => postmanUrlRaw(l.request.url))
+    if (!requests.length) return null
 
-    // Derive base URL from first item
-    const firstUrl = items[0].request.url.raw
+    // Derive base URL from first leaf with a usable URL
+    const firstUrl = postmanUrlRaw(requests[0].request.url)
     const { baseUrl } = extractBaseUrl(firstUrl)
 
-    // Detect auth from first item that has bearer auth
+    // Detect auth: first leaf that declares bearer with a token
     let authType = 'bearer'
     let token = ''
-    for (const item of items) {
-      const auth = item.request.auth
+    for (const leaf of requests) {
+      const auth = leaf.request.auth
       if (auth?.type === 'bearer' && auth.bearer?.[0]?.value) {
         authType = 'bearer'
         token = auth.bearer[0].value
@@ -293,12 +333,14 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
       }
     }
 
-    const connections = items.map(item => {
-      const { path } = extractBaseUrl(item.request.url.raw)
+    const connections: ImportConnection[] = requests.map(leaf => {
+      const { path } = extractBaseUrl(postmanUrlRaw(leaf.request.url))
       return {
-        name: item.name,
+        name: leaf.name,
         path: path || '/',
-        method: item.request.method || 'GET',
+        method: leaf.request.method || 'GET',
+        folder: leaf.folder,
+        selected: true, // all selected by default; user opts out
       }
     })
 
@@ -453,14 +495,15 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       if (!svcRes.ok) throw new Error(svcData.error)
       const serviceId = svcData.id
 
-      // 2. Create each connection
-      for (const conn of importPreview.connections) {
+      // 2. Create each connection (only those the user selected)
+      const selectedConns = importPreview.connections.filter(c => c.selected)
+      for (const conn of selectedConns) {
         await fetch('/api/services', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'createConnection',
             service_id: serviceId,
-            label: conn.name,
+            label: conn.folder && conn.folder !== 'Root' ? `${conn.folder} -- ${conn.name}` : conn.name,
             description: `${conn.method} ${conn.path}`,
             base_path: conn.path,
             pagination_style: 'none',
@@ -907,26 +950,75 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             })()}
           </Field>
 
-          {/* Connection list preview */}
-          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
-            {importPreview.connections.map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < importPreview.connections.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: c.method === 'GET' ? 'var(--blue-bg)' : c.method === 'POST' ? 'var(--green-bg)' : 'var(--amber-bg)', color: c.method === 'GET' ? 'var(--blue-t)' : c.method === 'POST' ? 'var(--green-t)' : 'var(--amber-t)', minWidth: 36, textAlign: 'center' }}>{c.method}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{c.name}</div>
-                  <code style={{ fontSize: 11, color: 'var(--text3)' }}>{c.path}</code>
+          {/* Connection list preview -- grouped by folder, with checkboxes */}
+          {(() => {
+            // Group connections by folder, preserving order of first appearance
+            const groups = new Map<string, ImportConnection[]>()
+            importPreview.connections.forEach(c => {
+              const list = groups.get(c.folder) || []
+              list.push(c)
+              groups.set(c.folder, list)
+            })
+
+            const setConnSelected = (folder: string, name: string, selected: boolean) => {
+              setImportPreview(p => p ? { ...p, connections: p.connections.map(c => c.folder === folder && c.name === name ? { ...c, selected } : c) } : p)
+            }
+            const setFolderSelected = (folder: string, selected: boolean) => {
+              setImportPreview(p => p ? { ...p, connections: p.connections.map(c => c.folder === folder ? { ...c, selected } : c) } : p)
+            }
+
+            const totalSelected = importPreview.connections.filter(c => c.selected).length
+            const totalAll = importPreview.connections.length
+
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 6, fontSize: 12, color: 'var(--text3)' }}>
+                  <span>{totalSelected} of {totalAll} endpoints selected</span>
+                  <button onClick={() => setImportPreview(p => p ? { ...p, connections: p.connections.map(c => ({ ...c, selected: true })) } : p)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-t)', fontSize: 12, padding: 0 }}>Select all</button>
+                  <span style={{ color: 'var(--text4)' }}>.</span>
+                  <button onClick={() => setImportPreview(p => p ? { ...p, connections: p.connections.map(c => ({ ...c, selected: false })) } : p)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-t)', fontSize: 12, padding: 0 }}>Select none</button>
                 </div>
-                <button onClick={() => setImportPreview(p => p ? { ...p, connections: p.connections.filter((_, j) => j !== i) } : p)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}></button>
-              </div>
-            ))}
-          </div>
+
+                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxHeight: 360, overflowY: 'auto' }}>
+                  {Array.from(groups.entries()).map(([folder, items], gi) => {
+                    const selectedCount = items.filter(i => i.selected).length
+                    const allOn = selectedCount === items.length
+                    const allOff = selectedCount === 0
+                    return (
+                      <div key={folder} style={{ borderBottom: gi < groups.size - 1 ? '1px solid var(--border)' : 'none' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'var(--bg2)', cursor: 'pointer', userSelect: 'none' }}>
+                          <input type="checkbox"
+                            checked={allOn}
+                            ref={el => { if (el) el.indeterminate = !allOn && !allOff }}
+                            onChange={e => setFolderSelected(folder, e.target.checked)} />
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{folder}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{selectedCount}/{items.length}</span>
+                        </label>
+                        {items.map((c, i) => (
+                          <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px 7px 32px', cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                            <input type="checkbox" checked={c.selected} onChange={e => setConnSelected(folder, c.name, e.target.checked)} />
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: c.method === 'GET' ? 'var(--blue-bg)' : c.method === 'POST' ? 'var(--green-bg)' : 'var(--amber-bg)', color: c.method === 'GET' ? 'var(--blue-t)' : c.method === 'POST' ? 'var(--green-t)' : 'var(--amber-t)', minWidth: 36, textAlign: 'center' }}>{c.method}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                              <code style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{c.path}</code>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )
+          })()}
 
           {importError && <Alert variant="error">{importError}</Alert>}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <Btn variant="primary" onClick={confirmImport} disabled={importing}>
-              {importing ? <><Spinner size={12} /> Importing...</> : `Import ${importPreview.connections.length} endpoint${importPreview.connections.length !== 1 ? 's' : ''}`}
+              {importing ? <><Spinner size={12} /> Importing...</> : (() => { const n = importPreview.connections.filter(c => c.selected).length; return `Import ${n} endpoint${n !== 1 ? 's' : ''}` })()}
             </Btn>
             <Btn onClick={() => { setImportPreview(null); setImportError('') }}>Cancel</Btn>
           </div>
