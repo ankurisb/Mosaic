@@ -110,7 +110,9 @@ export async function POST(req: Request) {
         const svcHint = isSap ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]` : ''
         const endpointLines = conns.map((conn: Record<string,unknown>) => {
           const method = String(conn.method || 'GET').toUpperCase()
-          const desc = conn.description ? ` -- ${String(conn.description).slice(0, 80)}` : ''
+          const rawDesc = String(conn.description || '').trim()
+          const desc = rawDesc && rawDesc.toLowerCase() !== String(conn.label || '').toLowerCase()
+            ? ` -- ${rawDesc.slice(0, 50)}` : ''
           return `  - id:"${conn.id}" | ${method} ${conn.base_path}${desc}`
         }).join('\n')
         return `### ${svcLabel}${svcHint}\n${endpointLines}`
@@ -150,6 +152,11 @@ You have access to live databases and APIs listed below. When a user asks about 
 - Aggregate the raw data into the chart shape yourself before calling render_chart. Bar/pie expect [{label, value}], line expects [{x, y}]. Don't pass raw API responses through.
 - Keep the title short and sentence case. Use subtitle for unit or total ("INR, last 30 days", "Total: 200").
 - Always also write a one or two sentence text summary alongside the chart that names the most important finding. The chart is a visual aid; the words are the answer.
+
+## Calling APIs
+- Always apply a limit when calling APIs. Use the connection's pagination param (e.g. limit=100) unless the user explicitly asks for all records.
+- For time-based endpoints, default to the last 30 days unless the user specifies a different period.
+- Never fetch unbounded data — if an endpoint has no limit param, add a date filter or ask the user to narrow the scope first.
 
 ## What you never do
 - Never invent data or fabricate query results.
