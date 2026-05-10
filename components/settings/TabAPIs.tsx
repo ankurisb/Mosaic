@@ -33,17 +33,26 @@ interface TryItResult {
 interface PostmanRequest {
   method: string
   url: { raw: string; path?: string[] } | string
-  auth?: { type: string; bearer?: Array<{ key: string; value: string }> }
+  auth?: {
+    type: string
+    bearer?: Array<{ key: string; value: string }>
+    basic?: Array<{ key: string; value: string }>
+    apikey?: Array<{ key: string; value: string }>
+    oauth2?: Array<{ key: string; value: string }>
+  }
   header?: Array<{ key: string; value: string }>
 }
 interface PostmanItem {
   name: string
   item?: PostmanItem[]
   request?: PostmanRequest
+  variable?: Array<{ key: string; value: string }>
 }
 interface PostmanCollection {
   info: { name: string }
   item: PostmanItem[]
+  variable?: Array<{ key: string; value: string }>
+  auth?: PostmanRequest['auth']
 }
 
 interface ImportConnection {
@@ -59,6 +68,10 @@ interface ImportPreview {
   baseUrl: string
   authType: string
   token: string
+  username?: string
+  password?: string
+  headerName?: string
+  headerValue?: string
   connections: ImportConnection[]
 }
 
@@ -289,16 +302,21 @@ function tokenLooksExpired(token: string): { expired: boolean; warning?: boolean
 // Walk a Postman item tree depth-first, flattening to a list of leaves.
 // folderPath is built as we descend; root items have folderPath = ''
 // and any request directly at root will land in folder 'Root'.
-function walkPostmanItems(items: PostmanItem[], folderPath: string): Array<{ folder: string; name: string; request: PostmanRequest }> {
-  const out: Array<{ folder: string; name: string; request: PostmanRequest }> = []
+function walkPostmanItems(
+  items: PostmanItem[],
+  folderPath: string,
+  inheritedVars: Record<string, string>
+): Array<{ folder: string; name: string; request: PostmanRequest; vars: Record<string, string> }> {
+  const out: Array<{ folder: string; name: string; request: PostmanRequest; vars: Record<string, string> }> = []
   for (const it of items) {
+    const scopedVars = it.variable?.length
+      ? mergeVarMaps(inheritedVars, buildVarMap(it.variable))
+      : inheritedVars
     if (it.item && Array.isArray(it.item)) {
-      // Folder -- recurse
       const childPath = folderPath ? `${folderPath}/${it.name}` : it.name
-      out.push(...walkPostmanItems(it.item, childPath))
+      out.push(...walkPostmanItems(it.item, childPath, scopedVars))
     } else if (it.request) {
-      // Leaf
-      out.push({ folder: folderPath || 'Root', name: it.name, request: it.request })
+      out.push({ folder: folderPath || 'Root', name: it.name, request: it.request, vars: scopedVars })
     }
   }
   return out
@@ -311,36 +329,85 @@ function postmanUrlRaw(url: PostmanRequest['url']): string {
   return url?.raw || ''
 }
 
+function buildVarMap(vars?: Array<{ key: string; value: string }>): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const v of vars ?? []) {
+    if (v.key) map[v.key] = v.value ?? ''
+  }
+  return map
+}
+
+function substitutePostmanVars(str: string, vars: Record<string, string>): string {
+  return str.replace(/\{\{([^}]+)\}\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
+  )
+}
+
+function mergeVarMaps(...maps: Record<string, string>[]): Record<string, string> {
+  return Object.assign({}, ...maps)
+}
+
 function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
   try {
-    const leaves = walkPostmanItems(json.item || [], '')
+    const collectionVars = buildVarMap(json.variable)
+    const leaves = walkPostmanItems(json.item || [], '', collectionVars)
     const requests = leaves.filter(l => postmanUrlRaw(l.request.url))
     if (!requests.length) return null
 
-    // Derive base URL from first leaf with a usable URL
-    const firstUrl = postmanUrlRaw(requests[0].request.url)
-    const { baseUrl } = extractBaseUrl(firstUrl)
+    const firstRaw = substitutePostmanVars(postmanUrlRaw(requests[0].request.url), requests[0].vars)
+    const { baseUrl } = extractBaseUrl(firstRaw)
 
-    // Detect auth: first leaf that declares bearer with a token
-    let authType = 'bearer'
+    let authType = 'none'
     let token = ''
-    for (const leaf of requests) {
-      const auth = leaf.request.auth
-      if (auth?.type === 'bearer' && auth.bearer?.[0]?.value) {
-        authType = 'bearer'
-        token = auth.bearer[0].value
-        break
+    let username = ''
+    let password = ''
+    let headerName = ''
+    let headerValue = ''
+
+    const detectAuth = (auth: PostmanRequest['auth'] | undefined, vars: Record<string, string>): boolean => {
+      if (!auth?.type) return false
+      const sub = (s: string) => substitutePostmanVars(s ?? '', vars)
+      const val = (arr?: Array<{ key: string; value: string }>, k = 'value') =>
+        sub(arr?.find(e => e.key === k)?.value ?? '')
+      switch (auth.type) {
+        case 'bearer':
+          authType = 'bearer'
+          token = val(auth.bearer, 'token') || val(auth.bearer, 'value')
+          return true
+        case 'basic':
+          authType = 'basic'
+          username = val(auth.basic, 'username')
+          password = val(auth.basic, 'password')
+          return true
+        case 'apikey':
+          authType = 'api_key'
+          headerName = val(auth.apikey, 'key')
+          headerValue = val(auth.apikey, 'value')
+          return true
+        case 'oauth2':
+          authType = 'oauth2'
+          token = val(auth.oauth2, 'accessToken') || val(auth.oauth2, 'value')
+          return true
+        default:
+          return false
+      }
+    }
+
+    if (!detectAuth(json.auth, collectionVars)) {
+      for (const leaf of requests) {
+        if (detectAuth(leaf.request.auth, leaf.vars)) break
       }
     }
 
     const connections: ImportConnection[] = requests.map(leaf => {
-      const { path } = extractBaseUrl(postmanUrlRaw(leaf.request.url))
+      const rawUrl = substitutePostmanVars(postmanUrlRaw(leaf.request.url), leaf.vars)
+      const { path } = extractBaseUrl(rawUrl)
       return {
         name: leaf.name,
         path: path || '/',
         method: leaf.request.method || 'GET',
         folder: leaf.folder,
-        selected: true, // all selected by default; user opts out
+        selected: true,
       }
     })
 
@@ -349,6 +416,10 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
       baseUrl,
       authType,
       token,
+      ...(username && { username }),
+      ...(password && { password }),
+      ...(headerName && { headerName }),
+      ...(headerValue && { headerValue }),
       connections,
     }
   } catch {
@@ -910,45 +981,76 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             </Field>
           </Grid>
 
-          <Field label="Bearer token (from collection)">
-            <div style={{ position: 'relative' }}>
-              <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11, paddingRight: 60 }} type="password"
-                value={importPreview.token}
-                onChange={e => setImportPreview(p => p ? { ...p, token: e.target.value } : p)} />
-              {importPreview.token && (
-                <button
-                  onClick={() => setImportPreview(p => p ? { ...p, token: '' } : p)}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
-                  Clear
-                </button>
-              )}
+          {/* Auth fields -- rendered based on detected auth type */}
+          {importPreview.authType === 'basic' ? (
+            <Grid cols={2}>
+              <Field label="Username (from collection)">
+                <input style={INP} value={importPreview.username ?? ''}
+                  onChange={e => setImportPreview(p => p ? { ...p, username: e.target.value } : p)} />
+              </Field>
+              <Field label="Password (from collection)">
+                <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11 }} type="password"
+                  value={importPreview.password ?? ''}
+                  onChange={e => setImportPreview(p => p ? { ...p, password: e.target.value } : p)} />
+              </Field>
+            </Grid>
+          ) : importPreview.authType === 'api_key' ? (
+            <Grid cols={2}>
+              <Field label="Header name (from collection)">
+                <input style={INP} value={importPreview.headerName ?? ''}
+                  onChange={e => setImportPreview(p => p ? { ...p, headerName: e.target.value } : p)} />
+              </Field>
+              <Field label="Header value (from collection)">
+                <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11 }} type="password"
+                  value={importPreview.headerValue ?? ''}
+                  onChange={e => setImportPreview(p => p ? { ...p, headerValue: e.target.value } : p)} />
+              </Field>
+            </Grid>
+          ) : importPreview.authType === 'none' ? (
+            <div style={{ fontSize: 11, color: 'var(--text3)', padding: '6px 0' }}>
+              No auth detected in collection — you can set it after import in the service settings.
             </div>
-            {(() => {
-              const check = tokenLooksExpired(importPreview.token)
-              if (!importPreview.token) return (
-                <div style={{ fontSize: 11, color: 'var(--amber-t)', marginTop: 4 }}>
-                   No token found in collection -- add one manually if this API requires auth.
-                </div>
-              )
-              if (check.expired) return (
-                <div style={{ fontSize: 11, color: 'var(--red-t)', marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
-                  <span></span>
-                  <span><strong>Token likely invalid:</strong> {check.reason}. Update it now or Mosaic will get 401 errors when calling this API.</span>
-                </div>
-              )
-              if (check.warning) return (
-                <div style={{ fontSize: 11, color: 'var(--amber-t)', marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
-                  <span></span>
-                  <span><strong>Expiring soon:</strong> {check.reason}. Consider refreshing it before it stops working.</span>
-                </div>
-              )
-              return (
-                <div style={{ fontSize: 11, color: 'var(--green-t)', marginTop: 4 }}>
-                  ok Token looks valid -- you can update it later in the service settings if it expires.
-                </div>
-              )
-            })()}
-          </Field>
+          ) : (
+            <Field label={`${importPreview.authType === 'oauth2' ? 'OAuth2 access' : 'Bearer'} token (from collection)`}>
+              <div style={{ position: 'relative' }}>
+                <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11, paddingRight: 60 }} type="password"
+                  value={importPreview.token}
+                  onChange={e => setImportPreview(p => p ? { ...p, token: e.target.value } : p)} />
+                {importPreview.token && (
+                  <button
+                    onClick={() => setImportPreview(p => p ? { ...p, token: '' } : p)}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+                    Clear
+                  </button>
+                )}
+              </div>
+              {(() => {
+                const check = tokenLooksExpired(importPreview.token)
+                if (!importPreview.token) return (
+                  <div style={{ fontSize: 11, color: 'var(--amber-t)', marginTop: 4 }}>
+                    ⚠ No token found in collection -- add one manually if this API requires auth.
+                  </div>
+                )
+                if (check.expired) return (
+                  <div style={{ fontSize: 11, color: 'var(--red-t)', marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+                    <span>✕</span>
+                    <span><strong>Token likely invalid:</strong> {check.reason}. Update it now or Mosaic will get 401 errors.</span>
+                  </div>
+                )
+                if (check.warning) return (
+                  <div style={{ fontSize: 11, color: 'var(--amber-t)', marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+                    <span>⚠</span>
+                    <span><strong>Expiring soon:</strong> {check.reason}. Consider refreshing before it stops working.</span>
+                  </div>
+                )
+                return (
+                  <div style={{ fontSize: 11, color: 'var(--green-t)', marginTop: 4 }}>
+                    ✓ Token looks valid -- update it later in service settings if it expires.
+                  </div>
+                )
+              })()}
+            </Field>
+          )}
 
           {/* Connection list preview -- grouped by folder, with checkboxes */}
           {(() => {
