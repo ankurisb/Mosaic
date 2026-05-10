@@ -482,12 +482,17 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
     const connections: ImportConnection[] = requests.map(leaf => {
       const rawUrl = substitutePostmanVars(postmanUrlRaw(leaf.request.url), leaf.vars)
       const { path } = extractBaseUrl(rawUrl)
+      // Infer pagination from query params in URL
+      const urlQueryStr = rawUrl.includes('?') ? rawUrl.split('?')[1] : ''
+      const urlParams = urlQueryStr ? Array.from(new URLSearchParams(urlQueryStr).keys()) : []
+      const pagInference = inferPagination(urlParams)
       return {
         name: leaf.name,
         path: path || '/',
         method: leaf.request.method || 'GET',
         folder: leaf.folder,
         selected: true,
+        ...pagInference,
       }
     })
 
@@ -1245,7 +1250,19 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                             <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: c.method === 'GET' ? 'var(--blue-bg)' : c.method === 'POST' ? 'var(--green-bg)' : 'var(--amber-bg)', color: c.method === 'GET' ? 'var(--blue-t)' : c.method === 'POST' ? 'var(--green-t)' : 'var(--amber-t)', minWidth: 36, textAlign: 'center' }}>{c.method}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-                              <code style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{c.path}</code>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                <code style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.path}</code>
+                                {c.paginationStyle && c.paginationStyle !== 'none' && (
+                                  <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--blue-bg)', color: 'var(--blue-t)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                    {c.paginationStyle}
+                                  </span>
+                                )}
+                                {c.dataPath && (
+                                  <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--surface)', color: 'var(--text3)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                    .{c.dataPath}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </label>
                         ))}
