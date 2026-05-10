@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
 
@@ -329,6 +330,85 @@ function postmanUrlRaw(url: PostmanRequest['url']): string {
   return url?.raw || ''
 }
 
+// ── OpenAPI 3.0 spec parser ────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseOpenApiSpec(raw: string): ImportPreview | null {
+  try {
+    // Support both JSON and YAML
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let spec: any
+    try { spec = JSON.parse(raw) } catch { spec = yaml.load(raw) }
+    if (!spec || typeof spec !== 'object') return null
+    if (!spec.paths || typeof spec.paths !== 'object') return null
+
+    const serviceName: string = spec.info?.title ?? 'Imported Service'
+    const baseUrl: string = spec.servers?.[0]?.url ?? ''
+
+    // Auth detection from securitySchemes
+    let authType = 'none'
+    let token = ''
+    let headerName = ''
+    let headerValue = ''
+    const schemes = spec.components?.securitySchemes ?? {}
+    const schemeKeys = Object.keys(schemes)
+    if (schemeKeys.length > 0) {
+      const scheme = schemes[schemeKeys[0]]
+      if (scheme?.type === 'http' && scheme?.scheme === 'bearer') {
+        authType = 'bearer'
+      } else if (scheme?.type === 'http' && scheme?.scheme === 'basic') {
+        authType = 'basic'
+      } else if (scheme?.type === 'apiKey') {
+        authType = 'api_key'
+        headerName = scheme.name ?? 'X-API-Key'
+      } else if (scheme?.type === 'oauth2') {
+        authType = 'oauth2'
+      }
+    }
+
+    // Build connections grouped by first tag
+    const connections: ImportConnection[] = []
+    for (const [pathStr, pathItem] of Object.entries(spec.paths)) {
+      if (!pathItem || typeof pathItem !== 'object') continue
+      const methods = ['get','post','put','patch','delete','head','options'] as const
+      for (const method of methods) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const op = (pathItem as any)[method]
+        if (!op) continue
+        const tag: string = (op.tags?.[0] ?? 'Root')
+        const opName: string = op.summary ?? op.operationId ?? `${method.toUpperCase()} ${pathStr}`
+        // Path: strip base URL prefix if server url is path-only
+        let connPath = pathStr
+        try {
+          const serverUrl = new URL(baseUrl)
+          const base = serverUrl.pathname.replace(/\/$/, '')
+          if (base && connPath.startsWith(base)) connPath = connPath.slice(base.length) || '/'
+        } catch { /* baseUrl may not be a full URL */ }
+        connections.push({
+          name: opName,
+          path: connPath || '/',
+          method: method.toUpperCase(),
+          folder: tag,
+          selected: true,
+        })
+      }
+    }
+
+    if (!connections.length) return null
+
+    return {
+      serviceName,
+      baseUrl,
+      authType,
+      token,
+      ...(headerName && { headerName }),
+      ...(headerValue && { headerValue }),
+      connections,
+    }
+  } catch {
+    return null
+  }
+}
+
 function buildVarMap(vars?: Array<{ key: string; value: string }>): Record<string, string> {
   const map: Record<string, string> = {}
   for (const v of vars ?? []) {
@@ -462,9 +542,13 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   // Postman import state
   const fileRef = useRef<HTMLInputElement>(null)
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
+  const [openApiUrl, setOpenApiUrl] = useState('')
+  const [openApiLoading, setOpenApiLoading] = useState(false)
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [importDragOver, setImportDragOver] = useState(false)
+  const [showPostmanZone, setShowPostmanZone] = useState(false)
+  const [showOpenApiZone, setShowOpenApiZone] = useState(false)
 
   async function load() { setLoading(true); const r = await fetch('/api/services'); if (r.ok) { const d = await r.json(); setServices(d.services); setConnections(d.connections) }; setLoading(false) }
   useEffect(() => { load() }, [])
@@ -544,6 +628,34 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     if (file) handlePostmanFile(file)
   }
 
+  async function handleOpenApiImport() {
+    const trimmed = openApiUrl.trim()
+    if (!trimmed) return
+    setImportError('')
+    setImportPreview(null)
+    setOpenApiLoading(true)
+    try {
+      let raw: string
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        // Fetch via proxy to avoid CORS
+        const res = await fetch(`/api/openapi-fetch?url=${encodeURIComponent(trimmed)}`)
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Fetch failed') }
+        raw = await res.text()
+      } else {
+        // Treat as pasted JSON/YAML
+        raw = trimmed
+      }
+      const preview = parseOpenApiSpec(raw)
+      if (!preview) { setImportError('Could not parse spec — make sure it is a valid OpenAPI 3.0 JSON or YAML document.'); return }
+      setImportPreview(preview)
+      setOpenApiUrl('')
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setOpenApiLoading(false)
+    }
+  }
+
   async function confirmImport() {
     if (!importPreview) return
     setImporting(true)
@@ -557,7 +669,11 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           base_url: importPreview.baseUrl,
           environment: 'production',
           auth_type: importPreview.authType,
-          auth_config: { token: importPreview.token },
+          token: importPreview.authType === 'bearer' || importPreview.authType === 'oauth2' ? importPreview.token : '',
+          username: importPreview.username ?? '',
+          password: importPreview.password ?? '',
+          header_name: importPreview.headerName ?? '',
+          header_value: importPreview.headerValue ?? '',
           request_timeout_ms: 30000,
           retry_count: 3,
         }),
@@ -583,6 +699,8 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       }
 
       setImportPreview(null)
+      setShowPostmanZone(false)
+      setShowOpenApiZone(false)
       setExpanded(prev => new Set([...prev, serviceId]))
       load()
     } catch (e) {
@@ -745,7 +863,8 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
         <PageTitle>API connections</PageTitle>
         {user.role === 'admin' && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn onClick={() => { fileRef.current?.click() }}> Import Postman</Btn>
+            <Btn onClick={() => { setShowPostmanZone(s => !s); setShowOpenApiZone(false); setImportError('') }}> Import Postman</Btn>
+            <Btn onClick={() => { setShowOpenApiZone(s => !s); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') }}> Import OpenAPI</Btn>
             <Btn onClick={() => { setShowSapForm(s => !s); setSapError('') }} style={{ background: 'var(--bg)', border: '1px solid rgba(0,112,243,0.3)', color: '#0070f3' }}> SAP S/4HANA</Btn>
             <Btn variant="primary" onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add service</Btn>
           </div>
@@ -758,8 +877,8 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       {error && <Alert variant="error">{error}</Alert>}
 
       {/* -- Postman import drop zone -- */}
-      {user.role === 'admin' && !importPreview && (
-        <>
+      {user.role === 'admin' && showPostmanZone && !importPreview && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16 }}>
           <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handlePostmanFile(f); e.target.value = '' }} />
           <div style={dropZoneStyle}
@@ -769,10 +888,32 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             onClick={() => fileRef.current?.click()}>
             <div style={{ fontSize: 22, marginBottom: 6 }}></div>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginBottom: 3 }}>Drop a Postman collection here</div>
-            <div style={{ fontSize: 12, color: 'var(--text3)' }}>or click to browse . supports Postman v2.1 JSON</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>or click to browse · supports Postman v2.1 JSON</div>
           </div>
           {importError && <Alert variant="error">{importError}</Alert>}
-        </>
+        </div>
+      )}
+
+      {/* -- OpenAPI import zone -- */}
+      {user.role === 'admin' && showOpenApiZone && !importPreview && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Import OpenAPI spec</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>Paste a URL or raw JSON/YAML · fetched server-side · supports OpenAPI 3.0</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={{ ...INP, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }}
+              placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
+              value={openApiUrl}
+              onChange={e => setOpenApiUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleOpenApiImport() }}
+              autoFocus
+            />
+            <Btn variant="primary" onClick={handleOpenApiImport} disabled={openApiLoading || !openApiUrl.trim()}>
+              {openApiLoading ? <><Spinner size={12} /> Fetching...</> : 'Import'}
+            </Btn>
+          </div>
+          {importError && <Alert variant="error" style={{ marginTop: 8 }}>{importError}</Alert>}
+        </div>
       )}
 
       {/* -- SAP S/4HANA setup panel -- */}
@@ -1122,7 +1263,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             <Btn variant="primary" onClick={confirmImport} disabled={importing}>
               {importing ? <><Spinner size={12} /> Importing...</> : (() => { const n = importPreview.connections.filter(c => c.selected).length; return `Import ${n} endpoint${n !== 1 ? 's' : ''}` })()}
             </Btn>
-            <Btn onClick={() => { setImportPreview(null); setImportError('') }}>Cancel</Btn>
+            <Btn onClick={() => { setImportPreview(null); setImportError(''); setShowPostmanZone(false); setShowOpenApiZone(false) }}>Cancel</Btn>
           </div>
         </div>
       )}
