@@ -554,6 +554,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [importDragOver, setImportDragOver] = useState(false)
   const [showPostmanZone, setShowPostmanZone] = useState(false)
   const [showOpenApiZone, setShowOpenApiZone] = useState(false)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
 
   async function load() { setLoading(true); const r = await fetch('/api/services'); if (r.ok) { const d = await r.json(); setServices(d.services); setConnections(d.connections) }; setLoading(false) }
   useEffect(() => { load() }, [])
@@ -661,10 +662,19 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     }
   }
 
-  async function confirmImport() {
+  async function confirmImport(replaceExisting = false) {
     if (!importPreview) return
     setImporting(true)
     try {
+      // 0. Dedup check — if service with same name exists, ask user
+      if (!replaceExisting) {
+        const existing = services.find(s => s.label.trim().toLowerCase() === importPreview.serviceName.trim().toLowerCase())
+        if (existing) {
+          setImporting(false)
+          setImportError(`A service named "${importPreview.serviceName}" already exists. Use "Replace" to overwrite or "Add as new" to create a duplicate.`)
+          return
+        }
+      }
       // 1. Create the service
       const svcRes = await fetch('/api/services', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -698,7 +708,10 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             label: conn.folder && conn.folder !== 'Root' ? `${conn.folder} -- ${conn.name}` : conn.name,
             description: `${conn.method} ${conn.path}`,
             base_path: conn.path,
-            pagination_style: 'none',
+            pagination_style: conn.paginationStyle ?? 'none',
+            pagination_limit_param: conn.paginationLimitParam ?? 'limit',
+            pagination_cursor_param: conn.paginationCursorParam ?? 'cursor',
+            pagination_data_path: conn.dataPath ?? '',
           }),
         })
       }
@@ -706,6 +719,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       setImportPreview(null)
       setShowPostmanZone(false)
       setShowOpenApiZone(false)
+      setExpandedFolders(new Set())
       setExpanded(prev => new Set([...prev, serviceId]))
       load()
     } catch (e) {
@@ -1244,28 +1258,45 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{folder}</span>
                           <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{selectedCount}/{items.length}</span>
                         </label>
-                        {items.map((c, i) => (
-                          <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px 7px 32px', cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
-                            <input type="checkbox" checked={c.selected} onChange={e => setConnSelected(folder, c.name, e.target.checked)} />
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: c.method === 'GET' ? 'var(--blue-bg)' : c.method === 'POST' ? 'var(--green-bg)' : 'var(--amber-bg)', color: c.method === 'GET' ? 'var(--blue-t)' : c.method === 'POST' ? 'var(--green-t)' : 'var(--amber-t)', minWidth: 36, textAlign: 'center' }}>{c.method}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                                <code style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.path}</code>
-                                {c.paginationStyle && c.paginationStyle !== 'none' && (
-                                  <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--blue-bg)', color: 'var(--blue-t)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                    {c.paginationStyle}
-                                  </span>
-                                )}
-                                {c.dataPath && (
-                                  <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--surface)', color: 'var(--text3)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                    .{c.dataPath}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </label>
-                        ))}
+                        {(() => {
+                          const FOLD_CAP = 5
+                          const folderKey = `fold_${gi}`
+                          const expanded2 = expandedFolders.has(folderKey)
+                          const visible = expanded2 ? items : items.slice(0, FOLD_CAP)
+                          const hidden = items.length - FOLD_CAP
+                          return (<>
+                            {visible.map((c, i) => (
+                              <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px 7px 32px', cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                                <input type="checkbox" checked={c.selected} onChange={e => setConnSelected(folder, c.name, e.target.checked)} />
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: c.method === 'GET' ? 'var(--blue-bg)' : c.method === 'POST' ? 'var(--green-bg)' : 'var(--amber-bg)', color: c.method === 'GET' ? 'var(--blue-t)' : c.method === 'POST' ? 'var(--green-t)' : 'var(--amber-t)', minWidth: 36, textAlign: 'center' }}>{c.method}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                    <code style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.path}</code>
+                                    {c.paginationStyle && c.paginationStyle !== 'none' && (
+                                      <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--blue-bg)', color: 'var(--blue-t)', whiteSpace: 'nowrap', flexShrink: 0 }}>{c.paginationStyle}</span>
+                                    )}
+                                    {c.dataPath && (
+                                      <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'var(--surface)', color: 'var(--text3)', whiteSpace: 'nowrap', flexShrink: 0 }}>.{c.dataPath}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </label>
+                            ))}
+                            {!expanded2 && hidden > 0 && (
+                              <button onClick={() => setExpandedFolders(s => { const n = new Set(s); n.add(folderKey); return n })}
+                                style={{ display: 'block', width: '100%', padding: '6px 14px 6px 32px', background: 'none', border: 'none', borderTop: '1px solid var(--border)', cursor: 'pointer', fontSize: 11, color: 'var(--blue-t)', textAlign: 'left' }}>
+                                +{hidden} more — show all
+                              </button>
+                            )}
+                            {expanded2 && items.length > FOLD_CAP && (
+                              <button onClick={() => setExpandedFolders(s => { const n = new Set(s); n.delete(folderKey); return n })}
+                                style={{ display: 'block', width: '100%', padding: '6px 14px 6px 32px', background: 'none', border: 'none', borderTop: '1px solid var(--border)', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', textAlign: 'left' }}>
+                                Show less
+                              </button>
+                            )}
+                          </>)
+                        })()}
                       </div>
                     )
                   })}
@@ -1277,9 +1308,16 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           {importError && <Alert variant="error">{importError}</Alert>}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <Btn variant="primary" onClick={confirmImport} disabled={importing}>
-              {importing ? <><Spinner size={12} /> Importing...</> : (() => { const n = importPreview.connections.filter(c => c.selected).length; return `Import ${n} endpoint${n !== 1 ? 's' : ''}` })()}
-            </Btn>
+            {importError && importError.includes('already exists') ? (
+              <>
+                <Btn variant="primary" onClick={() => { setImportError(''); confirmImport(true) }} disabled={importing}>Replace existing</Btn>
+                <Btn onClick={() => { setImportError(''); confirmImport(false) }} disabled={importing}>Add as new</Btn>
+              </>
+            ) : (
+              <Btn variant="primary" onClick={() => confirmImport()} disabled={importing}>
+                {importing ? <><Spinner size={12} /> Importing...</> : (() => { const n = importPreview.connections.filter(c => c.selected).length; return `Import ${n} endpoint${n !== 1 ? 's' : ''}` })()}
+              </Btn>
+            )}
             <Btn onClick={() => { setImportPreview(null); setImportError(''); setShowPostmanZone(false); setShowOpenApiZone(false) }}>Cancel</Btn>
           </div>
         </div>
