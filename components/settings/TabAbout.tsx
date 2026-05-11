@@ -1,3 +1,5 @@
+'use client'
+import { useState, useEffect } from 'react'
 import { PageTitle, PageSub, SectionLabel, Card, Badge } from './ui'
 
 const DEPS = [
@@ -6,12 +8,39 @@ const DEPS = [
   { name: '@neondatabase/serverless', version: '0.10.4', ok: true },
   { name: 'bcryptjs',                version: '2.4.3',  ok: true },
   { name: 'jose',                    version: '5.9.6',  ok: true },
-  { name: 'pg',                      version: '8.13.1', ok: false },
   { name: 'react',                   version: '19.1.0', ok: true },
+  { name: 'react-markdown',          version: '9.x',    ok: true },
   { name: 'typescript',              version: '5.7.3',  ok: true },
 ]
 
+interface ChangelogRelease {
+  version: string
+  date: string
+  sections: Record<string, string[]>
+}
+
+interface DeploymentInfo {
+  mode: string
+  scheduler: string
+  database: string
+  appUrl: string
+  nodeEnv: string
+  changelog: ChangelogRelease[]
+  currentVersion: string
+  latestVersion: string | null
+  latestReleaseUrl: string | null
+  updateAvailable: boolean
+}
+
 export default function TabAbout() {
+  const [deploy, setDeploy] = useState<DeploymentInfo | null>(null)
+
+  useEffect(() => {
+    fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {})
+  }, [])
+
+  const isVercel = deploy?.mode === 'vercel'
+
   return (
     <div className="fade-in">
       <PageTitle>About</PageTitle>
@@ -24,16 +53,16 @@ export default function TabAbout() {
           <span style={{ fontSize: 14, color: 'var(--text2)', background: 'var(--bg3)', padding: '3px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', fontWeight: 500 }}>v1.0.0</span>
           <Badge label="stable" color="green" />
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>Build 20260408 . Released 8 April 2026 . ugx.ai</p>
+        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>Build 20260408 · Released 8 April 2026 · ugx.ai</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            { label: 'Platform',       value: 'Vercel (Node.js runtime)', sub: 'Serverless functions' },
-            { label: 'AI model',       value: 'claude-sonnet-4-5',         sub: 'Anthropic . streaming' },
-            { label: 'Database',       value: 'PostgreSQL (Neon)',         sub: 'Serverless . auto-scaling' },
-            { label: 'Authentication', value: 'JWT + bcrypt',              sub: '7-day sessions' },
-            { label: 'Web search',     value: 'Tavily API',                sub: '1,000 free/month' },
-            { label: 'DB querying',    value: 'node-postgres (pg)',        sub: 'PostgreSQL, MySQL, SQL Server' },
+            { label: 'Platform',       value: deploy ? (isVercel ? 'Vercel (serverless)' : 'Self-hosted (Node.js)') : '—', sub: deploy ? (isVercel ? 'Serverless functions' : deploy.appUrl) : 'Loading...' },
+            { label: 'AI model',       value: 'claude-sonnet-4-6', sub: 'Anthropic · streaming' },
+            { label: 'Database',       value: deploy?.database || '—', sub: deploy ? (deploy.database.includes('SQLite') ? 'Local file · zero-config' : 'Cloud · auto-scaling') : 'Loading...' },
+            { label: 'Authentication', value: 'JWT + bcrypt', sub: '7-day sessions' },
+            { label: 'Scheduler',      value: deploy ? (deploy.scheduler + ' · every 60s') : '—', sub: deploy ? (isVercel ? 'vercel.json crons' : 'Built-in Node timer') : 'Loading...' },
+            { label: 'Environment',    value: deploy?.nodeEnv || '—', sub: deploy ? (deploy.nodeEnv === 'production' ? 'Production build' : 'Development mode') : 'Loading...' },
           ].map(item => (
             <div key={item.label} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: 5 }}>{item.label}</div>
@@ -44,6 +73,37 @@ export default function TabAbout() {
         </div>
       </div>
 
+      {/* Update available banner */}
+      {deploy?.updateAvailable && (
+        <div style={{ background: 'var(--amber-bg, #fffbeb)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--amber-t, #d97706)', flexShrink: 0 }}><circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/></svg>
+          <span style={{ color: 'var(--amber-t, #d97706)', fontWeight: 500, flex: 1 }}>
+            Version {deploy.latestVersion} available — you are on {deploy.currentVersion}
+          </span>
+          {deploy.latestReleaseUrl && (
+            <a href={deploy.latestReleaseUrl} target="_blank" rel="noreferrer"
+              style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', textDecoration: 'none', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+              See what's new →
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Deployment mode banner */}
+      {deploy && (
+        <div style={{ background: isVercel ? 'var(--blue-bg)' : 'var(--green-bg)', border: `1px solid ${isVercel ? 'rgba(0,112,243,.2)' : 'rgba(22,163,74,.2)'}`, borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: isVercel ? 'var(--blue-t)' : 'var(--green-t)', flexShrink: 0 }}>
+            {isVercel
+              ? <><path d="M8 1l7 14H1L8 1z"/></>
+              : <><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 7h6M5 10h4"/></>
+            }
+          </svg>
+          <span style={{ color: isVercel ? 'var(--blue-t)' : 'var(--green-t)', fontWeight: 500 }}>
+            {isVercel ? 'Vercel Cloud deployment' : 'Self-hosted deployment'} · Scheduler running every minute
+          </span>
+        </div>
+      )}
+
       <SectionLabel>Dependencies</SectionLabel>
       <Card>
         <div style={{ padding: '0 18px' }}>
@@ -52,7 +112,7 @@ export default function TabAbout() {
               <span style={{ fontSize: 13, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{d.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{d.version}</span>
-                {d.ok ? <span style={{ fontSize: 12, color: 'var(--green-t)', fontWeight: 500 }}>ok up to date</span> : <span style={{ fontSize: 12, color: 'var(--amber-t)', fontWeight: 500 }}> update available</span>}
+                {d.ok ? <span style={{ fontSize: 12, color: 'var(--green-t)', fontWeight: 500 }}>✓ up to date</span> : <span style={{ fontSize: 12, color: 'var(--amber-t)', fontWeight: 500 }}>↑ update available</span>}
               </div>
             </div>
           ))}
@@ -60,34 +120,31 @@ export default function TabAbout() {
       </Card>
 
       <SectionLabel>Changelog</SectionLabel>
-      <Card>
-        <div style={{ padding: '18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 16, color: 'var(--text)' }}>v1.0.0</span>
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>8 April 2026</span>
-            <Badge label="initial release" color="green" />
-          </div>
-          <div style={{ paddingLeft: 4 }}>
-            {[
-              'AI chat with streaming responses and tool use',
-              'Web search via Tavily API',
-              'Database connections -- query PostgreSQL, MySQL, SQL Server from chat',
-              'API service workspaces -- call HubSpot, Stripe, Salesforce and any REST API',
-              'User management with admin/user roles',
-              'Usage analytics with per-user cost tracking',
-              'Service monitoring with live health checks',
-              'Light and dark mode with system preference detection',
-            ].map((item, i) => (
-              <div key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.9, display: 'flex', gap: 8 }}>
-                <span style={{ color: 'var(--text4)' }}>.</span>{item}
+      {(deploy?.changelog || []).map((release, ri) => (
+        <Card key={release.version} style={{ marginBottom: 12 }}>
+          <div style={{ padding: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 16, color: 'var(--text)' }}>v{release.version}</span>
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>{release.date}</span>
+              {ri === 0 && <Badge label="latest" color="blue" />}
+              {release.version === '1.0.0' && <Badge label="initial release" color="green" />}
+            </div>
+            {Object.entries(release.sections).map(([section, items]) => (
+              <div key={section} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{section}</div>
+                {items.map((item, i) => (
+                  <div key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.9, display: 'flex', gap: 8 }}>
+                    <span style={{ color: 'var(--text4)', flexShrink: 0 }}>·</span>{item}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        </div>
-      </Card>
+        </Card>
+      ))}
 
       <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 8 }}>
-        Mosaic v1.0.0 . build 20260408 . ugx.ai . powered by UGX Systems
+        Mosaic v1.0.0 · build 20260408 · ugx.ai · powered by UGX Systems
       </div>
     </div>
   )

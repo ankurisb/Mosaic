@@ -13,7 +13,24 @@ async function ensureTable() {
   )`.catch(() => {})
 }
 
-const KNOWN_KEYS = ['TAVILY_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY']
+const KNOWN_KEYS = [
+  // AI & Search
+  'TAVILY_API_KEY',
+  // Notifications
+  'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
+  // n8n
+  'N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY',
+  // GitHub update checker
+  'GITHUB_TOKEN', 'GITHUB_REPO',
+  // App config
+  'NEXT_PUBLIC_APP_URL', 'CRON_SECRET',
+  // Database
+  'DATABASE_URL',
+  // Superset
+  'SUPERSET_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD',
+  // Airbyte
+  'AIRBYTE_USER', 'AIRBYTE_PASSWORD',
+]
 
 export async function GET() {
   const session = await getSession()
@@ -21,8 +38,14 @@ export async function GET() {
   await ensureTable()
   const sql  = getDb()
   // SQLite doesn't support ANY() -- use individual queries or IN with literal
-  const placeholders = KNOWN_KEYS.map(() => '?').join(',')
-  const rows = await sql`SELECT key, value_enc FROM kv_settings WHERE key IN (${KNOWN_KEYS[0]}, ${KNOWN_KEYS[1]}, ${KNOWN_KEYS[2]})`
+  // Fetch all known keys dynamically
+  // Fetch all known keys — query each individually to avoid SQL injection and driver compat issues
+  const allRows: {key:string;value_enc:string}[] = []
+  for (const k of KNOWN_KEYS) {
+    const r = await sql`SELECT key, value_enc FROM kv_settings WHERE key=${k}`.catch(() => [])
+    if ((r as {key:string;value_enc:string}[]).length) allRows.push((r as {key:string;value_enc:string}[])[0])
+  }
+  const rows = allRows
 
   const result: Record<string, { configured: boolean; preview: string }> = {}
   KNOWN_KEYS.forEach(k => { result[k] = { configured: false, preview: '' } })

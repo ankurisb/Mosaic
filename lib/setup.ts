@@ -482,6 +482,19 @@ export async function setupDatabase() {
   }
 
   // -- Superset: set Public role permissions for embedded dashboards ----
+  // Built-in scheduler for self-hosted deployments (replaces Vercel Cron)
+  if (typeof process !== 'undefined' && !process.env.VERCEL && !(global as Record<string,unknown>).__mosaicSchedulerStarted) {
+    (global as Record<string, unknown>).__mosaicSchedulerStarted = true
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
+    const cronSecret = process.env.CRON_SECRET
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (cronSecret) headers['Authorization'] = `Bearer ${cronSecret}`
+    setInterval(() => {
+      fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
+    }, 60_000)
+    console.log('[scheduler] Built-in scheduler started — firing every 60s')
+  }
+
   // Fire-and-forget: never blocks Mosaic startup
   initSupersetPublicRole().catch(() => {})
 
