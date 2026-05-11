@@ -19,12 +19,7 @@ interface ToolCall { name: string; input: unknown; result?: unknown }
 interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; narration?: string; startedAt?: number }
 interface Conv { id: string; title: string; messages: Message[] }
 
-const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
-  { icon: '🔍', label: 'Search the web', prompt: 'Search the web for the latest AI news' },
-  { icon: '🗄️', label: 'Query a database', prompt: 'What databases do I have connected?' },
-  { icon: '🔌', label: 'Call an API', prompt: 'What API connections do I have?' },
-  { icon: '✏️', label: 'Write something', prompt: 'Write a professional email template for a product launch' },
-]
+const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = []
 
 // Phase indicator shown above the tool pill while streaming.
 // Derived purely from message state (tools.length, content.length) — no
@@ -167,9 +162,46 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [mentionFilter, setMentionFilter] = useState('')
   const [mentionIdx, setMentionIdx] = useState(0)
   const [pinnedSources, setPinnedSources] = useState<DataSource[]>([])
+  const [plusOpen, setPlusOpen] = useState(false)
+  const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
+  const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
+  const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const plusRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const mentionRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetch('/api/rca-workflows').then(r => r.json()).then(d => {
+      if (d.workflows) setWorkflows(d.workflows.filter((w: { active: boolean }) => w.active))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!plusOpen) return
+    const handler = (e: MouseEvent) => {
+      if (plusRef.current && !plusRef.current.contains(e.target as Node)) {
+        setPlusOpen(false); setPlusSubmenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [plusOpen])
+
+  async function handleFiles(files: FileList | null) {
+    if (!files) return
+    for (const file of Array.from(files)) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const data = (e.target?.result as string).split(',')[1]
+        const preview = file.type.startsWith('image/') ? (e.target?.result as string) : undefined
+        setAttachments(a => [...a, { name: file.name, type: file.type, data, preview }])
+      }
+      reader.readAsDataURL(file)
+    }
+  }
 
   const active = convs.find(c => c.id === activeId) || convs[0] || { id: 'local-0', title: 'New conversation', messages: [] }
   // Safety: ensure messages is always an array
@@ -365,8 +397,10 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           pinnedSources.map(s => `"${s.label}" (id: ${s.id})`).join(', ') +
           '. Prefer these sources unless the question clearly requires a different one.'
         : ''
+      abortRef.current = new AbortController()
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: abortRef.current.signal,
         body: JSON.stringify({
           messages: history.map(m => ({ role: m.role, content: m.content })),
           system: systemPrompt + pinnedNote,
@@ -412,8 +446,13 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           } catch {}
         }
       }
-    } catch (err) { updateLast(cid, m => ({ ...m, content: 'Error: ' + (err instanceof Error ? err.message : 'Something went wrong') })) }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        updateLast(cid, m => ({ ...m, content: m.content || 'Error: ' + (err instanceof Error ? err.message : 'Something went wrong') }))
+      }
+    }
     finally {
+      abortRef.current = null
       // Parse and strip <rca_output> block from the final assistant message
       setConvs(p => p.map(c => {
         if (c.id !== cid && c.id !== activeId) return c
@@ -570,36 +609,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       {/* -- Main -- */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* System prompt + model selector */}
-        <div style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <button onClick={() => setShowSystem(v => !v)}
-              style={{ flex: 1, background: 'none', border: 'none', padding: '8px 20px', fontSize: 11, color: 'var(--text3)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              <span style={{ display: 'inline-block', transition: 'transform .15s', transform: showSystem ? 'rotate(90deg)' : 'none', fontSize: 9 }}></span>
-              System prompt
-              {systemPrompt && <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--blue-t)', letterSpacing: 0 }}>. active</span>}
-            </button>
-            {/* Model selector */}
-            <div style={{ padding: '0 14px 0 0', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <span style={{ fontSize: 10, color: 'var(--text4)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.06em' }}>Model</span>
-              <select
-                value={model}
-                onChange={e => setModel(e.target.value)}
-                style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '3px 6px', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
-                <option value="claude-haiku-4-5-20251001">Haiku -- fast &amp; cheap</option>
-                <option value="claude-sonnet-4-6">Sonnet -- balanced</option>
-                <option value="claude-opus-4-6">Opus -- most capable</option>
-              </select>
-            </div>
-          </div>
-          {showSystem && (
-            <div style={{ padding: '0 20px 12px' }}>
-              <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={3}
-                placeholder="You are a helpful assistant..."
-                style={{ width: '100%', resize: 'none', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '9px 12px', fontSize: 12, color: 'var(--text)', outline: 'none', fontFamily: 'inherit' }} />
-            </div>
-          )}
-        </div>
+
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 0' }}>
@@ -609,58 +619,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: 'var(--text)', marginBottom: 8 }}>What can I help with?</h1>
                 <p style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 24 }}>Web search · Database & API queries · Industrial AI</p>
 
-                {/* Source chips — Option 2 */}
-                {dataSources.length > 0 && (
-                  <div style={{ marginBottom: 28 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 10 }}>
-                      Analyse data from
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {dataSources.map(src => {
-                        const isPinned = pinnedSources.find(s => s.id === src.id)
-                        return (
-                          <button key={src.id}
-                            onClick={() => isPinned ? removePinned(src.id) : setPinnedSources(p => [...p, src])}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 6,
-                              padding: '6px 12px', borderRadius: 'var(--radius-pill)',
-                              border: `1px solid ${isPinned ? 'var(--accent-bg)' : 'var(--border2)'}`,
-                              background: isPinned ? 'var(--accent-bg)' : 'var(--surface)',
-                              color: isPinned ? 'var(--accent-fg)' : 'var(--text2)',
-                              fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                              fontFamily: 'inherit', transition: 'all .12s',
-                              boxShadow: 'var(--shadow)',
-                            }}>
-                            {sourceIcon(src)}
-                            {src.label}
-                            {src.type === 'db' && src.dialect && (
-                              <span style={{ fontSize: 10, opacity: 0.7, fontWeight: 400 }}>{src.dialect}</span>
-                            )}
-                            {isPinned && <span style={{ fontSize: 10, opacity: 0.8 }}>✓</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {pinnedSources.length > 0 && (
-                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-                        Focusing on: {pinnedSources.map(s => s.label).join(', ')} · <button onClick={() => setPinnedSources([])} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', textDecoration: 'underline' }}>clear</button>
-                      </div>
-                    )}
-                  </div>
-                )}
 
-                {/* Action suggestions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 380 }}>
-                  {SUGGESTIONS.map(s => (
-                    <button key={s.label} onClick={() => send(s.prompt)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 14, color: 'var(--text)', fontFamily: 'inherit', fontWeight: 500, textAlign: 'left', boxShadow: 'var(--shadow)', transition: 'box-shadow .15s, transform .1s' }}
-                      onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow)'; e.currentTarget.style.transform = 'none' }}>
-                      <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>{s.icon}</span>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             ) : (
               active.messages.map((msg, i) => (
@@ -750,30 +709,27 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         {/* Input bar */}
         <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: '14px 24px 18px', flexShrink: 0 }}>
           <div style={{ maxWidth: 720, margin: '0 auto', position: 'relative' }}>
-            {/* RCA + pinned source chips row */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button
-                onClick={() => setInput('Run a full RCA on the latest quality defects. Query the connected data sources and produce a Pareto, Fishbone, 5 Whys, and corrective action plan.')}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s' }}
-                title="Launch a structured RCA analysis"
-              >
-                <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="9" width="4" height="3" rx="1"/>
-                  <rect x="8" y="4.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="9"/><line x1="3" y1="6.5" x2="8" y2="6.5"/>
-                </svg>
-                Start RCA
-              </button>
-              {/* Pinned source chips */}
-              {pinnedSources.map(src => (
-                <span key={src.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'var(--accent-bg)', color: 'var(--accent-fg)', fontSize: 11, fontWeight: 600 }}>
-                  {sourceIcon(src)} {src.label}
-                  <button onClick={() => removePinned(src.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
-                </span>
-              ))}
-              {dataSources.length > 0 && pinnedSources.length === 0 && (
-                <span style={{ fontSize: 11, color: 'var(--text4)' }}>Type @ to select a data source</span>
-              )}
-            </div>
+            {/* Pinned source + attachment chips */}
+            {(pinnedSources.length > 0 || attachments.length > 0) && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {pinnedSources.map(src => (
+                  <span key={src.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'var(--accent-bg)', color: 'var(--accent-fg)', fontSize: 11, fontWeight: 600 }}>
+                    {sourceIcon(src)} {src.label}
+                    <button onClick={() => removePinned(src.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
+                  </span>
+                ))}
+                {attachments.map((a, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 500, color: 'var(--text2)' }}>
+                    {a.preview
+                      ? <img src={a.preview} style={{ width: 16, height: 16, borderRadius: 2, objectFit: 'cover' }} alt="" />
+                      : <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h5l3 3v7H2V1z"/><path d="M7 1v3h3"/></svg>
+                    }
+                    {a.name.slice(0, 20)}{a.name.length > 20 ? '…' : ''}
+                    <button onClick={() => setAttachments(x => x.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* @ Mention dropdown — Option 3 */}
             {mentionOpen && (() => {
@@ -804,7 +760,150 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 </div>
               ) : null
             })()}
+            {/* Hidden file input */}
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt" style={{ display: 'none' }}
+              onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
+
+            {/* + menu */}
+            <div ref={plusRef} style={{ position: 'relative', marginBottom: 6 }}>
+              {plusOpen && (
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 4, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', minWidth: 220, zIndex: 100, overflow: 'hidden' }}>
+
+                  <button onClick={() => { fileInputRef.current?.click(); setPlusOpen(false) }}
+                    style={{ width: '100%', padding: '10px 14px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 2h6l3 3v8H2V2z"/><path d="M8 2v3h3"/></svg>
+                    Add files
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>image · pdf · csv</span>
+                  </button>
+
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  <button onClick={() => setPlusSubmenu(s => s === 'sources' ? null : 'sources')}
+                    style={{ width: '100%', padding: '10px 14px', background: plusSubmenu === 'sources' ? 'var(--bg3)' : 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                    onMouseLeave={e => e.currentTarget.style.background = plusSubmenu === 'sources' ? 'var(--bg3)' : 'none'}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><ellipse cx="7.5" cy="4" rx="5" ry="2"/><path d="M2.5 4v3.5c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2.5 7.5V11c0 1.1 2.2 2 5 2s5-.9 5-2V7.5"/></svg>
+                    Data sources
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginLeft: 'auto', transform: plusSubmenu === 'sources' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
+                  </button>
+                  {plusSubmenu === 'sources' && (
+                    <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', maxHeight: 200, overflowY: 'auto' }}>
+                      {dataSources.length === 0
+                        ? <div style={{ padding: '8px 14px 8px 38px', fontSize: 12, color: 'var(--text4)' }}>No sources connected yet</div>
+                        : dataSources.map(src => {
+                          const isPinned = !!pinnedSources.find(s => s.id === src.id)
+                          return (
+                            <button key={src.id}
+                              onClick={() => { isPinned ? removePinned(src.id) : setPinnedSources(p => [...p, src]); setPlusOpen(false); setPlusSubmenu(null) }}
+                              style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', fontSize: 12, color: 'var(--text)' }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              {sourceIcon(src)}
+                              <span style={{ flex: 1 }}>{src.label}</span>
+                              {isPinned && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                            </button>
+                          )
+                        })
+                      }
+                    </div>
+                  )}
+
+                  <button onClick={() => setPlusSubmenu(s => s === 'workflows' ? null : 'workflows')}
+                    style={{ width: '100%', padding: '10px 14px', background: plusSubmenu === 'workflows' ? 'var(--bg3)' : 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                    onMouseLeave={e => e.currentTarget.style.background = plusSubmenu === 'workflows' ? 'var(--bg3)' : 'none'}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="11" width="4" height="3" rx="1"/><rect x="10" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="11"/><line x1="3" y1="7.5" x2="10" y2="7.5"/></svg>
+                    RCA Workflows
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginLeft: 'auto', transform: plusSubmenu === 'workflows' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
+                  </button>
+                  {plusSubmenu === 'workflows' && (
+                    <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                      {workflows.length === 0
+                        ? <div style={{ padding: '8px 14px 8px 38px', fontSize: 12, color: 'var(--text4)' }}>No active workflows</div>
+                        : workflows.map(w => (
+                          <button key={w.id}
+                            onClick={() => { setInput(`Run the "${w.name}" RCA workflow on the connected data sources.`); setPlusOpen(false); setPlusSubmenu(null) }}
+                            style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 500 }}>{w.name}</div>
+                            {w.description && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 1 }}>{w.description.slice(0, 50)}</div>}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  )}
+
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  <button style={{ width: '100%', padding: '10px 14px', background: 'none', border: 'none', textAlign: 'left', cursor: 'default', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text3)' }}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3 3"/></svg>
+                    Web search
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>always on</span>
+                  </button>
+
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  <button onClick={() => setPlusSubmenu(s => s === 'system' ? null : 'system')}
+                    style={{ width: '100%', padding: '10px 14px', background: plusSubmenu === 'system' ? 'var(--bg3)' : 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                    onMouseLeave={e => e.currentTarget.style.background = plusSubmenu === 'system' ? 'var(--bg3)' : 'none'}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="3" width="13" height="9" rx="1.5"/><path d="M4 7h7M4 10h4"/></svg>
+                    System prompt
+                    {systemPrompt && <span style={{ marginLeft: 4, width: 6, height: 6, borderRadius: '50%', background: 'var(--blue-t)', flexShrink: 0 }} />}
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginLeft: 'auto', transform: plusSubmenu === 'system' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
+                  </button>
+                  {plusSubmenu === 'system' && (
+                    <div style={{ padding: '8px 14px', background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                      <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={3}
+                        placeholder="Custom instructions for this session..."
+                        style={{ width: '100%', resize: 'none', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: 12, color: 'var(--text)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                    </div>
+                  )}
+
+                  <button onClick={() => setPlusSubmenu(s => s === 'model' ? null : 'model')}
+                    style={{ width: '100%', padding: '10px 14px', background: plusSubmenu === 'model' ? 'var(--bg3)' : 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                    onMouseLeave={e => e.currentTarget.style.background = plusSubmenu === 'model' ? 'var(--bg3)' : 'none'}>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7.5" cy="7.5" r="5.5"/><path d="M7.5 5v2.5l1.5 1.5"/></svg>
+                    Model
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>
+                      {model === 'claude-haiku-4-5-20251001' ? 'Haiku' : model === 'claude-sonnet-4-6' ? 'Sonnet' : 'Opus'}
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ transform: plusSubmenu === 'model' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
+                  </button>
+                  {plusSubmenu === 'model' && (
+                    <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                      {[
+                        { value: 'claude-haiku-4-5-20251001', label: 'Haiku', desc: 'Fast & lightweight' },
+                        { value: 'claude-sonnet-4-6', label: 'Sonnet', desc: 'Balanced — recommended' },
+                        { value: 'claude-opus-4-6', label: 'Opus', desc: 'Most capable' },
+                      ].map(m => (
+                        <button key={m.value}
+                          onClick={() => { setModel(m.value); setPlusSubmenu(null) }}
+                          style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === m.value ? 600 : 400 }}>{m.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text4)' }}>{m.desc}</div>
+                          </div>
+                          {model === m.value && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-lg)', padding: '10px 12px', boxShadow: 'var(--shadow)' }}>
+              <button onClick={() => { setPlusOpen(o => !o); setPlusSubmenu(null) }}
+                style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border2)', background: plusOpen ? 'var(--bg3)' : 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
+              </button>
               <textarea ref={taRef} value={input}
                 onChange={e => {
                   const val = e.target.value
@@ -840,13 +939,18 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 placeholder="Message... (Enter to send, Shift+Enter for new line)"
                 rows={1}
                 style={{ flex: 1, resize: 'none', background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: 'var(--text)', lineHeight: 1.6, fontFamily: 'inherit' }} />
-              <button onClick={() => send(input)} disabled={streaming || !input.trim()}
-                style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: streaming || !input.trim() ? 'var(--bg4)' : 'var(--accent-bg)', color: streaming || !input.trim() ? 'var(--text4)' : 'var(--accent-fg)', cursor: streaming || !input.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, transition: 'background .15s', boxShadow: streaming || !input.trim() ? 'none' : 'var(--shadow)' }}>
-                {streaming
-                  ? <span style={{ display: 'inline-block', width: 14, height: 14, border: '1.5px solid var(--text4)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                  : <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7h10M8 3l4 4-4 4"/></svg>
-                }
-              </button>
+              {streaming ? (
+                <button onClick={() => abortRef.current?.abort()}
+                  style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--bg4)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
+                  title="Stop generating">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
+                </button>
+              ) : (
+                <button onClick={() => send(input)} disabled={!input.trim()}
+                  style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: !input.trim() ? 'var(--bg4)' : 'var(--accent-bg)', color: !input.trim() ? 'var(--text4)' : 'var(--accent-fg)', cursor: !input.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s', boxShadow: !input.trim() ? 'none' : 'var(--shadow)' }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7h10M8 3l4 4-4 4"/></svg>
+                </button>
+              )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text4)', textAlign: 'center', marginTop: 8 }}>
               Mosaic may make mistakes. Verify important information.
