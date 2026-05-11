@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import RcaRenderer from './rca/RcaRenderer'
+import ReactMarkdown from 'react-markdown'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
 import type { RcaBlock, RcaAction } from '@/lib/rca'
 
@@ -694,20 +695,34 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     </div>
                   ) : (
                     <>
-                      <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                        {msg.rca ? (() => {
-                          const lines = msg.content.split('\n')
-                          // Strip trailing lines that look like action button labels
-                          // (short lines under 60 chars with no sentence-ending punctuation)
-                          let end = lines.length
-                          while (end > 0) {
-                            const line = lines[end - 1].trim()
-                            if (line === '' || (line.length < 60 && !/[.!?:]$/.test(line) && !/^[A-Z].*[a-z]{3,}.*[.!?]/.test(line))) {
-                              end--
-                            } else break
-                          }
-                          return lines.slice(0, end).join('\n').trim()
-                        })() : msg.content}
+                      <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)' }} className="prose-mosaic">
+                        <ReactMarkdown
+                          components={{
+                            p: ({children}) => <p style={{ margin: '0 0 10px', lineHeight: 1.8 }}>{children}</p>,
+                            strong: ({children}) => <strong style={{ fontWeight: 600, color: 'var(--text)' }}>{children}</strong>,
+                            ul: ({children}) => <ul style={{ margin: '6px 0 10px', paddingLeft: 20 }}>{children}</ul>,
+                            ol: ({children}) => <ol style={{ margin: '6px 0 10px', paddingLeft: 20 }}>{children}</ol>,
+                            li: ({children}) => <li style={{ margin: '3px 0', lineHeight: 1.7 }}>{children}</li>,
+                            h1: ({children}) => <h1 style={{ fontSize: 18, fontWeight: 600, margin: '16px 0 8px', color: 'var(--text)' }}>{children}</h1>,
+                            h2: ({children}) => <h2 style={{ fontSize: 16, fontWeight: 600, margin: '14px 0 6px', color: 'var(--text)' }}>{children}</h2>,
+                            h3: ({children}) => <h3 style={{ fontSize: 14, fontWeight: 600, margin: '12px 0 4px', color: 'var(--text)' }}>{children}</h3>,
+                            code: ({children}) => <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3 }}>{children}</code>,
+                            pre: ({children}) => <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', overflowX: 'auto', margin: '8px 0' }}>{children}</pre>,
+                            blockquote: ({children}) => <blockquote style={{ borderLeft: '3px solid var(--border2)', paddingLeft: 12, margin: '8px 0', color: 'var(--text3)', fontStyle: 'italic' }}>{children}</blockquote>,
+                            a: ({href, children}) => <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-t)', textDecoration: 'none' }}>{children}</a>,
+                            hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
+                          }}
+                        >
+                          {msg.rca ? (() => {
+                            const lines = msg.content.split('\n')
+                            let end = lines.length
+                            while (end > 0) {
+                              const line = lines[end - 1].trim()
+                              if (line === '' || (line.length < 60 && !/[.!?:]$/.test(line) && !/^[A-Z].*[a-z]{3,}.*[.!?]/.test(line))) { end-- } else break
+                            }
+                            return lines.slice(0, end).join('\n').trim()
+                          })() : msg.content}
+                        </ReactMarkdown>
                         {isLastStreaming(i) && (
                           <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text)', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', borderRadius: 1 }} />
                         )}
