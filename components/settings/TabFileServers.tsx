@@ -33,6 +33,8 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
   const [error, setError] = useState('')
   const [testing, setTesting] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, { ok: boolean; message?: string; latencyMs?: number }>>({})
+  const [fsSearch, setFsSearch] = useState('')
+  const [fsPage, setFsPage] = useState(1)
 
   async function load() {
     setLoading(true)
@@ -82,6 +84,10 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
   }
 
   const t = form.transport
+  const FS_PAGE_SIZE = 10
+  const fsFiltered = servers.filter(s => !fsSearch || s.label?.toLowerCase().includes(fsSearch.toLowerCase()) || s.transport?.toLowerCase().includes(fsSearch.toLowerCase()))
+  const fsTotalPages = Math.ceil(fsFiltered.length / FS_PAGE_SIZE) || 1
+  const fsPaged = fsFiltered.slice((fsPage - 1) * FS_PAGE_SIZE, fsPage * FS_PAGE_SIZE)
 
   return (
     <div className="fade-in">
@@ -160,8 +166,11 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
           No file servers configured. Add one above to let Mosaic read files from your network shares, SFTP servers, or S3 buckets.
         </div>
       ) : (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-          {servers.map((s, i) => {
+        <>
+          <input style={{ width: '100%', padding: '8px 12px', marginBottom: 10, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            placeholder="Search file servers..." value={fsSearch} onChange={e => { setFsSearch(e.target.value); setFsPage(1) }} />
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+            {fsPaged.map((s, i) => {
             const tr = results[s.id]
             return (
               <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: i < servers.length - 1 ? '1px solid var(--border)' : 'none' }}>
@@ -183,8 +192,16 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
                 </div>
               </div>
             )
-          })}
-        </div>
+            })}
+          </div>
+          {(
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 0 4px' }}>
+              <button onClick={() => setFsPage(p => Math.max(1, p - 1))} disabled={fsPage === 1} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: fsPage === 1 ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>←</button>
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>Page {fsPage} of {fsTotalPages}</span>
+              <button onClick={() => setFsPage(p => Math.min(fsTotalPages, p + 1))} disabled={fsPage === fsTotalPages} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: fsPage === fsTotalPages ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>→</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

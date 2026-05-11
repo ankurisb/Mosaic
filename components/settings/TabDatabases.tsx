@@ -92,6 +92,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [envDragOver, setEnvDragOver] = useState(false)
 
   const [sandboxing, setSandboxing] = useState(false)
+  const [dbSearch, setDbSearch] = useState('')
+  const [dbPage, setDbPage] = useState(1)
   const [sandboxMsg, setSandboxMsg] = useState('')
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
 
@@ -195,6 +197,10 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   }
 
   const envColor = (e: string): 'red'|'amber'|'green' => e === 'production' ? 'red' : e === 'staging' ? 'amber' : 'green'
+  const DB_PAGE_SIZE = 10
+  const dbFiltered = conns.filter(conn => !dbSearch || conn.label?.toLowerCase().includes(dbSearch.toLowerCase()) || conn.dialect?.toLowerCase().includes(dbSearch.toLowerCase()))
+  const dbTotalPages = Math.ceil(dbFiltered.length / DB_PAGE_SIZE) || 1
+  const dbPaged = dbFiltered.slice((dbPage - 1) * DB_PAGE_SIZE, dbPage * DB_PAGE_SIZE)
 
   return (
     <div className="fade-in">
@@ -459,8 +465,11 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
           No database connections yet. Add one above to start querying from chat.
         </div>
       ) : (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-          {conns.map((c, i) => {
+        <>
+          <input style={{ width: '100%', padding: '8px 12px', marginBottom: 10, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            placeholder="Search databases..." value={dbSearch} onChange={e => { setDbSearch(e.target.value); setDbPage(1) }} />
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+            {dbPaged.map((c, i) => {
             const tr = results[c.id]
             return (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: i < conns.length - 1 ? '1px solid var(--border)' : 'none' }}>
@@ -478,8 +487,16 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 </div>
               </div>
             )
-          })}
-        </div>
+            })}
+          </div>
+          {(
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 0 4px' }}>
+              <button onClick={() => setDbPage(p => Math.max(1, p - 1))} disabled={dbPage === 1} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: dbPage === 1 ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>←</button>
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>Page {dbPage} of {dbTotalPages}</span>
+              <button onClick={() => setDbPage(p => Math.min(dbTotalPages, p + 1))} disabled={dbPage === dbTotalPages} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: dbPage === dbTotalPages ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>→</button>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Airbyte section ───────────────────────────────── */}

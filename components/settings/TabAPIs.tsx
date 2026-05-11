@@ -555,6 +555,9 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [showPostmanZone, setShowPostmanZone] = useState(false)
   const [showOpenApiZone, setShowOpenApiZone] = useState(false)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [apiSearch, setApiSearch] = useState('')
+  const [apiPage, setApiPage] = useState(1)
+  const API_PAGE_SIZE = 10
 
   async function load() { setLoading(true); const r = await fetch('/api/services'); if (r.ok) { const d = await r.json(); setServices(d.services); setConnections(d.connections) }; setLoading(false) }
   useEffect(() => { load() }, [])
@@ -1533,7 +1536,15 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           No API services yet. Add one above or import a Postman collection.
         </div>
       ) : (
-        services.map(svc => {
+        <>
+        <input style={{ width: '100%', padding: '8px 12px', marginBottom: 10, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+          placeholder="Search services..." value={apiSearch} onChange={e => { setApiSearch(e.target.value); setApiPage(1) }} />
+        {(() => {
+          const filtered = services.filter(svc => !apiSearch || svc.label?.toLowerCase().includes(apiSearch.toLowerCase()) || svc.base_url?.toLowerCase().includes(apiSearch.toLowerCase()))
+          const totalPages = Math.ceil(filtered.length / API_PAGE_SIZE)
+          const paged = filtered.slice((apiPage - 1) * API_PAGE_SIZE, apiPage * API_PAGE_SIZE)
+          return (<>
+            {paged.map(svc => {
           const svcConns = connections.filter(c => c.service_id === svc.id)
           const isExpanded = expanded.has(svc.id)
           const p = preset(svc.label)
@@ -1623,7 +1634,17 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
               )}
             </div>
           )
-        })
+        })}
+            {(
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 0 4px' }}>
+                <button onClick={() => setApiPage(p => Math.max(1, p - 1))} disabled={apiPage === 1} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: apiPage === 1 ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>←</button>
+                <span style={{ fontSize: 12, color: 'var(--text3)' }}>Page {apiPage} of {totalPages}</span>
+                <button onClick={() => setApiPage(p => Math.min(totalPages, p + 1))} disabled={apiPage === totalPages} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: apiPage === totalPages ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>→</button>
+              </div>
+            )}
+          </>)
+        })()}
+        </>
       )}
     </div>
   )
