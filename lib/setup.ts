@@ -12,11 +12,68 @@ export async function setupDatabase() {
     id            TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
     email         TEXT UNIQUE NOT NULL,
     name          TEXT NOT NULL DEFAULT '',
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
     role          TEXT NOT NULL DEFAULT 'user',
     banned        INTEGER DEFAULT 0,
+    sso_provider  TEXT,
+    sso_sub       TEXT,
     created_at    TEXT DEFAULT (datetime('now'))
   )`
+
+  await sql`CREATE TABLE IF NOT EXISTS sso_config (
+    id          TEXT PRIMARY KEY DEFAULT 'default',
+    provider    TEXT NOT NULL,
+    client_id   TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    tenant_id   TEXT,
+    enabled     INTEGER DEFAULT 1,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )`
+
+  await sql`CREATE TABLE IF NOT EXISTS smtp_config (
+    id           TEXT PRIMARY KEY DEFAULT 'default',
+    host         TEXT NOT NULL,
+    port         INTEGER NOT NULL DEFAULT 587,
+    username     TEXT,
+    password_enc TEXT,
+    from_address TEXT NOT NULL,
+    from_name    TEXT NOT NULL DEFAULT 'Mosaic',
+    enabled      INTEGER DEFAULT 1,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`
+
+  await sql`CREATE TABLE IF NOT EXISTS smtp_config (
+    id           TEXT PRIMARY KEY DEFAULT 'default',
+    host         TEXT NOT NULL,
+    port         INTEGER NOT NULL DEFAULT 587,
+    username     TEXT,
+    password_enc TEXT,
+    from_address TEXT NOT NULL,
+    from_name    TEXT NOT NULL DEFAULT 'Mosaic',
+    enabled      INTEGER DEFAULT 1,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`
+
+  // Migrations: add SSO columns to existing users table
+  // SQLite doesn't support IF NOT EXISTS on ALTER TABLE — use .catch() to ignore "duplicate column" errors
+  await sql`ALTER TABLE users ADD COLUMN sso_provider TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
+  await sql`ALTER TABLE users ADD COLUMN sso_sub TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
+  await sql`ALTER TABLE users ADD COLUMN invite_sent_at TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
+  await sql`ALTER TABLE users ADD COLUMN last_login_at TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
+  await sql`ALTER TABLE users ADD COLUMN invite_sent_at TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
+  await sql`ALTER TABLE users ADD COLUMN last_login_at TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column')) throw e
+  })
 
   await sql`CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

@@ -8,7 +8,7 @@ export async function GET() {
   const session = await getSession()
   if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   const sql = getDb()
-  const rows = await sql`SELECT id,email,name,role,banned,created_at FROM users ORDER BY created_at ASC`
+  const rows = await sql`SELECT id,email,name,role,banned,created_at,invite_sent_at,last_login_at,sso_provider FROM users ORDER BY created_at ASC`
   return Response.json({ users: rows })
 }
 
@@ -27,6 +27,15 @@ export async function POST(req: Request) {
     if ((role || 'user') === 'admin') {
       syncUserToSuperset({ email: email.toLowerCase(), name: name || email, password: tempPassword, role: 'admin' }).catch(() => {})
     }
+    // Track invite timestamp
+    await sql`UPDATE users SET invite_sent_at=datetime('now') WHERE id=${rows[0].id}`
+    // Send welcome email (non-blocking — don't fail invite if email fails)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
+    import('@/lib/mailer').then(({ sendWelcomeEmail }) =>
+      sendWelcomeEmail(email.toLowerCase(), name || email.split('@')[0], tempPassword, appUrl)
+        .then(r => { if (!r.ok) console.warn('Welcome email failed:', r.error) })
+        .catch(e => console.warn('Welcome email error:', e))
+    )
     return Response.json({ user: rows[0], tempPassword })
   }
 
