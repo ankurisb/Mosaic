@@ -11,6 +11,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const pathname = usePathname()
   const [convs, setConvs] = useState<Conv[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     fetch('/api/conversations')
@@ -27,11 +28,11 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   function navBtn(path: string, icon: React.ReactNode, label: string) {
     const active = path === '/' ? pathname === '/' : pathname.startsWith(path)
     return (
-      <button onClick={() => router.push(path)}
-        style={{ width: '100%', padding: '8px 10px', background: active ? 'var(--bg3)' : 'none', border: `1px solid ${active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--text)' : 'var(--text2)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+      <button onClick={() => router.push(path)} title={collapsed ? label : undefined}
+        style={{ width: '100%', padding: collapsed ? '8px 0' : '8px 10px', background: active ? 'var(--bg3)' : 'none', border: `1px solid ${active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--text)' : 'var(--text2)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg3)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
-        {icon}{label}
+        {icon}{!collapsed && label}
       </button>
     )
   }
@@ -41,16 +42,28 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
       {/* Sidebar */}
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
+      <div style={{ width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
         {/* Logo */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)' }}>Mosaic</span>
-          <button onClick={() => router.push('/')} title="New conversation"
-            style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
+        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+          {!collapsed && <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0 }}>
+            {!collapsed && (
+              <button onClick={() => router.push('/')} title="New conversation"
+                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
+            )}
+            <button onClick={() => setCollapsed(s => !s)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)' }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
+                <rect x="1" y="1" width="12" height="12" rx="2"/>
+                <line x1="5" y1="1" x2="5" y2="13"/>
+                <path d="M3 5l-1.5 2 1.5 2" strokeWidth="1.2"/>
+              </svg>
+            </button>
+          </div>
         </div>
         {/* Conversations */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
-          {convs.map(c => (
+          {!collapsed && convs.map(c => (
             <div key={c.id} onClick={() => router.push(`/?conv=${c.id}`)}
               style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
