@@ -163,6 +163,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [mentionIdx, setMentionIdx] = useState(0)
   const [pinnedSources, setPinnedSources] = useState<DataSource[]>([])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [convSearch, setConvSearch] = useState('')
   const [plusOpen, setPlusOpen] = useState(false)
   const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
@@ -548,15 +549,29 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               style={{ width: '100%', padding: '8px 0', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
             </button>
-          ) : convs.map(c => (
-            <div key={c.id} onClick={() => setActiveId(c.id)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: c.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${c.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
-              <span style={{ fontSize: 12, color: c.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
-              <button onClick={e => delConv(c.id, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, paddingLeft: 6, flexShrink: 0, opacity: 0 }} className="conv-del-btn">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
-              </button>
-            </div>
-          ))}
+          ) : (
+            <>
+              <div style={{ position: 'relative', marginBottom: 6 }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text4)', pointerEvents: 'none' }}><circle cx="5" cy="5" r="3.5"/><path d="M8 8l2 2"/></svg>
+                <input value={convSearch} onChange={e => setConvSearch(e.target.value)} placeholder="Search chats..."
+                  style={{ width: '100%', padding: '6px 8px 6px 26px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                {convSearch && (
+                  <button onClick={() => setConvSearch('')} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: 0, display: 'flex' }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+                  </button>
+                )}
+              </div>
+              {convs.filter(conv => !convSearch || conv.title.toLowerCase().includes(convSearch.toLowerCase())).map(conv => (
+                <div key={conv.id} onClick={() => setActiveId(conv.id)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
+                  <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
+                  <button onClick={e => delConv(conv.id, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, paddingLeft: 6, flexShrink: 0, opacity: 0 }} className="conv-del-btn">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Footer nav */}
