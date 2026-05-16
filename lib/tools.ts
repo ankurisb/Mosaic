@@ -278,7 +278,7 @@ async function queryDatabase(connectionId: string, queryInput: string) {
   const upper = trimmed.toUpperCase()
 
   // SQL safety guard -- dialect-aware whitelist for read-only commands
-  if (dialect !== 'mongodb') {
+  if (dialect !== 'mongodb' && dialect !== 'elasticsearch') {
     const baseAllowed = ['SELECT', 'WITH', 'EXPLAIN']
     const dialectExtras: Record<string, string[]> = {
       influxdb:  ['SHOW'],
@@ -555,7 +555,87 @@ async function queryDatabase(connectionId: string, queryInput: string) {
     }
   }
 
-  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb.`)
+
+  // -- Elasticsearch -------------------------------------------
+  if (dialect === 'elasticsearch') {
+    const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+    const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 9200}`
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+
+    // Auth: API key (sentinel: username === '__apikey__') or Basic
+    if (conn.username === '__apikey__') {
+      headers['Authorization'] = `ApiKey ${decrypt((conn.password_enc as string) || '')}`
+    } else if (conn.username) {
+      headers['Authorization'] = 'Basic ' + Buffer.from(`${conn.username}:${decrypt((conn.password_enc as string) || '')}`).toString('base64')
+    }
+
+    // GET requests: schema/index discovery
+    // Claude uses these before querying:
+    //   GET /_cat/indices?format=json       -> list all indices
+    //   GET /{index}/_mapping               -> field structure
+    //   GET /_cluster/health                -> cluster status
+    if (trimmed.toUpperCase().startsWith('GET ')) {
+      const path = trimmed.slice(4).trim()
+      const res = await fetch(`${base}${path.startsWith('/') ? '' : '/'}${path}`, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout((conn.query_timeout_ms as number) || 30000),
+      })
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`Elasticsearch error ${res.status}: ${err.slice(0, 200)}`)
+      }
+      const data = await res.json()
+      const rows = Array.isArray(data) ? data : [data]
+      return { rows, rowCount: rows.length, fields: rows.length > 0 ? Object.keys(rows[0]) : [] }
+    }
+
+    // Query DSL: JSON body posted to /{index}/_search
+    let queryBody: Record<string, unknown>
+    try {
+      queryBody = JSON.parse(trimmed)
+    } catch {
+      throw new Error('Elasticsearch queries must be JSON Query DSL, e.g. {"query":{"match_all":{}}} or start with GET for discovery.')
+    }
+
+    const index = (conn.database_name as string) || '_all'
+    const searchUrl = `${base}/${index}/_search`
+
+    const res = await fetch(searchUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ size: 100, ...queryBody }),
+      signal: AbortSignal.timeout((conn.query_timeout_ms as number) || 30000),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Elasticsearch error ${res.status}: ${err.slice(0, 200)}`)
+    }
+
+    const data = await res.json()
+
+    if (data.error) {
+      throw new Error(`Elasticsearch query error: ${data.error.reason || JSON.stringify(data.error).slice(0, 200)}`)
+    }
+
+    // Aggregations: return directly without hits
+    if (data.aggregations) {
+      const rows = [{ aggregations: data.aggregations, took_ms: data.took, total: data.hits?.total?.value }]
+      return { rows, rowCount: 1, fields: ['aggregations', 'took_ms', 'total'] }
+    }
+
+    const hits = (data.hits?.hits || []).map((h: Record<string, unknown>) => ({
+      _id: h._id,
+      _score: h._score,
+      ...(h._source as object),
+    }))
+    const fields = hits.length > 0 ? Object.keys(hits[0]) : []
+    return { rows: hits, rowCount: data.hits?.total?.value ?? hits.length, fields }
+  }
+
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch.`)
 }
 
 // -- API call --------------------------------------------------
@@ -1755,6 +1835,47 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         })
       }
       return { connection_id: connectionId, dialect, fetched_at: stamp(), measurements: out, truncated }
+    }
+
+    // -- Elasticsearch ----------------------------------------
+    if (dialect === 'elasticsearch') {
+      const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+      const base = decryptConnStr(conn) || `${protocol}://${conn.host}:${conn.port || 9200}`
+      const headers: Record<string, string> = { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+      if (conn.username === '__apikey__') {
+        headers['Authorization'] = `ApiKey ${decrypt((conn.password_enc as string) || '')}`
+      } else if (conn.username) {
+        headers['Authorization'] = 'Basic ' + Buffer.from(`${conn.username}:${decrypt((conn.password_enc as string) || '')}`).toString('base64')
+      }
+
+      // Get all indices (exclude hidden .* indices)
+      const catRes = await fetch(`${base}/_cat/indices?format=json&expand_wildcards=open`, {
+        headers, signal: AbortSignal.timeout(10000),
+      })
+      if (!catRes.ok) throw new Error(`Elasticsearch ${catRes.status}: ${(await catRes.text()).slice(0, 200)}`)
+      const indices = await catRes.json() as Array<{ index: string; 'docs.count': string }>
+      const visible = indices.filter(i => !i.index.startsWith('.')).slice(0, MAX_TABLES)
+      const truncated = visible.length < indices.filter(i => !i.index.startsWith('.')).length
+
+      const out: CachedSchema['collections'] = []
+      for (const idx of visible) {
+        // Fetch mapping for each index to get field names + types
+        const mapRes = await fetch(`${base}/${idx.index}/_mapping`, {
+          headers, signal: AbortSignal.timeout(10000),
+        })
+        if (!mapRes.ok) continue
+        const mapData = await mapRes.json() as Record<string, { mappings: { properties?: Record<string, { type?: string }> } }>
+        const props = mapData[idx.index]?.mappings?.properties || {}
+        const sample_keys = Object.entries(props).slice(0, MAX_COLS_PER_TBL).map(([k, v]) => ({
+          name: k,
+          type: (v.type || 'object') + (v.type === 'text' ? ' (full-text searchable)' : v.type === 'keyword' ? ' (exact match/aggregations)' : ''),
+        }))
+        out.push({
+          name: `${idx.index} (${idx['docs.count'] || '?'} docs)`,
+          sample_keys,
+        })
+      }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), collections: out, truncated }
     }
 
     return {

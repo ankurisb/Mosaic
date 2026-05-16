@@ -427,6 +427,39 @@ function mergeVarMaps(...maps: Record<string, string>[]): Record<string, string>
   return Object.assign({}, ...maps)
 }
 
+// Infer pagination style from a request URL's query parameter names.
+// Returns the connection fields needed to populate pagination_style and
+// pagination_limit_param / pagination_cursor_param sensibly. Conservative
+// by design -- when we can't see a pattern we know, we return 'none'
+// rather than guess wrong, since wrong pagination causes silent data
+// truncation on the chat side.
+function inferPagination(paramKeys: string[]): {
+  pagination_style?: string
+  pagination_limit_param?: string
+  pagination_cursor_param?: string
+} {
+  const lower = paramKeys.map(k => k.toLowerCase())
+  const has = (k: string) => lower.includes(k)
+
+  // Page-number style: ?page=1&per_page=50 (or page_size, limit)
+  if (has('page') || has('page_number')) {
+    const limit = ['per_page', 'page_size', 'limit', 'pagesize'].find(k => has(k))
+    return { pagination_style: 'page_number', pagination_cursor_param: has('page') ? 'page' : 'page_number', ...(limit && { pagination_limit_param: limit }) }
+  }
+  // Cursor style: ?cursor=xxx&limit=50 (or next_token, page_token)
+  if (has('cursor') || has('next_token') || has('page_token') || has('next_cursor')) {
+    const cursor = ['cursor', 'next_token', 'page_token', 'next_cursor'].find(k => has(k))!
+    const limit = ['limit', 'per_page', 'page_size'].find(k => has(k))
+    return { pagination_style: 'cursor', pagination_cursor_param: cursor, ...(limit && { pagination_limit_param: limit }) }
+  }
+  // Offset style: ?offset=0&limit=50
+  if (has('offset')) {
+    const limit = ['limit', 'per_page', 'page_size'].find(k => has(k))
+    return { pagination_style: 'offset', pagination_cursor_param: 'offset', ...(limit && { pagination_limit_param: limit }) }
+  }
+  return { pagination_style: 'none' }
+}
+
 function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
   try {
     const collectionVars = buildVarMap(json.variable)
@@ -507,7 +540,8 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
       ...(headerValue && { headerValue }),
       connections,
     }
-  } catch {
+  } catch (e) {
+    console.error('[parsePostmanCollection] failed:', e)
     return null
   }
 }

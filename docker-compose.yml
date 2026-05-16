@@ -44,6 +44,8 @@ services:
       - SUPERSET_ADMIN_PASSWORD=${SUPERSET_ADMIN_PASSWORD:-Admin1234!}
       # Airbyte (internal Docker network URL)
       - AIRBYTE_URL=http://airbyte-proxy:8000
+      # Elasticsearch (internal Docker network URL — Mosaic Search Index)
+      - ELASTICSEARCH_INTERNAL_URL=http://elasticsearch:9200
       - AIRBYTE_USER=airbyte
       - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}
       # SMTP (optional)
@@ -58,6 +60,8 @@ services:
       - mosaic-data:/data
     depends_on:
       superset:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     networks:
       - mosaic-net
@@ -233,6 +237,30 @@ services:
       retries: 3
       start_period: 30s
 
+  # ── Elasticsearch (Mosaic Search Index) ────────────────────
+  # Internal only — never exposed to host. Fed by Airbyte syncs.
+  # Gives Claude full-text search across technician notes,
+  # fault descriptions, and shift narratives from all sources.
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: mosaic-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=mosaic-cluster
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
   mosaic-data:
@@ -241,6 +269,7 @@ volumes:
   superset-db-data:
   superset-data:
   n8n-data:
+  es-data:
 
 # ── Network ──────────────────────────────────────────────────
 networks:

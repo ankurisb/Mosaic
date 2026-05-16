@@ -120,7 +120,38 @@ export async function setupDatabase() {
     created_at          TEXT DEFAULT (datetime('now'))
   )`
   await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS mcp_endpoint TEXT`.catch(() => {})
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS mcp_token    TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS mcp_token           TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS full_text_search    INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS fts_airbyte_conn_id TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS description         TEXT`.catch(() => {})
+
+  // -- Auto-register internal Elasticsearch (Mosaic Search Index) --------
+  // If ELASTICSEARCH_INTERNAL_URL is set (Docker Compose deployment),
+  // upsert a db_connections row for it. Idempotent — safe on every boot.
+  // The connection is marked with label 'Mosaic Search Index' and is
+  // never shown in the admin delete flow (managed = 1).
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS managed INTEGER DEFAULT 0`.catch(() => {})
+  const esUrl = process.env.ELASTICSEARCH_INTERNAL_URL
+  if (esUrl) {
+    const existing = await sql`SELECT id FROM db_connections WHERE managed = 1 AND dialect = 'elasticsearch' LIMIT 1`
+    if (!existing.length) {
+      await sql`
+        INSERT INTO db_connections
+          (label, dialect, environment, host, port, database_name, ssl_mode, read_only, managed, description)
+        VALUES
+          ('Mosaic Search Index', 'elasticsearch', 'production',
+           'elasticsearch', 9200, '_all', 'disable', 1, 1,
+           'Internal full-text search index. Fed by Airbyte syncs from connected data sources. Use for searching technician notes, fault descriptions, and shift narratives.')
+      `
+    } else {
+      // Update host/port in case the URL changed
+      await sql`
+        UPDATE db_connections
+        SET host = 'elasticsearch', port = 9200, description = 'Internal full-text search index. Fed by Airbyte syncs from connected data sources. Use for searching technician notes, fault descriptions, and shift narratives.'
+        WHERE managed = 1 AND dialect = 'elasticsearch'
+      `
+    }
+  }
 
   // -- API services + connections --------------------------------
   await sql`CREATE TABLE IF NOT EXISTS api_services (

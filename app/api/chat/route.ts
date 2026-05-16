@@ -73,13 +73,16 @@ export async function POST(req: Request) {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
     if (dialect === 'clickhouse') return '(use standard SQL SELECT -- columnar OLAP, great for aggregations)'
     if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > datetime('now')-7d GROUP BY tag)`
+    if (dialect === 'elasticsearch') return '(use Elasticsearch Query DSL JSON: {"query":{"match_all":{}}} or {"query":{"bool":{"must":[{"match":{"field":"value"}},{"range":{"timestamp":{"gte":"now-7d"}}}]}},"aggs":{"by_field":{"terms":{"field":"keyword_field.keyword"}}}} — for schema discovery use: GET /_cat/indices?format=json or GET /{index}/_mapping)'
     return '(use SELECT queries)'
   }
   const dbList = dbConns.length
     ? '\n\n## Databases (query_database tool — use exact id)\n' +
       (await Promise.all(dbConns.map(async (c: Record<string,unknown>) => {
         const mcpNote = c.mcp_endpoint ? ' [MCP: schema-aware]' : ''
-        const header = `- id:"${c.id}" | "${c.label}" | ${c.dialect} ${dialectHint(c.dialect)} | ${c.host || 'local'}/${c.database_name || ''}${mcpNote}`
+        const ftsNote = c.full_text_search ? ' [FTS: text fields synced to Mosaic Search Index]' : ''
+        const descNote = c.description ? `\n  context: ${c.description}` : ''
+        const header = `- id:"${c.id}" | "${c.label}" | ${c.dialect} ${dialectHint(c.dialect)} | ${c.host || 'local'}/${c.database_name || ''}${mcpNote}${ftsNote}${descNote}`
         // Bug 4.5: inject cached schema so Claude doesn't burn 3-7 tool calls
         // rediscovering tables/columns. Cache is populated on connection
         // create/update; this call is non-blocking (returns stale on miss

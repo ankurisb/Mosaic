@@ -292,7 +292,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--blue-t)" strokeWidth="1.4" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="7" cy="7" r="6"/><path d="M7 4v3.5l2.5 1.5"/></svg>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 3 }}>Scheduler: Vercel Cron . every minute</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 3 }}>Scheduler: Scheduler running every minute</div>
           <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 }}>
             Defined in <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>vercel.json</code>.
             Calls <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>POST /api/integrations/scheduler</code> every minute.

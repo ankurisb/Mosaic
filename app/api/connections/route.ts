@@ -10,7 +10,7 @@ export async function GET() {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const sql = getDb()
-  const rows = await sql`SELECT id,label,dialect,environment,host,port,database_name,username,schema_name,ssl_mode,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,created_at FROM db_connections ORDER BY created_at ASC`
+  const rows = await sql`SELECT id,label,dialect,environment,host,port,database_name,username,schema_name,ssl_mode,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,managed,full_text_search,fts_airbyte_conn_id,description,created_at FROM db_connections ORDER BY created_at ASC`
   return Response.json({ connections: rows })
 }
 
@@ -197,6 +197,23 @@ export async function POST(req: Request) {
         const version = res.headers.get('x-influxdb-version') || res.headers.get('X-Influxdb-Version') || 'unknown'
         if (res.status === 204 || res.ok) return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `InfluxDB ${version}` })
         throw new Error(`InfluxDB ping returned ${res.status}`)
+      }
+
+      if (dialect === 'elasticsearch') {
+        const protocol = (conn.ssl_mode as string) === 'disable' ? 'http' : 'https'
+        const base = conn.connection_string ? decrypt(conn.connection_string as string) : `${protocol}://${conn.host}:${conn.port || 9200}`
+        const headers: Record<string,string> = { 'Accept': 'application/json' }
+        if (conn.username === '__apikey__') {
+          headers['Authorization'] = `ApiKey ${decrypt((conn.password_enc as string) || '')}`
+        } else if (conn.username) {
+          headers['Authorization'] = 'Basic ' + Buffer.from(`${conn.username}:${decrypt((conn.password_enc as string) || '')}`).toString('base64')
+        }
+        const res = await fetch(`${base}/`, { headers, signal: AbortSignal.timeout(5000) })
+        if (!res.ok) throw new Error(`Elasticsearch HTTP ${res.status}: ${(await res.text()).slice(0,100)}`)
+        const info = await res.json()
+        const version = info.version?.number || 'unknown'
+        const cluster = info.cluster_name || ''
+        return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `Elasticsearch ${version} — cluster: ${cluster}` })
       }
 
       return Response.json({ ok: false, message: `Unknown dialect: ${dialect}` })

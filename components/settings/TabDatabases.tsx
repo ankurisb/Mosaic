@@ -3,9 +3,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
 
-interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string }
+interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
-const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '' }
+const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false }
 
 // Keys whose values look like DB connection strings
 const ENV_KEY_PATTERNS = [/DATABASE_URL/i, /DB_URL/i, /DB_URI/i, /_DSN/i, /POSTGRES/i, /POSTGRESQL/i, /MYSQL/i, /MONGO/i, /CLICKHOUSE/i, /INFLUX/i, /REDIS/i, /SQLITE/i, /CONNECTION_STRING/i, /CONN_STR/i]
@@ -82,6 +82,28 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, TestResult>>({})
+  const [ftsLoading, setFtsLoading] = useState<Record<string,boolean>>({})
+
+  async function toggleFts(connId: string, currentlyEnabled: boolean) {
+    setFtsLoading(p => ({ ...p, [connId]: true }))
+    try {
+      const r = await fetch('/api/connections/fts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: connId, enable: !currentlyEnabled }),
+      })
+      const data = await r.json()
+      if (!r.ok || data.error) {
+        alert(data.error || 'Failed to update full-text search')
+      } else {
+        await load()
+      }
+    } catch {
+      alert('Failed to update full-text search')
+    } finally {
+      setFtsLoading(p => ({ ...p, [connId]: false }))
+    }
+  }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [parsedOk, setParsedOk] = useState(false)
@@ -337,8 +359,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
           <Field label="Database type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB']].map(([v,l]) => {
-                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086'}
+              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch']].map(([v,l]) => {
+                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200'}
                 return (
                   <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || '') }}
                     style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.dialect === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.dialect === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.dialect === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.dialect === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
@@ -360,6 +382,26 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" placeholder="" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
             <Field label="Schema" hint="Default: public"><input style={INP} placeholder="public" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
           </Grid>
+
+          <Field label="Description" hint="Optional — tell Mosaic what this connection contains and how it relates to other sources. Improves query routing and cross-source analysis.">
+            <textarea
+              style={{ ...INP, resize: 'vertical', minHeight: 64, fontSize: 12, fontFamily: 'inherit' }}
+              placeholder="e.g. Primary CMMS — work orders, asset registry, PM schedules. Asset IDs match sensor_telemetry.asset_id in InfluxDB."
+              value={String(form.description || '')}
+              onChange={e => set('description', e.target.value)}
+            />
+          </Field>
+
+          {form.dialect === 'elasticsearch' && (
+            <Field label="API Key" hint="Optional — leave blank for Basic auth above. Stored encrypted.">
+              <input style={INP} type="password" placeholder="base64-encoded Elasticsearch API key"
+                value={String((form as Record<string,unknown>).es_api_key || '')}
+                onChange={e => set('es_api_key' as never, e.target.value as never)} />
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                If set, API Key auth is used instead of username/password. Leave username blank.
+              </div>
+            </Field>
+          )}
 
           <Grid cols={2}>
             <Field label="SSL mode">
@@ -480,10 +522,27 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>{c.host}:{c.port}/{c.database_name} . SSL: {c.ssl_mode} . pool {c.pool_min}-{c.pool_max}{c.read_only ? ' . read-only' : ''}{c.mcp_endpoint ? ' .  MCP' : ''}</div>
                   {tr && <div style={{ fontSize: 11, color: tr.ok ? 'var(--green-t)' : 'var(--red-t)', marginTop: 3 }}>{tr.ok ? `ok Connected . ${tr.latencyMs}ms${tr.detail ? ' . ' + tr.detail : ''}` : `x ${tr.message}`}</div>}
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {user.role === 'admin' && c.dialect !== 'elasticsearch' && !c.managed && (
+                    <button
+                      onClick={() => toggleFts(c.id, !!c.full_text_search)}
+                      disabled={!!ftsLoading[c.id]}
+                      title={c.full_text_search ? 'Full-text search enabled — click to disable' : 'Enable full-text search'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '3px 8px', borderRadius: 'var(--radius-pill)',
+                        border: `1.5px solid ${c.full_text_search ? 'var(--green)' : 'var(--border2)'}`,
+                        background: c.full_text_search ? 'var(--green-bg)' : 'var(--bg)',
+                        color: c.full_text_search ? 'var(--green-t)' : 'var(--text3)',
+                        fontSize: 11, fontWeight: 600, cursor: ftsLoading[c.id] ? 'wait' : 'pointer',
+                        transition: 'all .15s', whiteSpace: 'nowrap', fontFamily: 'inherit',
+                      }}>
+                      {ftsLoading[c.id] ? <Spinner size={10} /> : <>{c.full_text_search ? '⚡ FTS on' : '⚡ FTS'}</>}
+                    </button>
+                  )}
                   <Btn size="sm" onClick={() => test(c.id)} disabled={testing === c.id}>{testing === c.id ? <Spinner size={11} /> : 'Test'}</Btn>
-                  {user.role === 'admin' && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
-                  {user.role === 'admin' && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}
+                  {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
+                  {user.role === 'admin' && !c.managed && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}
                 </div>
               </div>
             )

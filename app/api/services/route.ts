@@ -32,12 +32,29 @@ export async function POST(req: Request) {
 
   if (action === 'updateService') {
     const { id, label, base_url, environment, auth_type, auth_config, default_headers, api_version, version_header, rate_limit_rpm, connect_timeout_ms, request_timeout_ms, retry_count } = body
-    const authEnc = auth_config ? encrypt(JSON.stringify(auth_config)) : null
+    // If auth_config was provided, encrypt and update it; otherwise preserve the
+    // existing encrypted value so partial edits don't wipe auth.
+    let authEnc: string
+    if (auth_config) {
+      authEnc = encrypt(JSON.stringify(auth_config))
+    } else {
+      const existing = await sql`SELECT auth_config FROM api_services WHERE id=${id}`
+      authEnc = (existing[0]?.auth_config as string) || encrypt(JSON.stringify({}))
+    }
     await sql`
-      UPDATE api_services SET label=${label},base_url=${base_url},environment=${environment},auth_type=${auth_type},
-      ${authEnc ? sql`auth_config=${authEnc},` : sql``}
-      default_headers=${JSON.stringify(default_headers||{})},api_version=${api_version||null},version_header=${version_header||null},
-      rate_limit_rpm=${rate_limit_rpm||null},connect_timeout_ms=${connect_timeout_ms||5000},request_timeout_ms=${request_timeout_ms||30000},retry_count=${retry_count||3}
+      UPDATE api_services
+      SET label=${label},
+          base_url=${base_url},
+          environment=${environment},
+          auth_type=${auth_type},
+          auth_config=${authEnc},
+          default_headers=${JSON.stringify(default_headers||{})},
+          api_version=${api_version||null},
+          version_header=${version_header||null},
+          rate_limit_rpm=${rate_limit_rpm||null},
+          connect_timeout_ms=${connect_timeout_ms||5000},
+          request_timeout_ms=${request_timeout_ms||30000},
+          retry_count=${retry_count||3}
       WHERE id=${id}`
     return Response.json({ ok: true })
   }
