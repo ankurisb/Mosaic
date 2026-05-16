@@ -135,17 +135,18 @@ export default function TabUsers({ user }: { user: SessionUser }) {
       </div>
 
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['User', 'Role', 'Status', 'Auth', 'Invited', 'Last login', 'Actions'].map(h => (
-                <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>{h}</th>
+              {['User', 'Role', 'Status', 'Auth', 'Last login', 'Actions'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center' }}><Spinner size={18} /></td></tr>
+              <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center' }}><Spinner size={18} /></td></tr>
             ) : paged.length === 0 ? (
               <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', fontSize: 13, color: 'var(--text3)' }}>No users found</td></tr>
             ) : paged.map(u => (
@@ -159,21 +160,18 @@ export default function TabUsers({ user }: { user: SessionUser }) {
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '12px 16px' }}><Badge label={u.role} color={u.role === 'admin' ? 'purple' : 'gray'} /></td>
-                <td style={{ padding: '12px 16px' }}><Badge label={u.banned ? 'banned' : 'active'} color={u.banned ? 'red' : 'green'} /></td>
-                <td style={{ padding: '12px 16px' }}>
+                <td style={{ padding: '12px 12px' }}><Badge label={u.role} color={u.role === 'admin' ? 'purple' : 'gray'} /></td>
+                <td style={{ padding: '12px 12px' }}><Badge label={u.banned ? 'banned' : 'active'} color={u.banned ? 'red' : 'green'} /></td>
+                <td style={{ padding: '12px 12px' }}>
                   {u.sso_provider ? <Badge label={u.sso_provider} color="blue" /> : <Badge label="password" color="gray" />}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
-                  {fmtDateTime(u.invite_sent_at) || fmtDate(u.created_at)}
-                </td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmtDateTime(u.last_login_at)}</td>
-                <td style={{ padding: '12px 16px' }}>
+                <td style={{ padding: '12px 12px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmtDateTime(u.last_login_at) || '—'}</td>
+                <td style={{ padding: '12px 12px' }}>
                   {u.id !== user.id && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ user' : '↑ admin'}</Btn>
-                      <Btn size="sm" onClick={() => act(u.banned ? 'unban' : 'ban', u.id)}>{u.banned ? 'unban' : 'ban'}</Btn>
-                      <Btn size="sm" variant="danger" onClick={() => { if(confirm(`Delete ${u.email}?`)) act('delete', u.id) }}>delete</Btn>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
+                      <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ User' : '↑ Admin'}</Btn>
+                      <Btn size="sm" onClick={() => act(u.banned ? 'unban' : 'ban', u.id)}>{u.banned ? 'Unban' : 'Suspend'}</Btn>
+                      <Btn size="sm" variant="danger" onClick={() => { if(confirm(`Delete ${u.email}? This cannot be undone.`)) act('delete', u.id) }}>Delete</Btn>
                     </div>
                   )}
                 </td>
@@ -181,6 +179,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
             ))}
           </tbody>
         </table>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
           <span style={{ fontSize: 12, color: 'var(--text3)' }}>{filtered.length} user{filtered.length !== 1 ? 's' : ''}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
