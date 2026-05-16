@@ -118,6 +118,10 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [dbPage, setDbPage] = useState(1)
   const [sandboxMsg, setSandboxMsg] = useState('')
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
+  const [airbyteCount, setAirbyteCount] = useState(0)
+  React.useEffect(() => {
+    fetch('/api/airbyte?action=list').then(r => r.json()).then(d => setAirbyteCount((d.instances || []).length)).catch(() => {})
+  }, [showAirbyteForm])
 
   // Apply a parsed connection string -- fills all fields, auto-selects dialect
   function applyConnStr(raw: string) {
@@ -572,7 +576,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               You don't need the Airbyte browser open — just Docker running.
             </div>
           </div>
-          {user.role === 'admin' && (
+          {user.role === 'admin' && airbyteCount === 0 && (
             <button onClick={() => setShowAirbyteForm(true)}
               style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontFamily: 'inherit' }}>
               + Connect Airbyte
@@ -580,7 +584,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
           )}
         </div>
       </div>
-      <AirbyteSection user={user} showForm={showAirbyteForm} setShowForm={setShowAirbyteForm} />
+      <AirbyteSection user={user} showForm={showAirbyteForm} setShowForm={setShowAirbyteForm} onCountChange={setAirbyteCount} />
 
     </div>
   )
@@ -637,37 +641,48 @@ function AbStatusBadge({ status }: { status: string }) {
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: bg, color: fg }}>{status || '—'}</span>
 }
 
-function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; showForm: boolean; setShowForm: (v: boolean) => void }) {
+function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: SessionUser; showForm: boolean; setShowForm: (v: boolean) => void; onCountChange?: (n: number) => void }) {
   const isAdmin = user.role === 'admin'
-  const [instances, setInstances] = React.useState<AbInstance[]>([])
-  const [loading, setLoading]     = React.useState(true)
-  const [form, setForm]           = React.useState(AB_EMPTY)
-  const authMode = form.client_id ? 'oauth' : 'basic'
-  const [editing, setEditing]     = React.useState<string | null>(null)
-  const [saving, setSaving]       = React.useState(false)
-  const [expanded, setExpanded]   = React.useState<string | null>(null)
-  const [subTab, setSubTab]       = React.useState<Record<string,'sources'|'connections'|'jobs'|'destinations'>>({})
-  const [sources, setSources]     = React.useState<Record<string, AbSource[] | null>>({})
-  const [dests, setDests]         = React.useState<Record<string, AbDest[] | null>>({})
-  const [conns2, setConns2]       = React.useState<Record<string, AbConn[] | null>>({})
-  const [jobs2, setJobs2]         = React.useState<Record<string, AbJob[] | null>>({})
-  const [pingMap, setPingMap]     = React.useState<Record<string,{ok:boolean;msg:string}|'loading'>>({})
-  const [syncing, setSyncing]     = React.useState<string | null>(null)
-  const [cancelling, setCancelling] = React.useState<string | null>(null)
-  const [toast, setToast]         = React.useState<{msg:string;ok:boolean}|null>(null)
+  const [instances, setInstances]     = React.useState<AbInstance[]>([])
+  const [loading, setLoading]         = React.useState(true)
+  const [form, setForm]               = React.useState(AB_EMPTY)
+  const [editing, setEditing]         = React.useState<string | null>(null)
+  const [saving, setSaving]           = React.useState(false)
+  const [expanded, setExpanded]       = React.useState<string | null>(null)
+  const [pingMap, setPingMap]         = React.useState<Record<string,{ok:boolean;msg:string}|'loading'>>({})
+  const [syncing, setSyncing]         = React.useState<string | null>(null)
+  const [cancelling, setCancelling]   = React.useState<string | null>(null)
+  const [pipelines, setPipelines]     = React.useState<Record<string, any[]|null>>({})
+  const [pipelinesLoading, setPipelinesLoading] = React.useState<Record<string,boolean>>({})
+  const [showAdvanced, setShowAdvanced] = React.useState<Record<string,boolean>>({})
+  const [subTab, setSubTab]           = React.useState<Record<string,'sources'|'connections'|'jobs'|'destinations'>>({})
+  const [sources, setSources]         = React.useState<Record<string, AbSource[] | null>>({})
+  const [dests, setDests]             = React.useState<Record<string, AbDest[] | null>>({})
+  const [conns2, setConns2]           = React.useState<Record<string, AbConn[] | null>>({})
+  const [jobs2, setJobs2]             = React.useState<Record<string, AbJob[] | null>>({})
+  const [toast, setToast]             = React.useState<{msg:string;ok:boolean}|null>(null)
+  const [showWizard, setShowWizard]   = React.useState(false)
+  const [wizardStep, setWizardStep]   = React.useState<1|2>(1)
+  const [wizardInst, setWizardInst]   = React.useState('')
+  const [connDefs, setConnDefs]       = React.useState<any[]>([])
+  const [defsLoading, setDefsLoading] = React.useState(false)
+  const [selectedDef, setSelectedDef] = React.useState<any>(null)
+  const [sourceSpec, setSourceSpec]   = React.useState<any>(null)
+  const [specLoading, setSpecLoading] = React.useState(false)
+  const [sourceConfig, setSourceConfig] = React.useState<Record<string,string>>({})
+  const [sourceName, setSourceName]   = React.useState('')
+  const [wizardSaving, setWizardSaving] = React.useState(false)
+  const [defSearch, setDefSearch]     = React.useState('')
 
-  function showToast(msg: string, ok = true) {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 3500)
-  }
+  const onCountChangeRef = React.useRef(onCountChange)
+  React.useEffect(() => { onCountChangeRef.current = onCountChange }, [onCountChange])
+
+  function showToast(msg: string, ok = true) { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500) }
 
   const loadInstances = useCallback(async () => {
     setLoading(true)
-    try {
-      const r = await fetch('/api/airbyte?action=list')
-      const d = await r.json()
-      setInstances(d.instances || [])
-    } catch { showToast('Failed to load Airbyte instances', false) }
+    try { const r = await fetch('/api/airbyte?action=list'); const d = await r.json(); const insts = d.instances || []; setInstances(insts); onCountChangeRef.current?.(insts.length) }
+    catch { showToast('Failed to load Airbyte instances', false) }
     finally { setLoading(false) }
   }, [])
 
@@ -687,58 +702,28 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
       const d = await r.json()
       if (d.error) throw new Error(d.error)
       showToast(`Workspace found: ${d.workspaceId?.slice(0,8)}`)
-      loadInstances()
-      setSources(p => ({ ...p, [id]: null }))
-      fetchTab(id, 'sources')
+      loadInstances(); loadPipelines(id, true)
     } catch (e) { showToast((e as Error).message, false) }
     finally { setPingMap(p => { const n = {...p}; delete n[id]; return n }) }
   }
 
-  function toggleExpand(id: string) {
-    if (expanded === id) { setExpanded(null); return }
-    setExpanded(id)
-    const tab = subTab[id] || 'sources'
-    if (!subTab[id]) setSubTab(p => ({ ...p, [id]: 'sources' }))
-    fetchTab(id, tab)
-  }
-
-  function switchTab(id: string, tab: 'sources'|'connections'|'jobs'|'destinations') {
-    setSubTab(p => ({ ...p, [id]: tab }))
-    fetchTab(id, tab)
+  async function loadPipelines(id: string, force = false) {
+    if (pipelines[id] && !force) return
+    setPipelinesLoading(p => ({ ...p, [id]: true }))
+    setPipelines(p => ({ ...p, [id]: null }))
+    try { const r = await fetch(`/api/airbyte?action=pipelines&id=${id}`); const d = await r.json(); setPipelines(p => ({ ...p, [id]: d.pipelines || [] })) }
+    catch { setPipelines(p => ({ ...p, [id]: [] })) }
+    finally { setPipelinesLoading(p => ({ ...p, [id]: false })) }
   }
 
   async function fetchTab(id: string, tab: string) {
-    if (tab === 'sources' && !sources[id]) {
-      setSources(p => ({ ...p, [id]: null }))
-      const r = await fetch(`/api/airbyte?action=sources&id=${id}`)
-      const d = await r.json()
-      setSources(p => ({ ...p, [id]: d.sources || [] }))
-    } else if (tab === 'destinations' && !dests[id]) {
-      setDests(p => ({ ...p, [id]: null }))
-      const r = await fetch(`/api/airbyte?action=destinations&id=${id}`)
-      const d = await r.json()
-      setDests(p => ({ ...p, [id]: d.destinations || [] }))
-    } else if (tab === 'connections' && !conns2[id]) {
-      setConns2(p => ({ ...p, [id]: null }))
-      const r = await fetch(`/api/airbyte?action=connections&id=${id}`)
-      const d = await r.json()
-      setConns2(p => ({ ...p, [id]: d.connections || [] }))
-    } else if (tab === 'jobs' && !jobs2[id]) {
-      setJobs2(p => ({ ...p, [id]: null }))
-      const r = await fetch(`/api/airbyte?action=jobs&id=${id}`)
-      const d = await r.json()
-      setJobs2(p => ({ ...p, [id]: d.jobs || [] }))
-    }
+    if (tab === 'sources' && !sources[id]) { setSources(p => ({ ...p, [id]: null })); const r = await fetch(`/api/airbyte?action=sources&id=${id}`); const d = await r.json(); setSources(p => ({ ...p, [id]: d.sources || [] })) }
+    else if (tab === 'destinations' && !dests[id]) { setDests(p => ({ ...p, [id]: null })); const r = await fetch(`/api/airbyte?action=destinations&id=${id}`); const d = await r.json(); setDests(p => ({ ...p, [id]: d.destinations || [] })) }
+    else if (tab === 'connections' && !conns2[id]) { setConns2(p => ({ ...p, [id]: null })); const r = await fetch(`/api/airbyte?action=connections&id=${id}`); const d = await r.json(); setConns2(p => ({ ...p, [id]: d.connections || [] })) }
+    else if (tab === 'jobs' && !jobs2[id]) { setJobs2(p => ({ ...p, [id]: null })); const r = await fetch(`/api/airbyte?action=jobs&id=${id}`); const d = await r.json(); setJobs2(p => ({ ...p, [id]: d.jobs || [] })) }
   }
 
-  async function refreshTab(id: string) {
-    const tab = subTab[id] || 'sources'
-    if (tab === 'sources') setSources(p => ({ ...p, [id]: null }))
-    else if (tab === 'destinations') setDests(p => ({ ...p, [id]: null }))
-    else if (tab === 'connections') setConns2(p => ({ ...p, [id]: null }))
-    else setJobs2(p => ({ ...p, [id]: null }))
-    setTimeout(() => fetchTab(id, tab), 50)
-  }
+  function switchTab(id: string, tab: 'sources'|'connections'|'jobs'|'destinations') { setSubTab(p => ({ ...p, [id]: tab })); fetchTab(id, tab) }
 
   async function triggerSync(instanceId: string, connectionId: string) {
     setSyncing(connectionId)
@@ -747,7 +732,7 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
       const d = await r.json()
       if (d.error) throw new Error(d.error)
       showToast(`Sync triggered${d.jobId ? ' · job #' + d.jobId : ''}`)
-      setJobs2(p => ({ ...p, [instanceId]: null }))
+      setTimeout(() => loadPipelines(instanceId, true), 2000)
     } catch (e) { showToast((e as Error).message, false) }
     finally { setSyncing(null) }
   }
@@ -756,11 +741,8 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
     setCancelling(String(jobId))
     try {
       const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'cancel_job', instanceId, jobId }) })
-      const d = await r.json()
-      if (d.error) throw new Error(d.error)
-      showToast('Job cancelled')
-      setJobs2(p => ({ ...p, [instanceId]: null }))
-      fetchTab(instanceId, 'jobs')
+      const d = await r.json(); if (d.error) throw new Error(d.error)
+      showToast('Job cancelled'); setTimeout(() => loadPipelines(instanceId, true), 1000)
     } catch (e) { showToast((e as Error).message, false) }
     finally { setCancelling(null) }
   }
@@ -769,52 +751,90 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
     if (!confirm('Delete this source from Airbyte?')) return
     try {
       const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete_source', instanceId, sourceId }) })
-      const d = await r.json()
-      if (d.error) throw new Error(d.error)
-      showToast('Source deleted')
-      setSources(p => ({ ...p, [instanceId]: null }))
-      fetchTab(instanceId, 'sources')
+      const d = await r.json(); if (d.error) throw new Error(d.error)
+      showToast('Source deleted'); setSources(p => ({ ...p, [instanceId]: null })); loadPipelines(instanceId, true)
     } catch (e) { showToast((e as Error).message, false) }
   }
 
   async function saveInstance() {
-    if (!form.url.trim()) { showToast('URL required', false); return }
     setSaving(true)
     try {
       const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: editing ? 'update_instance' : 'create_instance', id: editing, ...form }) })
-      const d = await r.json()
-      if (d.error) throw new Error(d.error)
+      const d = await r.json(); if (d.error) throw new Error(d.error)
+      setShowForm(false); setEditing(null); setForm(AB_EMPTY); loadInstances()
       showToast(editing ? 'Instance updated' : 'Airbyte connected')
-      setShowForm(false); setEditing(null); setForm(AB_EMPTY)
-      loadInstances()
     } catch (e) { showToast((e as Error).message, false) }
     finally { setSaving(false) }
   }
 
   async function deleteInstance(id: string) {
-    if (!confirm('Remove this Airbyte instance?')) return
+    if (!confirm('Disconnect this Airbyte instance?')) return
     await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete_instance', id }) })
-    if (expanded === id) setExpanded(null)
     loadInstances()
-    showToast('Instance removed')
   }
 
-  function openEdit(inst: AbInstance) {
-    setForm({ label: inst.label, url: inst.url, username: inst.username, password: '', client_id: inst.client_id || '', client_secret: '' })
-    setEditing(inst.id); setShowForm(true)
+  function openEdit(inst: AbInstance) { setForm({ label: inst.label, url: inst.url, username: inst.username, password: '', client_id: '', client_secret: '' }); setEditing(inst.id); setShowForm(true) }
+
+  async function openWizard(instId: string) {
+    setWizardInst(instId); setWizardStep(1); setSelectedDef(null)
+    setSourceSpec(null); setSourceConfig({}); setSourceName(''); setDefSearch('')
+    setShowWizard(true); setDefsLoading(true)
+    try { const r = await fetch(`/api/airbyte?action=source_definitions&id=${instId}`); const d = await r.json(); setConnDefs(d.definitions || []) }
+    catch { showToast('Failed to load connectors', false) }
+    finally { setDefsLoading(false) }
   }
 
-  function normaliseJob(j: AbJob) {
-    return j.job || j
+  async function selectDef(def: any) {
+    setSelectedDef(def); setWizardStep(2); setSpecLoading(true); setSourceName(def.name || '')
+    try {
+      const r = await fetch(`/api/airbyte?action=source_spec&id=${wizardInst}&definitionId=${def.sourceDefinitionId || def.id}`)
+      const d = await r.json(); setSourceSpec(d.spec)
+      const defaults: Record<string,string> = {}
+      Object.entries(d.spec?.properties || {}).forEach(([k, v]: [string, any]) => { if (v.default !== undefined) defaults[k] = String(v.default) })
+      setSourceConfig(defaults)
+    } catch { showToast('Failed to load connector spec', false) }
+    finally { setSpecLoading(false) }
   }
 
-  const S: React.CSSProperties = { fontSize: 11, padding: '0 0' }
+  async function createSource() {
+    setWizardSaving(true)
+    try {
+      const spec = sourceSpec?.properties || {}
+      const typedConfig: Record<string, unknown> = {}
+      Object.entries(sourceConfig).forEach(([k, v]) => {
+        const t = spec[k]?.type
+        if (t === 'integer') typedConfig[k] = parseInt(v) || 0
+        else if (t === 'boolean') typedConfig[k] = v === 'true'
+        else typedConfig[k] = v
+      })
+      const instData = instances.find(i => i.id === wizardInst)
+      if (!instData?.workspace_id) throw new Error('Workspace not discovered. Click "Discover WS" first.')
+      const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'create_source', instanceId: wizardInst, workspaceId: instData.workspace_id, name: sourceName || selectedDef?.name, definitionId: selectedDef?.sourceDefinitionId || selectedDef?.id, config: typedConfig }) })
+      const d = await r.json(); if (d.error) throw new Error(d.error)
+      showToast(`Source "${sourceName}" created`); setShowWizard(false)
+      setSources(p => ({ ...p, [wizardInst]: null })); loadPipelines(wizardInst, true)
+    } catch (e) { showToast((e as Error).message, false) }
+    finally { setWizardSaving(false) }
+  }
+
+  function fmtRelTime(ts: string | number | null): string {
+    if (!ts) return 'Never'
+    const ms = typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : new Date(ts).getTime()
+    const diff = Date.now() - ms
+    if (diff < 60000) return 'Just now'
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`
+    return `${Math.floor(diff/86400000)}d ago`
+  }
+
+  function normaliseJob(j: AbJob) { return (j as any).job || j }
+
+  const filteredDefs = connDefs.filter(d => !defSearch || (d.name || '').toLowerCase().includes(defSearch.toLowerCase()))
 
   return (
     <div>
-      {/* Toast */}
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 2000, padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: toast.ok ? '#f0fdf4' : '#fef2f2', color: toast.ok ? '#15803d' : '#dc2626', border: `1px solid ${toast.ok ? '#bbf7d0' : '#fecaca'}`, boxShadow: '0 4px 16px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, padding: '10px 18px', borderRadius: 10, background: toast.ok ? '#f0fdf4' : '#fef2f2', border: `1px solid ${toast.ok ? '#bbf7d0' : '#fecaca'}`, color: toast.ok ? '#15803d' : '#dc2626', fontSize: 13, fontWeight: 500, boxShadow: '0 4px 20px rgba(0,0,0,.12)' }}>
           {toast.msg}
         </div>
       )}
@@ -828,9 +848,11 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
       )}
 
       {instances.map(inst => {
-        const curTab = subTab[inst.id] || 'sources'
         const isExp  = expanded === inst.id
         const ps     = pingMap[inst.id]
+        const pipes  = pipelines[inst.id]
+        const isAdv  = showAdvanced[inst.id]
+        const curTab = subTab[inst.id] || 'sources'
 
         return (
           <div key={inst.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 12, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
@@ -841,17 +863,16 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{inst.label}</div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {inst.url} · {inst.username}{inst.workspace_id ? ` · ws:${inst.workspace_id.slice(0,8)}` : ''}
+                  {inst.url}{inst.workspace_id ? ` · ws:${inst.workspace_id.slice(0,8)}` : ''}
                 </div>
               </div>
-              {ps && ps !== 'loading' && (
-                <span style={{ fontSize: 11, color: ps.ok ? '#15803d' : '#dc2626', fontWeight: 500 }}>{ps.msg}</span>
-              )}
+              {ps && ps !== 'loading' && <span style={{ fontSize: 11, color: (ps as any).ok ? '#15803d' : '#dc2626', fontWeight: 500 }}>{(ps as any).msg}</span>}
               {ps === 'loading' && <Spinner size={12} />}
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', flexShrink: 0 }}>
                 <Btn size="sm" onClick={() => ping(inst.id)} disabled={ps === 'loading'}>Test</Btn>
                 {!inst.workspace_id && <Btn size="sm" onClick={() => discoverWs(inst.id)}>Discover WS</Btn>}
-                <Btn size="sm" onClick={() => toggleExpand(inst.id)}>{isExp ? '↑ Collapse' : '↓ Explore'}</Btn>
+                {isAdmin && inst.workspace_id && <Btn size="sm" onClick={() => openWizard(inst.id)}>+ Add source</Btn>}
+                <Btn size="sm" onClick={() => { if (expanded === inst.id) { setExpanded(null) } else { setExpanded(inst.id); loadPipelines(inst.id) } }}>{isExp ? '↑ Hide' : '↓ Pipelines'}</Btn>
                 {isAdmin && <Btn size="sm" onClick={() => openEdit(inst)}>Edit</Btn>}
                 {isAdmin && <Btn size="sm" variant="danger" onClick={() => deleteInstance(inst.id)}>Delete</Btn>}
               </div>
@@ -859,136 +880,149 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
 
             {isExp && (
               <div style={{ borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', gap: 4, padding: '8px 18px', background: 'var(--bg3)', alignItems: 'center', overflowX: 'auto' }}>
-                  {(['sources','destinations','connections','jobs'] as const).map(t => (
-                    <button key={t} onClick={() => switchTab(inst.id, t)} style={{ padding: '3px 12px', borderRadius: 999, border: 'none', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: curTab === t ? 600 : 400, background: curTab === t ? 'var(--accent-bg)' : 'transparent', color: curTab === t ? 'var(--accent-fg)' : 'var(--text3)', whiteSpace: 'nowrap' }}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
-                    </button>
-                  ))}
-                  <button onClick={() => refreshTab(inst.id)} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 999, border: '1px solid var(--border2)', fontSize: 11, cursor: 'pointer', background: 'transparent', color: 'var(--text3)', fontFamily: 'inherit' }}>↻</button>
-                </div>
+                {pipelinesLoading[inst.id] && <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}><Spinner size={14} /> Loading pipelines…</div>}
 
-                {/* Sources */}
-                {curTab === 'sources' && (
-                  <div>
-                    {sources[inst.id] === null && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading sources…</div>}
-                    {sources[inst.id]?.length === 0 && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}>No sources configured.{!inst.workspace_id && ' Click "Discover WS" first.'}</div>}
-                    {sources[inst.id] && sources[inst.id]!.length > 0 && (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 380 }}>
-                          <thead><tr>
-                            {['Source','Type',''].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text4)', padding: '8px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}
-                          </tr></thead>
-                          <tbody>
-                            {sources[inst.id]!.map((s, i) => (
-                              <tr key={s.sourceId || s.id || i}>
-                                <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <AbIcon name={s.sourceName || s.sourceType || s.name} size={22} />
-                                    <div>
-                                      <div style={{ fontSize: 12, fontWeight: 500 }}>{s.name}</div>
-                                      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{s.sourceName || s.sourceType || '—'}</div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>{s.sourceName || s.sourceType || '—'}</td>
-                                <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)' }}>
-                                  {isAdmin && <Btn size="sm" variant="danger" onClick={() => deleteSource(inst.id, s.sourceId || s.id || '')}>Delete</Btn>}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                {pipes && pipes.length === 0 && (
+                  <div style={{ padding: '24px 18px', textAlign: 'center', fontSize: 13, color: 'var(--text3)' }}>
+                    No pipelines configured yet.
+                    {isAdmin && inst.workspace_id && <> Click <strong>+ Add source</strong> to create your first pipeline.</>}
+                    {!inst.workspace_id && <> Click <strong>Discover WS</strong> first.</>}
                   </div>
                 )}
 
-                {/* Destinations */}
-                {curTab === 'destinations' && (
-                  <div>
-                    {dests[inst.id] === null && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading destinations…</div>}
-                    {dests[inst.id]?.length === 0 && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}>No destinations configured in Airbyte.</div>}
-                    {dests[inst.id] && dests[inst.id]!.length > 0 && (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 340 }}>
-                          <thead><tr>
-                            {['Destination','Type'].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text4)', padding: '8px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}
-                          </tr></thead>
-                          <tbody>
-                            {dests[inst.id]!.map((d, i) => (
-                              <tr key={d.destinationId || d.id || i}>
-                                <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 500 }}>{d.name}</td>
-                                <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>{d.destinationType || d.destinationName || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Connections */}
-                {curTab === 'connections' && (
-                  <div>
-                    {conns2[inst.id] === null && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading connections…</div>}
-                    {conns2[inst.id]?.length === 0 && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}>No connections configured.</div>}
-                    {conns2[inst.id] && conns2[inst.id]!.length > 0 && (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 440 }}>
-                          <thead><tr>
-                            {['Connection','Schedule','Status',''].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text4)', padding: '8px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}
-                          </tr></thead>
-                          <tbody>
-                            {conns2[inst.id]!.map((c, i) => {
-                              const cid = c.connectionId || c.id || ''
-                              const sched = (c.schedule as any)?.scheduleType || 'manual'
-                              return (
-                                <tr key={cid || i}>
-                                  <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 500 }}>{c.name}</td>
-                                  <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{sched}</td>
-                                  <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)' }}><AbStatusBadge status={c.status} /></td>
-                                  <td style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)' }}>
-                                    <div style={{ display: 'flex', gap: 5 }}>
-                                      {isAdmin && <Btn size="sm" onClick={() => triggerSync(inst.id, cid)} disabled={syncing === cid}>{syncing === cid ? <Spinner size={10} /> : 'Sync'}</Btn>}
-                                    </div>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Jobs */}
-                {curTab === 'jobs' && (
-                  <div>
-                    {jobs2[inst.id] === null && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading jobs…</div>}
-                    {jobs2[inst.id]?.length === 0 && <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12 }}>No recent jobs.</div>}
-                    {jobs2[inst.id] && jobs2[inst.id]!.map((j, i) => {
-                      const jj = normaliseJob(j) as any
-                      const createdMs = (jj.createdAt||0) > 1e12 ? jj.createdAt : (jj.createdAt||0)*1000
-                      const durSec = jj.updatedAt && jj.createdAt ? Math.round(((jj.updatedAt>1e12?jj.updatedAt:jj.updatedAt*1000) - createdMs)/1000) : null
-                      const isRunning = (jj.status||'').toLowerCase() === 'running'
+                {pipes && pipes.length > 0 && (
+                  <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {pipes.map((p: any) => {
+                      const lastJob   = p.lastJob
+                      const isRunning = lastJob?.status?.toLowerCase() === 'running'
+                      const isSyncing = syncing === p.connectionId
+                      const schedLabel = p.schedule?.scheduleType === 'cron' ? p.schedule.cronExpression
+                        : p.schedule?.scheduleType === 'basic' ? `Every ${p.schedule.basicSchedule?.units} ${p.schedule.basicSchedule?.timeUnit}`
+                        : 'Manual'
                       return (
-                        <div key={jj.id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: '1px solid var(--border)' }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 500 }}>Job #{jj.id}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{createdMs ? new Date(createdMs).toLocaleString() : '—'}{durSec !== null ? ` · ${durSec >= 60 ? Math.floor(durSec/60)+'m '+durSec%60+'s' : durSec+'s'}` : ''}</div>
+                        <div key={p.connectionId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 140 }}>
+                            <AbIcon name={p.sourceType || p.sourceName} size={28} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.sourceName || p.name}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{p.sourceType}</div>
+                            </div>
                           </div>
-                          <AbStatusBadge status={jj.status} />
-                          {isAdmin && isRunning && (
-                            <Btn size="sm" variant="danger" onClick={() => cancelJob(inst.id, jj.id)} disabled={cancelling === String(jj.id)}>
-                              {cancelling === String(jj.id) ? <Spinner size={10}/> : 'Cancel'}
-                            </Btn>
-                          )}
+                          <div style={{ color: 'var(--text4)', fontSize: 13, flexShrink: 0 }}>→</div>
+                          <div style={{ flex: 1, minWidth: 100 }}>
+                            <div style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.destinationName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>{p.destinationType}</div>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', textAlign: 'right', minWidth: 90 }}>
+                            <div>{fmtRelTime(lastJob?.createdAt ?? null)}</div>
+                            {lastJob?.recordsSynced != null && <div style={{ color: 'var(--text4)' }}>{lastJob.recordsSynced.toLocaleString()} rec</div>}
+                            <div style={{ fontSize: 10, color: 'var(--text4)' }}>{schedLabel}</div>
+                          </div>
+                          <AbStatusBadge status={lastJob?.status || p.status} />
+                          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                            <Btn size="sm" onClick={() => triggerSync(inst.id, p.connectionId)} disabled={isSyncing || isRunning}>{isSyncing ? <Spinner size={10} /> : 'Sync'}</Btn>
+                            {isRunning && isAdmin && <Btn size="sm" variant="danger" onClick={() => cancelJob(inst.id, lastJob.id)} disabled={cancelling === String(lastJob.id)}>{cancelling === String(lastJob.id) ? <Spinner size={10} /> : 'Stop'}</Btn>}
+                          </div>
                         </div>
                       )
                     })}
+                    <button onClick={() => loadPipelines(inst.id, true)} style={{ alignSelf: 'flex-end', fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>↻ Refresh</button>
+                  </div>
+                )}
+
+                {!pipelinesLoading[inst.id] && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '8px 16px' }}>
+                    <button onClick={() => setShowAdvanced(p => ({ ...p, [inst.id]: !p[inst.id] }))} style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}>
+                      {isAdv ? '▾' : '▸'} Advanced view
+                    </button>
+                    {isAdv && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ display: 'flex', gap: 4, marginBottom: 8, overflowX: 'auto' }}>
+                          {(['sources','destinations','connections','jobs'] as const).map(t => (
+                            <button key={t} onClick={() => switchTab(inst.id, t)} style={{ padding: '3px 12px', borderRadius: 999, border: 'none', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: curTab === t ? 600 : 400, background: curTab === t ? 'var(--accent-bg)' : 'transparent', color: curTab === t ? 'var(--accent-fg)' : 'var(--text3)', whiteSpace: 'nowrap' }}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
+                          ))}
+                        </div>
+                        {curTab === 'sources' && (
+                          <div>
+                            {sources[inst.id] === null && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading…</div>}
+                            {sources[inst.id]?.length === 0 && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}>No sources.</div>}
+                            {sources[inst.id] && sources[inst.id]!.length > 0 && (
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr>{['Source','Type',''].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text4)', padding: '6px 12px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}</tr></thead>
+                                <tbody>{sources[inst.id]!.map((s, i) => (
+                                  <tr key={s.sourceId || s.id || i}>
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><AbIcon name={s.sourceName || s.sourceType || s.name} size={20} /><div style={{ fontSize: 12, fontWeight: 500 }}>{s.name}</div></div></td>
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>{s.sourceName || s.sourceType || '—'}</td>
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>{isAdmin && <Btn size="sm" variant="danger" onClick={() => deleteSource(inst.id, s.sourceId || s.id || '')}>Delete</Btn>}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                        {curTab === 'destinations' && (
+                          <div>
+                            {dests[inst.id] === null && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading…</div>}
+                            {dests[inst.id]?.length === 0 && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}>No destinations.</div>}
+                            {dests[inst.id] && dests[inst.id]!.length > 0 && (
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr>{['Name','Type'].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text4)', padding: '6px 12px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}</tr></thead>
+                                <tbody>{dests[inst.id]!.map((d, i) => (
+                                  <tr key={d.destinationId || d.id || i}>
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 500 }}>{d.name}</td>
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>{d.destinationType || d.destinationName || '—'}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                        {curTab === 'connections' && (
+                          <div>
+                            {conns2[inst.id] === null && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading…</div>}
+                            {conns2[inst.id]?.length === 0 && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}>No connections.</div>}
+                            {conns2[inst.id] && conns2[inst.id]!.length > 0 && (
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr>{['Connection','Schedule','Status',''].map(h => <th key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text4)', padding: '6px 12px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>)}</tr></thead>
+                                <tbody>{conns2[inst.id]!.map((c, i) => {
+                                  const cid = c.connectionId || c.id || ''
+                                  return (
+                                    <tr key={cid || i}>
+                                      <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 500 }}>{c.name}</td>
+                                      <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{(c.schedule as any)?.scheduleType || 'manual'}</td>
+                                      <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}><AbStatusBadge status={c.status} /></td>
+                                      <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>{isAdmin && <Btn size="sm" onClick={() => triggerSync(inst.id, cid)} disabled={syncing === cid}>{syncing === cid ? <Spinner size={10} /> : 'Sync'}</Btn>}</td>
+                                    </tr>
+                                  )
+                                })}</tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                        {curTab === 'jobs' && (
+                          <div>
+                            {jobs2[inst.id] === null && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}><Spinner size={11} /> Loading…</div>}
+                            {jobs2[inst.id]?.length === 0 && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 12 }}>No recent jobs.</div>}
+                            {jobs2[inst.id] && jobs2[inst.id]!.map((j, i) => {
+                              const jj = normaliseJob(j) as any
+                              const createdMs = (jj.createdAt||0) > 1e12 ? jj.createdAt : (jj.createdAt||0)*1000
+                              const durSec = jj.updatedAt && jj.createdAt ? Math.round(((jj.updatedAt>1e12?jj.updatedAt:jj.updatedAt*1000)-createdMs)/1000) : null
+                              const isRunning = (jj.status||'').toLowerCase() === 'running'
+                              return (
+                                <div key={jj.id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 500 }}>Job #{jj.id}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{createdMs ? new Date(createdMs).toLocaleString() : '—'}{durSec !== null ? ` · ${durSec >= 60 ? Math.floor(durSec/60)+'m '+durSec%60+'s' : durSec+'s'}` : ''}</div>
+                                  </div>
+                                  <AbStatusBadge status={jj.status} />
+                                  {isAdmin && isRunning && <Btn size="sm" variant="danger" onClick={() => cancelJob(inst.id, jj.id)} disabled={cancelling === String(jj.id)}>{cancelling === String(jj.id) ? <Spinner size={10}/> : 'Cancel'}</Btn>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -997,12 +1031,93 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
         )
       })}
 
-      {/* Add / Edit modal */}
+      {showWizard && (
+        <div onClick={e => { if (e.target === e.currentTarget) setShowWizard(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 14, width: 540, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Add data source</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Step {wizardStep} of 2 — {wizardStep === 1 ? 'Choose connector' : 'Configure source'}</div>
+              </div>
+              <button onClick={() => setShowWizard(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+
+            {wizardStep === 1 && (
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 16 }}>
+                <input placeholder="Search 300+ connectors..." value={defSearch} onChange={e => setDefSearch(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', marginBottom: 12, boxSizing: 'border-box' }} autoFocus />
+                {defsLoading && <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}><Spinner size={16} /> Loading connectors…</div>}
+                {!defsLoading && (
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {filteredDefs.map(def => (
+                      <button key={def.sourceDefinitionId || def.id} onClick={() => selectDef(def)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'border-color .15s' }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                        <AbIcon name={def.name} size={24} />
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>{def.name}</span>
+                      </button>
+                    ))}
+                    {filteredDefs.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 24, color: 'var(--text3)', fontSize: 13 }}>No connectors found</div>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {wizardStep === 2 && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+                {specLoading && <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}><Spinner size={16} /> Loading spec…</div>}
+                {!specLoading && sourceSpec && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                      <AbIcon name={selectedDef?.name} size={32} />
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{selectedDef?.name}</div>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Source name *</label>
+                      <input value={sourceName} onChange={e => setSourceName(e.target.value)} placeholder={`My ${selectedDef?.name}`}
+                        style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                    {Object.entries(sourceSpec.properties || {}).map(([key, prop]: [string, any]) => {
+                      if (prop.type === 'object' || prop.type === 'array') return null
+                      const isRequired = (sourceSpec.required || []).includes(key)
+                      const isSecret = prop.airbyte_secret || /password|token|secret|key/i.test(key)
+                      return (
+                        <div key={key} style={{ marginBottom: 14 }}>
+                          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
+                            {prop.title || key}{isRequired && <span style={{ color: '#dc2626' }}> *</span>}
+                          </label>
+                          {prop.enum ? (
+                            <select value={sourceConfig[key] || prop.default || ''} onChange={e => setSourceConfig(p => ({ ...p, [key]: e.target.value }))}
+                              style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}>
+                              {prop.enum.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                          ) : (
+                            <input type={isSecret ? 'password' : prop.type === 'integer' ? 'number' : 'text'}
+                              value={sourceConfig[key] || ''} onChange={e => setSourceConfig(p => ({ ...p, [key]: e.target.value }))}
+                              placeholder={prop.examples?.[0] ? String(prop.examples[0]) : (prop.description || '').slice(0, 60)}
+                              style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+                          )}
+                          {prop.description && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 3 }}>{prop.description.slice(0, 100)}</div>}
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
+              </div>
+            )}
+
+            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+              <Btn onClick={() => { if (wizardStep === 2) setWizardStep(1); else setShowWizard(false) }}>{wizardStep === 1 ? 'Cancel' : '← Back'}</Btn>
+              {wizardStep === 2 && <Btn onClick={createSource} disabled={wizardSaving || !sourceName}>{wizardSaving ? <><Spinner size={11} /> Creating…</> : 'Create source'}</Btn>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
-        <div onClick={e => { if (e.target === e.currentTarget) { setShowForm(false); setEditing(null); setForm(AB_EMPTY) } }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 420, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div onClick={e => { if (e.target === e.currentTarget) { setShowForm(false); setEditing(null); setForm(AB_EMPTY) } }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 420, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 16 }}>{editing ? 'Edit Airbyte instance' : 'Connect Airbyte instance'}</div>
               <button onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
@@ -1012,27 +1127,25 @@ function AirbyteSection({ user, showForm, setShowForm }: { user: SessionUser; sh
               <strong>abctl (Kubernetes)</strong> — use your email + password from <code style={{fontFamily:'var(--font-mono)'}}>abctl local credentials</code>, plus Client ID &amp; Secret below.
             </div>
             {([
-              { key: 'label',         label: 'Label',         ph: 'Local Airbyte',          type: 'text',     hint: '' },
-              { key: 'url',           label: 'Airbyte URL',   ph: 'http://localhost:8000',  type: 'text',     hint: 'Default port 8000', req: true },
-              { key: 'username',      label: 'Email / Username', ph: 'airbyte or your@email.com', type: 'text', hint: '' },
-              { key: 'password',      label: 'Password',      ph: editing ? '(unchanged)' : 'password', type: 'password', hint: editing ? 'Leave blank to keep existing' : '' },
-              { key: 'client_id',     label: 'Client ID',     ph: 'abctl only — from abctl local credentials', type: 'text', hint: 'OAuth2 client ID for abctl deployments' },
-              { key: 'client_secret', label: 'Client Secret', ph: editing ? '(unchanged)' : 'abctl only', type: 'password', hint: editing ? 'Leave blank to keep existing' : 'OAuth2 client secret for abctl deployments' },
+              { key: 'label',         label: 'Label',            ph: 'Local Airbyte',              type: 'text',     hint: '' },
+              { key: 'url',           label: 'Airbyte URL',      ph: 'http://localhost:8000',      type: 'text',     hint: 'Default port 8000', req: true },
+              { key: 'username',      label: 'Email / Username', ph: 'airbyte or your@email.com', type: 'text',     hint: '' },
+              { key: 'password',      label: 'Password',         ph: editing ? '(unchanged)' : 'password', type: 'password', hint: editing ? 'Leave blank to keep existing' : '' },
+              { key: 'client_id',     label: 'Client ID',        ph: 'abctl only',                 type: 'text',     hint: 'OAuth2 client ID for abctl deployments' },
+              { key: 'client_secret', label: 'Client Secret',    ph: editing ? '(unchanged)' : 'abctl only', type: 'password', hint: editing ? 'Leave blank to keep existing' : 'OAuth2 client secret' },
             ] as const).map(f => (
               <div key={f.key} style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-                  {f.label}{(f as any).req && <span style={{ color: '#dc2626' }}> *</span>}
-                </label>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>{f.label}{(f as any).req && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 <input type={f.type} value={form[f.key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.ph}
                   style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }} />
                 {f.hint && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 3 }}>{f.hint}</div>}
               </div>
             ))}
             <div style={{ padding: '10px 12px', background: '#eff6ff', borderRadius: 8, fontSize: 12, color: '#2563eb', lineHeight: 1.6, marginBottom: 20 }}>
-              Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(37,99,235,.12)', padding: '1px 5px', borderRadius: 4 }}>docker compose up -d</code> in your Airbyte directory. Default: <code style={{ fontFamily: 'var(--font-mono)' }}>airbyte / password</code>
+              Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(37,99,235,.12)', padding: '1px 5px', borderRadius: 4 }}>docker compose up -d</code> in your Airbyte directory.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn variant="ghost" onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }}>Cancel</Btn>
+              <Btn onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }}>Cancel</Btn>
               <Btn onClick={saveInstance} disabled={saving}>{saving ? <Spinner size={12} /> : (editing ? 'Save changes' : 'Connect')}</Btn>
             </div>
           </div>

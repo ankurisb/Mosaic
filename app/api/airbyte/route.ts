@@ -323,6 +323,101 @@ export async function GET(req: Request) {
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }
 
+  // ── Pipelines: connections enriched with latest job status
+  // Returns each connection with source name, destination name, last job
+  // Used by the new pipeline cards UI — single call replaces 3 separate fetches
+  if (action === 'pipelines') {
+    try {
+      const wsId = await getWorkspaceId(sql, inst)
+
+      // Fetch connections, sources, destinations in parallel
+      const [connData, srcData, destData] = await Promise.all([
+        ab(inst, `/connections?workspaceIds=${wsId}&limit=100`, '/connections/list', 'GET', { workspaceId: wsId }),
+        ab(inst, `/sources?workspaceIds=${wsId}&limit=100`, '/sources/list', 'GET', { workspaceId: wsId }),
+        ab(inst, `/destinations?workspaceIds=${wsId}&limit=100`, '/destinations/list', 'GET', { workspaceId: wsId }),
+      ]) as any[]
+
+      const connections = connData.data || connData.connections || []
+      const sources     = srcData.data || srcData.sources || []
+      const dests       = destData.data || destData.destinations || []
+
+      // Index sources and destinations by id for quick lookup
+      const srcMap  = Object.fromEntries(sources.map((s: any) => [s.sourceId || s.id, s]))
+      const destMap = Object.fromEntries(dests.map((d: any) => [d.destinationId || d.id, d]))
+
+      // Fetch latest job for each connection in parallel (cap at 20 connections)
+      const enriched = await Promise.all(
+        connections.slice(0, 20).map(async (c: any) => {
+          const cid = c.connectionId || c.id
+          const src  = srcMap[c.sourceId] || {}
+          const dest = destMap[c.destinationId] || {}
+          let lastJob: any = null
+          try {
+            const jobData = await ab(inst,
+              `/jobs?limit=1&connectionId=${cid}`,
+              '/jobs/list', 'GET',
+              { configTypes: ['sync'], pagination: { pageSize: 1, rowOffset: 0 }, connectionId: cid }
+            ) as any
+            const jobs = jobData.data || jobData.jobs || []
+            if (jobs.length > 0) lastJob = jobs[0]
+          } catch { /* skip if jobs fail */ }
+
+          return {
+            connectionId:    cid,
+            name:            c.name || `${src.name || 'Source'} → ${dest.name || 'Destination'}`,
+            status:          c.status || 'unknown',
+            schedule:        c.schedule || null,
+            sourceId:        c.sourceId,
+            sourceName:      src.name || '',
+            sourceType:      src.sourceName || src.sourceType || '',
+            destinationId:   c.destinationId,
+            destinationName: dest.name || '',
+            destinationType: dest.destinationName || dest.destinationType || '',
+            lastJob: lastJob ? {
+              id:         lastJob.jobId || lastJob.id,
+              status:     lastJob.status || lastJob.job?.status || 'unknown',
+              createdAt:  lastJob.startedAt || lastJob.createdAt || lastJob.job?.createdAt,
+              updatedAt:  lastJob.lastUpdatedAt || lastJob.updatedAt || lastJob.job?.updatedAt,
+              recordsSynced: lastJob.recordsSynced || lastJob.job?.aggregatedStats?.recordsSynced || null,
+            } : null,
+          }
+        })
+      )
+
+      return Response.json({ pipelines: enriched })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
+  // ── Source definition spec (for dynamic add-source form)
+  if (action === 'source_spec' && searchParams.get('definitionId')) {
+    const defId = searchParams.get('definitionId') || ''
+    // Mock specs for dev/testing
+    const MOCK_SPECS: Record<string, unknown> = {
+      'mock-postgres':    { required: ['host','port','database','username'], properties: { host: { type: 'string', title: 'Host', examples: ['localhost'] }, port: { type: 'integer', title: 'Port', default: 5432 }, database: { type: 'string', title: 'Database name' }, username: { type: 'string', title: 'Username' }, password: { type: 'string', title: 'Password', airbyte_secret: true }, ssl_mode: { type: 'string', title: 'SSL mode', enum: ['disable','allow','prefer','require'], default: 'prefer' } } },
+      'mock-mysql':       { required: ['host','port','database','username'], properties: { host: { type: 'string', title: 'Host' }, port: { type: 'integer', title: 'Port', default: 3306 }, database: { type: 'string', title: 'Database' }, username: { type: 'string', title: 'Username' }, password: { type: 'string', title: 'Password', airbyte_secret: true } } },
+      'mock-salesforce':  { required: ['client_id','client_secret','refresh_token'], properties: { client_id: { type: 'string', title: 'Client ID' }, client_secret: { type: 'string', title: 'Client Secret', airbyte_secret: true }, refresh_token: { type: 'string', title: 'Refresh Token', airbyte_secret: true }, is_sandbox: { type: 'boolean', title: 'Sandbox', default: false }, start_date: { type: 'string', title: 'Start Date', examples: ['2024-01-01'] } } },
+      'mock-s3':          { required: ['bucket','region'], properties: { bucket: { type: 'string', title: 'Bucket name' }, region: { type: 'string', title: 'AWS Region', examples: ['us-east-1'] }, access_key_id: { type: 'string', title: 'Access Key ID', airbyte_secret: true }, secret_access_key: { type: 'string', title: 'Secret Access Key', airbyte_secret: true }, path_prefix: { type: 'string', title: 'Path prefix' } } },
+      'mock-hubspot':     { required: ['credentials'], properties: { start_date: { type: 'string', title: 'Start Date', examples: ['2024-01-01'] }, access_token: { type: 'string', title: 'Access Token', airbyte_secret: true } } },
+      'mock-stripe':      { required: ['account_id','client_secret'], properties: { account_id: { type: 'string', title: 'Account ID', examples: ['acct_...'] }, client_secret: { type: 'string', title: 'Secret Key', airbyte_secret: true }, start_date: { type: 'string', title: 'Start Date', examples: ['2024-01-01'] } } },
+    }
+    if (defId.startsWith('mock-') && MOCK_SPECS[defId]) {
+      return Response.json({ spec: MOCK_SPECS[defId], mock: true })
+    }
+    // For unknown mock IDs, return a generic spec
+    if (defId.startsWith('mock-')) {
+      return Response.json({ spec: { required: ['host'], properties: { host: { type: 'string', title: 'Host' }, port: { type: 'integer', title: 'Port' }, username: { type: 'string', title: 'Username' }, password: { type: 'string', title: 'Password', airbyte_secret: true } } }, mock: true })
+    }
+    try {
+      const data = await ab(inst,
+        `/source_definitions/${defId}/specification`,
+        '/source_definition_specifications/get',
+        'GET',
+        { sourceDefinitionId: defId }
+      ) as any
+      return Response.json({ spec: data.connectionSpecification || data.spec || data })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
   return Response.json({ error: 'Unknown action' }, { status: 400 })
 }
 
