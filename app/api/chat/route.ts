@@ -242,7 +242,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       }).join('\n')
     : ''
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition
+  // Inject available statistical analyses
+  const { formatAnalyticsForPrompt } = await import('@/lib/analytics/registry')
+  const analyticsBlock = '\n\n' + formatAnalyticsForPrompt()
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition + analyticsBlock
   // Fix #7: per-user rate limit -- max 50 requests per hour per user
   try {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()

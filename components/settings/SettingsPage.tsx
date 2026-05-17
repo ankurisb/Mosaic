@@ -11,6 +11,7 @@ import TabMonitor from './TabMonitor'
 import TabDataSources from './TabDataSources'
 import TabAbout from './TabAbout'
 import TabRcaWorkflows from './TabRcaWorkflows'
+import TabAnalytics from './TabAnalytics'
 import TabIntegrations from './TabIntegrations'
 
 const TABS = [
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'system-health', label: 'System health' },
   { id: 'data-sources',  label: 'Data sources' },
   { id: 'rca-workflows', label: 'RCA workflows' },
+  { id: 'analytics',     label: 'Analysis capabilities' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'about',         label: 'About' },
 ]
@@ -36,6 +38,7 @@ function TabIcon({ id }: { id: string }) {
     case 'data-sources': return <svg {...p}><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
     case 'apis':         return <svg {...p}><rect x="1" y="4" width="12" height="6" rx="1.5"/><path d="M3.5 7h2M8.5 7h2"/></svg>
     case 'files':        return <svg {...p}><path d="M2 3h4l1.5 2H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>
+    case 'analytics':    return <svg {...p}><polyline points="2,12 7,6 11,10 14,4 18,8"/><line x1="2" y1="12" x2="18" y2="12" opacity={0.3}/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>
     case 'rca-workflows':return <svg {...p}><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="10" width="4" height="3" rx="1"/><rect x="9" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="10"/><line x1="3" y1="7" x2="9" y2="7"/></svg>
     case 'notifications': return <svg {...p}><circle cx="3" cy="7" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="11" cy="11" r="1.5"/><path d="M4.5 7h2l2-4M4.5 7h2l2 4"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
@@ -48,7 +51,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','notifications','about']
+      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','analytics','notifications','about']
       if (validTabs.includes(hash)) return hash
     }
     return 'keys'
@@ -98,7 +101,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
-        <div style={{ maxWidth: 820, margin: '0 auto', padding: '40px 40px' }}>
+        <div style={{ maxWidth: tab === 'analytics' ? 1100 : 820, margin: '0 auto', padding: '40px 40px' }}>
           {tab === 'keys'      && <TabKeys user={user} />}
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}
@@ -107,6 +110,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
+        {tab === 'analytics' && <TabAnalytics />}
           {tab === 'notifications' && <TabIntegrations user={user} />}
         </div>
       </div>

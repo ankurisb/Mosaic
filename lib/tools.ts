@@ -106,6 +106,31 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'run_statistical_analysis',
+    description: `Run statistical analysis on data retrieved from a previous query_database call.
+Use AFTER fetching data when the question requires mathematical computation beyond simple aggregation.
+Available: control_chart, process_capability, trend, anomaly_detection, changepoint_detection, pareto, correlation, regression, weibull, mtbf, oee_decomposition, hypothesis_test.
+Pass the rows array directly from the previous query result as the data parameter.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        analysis_type: {
+          type: 'string',
+          description: 'Type of analysis. One of: control_chart, process_capability, trend, anomaly_detection, changepoint_detection, pareto, correlation, regression, weibull, mtbf, oee_decomposition, hypothesis_test',
+        },
+        data: {
+          type: 'array',
+          description: 'Array of data points from a previous query_database call. Can be numbers or objects.',
+        },
+        params: {
+          type: 'object',
+          description: 'Analysis-specific parameters e.g. {lsl:9.95, usl:10.05} for process_capability; {threshold:7.5} for trend; {group_labels:[...]} for hypothesis_test',
+        },
+      },
+      required: ['analysis_type', 'data'],
+    },
+  },
+  {
     name: 'render_chart',
     description: 'Render a chart inline in the chat to visualize data the user has asked about. Use this when the user asks for a chart, graph, visualization, breakdown, trend, or comparison; or when a visual summary would be more useful than a text response. Always fetch the underlying data first via call_api/query_database/etc., then summarise it into the right shape for the chart type below.',
     input_schema: {
@@ -133,6 +158,7 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
     case 'call_api': return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
     case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
+    case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
     case 'render_chart': return renderChart(input)
     default: throw new Error(`Unknown tool: ${name}`)
   }
@@ -636,6 +662,30 @@ async function queryDatabase(connectionId: string, queryInput: string) {
   }
 
   throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch.`)
+}
+
+// -- Statistical Analysis ------------------------------------
+async function runStatisticalAnalysis(
+  analysisType: string,
+  data: unknown[],
+  params?: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const statsUrl = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
+  const res = await fetch(`${statsUrl}/analyse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ analysis_type: analysisType, data, params: params || {} }),
+    signal: AbortSignal.timeout(30000),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Stats sidecar error ${res.status}: ${err.slice(0, 200)}`)
+  }
+  const result = await res.json()
+  if (!result.ok) {
+    throw new Error(`Statistical analysis failed: ${result.error || 'unknown error'}`)
+  }
+  return result
 }
 
 // -- API call --------------------------------------------------

@@ -46,6 +46,8 @@ services:
       - AIRBYTE_URL=http://airbyte-proxy:8000
       # Elasticsearch (internal Docker network URL — Mosaic Search Index)
       - ELASTICSEARCH_INTERNAL_URL=http://elasticsearch:9200
+      # Stats sidecar (internal Docker network URL)
+      - STATS_SIDECAR_URL=http://mosaic-stats:8001
       - AIRBYTE_USER=airbyte
       - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}
       # SMTP (optional)
@@ -260,6 +262,25 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  # ── Stats Sidecar ───────────────────────────────────────────
+  # Python FastAPI service for statistical analysis.
+  # Internal only — never exposed to host.
+  # Claude calls it via run_statistical_analysis tool.
+  mosaic-stats:
+    build:
+      context: ./services/stats-sidecar
+      dockerfile: Dockerfile
+    container_name: mosaic-stats
+    restart: unless-stopped
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
