@@ -142,14 +142,15 @@ export const ANALYTICS_REGISTRY: AnalysisDefinition[] = [
   },
 ]
 
-export function formatAnalyticsForPrompt(): string {
+export function formatAnalyticsForPrompt(disabled: string[] = []): string {
+  const active = ANALYTICS_REGISTRY.filter(a => !disabled.includes(a.name))
   const byCategory: Record<string, AnalysisDefinition[]> = {}
-  for (const a of ANALYTICS_REGISTRY) {
+  for (const a of active) {
     if (!byCategory[a.category]) byCategory[a.category] = []
     byCategory[a.category].push(a)
   }
   const lines: string[] = ['## Statistical Analysis (run_statistical_analysis tool)']
-  lines.push('Use this tool AFTER querying data when the question requires statistical computation.')
+  lines.push(`Use this tool AFTER querying data when the question requires statistical computation. ${disabled.length ? `(${disabled.length} analysis type(s) disabled by admin)` : ''}`)
   lines.push('Pass the data array from the previous query_database result.')
   lines.push('')
   for (const [cat, analyses] of Object.entries(byCategory)) {

@@ -242,9 +242,14 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       }).join('\n')
     : ''
 
-  // Inject available statistical analyses
+  // Inject available statistical analyses (excluding admin-disabled ones)
   const { formatAnalyticsForPrompt } = await import('@/lib/analytics/registry')
-  const analyticsBlock = '\n\n' + formatAnalyticsForPrompt()
+  let disabledAnalyses: string[] = []
+  try {
+    const disabledRows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'DISABLED_ANALYSES'`
+    if (disabledRows.length) disabledAnalyses = JSON.parse(disabledRows[0].value_enc as string)
+  } catch { }
+  const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses)
 
   const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition + analyticsBlock
   // Fix #7: per-user rate limit -- max 50 requests per hour per user

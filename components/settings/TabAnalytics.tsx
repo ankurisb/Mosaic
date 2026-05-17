@@ -87,13 +87,20 @@ const REGISTRY: AnalysisDef[] = [
 export default function TabAnalytics() {
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState<string>('all')
+  const [search, setSearch] = useState('')
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [disabled, setDisabled] = useState<string[]>([])
+  const [saving, setSaving] = useState<string | null>(null)
 
-  const totalPages = Math.ceil(
-    (filter === 'all' ? REGISTRY : REGISTRY.filter(a => a.category === filter)).length / ITEMS_PER_PAGE
-  )
-  const filtered = filter === 'all' ? REGISTRY : REGISTRY.filter(a => a.category === filter)
+  const filtered = REGISTRY.filter(a => {
+    const matchCat = filter === 'all' || a.category === filter
+    const matchSearch = !search || a.title.toLowerCase().includes(search.toLowerCase()) ||
+      a.description.toLowerCase().includes(search.toLowerCase()) ||
+      a.when_to_use.toLowerCase().includes(search.toLowerCase())
+    return matchCat && matchSearch
+  })
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
   const paged = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
   const categories = Array.from(new Set(REGISTRY.map(a => a.category)))
 
@@ -102,7 +109,27 @@ export default function TabAnalytics() {
       .then(r => r.json())
       .then(d => setSidecarOk(d.ok))
       .catch(() => setSidecarOk(false))
+    fetch('/api/stats/settings')
+      .then(r => r.json())
+      .then(d => setDisabled(d.disabled || []))
+      .catch(() => {})
   }, [])
+
+  async function toggleAnalysis(name: string) {
+    setSaving(name)
+    const newDisabled = disabled.includes(name)
+      ? disabled.filter(d => d !== name)
+      : [...disabled, name]
+    try {
+      await fetch('/api/stats/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled: newDisabled }),
+      })
+      setDisabled(newDisabled)
+    } catch { }
+    finally { setSaving(null) }
+  }
 
   return (
     <div style={{ padding: '0 0 40px' }}>
@@ -130,6 +157,16 @@ export default function TabAnalytics() {
         )}
       </div>
 
+      {/* Search */}
+      <div style={{ marginBottom: 14 }}>
+        <input
+          placeholder="Search analyses..."
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1) }}
+          style={{ width: '100%', padding: '8px 12px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+        />
+      </div>
+
       {/* Category filter */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
         <button onClick={() => { setFilter('all'); setPage(1) }}
@@ -155,7 +192,7 @@ export default function TabAnalytics() {
           const isExpanded = expanded === a.name
           return (
             <div key={a.name}
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow)', transition: 'box-shadow .15s' }}
+              style={{ background: 'var(--surface)', border: `1px solid ${disabled.includes(a.name) ? 'var(--border)' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow)', transition: 'all .15s', opacity: disabled.includes(a.name) ? 0.55 : 1 }}
               onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.1)')}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = 'var(--shadow)')}>
 
@@ -187,11 +224,20 @@ export default function TabAnalytics() {
 
               {/* Expandable details */}
               <div style={{ borderTop: '1px solid var(--border)' }}>
-                <button onClick={() => setExpanded(isExpanded ? null : a.name)}
-                  style={{ width: '100%', padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
-                  <span>Example &amp; output</span>
-                  <span>{isExpanded ? '▾' : '▸'}</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px 0 0' }}>
+                  <button onClick={() => setExpanded(isExpanded ? null : a.name)}
+                    style={{ flex: 1, padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+                    <span>Example &amp; output</span>
+                    <span>{isExpanded ? '▾' : '▸'}</span>
+                  </button>
+                  <button
+                    onClick={() => toggleAnalysis(a.name)}
+                    disabled={saving === a.name}
+                    title={disabled.includes(a.name) ? 'Click to enable this analysis' : 'Click to disable this analysis'}
+                    style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${disabled.includes(a.name) ? 'var(--border2)' : color}`, background: disabled.includes(a.name) ? 'var(--bg3)' : color + '18', color: disabled.includes(a.name) ? 'var(--text4)' : color, fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all .15s' }}>
+                    {saving === a.name ? '…' : disabled.includes(a.name) ? 'Disabled' : 'Enabled'}
+                  </button>
+                </div>
                 {isExpanded && (
                   <div style={{ padding: '0 16px 14px' }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Example question</div>
