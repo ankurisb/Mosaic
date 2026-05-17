@@ -48,12 +48,21 @@ function defaultSection(type: SectionType): Section {
   }
 }
 
+// SVG icons matching Mosaic's inline SVG style (stroke=currentColor, strokeWidth=1.4, round caps)
+const SECTION_ICONS: Record<SectionType, React.ReactNode> = {
+  kpi: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="7" width="3" height="6" rx="1"/><rect x="5.5" y="4" width="3" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg>,
+  table: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="12" height="12" rx="1.5"/><path d="M1 5h12M5 5v8"/></svg>,
+  chart: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M1 10l3-4 2.5 2.5 3-5 2.5 3"/><path d="M1 13h12"/></svg>,
+  ai_narrative: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><polygon points="7,1 9,5 13,5.5 10,8.5 10.5,13 7,11 3.5,13 4,8.5 1,5.5 5,5"/></svg>,
+  text: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 3h10M2 6.5h8M2 10h6"/></svg>,
+}
+
 const SECTION_LABELS: Record<SectionType, string> = {
-  kpi:          '🔢 KPI Summary',
-  table:        '📋 Data Table',
-  chart:        '📊 Chart',
-  ai_narrative: '🤖 AI Narrative',
-  text:         '📝 Static Text',
+  kpi:          'KPI Summary',
+  table:        'Data Table',
+  chart:        'Chart',
+  ai_narrative: 'AI Narrative',
+  text:         'Static Text',
 }
 
 const SECTION_DESC: Record<SectionType, string> = {
@@ -103,7 +112,10 @@ function SectionCard({
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg2)', borderBottom: open ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
         onClick={() => setOpen(o => !o)}>
         <span style={{ fontSize: 12, color: 'var(--text3)', minWidth: 20 }}>{index + 1}</span>
-        <span style={{ fontSize: 13 }}>{SECTION_LABELS[section.type]}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}>
+            {SECTION_ICONS[section.type]}
+            {SECTION_LABELS[section.type]}
+          </span>
         {section.title && <span style={{ fontSize: 12, color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>— {section.title}</span>}
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
           <button onClick={onMoveUp} disabled={index === 0} title="Move up"
@@ -133,7 +145,7 @@ function SectionCard({
                 {(['database', 'api', 'none'] as const).map(st => (
                   <button key={st} onClick={() => up('source_type', st)}
                     style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.source_type === st ? 'var(--blue)' : 'var(--border2)'}`, background: section.source_type === st ? '#eff6ff' : 'var(--bg)', color: section.source_type === st ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.source_type === st ? 600 : 400 }}>
-                    {st === 'database' ? '🗄 Database' : st === 'api' ? '🔌 API' : '— None'}
+                    {st === 'database' ? 'Database' : st === 'api' ? 'API' : 'None'}
                   </button>
                 ))}
               </div>
@@ -185,7 +197,7 @@ function SectionCard({
                 {(['bar', 'line', 'pie', 'number'] as const).map(ct => (
                   <button key={ct} onClick={() => up('chart_type', ct)}
                     style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.chart_type === ct ? 'var(--blue)' : 'var(--border2)'}`, background: section.chart_type === ct ? '#eff6ff' : 'var(--bg)', color: section.chart_type === ct ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.chart_type === ct ? 600 : 400 }}>
-                    {ct === 'bar' ? '📊 Bar' : ct === 'line' ? '📈 Line' : ct === 'pie' ? '🥧 Pie' : '🔢 Number'}
+                    {ct === 'bar' ? 'Bar' : ct === 'line' ? 'Line' : ct === 'pie' ? 'Pie' : 'Number'}
                   </button>
                 ))}
               </div>
@@ -233,7 +245,7 @@ function SectionPicker({ onAdd }: { onAdd: (t: SectionType) => void }) {
       {!open ? (
         <button onClick={() => setOpen(true)}
           style={{ padding: '8px 18px', borderRadius: 8, border: '1.5px dashed var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>+</span> Add section
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg> Add section
         </button>
       ) : (
         <div style={{ border: '1.5px solid var(--border)', borderRadius: 10, background: 'var(--surface)', overflow: 'hidden' }}>
@@ -244,7 +256,10 @@ function SectionPicker({ onAdd }: { onAdd: (t: SectionType) => void }) {
           {(Object.keys(SECTION_LABELS) as SectionType[]).map((t, i, arr) => (
             <button key={t} onClick={() => { onAdd(t); setOpen(false) }}
               style={{ width: '100%', padding: '11px 16px', border: 'none', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{SECTION_LABELS[t]}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ color: 'var(--text3)' }}>{SECTION_ICONS[t]}</span>
+                  {SECTION_LABELS[t]}
+                </span>
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>{SECTION_DESC[t]}</span>
             </button>
           ))}

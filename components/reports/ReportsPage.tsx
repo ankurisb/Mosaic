@@ -207,11 +207,11 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => router.push(`/reports/template/edit/${t.id}`)}
                           style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          ✏ Edit
+                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2L4 10H2v-2L8.5 1.5z"/></svg> Edit
                         </button>
                         <button onClick={() => runTemplate(String(t.id), String(t.name))} disabled={running === String(t.id)}
                           style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          {running === String(t.id) ? 'Generating…' : '▶ Run now'}
+                          {running === String(t.id) ? 'Generating…' : <><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><polygon points="2,1 9,5 2,9" fill="currentColor" stroke="none"/></svg> Run now</>}
                         </button>
                         <button onClick={() => deleteTemplate(String(t.id))}
                           style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
