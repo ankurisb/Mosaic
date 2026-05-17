@@ -25,13 +25,30 @@ interface Section {
 interface DbConnection { id: string; label: string; dialect: string }
 interface ApiService   { id: string; label: string; base_url: string }
 
+interface NotifGroup { id: string; name: string; members: unknown[] }
+
+interface RecipientEntry {
+  type: 'group' | 'email'
+  group_id?: string
+  label: string        // display name or raw email
+}
+
+// Internal schedule state — never cron-string to the user
+interface ScheduleState {
+  enabled: boolean
+  frequency: 'daily' | 'weekly' | 'monthly'
+  days: number[]        // 0=Sun..6=Sat for weekly; 1-28 for monthly
+  hour: number          // 0-23
+  minute: number        // 0 or 30
+}
+
 interface Template {
   id?: string
   name: string
   description: string
   type: string
-  schedule: string
-  recipients: string
+  scheduleState: ScheduleState
+  recipients: RecipientEntry[]
   sections: Section[]
 }
 
@@ -72,6 +89,44 @@ const SECTION_DESC: Record<SectionType, string> = {
   ai_narrative: 'Claude analyses query results and writes a narrative paragraph',
   text:         'Static markdown/HTML text — no data binding needed',
 }
+
+// ── Cron helpers ─────────────────────────────────────────────────────────────
+
+function scheduleToCron(s: ScheduleState): string | null {
+  if (!s.enabled) return null
+  const mm = s.minute === 0 ? '0' : '30'
+  const hh = String(s.hour)
+  if (s.frequency === 'daily')   return `${mm} ${hh} * * *`
+  if (s.frequency === 'weekly')  return `${mm} ${hh} * * ${s.days.length ? s.days.join(',') : '1'}`
+  if (s.frequency === 'monthly') return `${mm} ${hh} ${s.days.length ? s.days.join(',') : '1'} * *`
+  return null
+}
+
+function parseCronToState(cron: string): ScheduleState {
+  try {
+    const parts = cron.trim().split(/\s+/)
+    if (parts.length < 5) return { ...defaultSchedule(), enabled: true }
+    const [mm, hh, dom, , dow] = parts
+    const minute = Number(mm) === 30 ? 30 : 0
+    const hour   = Number(hh) || 0
+    if (dow !== '*') {
+      return { enabled: true, frequency: 'weekly', days: dow.split(',').map(Number), hour, minute }
+    }
+    if (dom !== '*') {
+      return { enabled: true, frequency: 'monthly', days: dom.split(',').map(Number), hour, minute }
+    }
+    return { enabled: true, frequency: 'daily', days: [], hour, minute }
+  } catch {
+    return { ...defaultSchedule(), enabled: true }
+  }
+}
+
+function defaultSchedule(): ScheduleState {
+  return { enabled: false, frequency: 'weekly', days: [1], hour: 6, minute: 0 }
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -269,38 +324,204 @@ function SectionPicker({ onAdd }: { onAdd: (t: SectionType) => void }) {
   )
 }
 
-// ── Schedule builder ──────────────────────────────────────────────────────────
+// ── Schedule builder ─────────────────────────────────────────────────────────
 
-const SCHEDULE_PRESETS = [
-  { label: 'Manual only',          value: '' },
-  { label: 'Daily at 06:00',       value: '0 6 * * *' },
-  { label: 'Weekly — Mon 06:00',   value: '0 6 * * 1' },
-  { label: 'Weekly — Fri 17:00',   value: '0 17 * * 5' },
-  { label: 'Monthly — 1st at 07:00', value: '0 7 1 * *' },
-  { label: 'Custom cron…',         value: '__custom__' },
-]
+function ScheduleBuilder({ state, onChange }: { state: ScheduleState; onChange: (s: ScheduleState) => void }) {
+  const up = <K extends keyof ScheduleState>(k: K, v: ScheduleState[K]) => onChange({ ...state, [k]: v })
 
-function ScheduleBuilder({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const isPreset = SCHEDULE_PRESETS.some(p => p.value === value && p.value !== '__custom__')
-  const [custom, setCustom] = useState(!isPreset && value !== '')
+  const toggleDay = (d: number) => {
+    const days = state.days.includes(d) ? state.days.filter(x => x !== d) : [...state.days, d].sort((a,b) => a-b)
+    up('days', days.length ? days : [d])
+  }
+
+  const fmtSummary = () => {
+    if (!state.enabled) return 'Manual only — run on demand'
+    const time = `${String(state.hour).padStart(2,'0')}:${state.minute === 0 ? '00' : '30'}`
+    if (state.frequency === 'daily')   return `Every day at ${time}`
+    if (state.frequency === 'weekly') {
+      const names = state.days.map(d => DAY_LABELS[d]).join(', ')
+      return `Every ${names} at ${time}`
+    }
+    if (state.frequency === 'monthly') {
+      const ordinal = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`
+      const names = state.days.map(ordinal).join(', ')
+      return `Monthly on the ${names} at ${time}`
+    }
+    return ''
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <select style={INP}
-        value={custom ? '__custom__' : value}
-        onChange={e => {
-          if (e.target.value === '__custom__') { setCustom(true) }
-          else { setCustom(false); onChange(e.target.value) }
-        }}>
-        {SCHEDULE_PRESETS.map(p => <option key={p.label} value={p.value}>{p.label}</option>)}
-      </select>
-      {custom && (
-        <input style={INP} placeholder="cron expression, e.g. 0 6 * * 1"
-          value={value} onChange={e => onChange(e.target.value)} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Enable toggle */}
+      <button onClick={() => up('enabled', !state.enabled)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }}>
+        <div style={{ width: 34, height: 18, borderRadius: 9, background: state.enabled ? 'var(--blue)' : 'var(--border2)', position: 'relative', transition: 'background .15s', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', top: 2, left: state.enabled ? 18 : 2, width: 14, height: 14, borderRadius: '50%', background: 'white', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+        </div>
+        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{state.enabled ? 'Scheduled' : 'Manual only'}</span>
+      </button>
+
+      {state.enabled && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 14px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          {/* Frequency */}
+          <div>
+            <div style={{ ...LABEL, marginBottom: 6 }}>Frequency</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['daily', 'weekly', 'monthly'] as const).map(f => (
+                <button key={f} onClick={() => up('frequency', f)}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: `1.5px solid ${state.frequency === f ? 'var(--blue)' : 'var(--border2)'}`, background: state.frequency === f ? '#eff6ff' : 'var(--bg)', color: state.frequency === f ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: state.frequency === f ? 600 : 400, textTransform: 'capitalize' }}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Day picker — weekly */}
+          {state.frequency === 'weekly' && (
+            <div>
+              <div style={{ ...LABEL, marginBottom: 6 }}>Day(s)</div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {DAY_LABELS.map((d, i) => (
+                  <button key={d} onClick={() => toggleDay(i)}
+                    style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: `1.5px solid ${state.days.includes(i) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(i) ? '#eff6ff' : 'var(--bg)', color: state.days.includes(i) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 10, fontWeight: state.days.includes(i) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Day picker — monthly */}
+          {state.frequency === 'monthly' && (
+            <div>
+              <div style={{ ...LABEL, marginBottom: 6 }}>Day of month</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                  <button key={d} onClick={() => toggleDay(d)}
+                    style={{ width: 28, height: 28, borderRadius: 5, border: `1.5px solid ${state.days.includes(d) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(d) ? '#eff6ff' : 'var(--bg)', color: state.days.includes(d) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 11, fontWeight: state.days.includes(d) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Time picker */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...LABEL, marginBottom: 6 }}>Time</div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select style={{ ...INP, flex: 1 }} value={state.hour} onChange={e => up('hour', Number(e.target.value))}>
+                  {HOURS.map(h => (
+                    <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                  ))}
+                </select>
+                <select style={{ ...INP, width: 80 }} value={state.minute} onChange={e => up('minute', Number(e.target.value))}>
+                  <option value={0}>:00</option>
+                  <option value={30}>:30</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Human summary */}
+          <div style={{ fontSize: 11, color: 'var(--blue-t)', padding: '6px 10px', background: '#eff6ff', borderRadius: 6, border: '1px solid rgba(37,99,235,.15)' }}>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><circle cx="6" cy="6" r="5"/><path d="M6 4v3l2 1"/></svg>
+            {fmtSummary()}
+          </div>
+        </div>
       )}
-      {value && !custom && (
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Cron: <code>{value}</code></div>
+    </div>
+  )
+}
+
+// ── Recipients editor ────────────────────────────────────────────────────────
+
+function RecipientsEditor({
+  value, onChange, groups,
+}: {
+  value: RecipientEntry[]
+  onChange: (v: RecipientEntry[]) => void
+  groups: NotifGroup[]
+}) {
+  const [emailInput, setEmailInput] = useState('')
+
+  const remove = (i: number) => onChange(value.filter((_, j) => j !== i))
+
+  const addGroup = (id: string) => {
+    const g = groups.find(x => x.id === id)
+    if (!g) return
+    if (value.some(r => r.type === 'group' && r.group_id === id)) return
+    onChange([...value, { type: 'group', group_id: id, label: g.name }])
+  }
+
+  const addEmail = () => {
+    const emails = emailInput.split(/[,\n]/).map(e => e.trim()).filter(e => e.includes('@'))
+    if (!emails.length) return
+    const existing = new Set(value.filter(r => r.type === 'email').map(r => r.label))
+    const toAdd = emails.filter(e => !existing.has(e)).map(e => ({ type: 'email' as const, label: e }))
+    if (toAdd.length) onChange([...value, ...toAdd])
+    setEmailInput('')
+  }
+
+  const hasGroups = groups.length > 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Pills */}
+      {value.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {value.map((r, i) => (
+            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px 3px 9px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: r.type === 'group' ? '#eff6ff' : 'var(--bg3)', border: `1px solid ${r.type === 'group' ? 'rgba(37,99,235,.2)' : 'var(--border)'}`, color: r.type === 'group' ? 'var(--blue-t)' : 'var(--text2)' }}>
+              {r.type === 'group'
+                ? <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="4.5" cy="4" r="2"/><path d="M1 10c0-2 1.6-3 3.5-3s3.5 1 3.5 3"/><circle cx="9" cy="4" r="1.5"/><path d="M9 7.5c1.2.2 2 .9 2 2"/></svg>
+                : <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="10" height="8" rx="1.5"/><path d="M1 4l5 3 5-3"/></svg>
+              }
+              {r.label}
+              <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 2px', lineHeight: 1, color: 'var(--text3)', fontSize: 14, display: 'flex', alignItems: 'center' }}>×</button>
+            </span>
+          ))}
+        </div>
       )}
+
+      {/* Group picker */}
+      {hasGroups && (
+        <div>
+          <div style={{ ...LABEL, marginBottom: 5 }}>Add notification group</div>
+          <select style={INP} value="" onChange={e => { addGroup(e.target.value); e.target.value = '' }}>
+            <option value="">+ Add group...</option>
+            {groups.map(g => (
+              <option key={g.id} value={g.id} disabled={value.some(r => r.group_id === g.id)}>
+                {g.name} ({(g.members as unknown[]).length} members)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Individual email */}
+      <div>
+        <div style={{ ...LABEL, marginBottom: 5 }}>
+          {hasGroups ? 'Or add individual emails' : 'Add recipients'}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input style={{ ...INP, flex: 1 }}
+            placeholder="name@company.com"
+            value={emailInput}
+            onChange={e => setEmailInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEmail() } }} />
+          <button onClick={addEmail} disabled={!emailInput.trim()}
+            style={{ padding: '7px 12px', borderRadius: 7, border: '1.5px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 12, cursor: emailInput.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: emailInput.trim() ? 1 : 0.4, whiteSpace: 'nowrap' }}>
+            Add
+          </button>
+        </div>
+        {!hasGroups && (
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>
+            No notification groups configured yet.{' '}
+            <a href="/settings" style={{ color: 'var(--blue-t)', textDecoration: 'none' }}>Set them up in Settings → Notifications</a>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -312,10 +533,14 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   const isEdit = !!templateId
 
   const [template, setTemplate] = useState<Template>({
-    name: '', description: '', type: 'operational', schedule: '', recipients: '', sections: [],
+    name: '', description: '', type: 'operational',
+    scheduleState: defaultSchedule(),
+    recipients: [],
+    sections: [],
   })
-  const [dbs, setDbs]   = useState<DbConnection[]>([])
-  const [apis, setApis] = useState<ApiService[]>([])
+  const [dbs, setDbs]       = useState<DbConnection[]>([])
+  const [apis, setApis]     = useState<ApiService[]>([])
+  const [groups, setGroups] = useState<NotifGroup[]>([])
   const [saving, setSaving]   = useState(false)
   const [loading, setLoading] = useState(isEdit)
   const [error, setError]     = useState('')
@@ -324,6 +549,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   useEffect(() => {
     fetch('/api/connections').then(r => r.json()).then(d => setDbs(d.connections || []))
     fetch('/api/services').then(r => r.json()).then(d => setApis(d.services || []))
+    fetch('/api/integrations/groups').then(r => r.json()).then(d => setGroups(d.groups || [])).catch(() => {})
   }, [])
 
   // Load existing template if editing
@@ -334,10 +560,33 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
       .then(d => {
         const t = d.template
         if (!t) return
+        // Parse stored cron back into friendly state
+        const cronStr = t.schedule as string | null
+        let scheduleState = defaultSchedule()
+        if (cronStr) {
+          scheduleState = parseCronToState(cronStr)
+        }
+
+        // Parse recipients
+        let recipients: RecipientEntry[] = []
+        try {
+          const raw = JSON.parse(t.recipients as string)
+          if (Array.isArray(raw)) {
+            recipients = raw.map((r: unknown) => {
+              const entry = r as Record<string, unknown>
+              if (entry.type === 'group') return { type: 'group' as const, group_id: entry.group_id as string, label: entry.label as string }
+              // legacy: plain email string
+              if (typeof r === 'string') return { type: 'email' as const, label: r }
+              return { type: 'email' as const, label: String(entry.label || '') }
+            })
+          }
+        } catch { recipients = [] }
+
         setTemplate({
           id: t.id, name: t.name, description: t.description || '',
-          type: t.type || 'operational', schedule: t.schedule || '',
-          recipients: Array.isArray(t.recipients) ? t.recipients.join(', ') : (t.recipients || ''),
+          type: t.type || 'operational',
+          scheduleState,
+          recipients,
           sections: (() => { try { return JSON.parse(t.sections) } catch { return [] } })(),
         })
       })
@@ -373,6 +622,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
     if (!template.name) { setError('Template name is required'); return }
     setSaving(true); setError('')
     try {
+      const cronStr = scheduleToCron(template.scheduleState)
       const body = {
         action: isEdit ? 'update_template' : 'create_template',
         id: template.id,
@@ -380,8 +630,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         description: template.description,
         type: template.type,
         sections: template.sections,
-        schedule: template.schedule || null,
-        recipients: template.recipients.split(',').map(r => r.trim()).filter(Boolean),
+        schedule: cronStr,
+        recipients: template.recipients,
       }
       const res = await fetch('/api/reports', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -481,16 +731,19 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
 
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Schedule</div>
-          <ScheduleBuilder value={template.schedule} onChange={v => up('schedule', v)} />
+          <ScheduleBuilder
+            state={template.scheduleState}
+            onChange={s => up('scheduleState', s)}
+          />
         </div>
 
-        <div style={FIELD}>
-          <label style={LABEL}>Recipients</label>
-          <textarea style={{ ...TEXTAREA, minHeight: 60 }}
-            placeholder="manager@company.com&#10;ops-team@company.com"
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Recipients</div>
+          <RecipientsEditor
             value={template.recipients}
-            onChange={e => up('recipients', e.target.value)} />
-          <span style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>One email per line or comma-separated</span>
+            onChange={v => up('recipients', v)}
+            groups={groups}
+          />
         </div>
 
         {/* Summary */}
@@ -498,7 +751,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
           <div><b style={{ color: 'var(--text2)' }}>{template.sections.length}</b> sections</div>
           <div><b style={{ color: 'var(--text2)' }}>{template.sections.filter(s => s.source_type !== 'none').length}</b> data bindings</div>
           <div><b style={{ color: 'var(--text2)' }}>{template.sections.filter(s => s.type === 'ai_narrative').length}</b> AI narratives</div>
-          <div><b style={{ color: 'var(--text2)' }}>{template.schedule ? template.schedule : 'Manual only'}</b></div>
+          <div><b style={{ color: 'var(--text2)' }}>{template.recipients.length}</b> recipients</div>
+          <div style={{ color: 'var(--text3)' }}>{template.scheduleState.enabled ? (() => { const s = template.scheduleState; const time = `${String(s.hour).padStart(2,'0')}:${s.minute===0?'00':'30'}`; return s.frequency === 'daily' ? `Daily at ${time}` : s.frequency === 'weekly' ? `Weekly · ${time}` : `Monthly · ${time}` })() : 'Manual only'}</div>
         </div>
 
         {error && (

@@ -549,9 +549,17 @@ export async function POST(req: Request) {
     const t = tmpl as Record<string, unknown>
     const templateId = t.id as string
     const schedule   = t.schedule as string
-    const recipients: string[] = (() => {
+    // Recipients stored as RecipientEntry objects or legacy plain strings
+    const recipientRaw: unknown[] = (() => {
       try { return JSON.parse(String(t.recipients || '[]')) } catch { return [] }
     })()
+    const recipients: string[] = recipientRaw.flatMap(r => {
+      if (typeof r === 'string') return [r]
+      const entry = r as Record<string, unknown>
+      if (entry.type === 'email' && typeof entry.label === 'string') return [entry.label]
+      // group recipients — resolve members at send time (for now, skip groups in scheduler)
+      return []
+    }).filter(Boolean)
 
     try {
       // Parse cron expression and check if due
