@@ -281,6 +281,9 @@ export async function setupDatabasePostgres(): Promise<void> {
     updated_at    TEXT DEFAULT now()::text
   )`
 
+  // last_scheduled_run column (safe to run on existing tables)
+  await sql`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS last_scheduled_run TEXT`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS report_templates (
     id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name        TEXT NOT NULL,

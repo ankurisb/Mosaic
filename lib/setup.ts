@@ -477,6 +477,9 @@ export async function setupDatabase() {
 
   // -- Airbyte integration --------------------------------------
   // -- Reports -----------------------------------------------
+  // Migration: add last_scheduled_run to report_templates
+  await sql`ALTER TABLE report_templates ADD COLUMN last_scheduled_run TEXT`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS report_templates (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
     name            TEXT NOT NULL,

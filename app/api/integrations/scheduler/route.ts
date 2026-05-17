@@ -5,7 +5,8 @@
 
 import { getDb }           from '@/lib/db'
 import { runTool }         from '@/lib/tools'
-import { sendNotification, renderTemplate } from '@/lib/notify'
+import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
+import { runReport }       from '@/lib/report-runner'
 export const runtime = 'nodejs'
 
 // Vercel Cron passes a secret header to prevent unauthorised triggers
@@ -531,14 +532,83 @@ export async function POST(req: Request) {
   } // end groups loop
 
 
+  // ============================================================
+  // SCHEDULED REPORT TEMPLATES
+  // ============================================================
+
+  const reportTemplates = await sql`
+    SELECT * FROM report_templates
+    WHERE active = 1
+    AND   schedule IS NOT NULL
+    AND   schedule != ''`
+
+  let reportsRun = 0
+  const reportErrors: string[] = []
+
+  for (const tmpl of reportTemplates) {
+    const t = tmpl as Record<string, unknown>
+    const templateId = t.id as string
+    const schedule   = t.schedule as string
+    const recipients: string[] = (() => {
+      try { return JSON.parse(String(t.recipients || '[]')) } catch { return [] }
+    })()
+
+    try {
+      // Parse cron expression and check if due
+      const parser = await import('cron-parser')
+      const interval = parser.parseExpression(schedule, { currentDate: now })
+      const prev     = interval.prev().toDate()
+      const lastRun  = t.last_scheduled_run as string | null
+
+      // Due if: never run OR last run was before the most recent cron tick
+      const isDue = !lastRun || new Date(lastRun) < prev
+
+      if (!isDue) continue
+
+      // Generate the report
+      const result = await runReport(templateId, null, 'scheduled')
+
+      if (result.ok) {
+        reportsRun++
+
+        // Update last_scheduled_run
+        await sql`
+          UPDATE report_templates
+          SET last_scheduled_run = ${now.toISOString()}
+          WHERE id = ${templateId}`
+
+        // Email PDF to recipients if any
+        if (recipients.length > 0 && result.pdf_buffer) {
+          const subject = `Mosaic Report: ${String(t.name)} — ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+          const body    = `Your scheduled report "${String(t.name)}" has been generated.\n\nGenerated: ${now.toLocaleString()}\nSections: ${result.sections_rendered || 0}\n\nPlease find the full report attached as a PDF.`
+          const emailResult = await sendReportEmail({
+            recipients,
+            subject,
+            body,
+            pdfBuffer: result.pdf_buffer,
+            pdfName:   `${String(t.name).replace(/[^a-z0-9]/gi, '_')}_${now.toISOString().slice(0,10)}.pdf`,
+          })
+          if (!emailResult.ok) {
+            reportErrors.push(`${templateId} email: ${emailResult.error}`)
+          }
+        }
+      } else {
+        reportErrors.push(`${templateId}: ${result.error}`)
+      }
+    } catch (e) {
+      reportErrors.push(`${templateId}: ${(e as Error).message}`)
+    }
+  }
+
   return Response.json({
     ok:              true,
     rules_checked:   rules.length,
     groups_checked:  groups.length,
+    reports_run:     reportsRun,
     fired:           fired.length,
     errors:          errors.length,
     fired_ids:       fired,
-    error_details:   errors,
+    error_details:   [...errors, ...reportErrors],
     ran_at:          now.toISOString(),
   })
 }

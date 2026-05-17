@@ -175,6 +175,77 @@ async function sendEmail(
   return { ok: true, message, latency_ms: Date.now() - start }
 }
 
+
+// -- Email with PDF attachment --------------------------------
+export async function sendReportEmail(opts: {
+  recipients: string[]
+  subject:    string
+  body:       string
+  pdfBuffer:  Buffer
+  pdfName:    string
+}): Promise<NotifyResult> {
+  const start = Date.now()
+  const sql   = (await import('./db')).getDb()
+
+  // Load SMTP config from DB
+  const [cfg] = await sql`SELECT * FROM smtp_config WHERE id = 'default' AND enabled = 1`
+  if (!cfg) {
+    // Fall back to env vars
+    const host = process.env.SMTP_HOST
+    const port = Number(process.env.SMTP_PORT || 587)
+    const user = process.env.SMTP_USER
+    const pass = process.env.SMTP_PASS
+    const from = process.env.SMTP_USER || 'mosaic@noreply.com'
+    if (!host) return { ok: false, error: 'No SMTP config found — add one in Settings → Notifications', latency_ms: Date.now() - start }
+
+    const nodemailer = await import('nodemailer').catch(() => null)
+    if (!nodemailer) return { ok: false, error: 'nodemailer not installed', latency_ms: Date.now() - start }
+
+    const t = nodemailer.createTransport({ host, port, secure: port === 465, auth: user ? { user, pass } : undefined })
+    await t.sendMail({
+      from, to: opts.recipients.join(', '), subject: opts.subject,
+      text: opts.body, html: opts.body.replace(/\n/g, '<br>'),
+      attachments: [{ filename: opts.pdfName, content: opts.pdfBuffer, contentType: 'application/pdf' }],
+    })
+    return { ok: true, latency_ms: Date.now() - start }
+  }
+
+  const c = cfg as Record<string, unknown>
+  const host     = c.host         as string
+  const port     = Number(c.port  || 587)
+  const user     = c.username     as string | undefined
+  const passEnc  = c.password_enc as string | undefined
+  const pass     = passEnc ? decrypt(passEnc) : undefined
+  const from     = c.from_address as string
+
+  const nodemailer = await import('nodemailer').catch(() => null)
+  if (!nodemailer) return { ok: false, error: 'nodemailer not installed', latency_ms: Date.now() - start }
+
+  const transporter = nodemailer.createTransport({
+    host, port, secure: port === 465,
+    auth: user ? { user, pass } : undefined,
+  })
+
+  await transporter.sendMail({
+    from,
+    to:      opts.recipients.join(', '),
+    subject: opts.subject,
+    text:    opts.body,
+    html:    `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;max-width:600px">
+      ${opts.body.replace(/\n/g, '<br>')}
+      <hr style="margin:20px 0;border:none;border-top:1px solid #e0e0e0">
+      <p style="font-size:11px;color:#8a8a8a">Sent by Mosaic · Scheduled Report</p>
+    </div>`,
+    attachments: [{
+      filename:    opts.pdfName,
+      content:     opts.pdfBuffer,
+      contentType: 'application/pdf',
+    }],
+  })
+
+  return { ok: true, latency_ms: Date.now() - start }
+}
+
 // -- Message template renderer ---------------------------------
 // Replaces {variable} placeholders in a template string
 export function renderTemplate(
