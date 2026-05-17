@@ -114,6 +114,7 @@ When the user asks about root causes, defects, failures, downtime, quality issue
   ],
   "actions": [
     { "id": "export_word", "label": "Export as Word doc" },
+    { "id": "export_pdf", "label": "Export as PDF report" },
     { "id": "overlay_spc", "label": "Overlay on SPC chart" }
   ]
 }

@@ -361,7 +361,21 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     }
 
     if (action.id === 'export_pdf') {
-      send('Please export this analysis as a PDF summary I can save.')
+      try {
+        const res = await fetch('/api/export/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: conversationId }),
+        })
+        if (!res.ok) { alert('PDF export failed'); return }
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = res.headers.get('Content-Disposition')?.split('filename="')[1]?.replace('"', '') || 'RCA_Report.pdf'
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (e) { console.error(e); alert('PDF export failed') }
       return
     }
 
@@ -585,6 +599,15 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               <rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/>
             </svg>
             Dashboards
+          </button>
+          <button onClick={() => router.push('/reports')}
+            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/>
+            </svg>
+            Reports
           </button>
           <button onClick={() => router.push('/rules')}
             style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}

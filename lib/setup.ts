@@ -462,6 +462,48 @@ export async function setupDatabase() {
   }
 
   // -- Airbyte integration --------------------------------------
+  // -- Reports -----------------------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS report_templates (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    type            TEXT NOT NULL DEFAULT 'operational',
+    sections        TEXT NOT NULL DEFAULT '[]',
+    schedule        TEXT,
+    recipients      TEXT NOT NULL DEFAULT '[]',
+    active          INTEGER DEFAULT 1,
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  await sql`CREATE TABLE IF NOT EXISTS report_instances (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    template_id     TEXT REFERENCES report_templates(id) ON DELETE SET NULL,
+    name            TEXT NOT NULL,
+    type            TEXT NOT NULL DEFAULT 'operational',
+    trigger         TEXT NOT NULL DEFAULT 'manual',
+    triggered_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    pdf_path        TEXT,
+    pdf_size        INTEGER,
+    page_count      INTEGER,
+    error           TEXT,
+    generated_at    TEXT DEFAULT (datetime('now')),
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  await sql`CREATE TABLE IF NOT EXISTS report_deliveries (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    report_id       TEXT NOT NULL REFERENCES report_instances(id) ON DELETE CASCADE,
+    recipient       TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    sent_at         TEXT,
+    error           TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,
