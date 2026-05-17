@@ -9,6 +9,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type') || 'instances'
 
+  if (type === 'template') {
+    const id = searchParams.get('id')
+    if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const [row] = await sql`SELECT * FROM report_templates WHERE id = ${id}`
+    return Response.json({ template: row || null })
+  }
+
   if (type === 'templates') {
     const rows = await sql`SELECT * FROM report_templates ORDER BY created_at DESC`
     return Response.json({ templates: rows })
@@ -50,6 +57,22 @@ export async function POST(req: NextRequest) {
       INSERT INTO report_templates (name, description, type, sections, schedule, recipients, created_by)
       VALUES (${name}, ${description||''}, ${type||'operational'}, ${JSON.stringify(sections||[])}, ${schedule||null}, ${JSON.stringify(recipients||[])}, ${session.id})
       RETURNING *`
+    return Response.json({ ok: true, template: row })
+  }
+
+  if (body.action === 'update_template') {
+    const { id, name, description, type, sections, schedule, recipients } = body
+    await sql`
+      UPDATE report_templates SET
+        name        = ${name},
+        description = ${description || ''},
+        type        = ${type || 'operational'},
+        sections    = ${JSON.stringify(sections || [])},
+        schedule    = ${schedule || null},
+        recipients  = ${JSON.stringify(recipients || [])},
+        updated_at  = datetime('now')
+      WHERE id = ${id}`
+    const [row] = await sql`SELECT * FROM report_templates WHERE id = ${id}`
     return Response.json({ ok: true, template: row })
   }
 

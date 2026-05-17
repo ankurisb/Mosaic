@@ -25,7 +25,7 @@ const SKIP_AUTO_PARSE = new Set([
 ])
 
 let _client: SqlQuery | null = null
-let _driver: 'sqlite' | 'postgres' | 'neon' = 'neon'
+let _driver: 'sqlite' | 'postgres' | 'neon' = 'sqlite'
 
 export function getDbDriver(): 'sqlite' | 'postgres' | 'neon' {
   return _driver

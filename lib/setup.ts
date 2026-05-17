@@ -6,6 +6,9 @@ let done = false
 export async function setupDatabase() {
   if (done) return
 
+  // Call getDb() first — this sets _driver correctly based on DATABASE_URL
+  const sql = getDb()
+
   // On Postgres/Neon (Vercel staging), use the dedicated Postgres schema setup
   if (isPostgres()) {
     const { setupDatabasePostgres } = await import('./setup-pg')
@@ -14,7 +17,6 @@ export async function setupDatabase() {
     return
   }
 
-  const sql = getDb()
   const pg = isPostgres()
 
 

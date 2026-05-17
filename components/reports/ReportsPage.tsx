@@ -130,7 +130,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
             ))}
           </div>
           {isAdmin && tab === 'templates' && (
-            <button onClick={() => setShowNewTemplate(true)}
+            <button onClick={() => router.push('/reports/template/new')}
               style={{ padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--blue)', color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               + New template
             </button>
@@ -205,6 +205,10 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => router.push(`/reports/template/edit/${t.id}`)}
+                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          ✏ Edit
+                        </button>
                         <button onClick={() => runTemplate(String(t.id), String(t.name))} disabled={running === String(t.id)}
                           style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                           {running === String(t.id) ? 'Generating…' : '▶ Run now'}
