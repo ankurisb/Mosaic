@@ -1978,11 +1978,75 @@ export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxCh
     }
   }
 
+  // Generate dialect-aware example query using actual field names
+  const exampleQuery = generateExampleQuery(schema)
+  if (exampleQuery) lines.push(exampleQuery)
+
   let out = lines.join('\n')
   if (out.length > max) {
     out = out.slice(0, max - 20) + '\n      … (truncated)'
   }
   return out
+}
+
+function generateExampleQuery(schema: CachedSchema): string {
+  const d = schema.dialect
+
+  // SQL dialects — use first table with a numeric column
+  if (['postgres','mysql','mssql','sqlite','clickhouse'].includes(d) && schema.tables?.length) {
+    const t = schema.tables[0]
+    const numCol = t.columns.find(c => /int|float|real|double|decimal|numeric|number/i.test(c.type) && !c.pk)
+    const dateCol = t.columns.find(c => /date|time|timestamp/i.test(c.name) || /date|time|timestamp/i.test(c.type))
+    const pkCol = t.columns.find(c => c.pk)
+    const qualified = t.schema && t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name
+    if (numCol && dateCol) {
+      return `    example: SELECT ${pkCol?.name || t.columns[0]?.name}, ${dateCol.name}, ${numCol.name} FROM ${qualified} WHERE ${dateCol.name} >= datetime('now','-7 days') ORDER BY ${dateCol.name} DESC LIMIT 100`
+    } else if (numCol) {
+      return `    example: SELECT ${t.columns.slice(0,4).map(c=>c.name).join(', ')} FROM ${qualified} ORDER BY ${numCol.name} DESC LIMIT 100`
+    }
+    return `    example: SELECT ${t.columns.slice(0,4).map(c=>c.name).join(', ')} FROM ${qualified} LIMIT 100`
+  }
+
+  // InfluxDB — use first measurement with field keys
+  if (d === 'influxdb' && schema.measurements?.length) {
+    const m = schema.measurements[0]
+    const field = m.field_keys[0]?.name
+    const tag = m.tag_keys[0]
+    if (field && tag) {
+      return `    example: SELECT mean("${field}") FROM "${m.name}" WHERE time > now()-7d GROUP BY time(1h), "${tag}"`
+    } else if (field) {
+      return `    example: SELECT mean("${field}") FROM "${m.name}" WHERE time > now()-24h GROUP BY time(1h)`
+    }
+  }
+
+  // MongoDB — use first collection with sample keys
+  if (d === 'mongodb' && schema.collections?.length) {
+    const c = schema.collections[0]
+    const dateKey = c.sample_keys.find(k => /date|time|created|updated/i.test(k.name))
+    const projection = c.sample_keys.slice(0,4).map(k => `"${k.name}":1`).join(', ')
+    if (dateKey) {
+      return `    example: {"collection":"${c.name}","filter":{"${dateKey.name}":{"$gte":"now-7d"}},"projection":{${projection}},"limit":20}`
+    }
+    return `    example: {"collection":"${c.name}","filter":{},"projection":{${projection}},"limit":20}`
+  }
+
+  // Elasticsearch — use first index with text/keyword fields
+  if (d === 'elasticsearch' && schema.collections?.length) {
+    const idx = schema.collections[0]
+    // strip " (N docs)" suffix to get index name
+    const idxName = idx.name.split(' (')[0]
+    const textField = idx.sample_keys.find(k => k.type?.includes('full-text'))
+    const dateField = idx.sample_keys.find(k => k.type?.includes('date') || /time|date/i.test(k.name))
+    const kwField = idx.sample_keys.find(k => k.type?.includes('exact match'))
+    if (textField && dateField) {
+      return `    example: {"query":{"bool":{"must":[{"match":{"${textField.name}":"keyword"}},{"range":{"${dateField.name}":{"gte":"now-7d"}}}]}},"size":20}`
+    } else if (kwField) {
+      return `    example: {"query":{"term":{"${kwField.name}":"value"}},"size":20}`
+    }
+    return `    example: GET /${idxName}/_mapping (discover fields first)`
+  }
+
+  return ''
 }
 
 
