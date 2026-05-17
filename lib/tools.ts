@@ -110,7 +110,8 @@ export const TOOLS: Anthropic.Tool[] = [
     description: `Run statistical analysis on data retrieved from a previous query_database call.
 Use AFTER fetching data when the question requires mathematical computation beyond simple aggregation.
 Available: control_chart, process_capability, trend, anomaly_detection, changepoint_detection, pareto, correlation, regression, weibull, mtbf, oee_decomposition, hypothesis_test.
-Pass the rows array directly from the previous query result as the data parameter.`,
+Pass the rows array directly from the previous query result as the data parameter.
+IMPORTANT: After running statistical analysis, present results as narrative or table — do NOT call render_chart unless the user explicitly asks for a chart. Exceptions: pareto benefits from a bar chart; control_chart benefits from a line chart showing UCL/LCL. All other types should be text/table only.`,
     input_schema: {
       type: 'object',
       properties: {
