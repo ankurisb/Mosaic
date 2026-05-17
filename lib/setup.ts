@@ -1,11 +1,23 @@
-import { getDb } from './db'
+import { getDb, isPostgres } from './db'
 import bcrypt from 'bcryptjs'
 
 let done = false
 
 export async function setupDatabase() {
   if (done) return
+
+  // On Postgres/Neon (Vercel staging), use the dedicated Postgres schema setup
+  if (isPostgres()) {
+    const { setupDatabasePostgres } = await import('./setup-pg')
+    await setupDatabasePostgres()
+    done = true
+    return
+  }
+
   const sql = getDb()
+  const pg = isPostgres()
+
+
 
   // -- Core auth tables ------------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS users (

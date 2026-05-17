@@ -25,6 +25,16 @@ const SKIP_AUTO_PARSE = new Set([
 ])
 
 let _client: SqlQuery | null = null
+let _driver: 'sqlite' | 'postgres' | 'neon' = 'neon'
+
+export function getDbDriver(): 'sqlite' | 'postgres' | 'neon' {
+  return _driver
+}
+
+// Convenience: true when running on any Postgres-compatible backend
+export function isPostgres(): boolean {
+  return _driver === 'postgres' || _driver === 'neon'
+}
 
 export function getDb(): SqlQuery {
   if (_client) return _client
@@ -37,6 +47,7 @@ export function getDb(): SqlQuery {
     const path = url.replace(/^sqlite:\/\//, '').replace(/^sqlite:/, '')
     // Lazy require -- better-sqlite3 is optional dep, only needed locally
     // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _driver = 'sqlite'
     const Database = require('better-sqlite3')
     const db = new Database(path === ':memory:' ? ':memory:' : path)
     db.pragma('journal_mode = WAL')
@@ -92,6 +103,7 @@ export function getDb(): SqlQuery {
     !url.includes('neondb.net')
   ) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _driver = 'postgres'
     const { Pool } = require('pg')
     const pool = new Pool({ connectionString: url, max: 10 })
 
@@ -109,6 +121,7 @@ export function getDb(): SqlQuery {
   }
 
   // -- Neon serverless (cloud / Vercel default) ------------------
+  _driver = 'neon'
   const neonSql = neon(url) as NeonQueryFunction<false, false>
   _client = neonSql as unknown as SqlQuery
   return _client
