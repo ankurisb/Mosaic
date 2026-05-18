@@ -6,6 +6,7 @@
     "dev": "concurrently \"next dev\" \"cd services/stats-sidecar && python3 main.py\"",
     "build": "next build",
     "start": "next start",
+    "logs": "tail -f logs/server.log | node_modules/.bin/pino-pretty --colorize --translateTime 'HH:MM:ss' --ignore pid,hostname --messageFormat '[{service}] {msg}'",
     "stats": "cd services/stats-sidecar && python3 main.py",
     "build:local": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build"
   },
