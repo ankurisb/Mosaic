@@ -1,5 +1,6 @@
 import { getDb, isPostgres } from './db'
 import bcrypt from 'bcryptjs'
+import { log } from './logger'
 
 let done = false
 
@@ -362,10 +363,10 @@ export async function setupDatabase() {
             rawDb.exec('DROP TABLE _integration_runs_old')
             rawDb.pragma('foreign_keys = ON')
             rawDb.close()
-            console.log('[setup] integration_runs FK migration complete')
+            log.info({ service: 'setup' }, 'integration_runs FK migration complete')
           } else { rawDb.close() }
         }
-      } catch (e) { console.warn('[setup] integration_runs migration skipped:', (e as Error).message) }
+      } catch (e) { log.warn({ service: 'setup', err: (e as Error).message }, 'integration_runs migration skipped') }
     }
   }
 
@@ -481,7 +482,7 @@ export async function setupDatabase() {
            ${wf.color}, ${JSON.stringify(wf.keywords)}, ${JSON.stringify(wf.data_steps)},
            ${JSON.stringify(wf.renderers)}, ${JSON.stringify(wf.output_config)}, ${wf.sort_order})`
     }
-    console.log('RCA workflow templates seeded (4 defaults)')
+    log.info({ service: 'setup' }, 'RCA workflow templates seeded — 4 defaults')
   }
 
   // -- Airbyte integration --------------------------------------
@@ -594,7 +595,7 @@ export async function setupDatabase() {
       await sql`INSERT INTO kv_settings (key, value_enc, updated_by)
         VALUES ('SETUP_COMPLETE', 'true', 'env-bootstrap')
         ON CONFLICT(key) DO NOTHING`.catch(() => {})
-      console.log('Admin created:', email)
+      log.info({ service: 'setup', email }, 'Admin account created from env vars')
     }
   }
 
@@ -609,7 +610,7 @@ export async function setupDatabase() {
     setInterval(() => {
       fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
     }, 60_000)
-    console.log('[scheduler] Built-in scheduler started — firing every 60s')
+    log.info({ service: 'scheduler' }, 'Built-in scheduler started — firing every 60s')
   }
 
   // Fire-and-forget: never blocks Mosaic startup
@@ -751,7 +752,7 @@ async function initAirbyteWorkspace(): Promise<void> {
         VALUES ('Local Airbyte', ${airbyteUrl}, ${user}, ${encrypt(pass)})`
       const newRows = await sql`SELECT * FROM airbyte_instances WHERE active = 1 LIMIT 1`
       inst = newRows[0] as Record<string, unknown>
-      console.log('[airbyte-init] Registered Airbyte instance:', airbyteUrl)
+      log.info({ service: 'airbyte-init', url: airbyteUrl }, 'Airbyte instance registered')
     }
 
     if (!inst) return
@@ -775,7 +776,7 @@ async function initAirbyteWorkspace(): Promise<void> {
       await new Promise(r => setTimeout(r, 5000))
     }
     if (!ready) {
-      console.warn('[airbyte-init] Airbyte not ready after 120s — workspace discovery skipped')
+      log.warn({ service: 'airbyte-init' }, 'Airbyte not ready after 120s — workspace discovery skipped')
       return
     }
 
@@ -793,9 +794,9 @@ async function initAirbyteWorkspace(): Promise<void> {
     if (!wsId) return
 
     await sql`UPDATE airbyte_instances SET workspace_id = ${wsId} WHERE id = ${inst.id as string}`
-    console.log('[airbyte-init] Workspace ID discovered and cached:', wsId)
+    log.info({ service: 'airbyte-init', workspaceId: wsId }, 'Workspace ID discovered and cached')
   } catch (err) {
-    console.warn('[airbyte-init] Non-fatal error discovering workspace:', (err as Error).message)
+    log.warn({ service: 'airbyte-init', err: (err as Error).message }, 'Non-fatal error discovering workspace')
   }
 }
 
@@ -864,7 +865,7 @@ async function initSupersetPublicRole(): Promise<void> {
 
     const missing = needed.filter(p => !existing.has(`${p.permission_name}||${p.view_menu_name}`))
     if (missing.length === 0) {
-      console.log('[superset-init] Public role permissions already set')
+      log.info({ service: 'superset-init' }, 'Public role permissions already set')
       return
     }
 
@@ -897,9 +898,9 @@ async function initSupersetPublicRole(): Promise<void> {
       body: JSON.stringify({ permission_view_menu_ids: toAdd }),
       signal: AbortSignal.timeout(10000),
     })
-    console.log(`[superset-init] Added ${toAdd.length} permissions to Public role`)
+    log.info({ service: 'superset-init', count: toAdd.length }, 'Added permissions to Public role')
   } catch (err) {
-    console.warn('[superset-init] Non-fatal error setting Public role:', err)
+    log.warn({ service: 'superset-init', err }, 'Non-fatal error setting Public role')
   }
 
 }

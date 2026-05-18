@@ -95,14 +95,14 @@ export async function syncUserToSuperset(params: {
       await fetch(`${SUPERSET_URL}/api/v1/security/users/${existing.id}`, {
         method: 'PUT', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
       })
-      console.log(`[superset-user-sync] Updated admin "${params.email}" in Superset`)
+      log.info({ service: 'superset-user-sync' }, `[superset-user-sync] Updated admin "${params.email}" in Superset`)
     } else {
       await fetch(`${SUPERSET_URL}/api/v1/security/users/`, {
         method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
       })
-      console.log(`[superset-user-sync] Created admin "${params.email}" in Superset`)
+      log.info({ service: 'superset-user-sync' }, `[superset-user-sync] Created admin "${params.email}" in Superset`)
     }
   } catch (e) {
-    console.warn('[superset-user-sync] Sync error (non-fatal):', (e as Error).message)
+    log.warn({ service: 'superset-user-sync', err: (e as Error).message }, 'Sync error (non-fatal)')
   }
 }

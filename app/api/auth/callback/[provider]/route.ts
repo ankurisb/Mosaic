@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db'
+import { log } from '@/lib/logger'
 import { createToken, COOKIE_NAME } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
@@ -57,7 +58,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     })
     if (!tokenRes.ok) {
       const err = await tokenRes.text()
-      console.error('SSO token exchange failed:', err)
+      log.error({ service: 'sso-callback', err }, 'SSO token exchange failed')
       return Response.redirect(`${APP_URL}/login?error=token_exchange_failed`)
     }
     const tokenData = await tokenRes.json()
@@ -101,7 +102,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     store.set(COOKIE_NAME, token, OPTS)
     return Response.redirect(`${APP_URL}/`)
   } catch (e) {
-    console.error('SSO callback error:', provider, e instanceof Error ? e.message : e)
+    log.error({ service: 'sso-callback', provider, err: e instanceof Error ? e.message : e }, 'SSO callback error')
     const msg = e instanceof Error ? e.message.slice(0, 100) : 'sso_failed'
     return Response.redirect(`${APP_URL}/login?error=${encodeURIComponent(msg)}`)
   }

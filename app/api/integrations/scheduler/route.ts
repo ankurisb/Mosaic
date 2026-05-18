@@ -4,6 +4,7 @@
 // executes them, sends notifications, updates run timestamps.
 
 import { getDb }           from '@/lib/db'
+import { log } from '@/lib/logger'
 import { runTool }         from '@/lib/tools'
 import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
 import { runReport }       from '@/lib/report-runner'
@@ -279,7 +280,7 @@ export async function POST(req: Request) {
           const op      = cond.op          as string || '<'
           const thr     = Number(cond.value)
 
-          if (!srcId || !field) { console.log('[rulegroup] skip: no srcId or field', { srcId, field }); results.push(false); continue }
+          if (!srcId || !field) { log.info({ service: 'integrations-scheduler', data: { srcId, field } }, '[rulegroup] skip: no srcId or field'); results.push(false); continue }
 
           try {
             let data: unknown

@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db'
+import { log } from '@/lib/logger'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
 
     return Response.json({ ok: true })
   } catch (err) {
-    console.error('[setup] POST error:', err)
+    log.error({ service: 'setup', err: err }, '[setup] POST error:')
     return Response.json({ error: 'Setup failed' }, { status: 500 })
   }
 }

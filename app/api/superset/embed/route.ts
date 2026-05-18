@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { NextRequest } from 'next/server'
 export const runtime = 'nodejs'
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     signal: AbortSignal.timeout(10000),
   })
   const embedData = await embedRes.json()
-  console.log('Embed response:', JSON.stringify(embedData))
+  log.info({ service: 'superset-embed' }, 'Embed response received')
   const embedUuid = embedData.result?.uuid
   if (!embedUuid) {
     return Response.json({ error: 'Failed to enable embedding', detail: embedData }, { status: 502 })

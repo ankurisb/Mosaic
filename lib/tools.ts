@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
+import { log } from './logger'
 import { getDb } from './db'
 import {
   applyDataAccessRules,
@@ -1234,7 +1235,7 @@ async function listFiles(
       const exts  = filterExt ? [filterExt.toLowerCase()] : fileTypes.map(t => '.' + t.replace(/^\./, ''))
       return await listSharePointFiles(token, siteId, folder, exts, maxF)
     } catch (e) {
-      console.error('[sharepoint] listFiles error:', (e as Error).message)
+      log.error({ service: 'tools', err: (e as Error).message }, 'sharepoint listFiles error')
       return []
     }
   }

@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { NextRequest } from 'next/server'
 export const runtime = 'nodejs'
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
     signal: AbortSignal.timeout(10000),
   })
   const guestData = await guestRes.json()
-  console.log('Guest token response:', JSON.stringify(guestData).substring(0, 100))
+  log.info({ service: 'superset-guest-token' }, 'Guest token response received')
   const guestToken = guestData.token
   if (!guestToken) return Response.json({ error: 'Guest token failed', detail: guestData }, { status: 502 })
 

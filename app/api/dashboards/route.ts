@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 export const runtime = 'nodejs'
 
@@ -141,7 +142,7 @@ export async function POST(req: Request) {
 
   return Response.json({ error: 'Unknown action' }, { status: 400 })
   } catch (err) {
-    console.error('POST /api/dashboards failed:', err)
+    log.error({ service: 'api_dashboards', err }, 'POST /api/dashboards failed:')
     return Response.json({ error: (err as Error).message }, { status: 500 })
   }
 }

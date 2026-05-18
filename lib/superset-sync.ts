@@ -74,7 +74,7 @@ async function getCsrfToken(accessToken: string): Promise<CsrfPair | null> {
       .find(c => c.startsWith('session=')) || null
 
     if (!sessionCookie) {
-      console.warn('[superset-sync] CSRF response had no session cookie. setCookies count=' + setCookies.length)
+      log.warn({ service: 'superset-sync', setCookiesCount: setCookies.length }, 'CSRF response had no session cookie')
     }
 
     return { csrfToken: data.result, sessionCookie }
@@ -119,20 +119,20 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
 
   const uri = buildSqlalchemyUri(conn)
   if (!uri) {
-    console.warn(`[superset-sync] Could not build URI for connection ${conn.id}`)
+    log.warn({ service: 'superset-sync' }, `[superset-sync] Could not build URI for connection ${conn.id}`)
     return
   }
 
   try {
     const accessToken = await getSupersetToken()
     if (!accessToken) {
-      console.warn('[superset-sync] Could not authenticate with Superset')
+      log.warn({ service: 'superset-sync' }, '[superset-sync] Could not authenticate with Superset')
       return
     }
 
     const csrf = await getCsrfToken(accessToken)
     if (!csrf) {
-      console.warn('[superset-sync] Could not get CSRF token from Superset')
+      log.warn({ service: 'superset-sync' }, '[superset-sync] Could not get CSRF token from Superset')
       return
     }
     const { csrfToken, sessionCookie } = csrf
@@ -165,13 +165,13 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
 
     if (res.ok) {
       const data = await res.json()
-      console.log(`[superset-sync] Registered "${conn.label}" in Superset (id: ${data.id})`)
+      log.info({ service: 'superset-sync' }, `[superset-sync] Registered "${conn.label}" in Superset (id: ${data.id})`)
     } else {
       const err = await res.text()
-      console.warn(`[superset-sync] Failed to register in Superset: ${res.status} ${err.slice(0, 200)}`)
+      log.warn({ service: 'superset-sync' }, `[superset-sync] Failed to register in Superset: ${res.status} ${err.slice(0, 200)}`)
     }
   } catch (err) {
     // Never throw — Superset sync failure must not break claude-app
-    console.warn('[superset-sync] Sync error (non-fatal):', err)
+    log.warn({ service: 'superset-sync', data: err }, '[superset-sync] Sync error (non-fatal):')
   }
 }

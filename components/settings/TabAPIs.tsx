@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { log } from '@/lib/logger'
 import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
@@ -545,7 +546,7 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
       connections,
     }
   } catch (e) {
-    console.error('[parsePostmanCollection] failed:', e)
+    log.error({ service: 'settings_TabAPIs', err: e }, 'DB setup error')
     return null
   }
 }

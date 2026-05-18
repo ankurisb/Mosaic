@@ -1,4 +1,5 @@
 import { getDb } from './db'
+import { log } from './logger'
 import { decrypt } from './encrypt'
 export const runtime = 'nodejs'
 
@@ -60,7 +61,7 @@ export async function sendWelcomeEmail(
 
     return { ok: true }
   } catch (e) {
-    console.error('mailer error:', e)
+    log.error({ service: 'mailer', err: e }, 'mailer error:')
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }

@@ -1,13 +1,28 @@
 import { redirect } from 'next/navigation'
+import { log } from '@/lib/logger'
 import { getSession } from '@/lib/auth'
 import { setupDatabase } from '@/lib/setup'
-import { getDb } from '@/lib/db'
+import { getDb, getDbDriver } from '@/lib/db'
 import ChatPage from '@/components/ChatPage'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  try { await setupDatabase() } catch (e) { console.error('DB setup:', e) }
+  // Run migrations first (SQLite only — Postgres uses setup-pg.ts)
+  if (getDbDriver() === 'sqlite') {
+    try {
+      const Database = (await import('better-sqlite3')).default
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^sqlite:\/\//, '').replace(/^sqlite:/, '')
+      if (dbUrl) {
+        const rawDb = new Database(dbUrl)
+        const { runMigrations } = await import('@/lib/migrate')
+        await runMigrations(rawDb)
+        rawDb.close()
+      }
+    } catch (e) { log.error({ service: 'app-pagex', err: e }, '[migrations] Failed:') }
+  }
+
+  try { await setupDatabase() } catch (e) { log.error({ service: 'app-pagex', err: e }, 'DB setup:') }
 
   // First-run detection: no users and setup not complete → setup wizard
   try {

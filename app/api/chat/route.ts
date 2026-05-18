@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { log } from '@/lib/logger'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
@@ -277,7 +278,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // Type 8 — prompt injection detection (log and flag but don't hard-block)
   const injectionSuspected = checkInputForInjection(lastUserContent)
   if (injectionSuspected) {
-    console.warn('[guardrails] Potential prompt injection in user message from', session.email)
+    log.warn({ service: 'chat', data: session.email }, '[guardrails] Potential prompt injection in user message from')
   }
 
   // Fix #7: per-user rate limit -- max 50 requests per hour per user
@@ -515,7 +516,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 ${JSON.stringify((rcaBlock as {renderers?: unknown[]}).renderers?.map((r: unknown) => (r as {type:string}).type) || [])},
                 ${JSON.stringify(rcaBlock)},
                 ${session.id}
-              )`.catch((e: unknown) => { console.error('[rca_sessions] insert failed:', e) })
+              )`.catch((e: unknown) => { log.error({ service: 'chat', err: e }, '[rca_sessions] insert failed:') })
           }
         } catch { /* don't block on session save failure */ }
 

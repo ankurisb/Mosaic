@@ -11,6 +11,7 @@
 //   2. Updates db_connections.full_text_search = 0
 
 import { NextRequest } from 'next/server'
+import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { decrypt } from '@/lib/encrypt'
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
           await ab(inst, `/connections/${conn.fts_airbyte_conn_id}`, '/connections/delete', 'DELETE', { connectionId: conn.fts_airbyte_conn_id })
         }
       } catch (e) {
-        console.warn('FTS disable: could not delete Airbyte connection:', (e as Error).message)
+        log.warn({ service: 'fts', err: (e as Error).message }, 'FTS disable: could not delete Airbyte connection')
       }
     }
     await sql`UPDATE db_connections SET full_text_search = 0, fts_airbyte_conn_id = NULL WHERE id = ${connectionId}`
@@ -201,7 +202,7 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (e) {
-    console.error('FTS enable error:', e)
+    log.error({ service: 'api_connections_fts', err: e }, 'DB setup error')
     return Response.json({ error: (e as Error).message }, { status: 500 })
   }
 }

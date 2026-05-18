@@ -17,6 +17,7 @@
 //   - client_credentials (machine-to-machine, no user context)
 
 import { decrypt } from '@/lib/encrypt'
+import { log } from './logger'
 import { getDb } from '@/lib/db'
 
 // -- Types -------------------------------------------------------
@@ -104,7 +105,7 @@ export async function getOAuth2AccessToken(
       const errDesc = parsed?.error_description ? `: ${parsed.error_description}` : ''
       const truncated = !parsed && bodyText.length > 200 ? bodyText.slice(0, 200) + '...' : bodyText
       const error = parsed ? `${errCode}${errDesc}` : `${errCode}: ${truncated}`
-      console.error(`OAuth2 token fetch failed (service=${serviceId}): ${error}`)
+      log.error({ service: 'api-auth' }, `OAuth2 token fetch failed (service=${serviceId}): ${error}`)
       // Revocation signals (invalid_grant, invalid_token) mean any cached token
       // is now dead — evict it so the next call retries immediately rather than
       // serving a stale token for the remainder of its TTL (up to 59 min).
@@ -123,7 +124,7 @@ export async function getOAuth2AccessToken(
     return { ok: true, token: data.access_token }
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Network error contacting token endpoint'
-    console.error(`OAuth2 token fetch error (service=${serviceId}):`, e)
+    log.error({ service: 'api-auth', err: e }, `OAuth2 token fetch error (service=${serviceId}):`)
     return { ok: false, error }
   }
 }
@@ -144,7 +145,7 @@ async function recordAuthStatus(serviceId: string, ok: boolean, error: string | 
     const now = Date.now()
     await sql`UPDATE api_services SET auth_status=${status}, last_auth_error=${error}, last_auth_check=${now} WHERE id=${serviceId}`
   } catch (e) {
-    console.error('Failed to record auth status:', e)
+    log.error({ service: 'api-auth', err: e }, 'Failed to record auth status:')
   }
 }
 

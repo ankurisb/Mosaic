@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { log } from '@/lib/logger'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
 import { getDb } from '@/lib/db'
 import bcrypt from 'bcryptjs'
@@ -33,8 +34,8 @@ export async function POST(req: Request) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
     import('@/lib/mailer').then(({ sendWelcomeEmail }) =>
       sendWelcomeEmail(email.toLowerCase(), name || email.split('@')[0], tempPassword, appUrl)
-        .then(r => { if (!r.ok) console.warn('Welcome email failed:', r.error) })
-        .catch(e => console.warn('Welcome email error:', e))
+        .then(r => { if (!r.ok) log.warn({ service: 'users', err: r.error }, 'Welcome email failed') })
+        .catch(e => log.warn({ service: 'users', err: e }, 'Welcome email error'))
     )
     return Response.json({ user: rows[0], tempPassword })
   }

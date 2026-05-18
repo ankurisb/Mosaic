@@ -4,6 +4,7 @@
 // Separate from .env.local so it survives env file changes.
 
 import { randomBytes } from 'crypto'
+import { log } from './logger'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -37,9 +38,9 @@ export function getSecret(): string {
     if (!existsSync(MOSAIC_DIR)) mkdirSync(MOSAIC_DIR, { recursive: true })
     writeFileSync(SECRET_FILE, key, { encoding: 'utf8' })
     chmodSync(SECRET_FILE, 0o600)   // owner read/write only
-    console.log('[mosaic] Generated secret key at', SECRET_FILE)
+    log.info({ service: 'secret', data: SECRET_FILE }, '[mosaic] Generated secret key at')
   } catch (err) {
-    console.warn('[mosaic] Could not write secret key file:', err)
+    log.warn({ service: 'secret', data: err }, '[mosaic] Could not write secret key file:')
     // Fall back to in-memory (lost on restart, but won't crash)
   }
   _cached = key
