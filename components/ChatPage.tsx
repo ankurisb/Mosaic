@@ -5,6 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
+import { APP_VERSION } from '@/lib/version'
 import RcaRenderer from './rca/RcaRenderer'
 import ReactMarkdown from 'react-markdown'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
@@ -633,7 +634,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v1.0.0</div>
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{APP_VERSION}</div>
                 </div>
               )}
             </button>
@@ -657,7 +658,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     </button>
                   ))}
                   <div style={{ padding: '7px 10px', borderTop: '1px solid var(--border)', marginTop: 4, fontSize: 10, color: 'var(--text4)' }}>
-                    Mosaic v1.0.0 · ugx.ai
+                    Mosaic v{APP_VERSION} · ugx.ai
                   </div>
                 </div>
               </>

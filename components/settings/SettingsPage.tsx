@@ -14,6 +14,7 @@ import TabRcaWorkflows from './TabRcaWorkflows'
 import TabAnalytics from './TabAnalytics'
 import TabIntegrations from './TabIntegrations'
 import TabGuardrails from './TabGuardrails'
+import { APP_VERSION } from '@/lib/version'
 
 const TABS = [
   { id: 'keys',          label: 'API keys' },
@@ -96,7 +97,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
             <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
-            <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>v1.0.0</div>
+            <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>v{APP_VERSION}</div>
           </div>
           <ThemeToggle />
         </div>
