@@ -22,7 +22,7 @@ export async function GET(
   const sql = getDb()
   const now    = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-  const orgName = process.env.ORG_NAME || 'Your Organisation'
+  const orgName = process.env.ORG_NAME || 'UGX Systems Pvt Ltd'
 
   let html = ''
 

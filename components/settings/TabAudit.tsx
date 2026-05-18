@@ -141,9 +141,9 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
           {chain && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: chain.valid ? 'var(--green-t)' : 'var(--red-t)', background: chain.valid ? 'var(--green-bg)' : 'rgba(220,38,38,.08)', border: `1px solid ${chain.valid ? 'rgba(22,163,74,.2)' : 'rgba(220,38,38,.2)'}`, borderRadius: 'var(--radius-pill)', padding: '3px 10px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: chain.valid ? 'var(--green-t)' : 'var(--red-t)', background: chain.valid ? 'var(--green-bg)' : 'rgba(220,38,38,.08)', border: `1px solid ${chain.valid ? 'rgba(22,163,74,.2)' : 'rgba(220,38,38,.2)'}`, borderRadius: 'var(--radius-pill)', padding: '4px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}>
               <span>{chain.valid ? '✓ Chain intact' : '⚠ Chain broken'}</span>
-              <span style={{ color: 'var(--text3)' }}>({chain.totalRows} events)</span>
+              <span style={{ color: 'var(--text3)' }}>({chain.totalRows})</span>
             </div>
           )}
           <Btn size="sm" onClick={exportCsv}>Export CSV</Btn>
@@ -179,19 +179,20 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Retention policy</div>
           <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
-            Events older than this are purged nightly. ISO 27001 requires minimum 1 year.
+            Events older than this are purged nightly.
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
-              type="number" min={30} max={3650} value={retDays}
+              type="number" min={365} max={3650} value={retDays}
               onChange={e => setRetDays(e.target.value)}
               style={{ ...inp, width: 80 }}
             />
             <span style={{ fontSize: 12, color: 'var(--text3)' }}>days</span>
             <Btn size="sm" onClick={saveRetention} disabled={savingRet}>{savingRet ? 'Saving…' : 'Save'}</Btn>
           </div>
+          <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 5 }}>* ISO 27001 requires minimum 1 year (365 days)</div>
           {retMsg && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{retMsg}</div>}
-          {settings.last_purge_at && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Last purge: {formatTime(settings.last_purge_at)} ({settings.last_purge_count || 0} events)</div>}
+          {settings.last_purge_at && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 4 }}>Last purge: {formatTime(settings.last_purge_at)} ({settings.last_purge_count || 0} events)</div>}
         </div>
 
         {/* Chain integrity */}

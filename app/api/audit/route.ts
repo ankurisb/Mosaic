@@ -108,8 +108,8 @@ export async function PATCH(req: Request) {
     return Response.json({ error: 'Admin only' }, { status: 403 })
 
   const { retention_days } = await req.json()
-  if (!retention_days || isNaN(Number(retention_days)) || Number(retention_days) < 30) {
-    return Response.json({ error: 'retention_days must be a number >= 30' }, { status: 400 })
+  if (!retention_days || isNaN(Number(retention_days)) || Number(retention_days) < 365) {
+    return Response.json({ error: 'retention_days must be a number >= 365 (ISO 27001 minimum 1 year)' }, { status: 400 })
   }
 
   const sql = getDb()
