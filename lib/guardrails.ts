@@ -6,6 +6,15 @@
 
 import { getDb } from './db'
 
+
+// ── Safe JSON column parser (SQLite auto-parses JSON; Postgres returns strings) ─
+function jsonCol<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return fallback
+  if (typeof value !== 'string') return value as T  // already parsed by SQLite driver
+  if (value === '') return fallback
+  try { return JSON.parse(value) as T } catch { return fallback }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GuardrailContext {
@@ -94,7 +103,7 @@ export async function applyDataAccessRules(
 
     for (const row of rows as Record<string, unknown>[]) {
       // Check allowed tables whitelist
-      const allowedTables: string[] = JSON.parse(String(row.allowed_tables || '[]'))
+      const allowedTables: string[] = jsonCol<string[]>(row.allowed_tables, [])
       if (allowedTables.length > 0) {
         const mentionsAllowed = allowedTables.some(t => upper.includes(t.toUpperCase()))
         if (!mentionsAllowed) {
@@ -106,7 +115,7 @@ export async function applyDataAccessRules(
       }
 
       // Check blocked columns
-      const blockedCols: string[] = JSON.parse(String(row.blocked_columns || '[]'))
+      const blockedCols: string[] = jsonCol<string[]>(row.blocked_columns, [])
       for (const col of blockedCols) {
         if (upper.includes(col.toUpperCase())) {
           return {
@@ -179,7 +188,7 @@ export async function checkActionAllowed(
 
     for (const row of rows as Record<string, unknown>[]) {
       // Blocked tools
-      const blocked: string[] = JSON.parse(String(row.blocked_tools || '[]'))
+      const blocked: string[] = jsonCol<string[]>(row.blocked_tools, [])
       if (blocked.includes(toolName)) {
         return { allowed: false, reason: `Tool "${toolName}" is disabled for your role.` }
       }
@@ -194,7 +203,7 @@ export async function checkActionAllowed(
 
       // Allowed HTTP methods
       if (method && toolName === 'call_api') {
-        const allowedMethods: string[] = JSON.parse(String(row.allowed_methods || '["GET","POST","PUT","PATCH","DELETE"]'))
+        const allowedMethods: string[] = jsonCol<string[]>(row.allowed_methods, ['GET','POST','PUT','PATCH','DELETE'])
         if (!allowedMethods.includes(method.toUpperCase())) {
           return { allowed: false, reason: `HTTP method ${method.toUpperCase()} is not allowed for your role. Permitted: ${allowedMethods.join(', ')}` }
         }
@@ -285,7 +294,7 @@ export async function checkContentAllowed(userMessage: string): Promise<Guardrai
 
     for (const row of rows as Record<string, unknown>[]) {
       const mode = String(row.mode || 'blocklist')
-      const patterns: string[] = JSON.parse(String(row.patterns || '[]'))
+      const patterns: string[] = jsonCol<string[]>(row.patterns, [])
       const blockMsg = String(row.block_message || 'This topic is outside the scope of Mosaic.')
 
       if (mode === 'blocklist') {
@@ -359,7 +368,7 @@ export async function isHITLRequired(toolName: string, method?: string): Promise
   if (!(await isHITLEnabled())) return false
   // Require HITL for any write API call
   if (toolName === 'call_api' && method) {
-    const writeMethods = JSON.parse(await getSetting('hitl_write_methods', '["POST","PUT","PATCH","DELETE"]'))
+    const writeMethods = jsonCol<string[]>(await getSetting('hitl_write_methods', ''), ['POST','PUT','PATCH','DELETE'])
     return writeMethods.includes(method.toUpperCase())
   }
   return false
