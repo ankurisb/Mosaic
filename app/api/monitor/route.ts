@@ -186,6 +186,18 @@ export async function GET() {
     results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'down', latencyMs: null })
   }
 
+
+  // Check Stats Sidecar
+  const statsUrl = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
+  try {
+    const start = Date.now()
+    const res = await fetch(`${statsUrl}/health`, { signal: AbortSignal.timeout(3000) })
+    const data = await res.json()
+    results.push({ id: 'stats_sidecar', label: 'Stats Engine', category: 'infrastructure', status: res.ok && data.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, message: res.ok && data.ok ? '12 analysis types available' : 'Health check failed' })
+  } catch {
+    results.push({ id: 'stats_sidecar', label: 'Stats Engine', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running — start with: cd services/stats-sidecar && python3 main.py' })
+  }
+
   // Check Superset
   const supersetUrl = process.env.SUPERSET_URL || 'http://localhost:8088'
   try {

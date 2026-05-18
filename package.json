@@ -3,9 +3,10 @@
   "version": "1.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently \"next dev\" \"cd services/stats-sidecar && python3 main.py\"",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "stats": "cd services/stats-sidecar && python3 main.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -46,6 +47,7 @@
     "@types/pg": "^8.11.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "concurrently": "^8.2.2",
     "typescript": "^5.7.3"
   },
   "optionalDependencies": {
