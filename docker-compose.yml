@@ -204,13 +204,20 @@ services:
       retries: 5
       start_period: 120s
 
-  # ── Keycloak (optional SSO — enable with SSO_ENABLED=true) ─
+  # ── Keycloak (optional SSO — enable with SSO_ENABLED=true) ─────────
   # Self-hosted OIDC identity provider. Connects to AD/LDAP for enterprise SSO.
   # Admin UI: http://localhost:8080 (admin / ${KEYCLOAK_ADMIN_PASSWORD:-admin})
-  # Set SSO_ENABLED=true in .env to include this service.
-  # After first start: create a realm 'mosaic', add a client 'mosaic' (confidential,
-  # standard flow), set redirect URI to http://localhost:3001/api/auth/callback/keycloak,
-  # then paste Server URL + Realm + Client ID + Secret into Settings → Authentication.
+  #
+  # HOW TO ENABLE:
+  #   Add to your .env file:
+  #     SSO_ENABLED=true
+  #     COMPOSE_PROFILES=sso
+  #   Then run: docker compose up -d
+  #
+  # OR start manually alongside a running stack:
+  #   docker compose --profile sso up -d keycloak
+  #
+  # After first start: see KEYCLOAK.md for realm + client setup (5 min).
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: mosaic-keycloak

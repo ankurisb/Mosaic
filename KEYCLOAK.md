@@ -20,22 +20,22 @@ Keycloak handles all identity: password storage, MFA, AD/LDAP sync, group/role m
 
 ## 1. Start Keycloak
 
-Keycloak runs as an **optional Docker profile** — it does not start by default.
+Keycloak is **opt-in** — it doesn't start with the default `docker compose up -d` to avoid pulling a 500MB image on deployments that don't need SSO.
 
+**Option A — permanent (recommended):** Add to your `.env` file:
 ```bash
-# Start Mosaic + Keycloak together
-docker compose --profile sso up -d
+SSO_ENABLED=true
+COMPOSE_PROFILES=sso
+KEYCLOAK_ADMIN_PASSWORD=<strong-password>
+```
+Then `docker compose up -d` will include Keycloak automatically on every start.
 
-# Or start Keycloak separately if Mosaic is already running
-docker compose up -d keycloak
+**Option B — one-off:**
+```bash
+docker compose --profile sso up -d keycloak
 ```
 
-Default admin credentials (change in `.env` before production):
-```
-URL:      http://localhost:8080
-Username: admin
-Password: admin   (set KEYCLOAK_ADMIN_PASSWORD in .env)
-```
+**Health monitoring:** Once SSO is configured in Settings → Authentication, Keycloak appears in Settings → System Health and is checked on every refresh.
 
 ---
 

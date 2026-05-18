@@ -208,6 +208,25 @@ export async function GET() {
     results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null })
   }
 
+  // Check Keycloak (SSO) — only shown when SSO_ENABLED=true or a keycloak config exists in sso_config
+  const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080'
+  const ssoEnabled = process.env.SSO_ENABLED === 'true'
+  const keycloakRows = await sql`SELECT server_url FROM sso_config WHERE provider='keycloak' AND enabled=1 LIMIT 1`.catch(() => [])
+  const configuredUrl = (keycloakRows[0] as { server_url?: string } | undefined)?.server_url
+  const effectiveKcUrl = configuredUrl || (ssoEnabled ? keycloakUrl : null)
+
+  if (effectiveKcUrl) {
+    try {
+      const start = Date.now()
+      const res = await fetch(`${effectiveKcUrl}/health/ready`, { signal: AbortSignal.timeout(4000) })
+      results.push({ id: 'keycloak', label: 'Keycloak SSO', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, message: res.ok ? `Realm: ${configuredUrl ? 'configured' : 'pending setup'}` : `HTTP ${res.status}` })
+    } catch {
+      results.push({ id: 'keycloak', label: 'Keycloak SSO', category: 'infrastructure', status: 'down', latencyMs: null, message: ssoEnabled ? 'Not running — start with: docker compose --profile sso up -d keycloak' : 'SSO configured but Keycloak unreachable' })
+    }
+  } else {
+    results.push({ id: 'keycloak', label: 'Keycloak SSO', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — set SSO_ENABLED=true or add Keycloak in Settings → Authentication' })
+  }
+
   const healthy = results.filter(r => r.status === 'healthy').length
   const degraded = results.filter(r => r.status === 'degraded').length
   const down = results.filter(r => r.status === 'down').length
