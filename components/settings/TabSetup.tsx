@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, Spinner } from './ui'
 
@@ -48,8 +47,7 @@ const ITEMS = [
   },
 ]
 
-export default function TabSetup({ user }: { user: SessionUser }) {
-  const router = useRouter()
+export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNavigate: (tab: string) => void }) {
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -62,7 +60,7 @@ export default function TabSetup({ user }: { user: SessionUser }) {
   }, [])
 
   function navigate(href: string) {
-    window.location.hash = href.replace('#', '')
+    onNavigate(href.replace('#', ''))
   }
 
   const criticalDone = status?.allCriticalDone ?? false

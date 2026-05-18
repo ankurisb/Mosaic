@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '../ThemeToggle'
@@ -66,6 +66,22 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
     return user.role === 'admin' ? 'setup' : 'keys'
   })
 
+  // Listen for hash changes so TabSetup action buttons can navigate here
+  useEffect(() => {
+    function onHashChange() {
+      const hash = window.location.hash.replace('#', '')
+      const ids = ALL_TABS.filter(t => !t.adminOnly || user.role === 'admin').map(t => t.id)
+      if (ids.includes(hash)) setTab(hash)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  function navigateTab(id: string) {
+    setTab(id)
+    window.location.hash = id
+  }
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
@@ -87,7 +103,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
         <div style={{ flex: 1, padding: '8px 8px', overflowY: 'auto' }}>
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '6px 10px 4px' }}>Settings</div>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); window.location.hash = t.id }}
+            <button key={t.id} onClick={() => navigateTab(t.id)}
               style={{ width: '100%', padding: '9px 12px', background: tab === t.id ? 'var(--bg3)' : 'transparent', border: `1px solid ${tab === t.id ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, color: tab === t.id ? 'var(--text)' : 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 9, fontFamily: 'inherit', marginBottom: 1, transition: 'background .12s' }}
               onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.background = 'var(--bg3)' }}
               onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.background = 'transparent' }}>
@@ -111,7 +127,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
         <div style={{ maxWidth: tab === 'analytics' ? 1100 : 820, margin: '0 auto', padding: '40px 40px' }}>
-          {tab === 'setup'      && <TabSetup user={user} />}
+          {tab === 'setup'      && <TabSetup user={user} onNavigate={navigateTab} />}
           {tab === 'keys'      && <TabKeys user={user} />}
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}
