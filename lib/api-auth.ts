@@ -105,6 +105,13 @@ export async function getOAuth2AccessToken(
       const truncated = !parsed && bodyText.length > 200 ? bodyText.slice(0, 200) + '...' : bodyText
       const error = parsed ? `${errCode}${errDesc}` : `${errCode}: ${truncated}`
       console.error(`OAuth2 token fetch failed (service=${serviceId}): ${error}`)
+      // Revocation signals (invalid_grant, invalid_token) mean any cached token
+      // is now dead — evict it so the next call retries immediately rather than
+      // serving a stale token for the remainder of its TTL (up to 59 min).
+      const REVOCATION_CODES = ['invalid_grant', 'invalid_token', 'token_expired', 'access_denied']
+      if (errCode && REVOCATION_CODES.some(c => errCode.toLowerCase().includes(c))) {
+        oauth2TokenCache.delete(serviceId)
+      }
       return { ok: false, error }
     }
     const data = JSON.parse(bodyText) as { access_token: string; expires_in?: number }
