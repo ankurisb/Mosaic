@@ -396,20 +396,21 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           }
         } catch { /* don't block on persistence failure */ }
 
-        // Save RCA session if an rca_block was produced
+        // Save RCA session if an rca_block was produced (works with or without a matched workflow)
         try {
-          if (convId && rcaBlock && matchedWorkflow) {
+          if (convId && rcaBlock) {
             const sessionSql = getDb()
+            const wfId = matchedWorkflow ? (matchedWorkflow as Record<string,unknown>).id as string : null
             await sessionSql`
               INSERT INTO rca_sessions (workflow_id, conversation_id, problem, renderers_used, rca_block, created_by)
               VALUES (
-                ${(matchedWorkflow as Record<string,unknown>).id as string},
+                ${wfId},
                 ${convId},
                 ${lastUserContent.slice(0, 200)},
                 ${JSON.stringify((rcaBlock as {renderers?: unknown[]}).renderers?.map((r: unknown) => (r as {type:string}).type) || [])},
                 ${JSON.stringify(rcaBlock)},
                 ${session.id}
-              )`.catch(() => {}) // non-blocking -- sessions table may not exist yet
+              )`.catch((e: unknown) => { console.error('[rca_sessions] insert failed:', e) })
           }
         } catch { /* don't block on session save failure */ }
 
