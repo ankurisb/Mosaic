@@ -348,7 +348,7 @@ export async function setupDatabase() {
   // -- Integration run log ---------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS integration_runs (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
-    rule_id         TEXT NOT NULL REFERENCES integration_rules(id) ON DELETE CASCADE,
+    rule_id         TEXT NOT NULL,
     triggered_at    TEXT DEFAULT (datetime('now')),
     status          TEXT NOT NULL,   -- 'sent' | 'skipped' | 'error'
     value_snapshot  TEXT,
@@ -359,6 +359,34 @@ export async function setupDatabase() {
 
   await sql`CREATE INDEX IF NOT EXISTS idx_rules_next_run   ON integration_rules(next_run_at) WHERE active = 1`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_runs_rule        ON integration_runs(rule_id, triggered_at DESC)`.catch(() => {})
+
+  // Migration: drop FK on integration_runs.rule_id so rule_groups can also log runs
+  // SQLite requires table recreation to change constraints -- done via better-sqlite3 sync API
+  {
+    const { getDbDriver } = await import('./db')
+    if (getDbDriver() === 'sqlite') {
+      try {
+        const Database = require('better-sqlite3') as typeof import('better-sqlite3')
+        const dbUrl = (process.env.DATABASE_URL || '').replace(/^sqlite:\/\//, '').replace(/^sqlite:/, '')
+        if (dbUrl) {
+          const rawDb = new Database(dbUrl)
+          const hasFk = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='integration_runs'").get() as { sql: string } | undefined
+          if (hasFk?.sql?.includes('REFERENCES integration_rules')) {
+            rawDb.pragma('foreign_keys = OFF')
+            rawDb.exec('ALTER TABLE integration_runs RENAME TO _integration_runs_old')
+            rawDb.exec('CREATE TABLE integration_runs (id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))), rule_id TEXT NOT NULL, triggered_at TEXT DEFAULT (datetime(\'now\')), status TEXT NOT NULL, value_snapshot TEXT, message_sent TEXT, error TEXT, latency_ms INT)')
+            rawDb.exec('INSERT INTO integration_runs SELECT * FROM _integration_runs_old')
+            rawDb.exec('DROP TABLE _integration_runs_old')
+            rawDb.pragma('foreign_keys = ON')
+            rawDb.close()
+            console.log('[setup] integration_runs FK migration complete')
+          } else { rawDb.close() }
+        }
+      } catch (e) { console.warn('[setup] integration_runs migration skipped:', (e as Error).message) }
+    }
+  }
+
+
 
   // -- RCA workflow templates ------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS rca_workflows (

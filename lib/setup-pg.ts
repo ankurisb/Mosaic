@@ -255,7 +255,7 @@ export async function setupDatabasePostgres(): Promise<void> {
 
   await sql`CREATE TABLE IF NOT EXISTS integration_runs (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    rule_id         TEXT NOT NULL REFERENCES integration_rules(id) ON DELETE CASCADE,
+    rule_id         TEXT NOT NULL,
     triggered_at    TEXT DEFAULT now()::text,
     status          TEXT NOT NULL,
     value_snapshot  TEXT,

@@ -520,8 +520,7 @@ export async function POST(req: Request) {
                 const ok = res.ok || res.status < 400
                 await sql`
                   INSERT INTO integration_runs (rule_id, status, message_sent, error, latency_ms)
-                  VALUES (${groupId}, ${ok ? 'sent' : 'error'}, ${JSON.stringify(enrichedBody)}, ${ok ? null : 'HTTP ' + res.status}, ${Date.now() - startTime})`
-                .catch(() => {})
+                  VALUES (${groupId}, ${ok ? 'sent' : 'error'}, ${JSON.stringify(enrichedBody)}, ${ok ? null : 'HTTP ' + String(res.status)}, ${Date.now() - startTime})`
 
                 if (ok) fired.push(`${groupId}:n8n_webhook`)
                 else    errors.push(`${groupId}/n8n_webhook: HTTP ${res.status}`)
