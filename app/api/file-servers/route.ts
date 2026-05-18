@@ -10,7 +10,7 @@ export async function GET() {
   const sql = getDb()
   const rows = await sql`
     SELECT id, label, transport, environment, host, port, share_path, sub_path,
-           username, bucket, endpoint_url, access_key_id,
+           username, bucket, endpoint_url, access_key_id, tenant_id, client_id,
            file_types, poll_interval_sec, max_files, max_rows,
            filename_date_pattern, ts_strategy, created_at
     FROM file_servers ORDER BY created_at ASC`
@@ -47,6 +47,7 @@ export async function POST(req: Request) {
         label, transport, environment, host, port, share_path, sub_path,
         username, password_enc, ssh_key_enc,
         bucket, endpoint_url, access_key_id, secret_key_enc,
+        tenant_id, client_id,
         file_types, poll_interval_sec, max_files, max_rows,
         filename_date_pattern, ts_strategy
       ) VALUES (
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
         ${host || null}, ${port || null}, ${share_path || null}, ${sub_path || null},
         ${username || null}, ${passwordEnc}, ${sshKeyEnc},
         ${bucket || null}, ${endpoint_url || null}, ${access_key_id || null}, ${secretKeyEnc},
+        ${body.tenant_id || null}, ${body.client_id || null},
         ${file_types || 'csv,xlsx,pdf'}, ${poll_interval_sec || 60},
         ${max_files || 20}, ${max_rows || 500},
         ${filename_date_pattern || null}, ${ts_strategy || 'auto'}
@@ -95,7 +97,9 @@ export async function POST(req: Request) {
         max_files = ${max_files || 20},
         max_rows = ${max_rows || 500},
         filename_date_pattern = ${filename_date_pattern || null},
-        ts_strategy = ${ts_strategy || 'auto'}
+        ts_strategy = ${ts_strategy || 'auto'},
+        tenant_id = ${body.tenant_id || null},
+        client_id = ${body.client_id || null}
       WHERE id = ${id}`
 
     // Update encrypted credentials only when new values are supplied;

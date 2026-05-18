@@ -156,6 +156,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     endpoint_url          TEXT,
     access_key_id         TEXT,
     secret_key_enc        TEXT,
+    tenant_id             TEXT,
+    client_id             TEXT,
     file_types            TEXT NOT NULL DEFAULT 'csv,xlsx,pdf',
     poll_interval_sec     INTEGER NOT NULL DEFAULT 60,
     max_files             INTEGER NOT NULL DEFAULT 20,
@@ -294,6 +296,9 @@ export async function setupDatabasePostgres(): Promise<void> {
 
   await sql`CREATE INDEX IF NOT EXISTS idx_rca_sessions_conv ON rca_sessions(conversation_id, created_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_rca_sessions_wf   ON rca_sessions(workflow_id, created_at DESC)`.catch(() => {})
+
+  await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS tenant_id TEXT`.catch(() => {})
+  await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS client_id TEXT`.catch(() => {})
 
   // last_scheduled_run column (safe to run on existing tables)
   await sql`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS last_scheduled_run TEXT`.catch(() => {})

@@ -234,6 +234,8 @@ export async function setupDatabase() {
     endpoint_url          TEXT,
     access_key_id         TEXT,
     secret_key_enc        TEXT,
+    tenant_id             TEXT,
+    client_id             TEXT,
     file_types            TEXT NOT NULL DEFAULT 'csv,xlsx,pdf',
     poll_interval_sec     INTEGER NOT NULL DEFAULT 60,
     max_files             INTEGER NOT NULL DEFAULT 20,
@@ -243,6 +245,10 @@ export async function setupDatabase() {
     created_at            TEXT DEFAULT (datetime('now'))
   )`
 
+
+  // Migration: add SharePoint columns to file_servers
+  await sql`ALTER TABLE file_servers ADD COLUMN tenant_id TEXT`.catch(() => {})
+  await sql`ALTER TABLE file_servers ADD COLUMN client_id TEXT`.catch(() => {})
 
   // -- Analytics dashboards --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS dashboards (

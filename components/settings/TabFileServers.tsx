@@ -7,6 +7,7 @@ interface FileServer {
   id: string; label: string; transport: string; environment: string
   host: string; port: number; share_path: string; sub_path: string
   username: string; bucket: string; endpoint_url: string; access_key_id: string
+  tenant_id: string; client_id: string
   file_types: string; poll_interval_sec: number; max_files: number; max_rows: number
   filename_date_pattern: string; ts_strategy: string
 }
@@ -19,6 +20,7 @@ const EMPTY = {
   label: '', transport: 'smb', environment: 'production',
   host: '', port: '', share_path: '', sub_path: '', username: '', password: '', ssh_key: '',
   bucket: '', endpoint_url: '', access_key_id: '', secret_key: '',
+  tenant_id: '', client_id: '',
   file_types: 'csv,xlsx,pdf', poll_interval_sec: '60', max_files: '20', max_rows: '500',
   filename_date_pattern: '', ts_strategy: 'auto',
 }
@@ -141,6 +143,25 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
               <Field label="Secret key"><input style={INP} type="password" value={form.secret_key} onChange={e => f('secret_key', e.target.value)} placeholder={editing ? '(unchanged)' : 'secret'} /></Field>
             </Grid>
           )}
+          {form.transport === 'sharepoint' && (
+            <Grid cols={2}>
+              <Field label="SharePoint site URL" hint="e.g. https://yourcompany.sharepoint.com/sites/Engineering">
+                <input style={INP} type="url" value={form.endpoint_url} onChange={e => f('endpoint_url', e.target.value)} placeholder="https://yourcompany.sharepoint.com/sites/Engineering" />
+              </Field>
+              <Field label="Document library folder" hint="Leave blank for root Documents, or enter a path e.g. Reports/2026">
+                <input style={INP} type="text" value={form.sub_path} onChange={e => f('sub_path', e.target.value)} placeholder="Reports/2026" />
+              </Field>
+              <Field label="Tenant ID" hint="Azure AD Directory ID — Azure Portal → App registrations">
+                <input style={INP} type="text" value={form.tenant_id || ''} onChange={e => f('tenant_id', e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+              </Field>
+              <Field label="Client ID (App ID)" hint="Application ID from Azure App Registration">
+                <input style={INP} type="text" value={form.client_id || ''} onChange={e => f('client_id', e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+              </Field>
+              <Field label="Client secret" hint="Client secret value — Certificates &amp; secrets">
+                <input style={INP} type="password" value={form.password} onChange={e => f('password', e.target.value)} placeholder={editing ? '(unchanged)' : 'client secret value'} />
+              </Field>
+            </Grid>
+          )}
 
           <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
           <Grid cols={2}>
@@ -181,7 +202,7 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
                     {s.label} <Badge label={s.environment} color={ENV_COLOR(s.environment)} />
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {s.transport === 's3' ? (s.endpoint_url ? `${s.endpoint_url}/${s.bucket || ''}` : (s.bucket || '—')) : s.host ? `${s.host}${s.share_path ? '/' + s.share_path : ''}` : (s.share_path || '—')} · {s.file_types}
+                    {s.transport === 's3' ? (s.endpoint_url ? `${s.endpoint_url}/${s.bucket || ''}` : (s.bucket || '—')) : s.transport === 'sharepoint' ? (s.endpoint_url || '—') : s.host ? `${s.host}${s.share_path ? '/' + s.share_path : ''}` : (s.share_path || '—')} · {s.file_types}
                   </div>
                   {tr && <div style={{ fontSize: 11, color: tr.ok ? 'var(--green-t)' : 'var(--red-t)', marginTop: 3 }}>{tr.ok ? (tr.latencyMs != null ? `✓ Connected · ${tr.latencyMs}ms` : '✓ Connected') : `✗ ${tr.message}`}</div>}
                 </div>

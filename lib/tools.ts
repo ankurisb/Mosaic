@@ -943,6 +943,91 @@ interface FileEntry {
   ts_source?: string
 }
 
+
+// -- SharePoint / Microsoft Graph helpers ---------------------
+async function getSharePointToken(fs: Record<string, unknown>): Promise<string> {
+  const tenantId    = fs.tenant_id    as string
+  const clientId    = fs.client_id    as string
+  const clientSecret = fs.password_enc ? decrypt(fs.password_enc as string) : (fs.password as string || '')
+
+  if (!tenantId || !clientId || !clientSecret) {
+    throw new Error('SharePoint auth requires tenant_id, client_id, and client secret (password field)')
+  }
+
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const res = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type:    'client_credentials',
+      client_id:     clientId,
+      client_secret: clientSecret,
+      scope:         'https://graph.microsoft.com/.default',
+    }).toString(),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`SharePoint auth failed (${res.status}): ${err.slice(0, 200)}`)
+  }
+  const data = await res.json() as { access_token: string }
+  return data.access_token
+}
+
+// Resolve SharePoint site ID from a site URL like https://tenant.sharepoint.com/sites/MySite
+async function getSharePointSiteId(token: string, siteUrl: string): Promise<string> {
+  // Graph API: GET /v1.0/sites/{hostname}:/{server-relative-path}
+  const url = new URL(siteUrl)
+  const hostname = url.hostname
+  const sitePath = url.pathname // e.g. /sites/MySite
+  const graphUrl = `https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`
+  const res = await fetch(graphUrl, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) throw new Error(`SharePoint site lookup failed (${res.status}) for ${siteUrl}`)
+  const data = await res.json() as { id: string }
+  return data.id
+}
+
+// List files in a SharePoint document library / folder path
+async function listSharePointFiles(
+  token: string, siteId: string, folderPath: string,
+  allowedExts: string[], maxFiles: number
+): Promise<FileEntry[]> {
+  // GET /v1.0/sites/{site-id}/drive/root:/{folder}:/children
+  const encoded = folderPath ? encodeURIComponent(folderPath) : ''
+  const graphUrl = encoded
+    ? `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encoded}:/children`
+    : `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children`
+
+  const res = await fetch(`${graphUrl}?$top=${maxFiles}&$select=name,size,lastModifiedDateTime,@microsoft.graph.downloadUrl,file`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`SharePoint list failed (${res.status}): ${err.slice(0, 200)}`)
+  }
+
+  const data = await res.json() as { value: Array<{ name: string; size: number; lastModifiedDateTime: string; file?: unknown; '@microsoft.graph.downloadUrl'?: string }> }
+  const files: FileEntry[] = []
+
+  for (const item of data.value || []) {
+    if (!item.file) continue // skip folders
+    const ext = '.' + (item.name.split('.').pop()?.toLowerCase() || '')
+    if (allowedExts.length && !allowedExts.includes(ext)) continue
+    files.push({
+      name:      item.name,
+      path:      item['@microsoft.graph.downloadUrl'] || item.name,
+      size:      item.size,
+      timestamp: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : undefined,
+    })
+    if (files.length >= maxFiles) break
+  }
+  return files
+}
+
 async function listFiles(
   fs: Record<string, unknown>,
   transport: string,
@@ -1071,6 +1156,20 @@ async function listFiles(
     return files.sort((a, b) => (b.timestamp?.getTime() ?? 0) - (a.timestamp?.getTime() ?? 0))
   }
 
+
+  if (transport === 'sharepoint') {
+    try {
+      const token   = await getSharePointToken(fs)
+      const siteUrl = (fs.endpoint_url as string) || (fs.host as string) || ''
+      if (!siteUrl) return []
+      const siteId  = await getSharePointSiteId(token, siteUrl)
+      const folder  = (fs.sub_path as string) || (fs.share_path as string) || ''
+      return await listSharePointFiles(token, siteId, folder, filterExt, maxFiles)
+    } catch (e) {
+      console.error('[sharepoint] listFiles error:', (e as Error).message)
+      return []
+    }
+  }
   return []
 }
 
@@ -1199,6 +1298,26 @@ async function fetchFileContent(
         password,
       })
     })
+  }
+  if (transport === 'sharepoint') {
+    // filePath here is the pre-signed download URL returned by listSharePointFiles
+    const token = await getSharePointToken(fs)
+    // If filePath is a full URL (download URL), fetch directly; otherwise resolve via Graph
+    const isUrl = filePath.startsWith('https://')
+    const fetchUrl = isUrl
+      ? filePath
+      : (() => {
+          const siteUrl = (fs.endpoint_url as string) || (fs.host as string) || ''
+          const folder  = (fs.sub_path as string) || (fs.share_path as string) || ''
+          const relativePath = folder ? `${folder}/${filePath}` : filePath
+          return `https://graph.microsoft.com/v1.0/sites/__placeholder__/drive/root:/${encodeURIComponent(relativePath)}:/content`
+        })()
+    const res = await fetch(fetchUrl, {
+      headers: isUrl ? {} : { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!res.ok) throw new Error(`SharePoint file fetch failed (${res.status}): ${filePath}`)
+    return Buffer.from(await res.arrayBuffer())
   }
   // SMB still unimplemented
   throw new Error(`Direct file reading for ${transport.toUpperCase()} requires native client (samba/smbclient).`)
