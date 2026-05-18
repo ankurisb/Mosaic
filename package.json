@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"next dev\" \"cd services/stats-sidecar && python3 main.py\"",
-    "build": "next build",
+    "build": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build",
     "start": "next start",
     "stats": "cd services/stats-sidecar && python3 main.py"
   },
@@ -54,5 +54,5 @@
     "mssql": "^10.0.4",
     "ssh2": "^1.16.0"
   },
-  "description": "Mosaic — industrial AI platform by UGX Systems"
+  "description": "Mosaic \u2014 industrial AI platform by UGX Systems"
 }
