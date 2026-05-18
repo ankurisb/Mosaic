@@ -1,6 +1,6 @@
 # Mosaic — Master Feature Hit List
-**Last updated:** 30 April 2026  
-**Baseline:** Session 6 complete (HEAD: 82922e1)  
+**Last updated:** 18 May 2026  
+**Baseline:** Session 7 complete (HEAD: 582a100)  
 **Purpose:** Tick off as you go. Organised by current state → near-term → strategic.
 
 ---
@@ -9,15 +9,15 @@
 
 | Category | Done | Remaining | Total |
 |---|---|---|---|
-| Core platform (Part 1) | 75 | 0 | 75 |
+| Core platform (Part 1) | 76 | 0 | 76 |
 | Near-term / blockers (Part 2) | 3 | 15 | 18 |
-| Enterprise roadmap (Part 3, Phases A–P) | 6 | 114 | 120 |
+| Enterprise roadmap (Part 3, Phases A–P) | 8 | 113 | 121 |
 | ThingsBoard IoT (Part 4) | 0 | 15 | 15 |
 | Predictive Maintenance (Part 5) | 0 | 18 | 18 |
 | Reporting (Part 6) | 0 | 9 | 9 |
 | Multi-Tenant SaaS (Part 7) | 0 | 7 | 7 |
 | Air-Gapped / Local LLM (Part 8) | 0 | 6 | 6 |
-| **Total** | **84** | **184** | **268** |
+| **Total** | **87** | **183** | **270** |
 
 > **Deployment readiness:** 1 blocker remaining — Docker Compose validation from fresh clone.  
 > Once cleared, Mosaic v1.0.0 is customer-deployable.
@@ -32,7 +32,7 @@
 
 ---
 
-## Part 1 — Current Build: Verified ✅ (75/75)
+## Part 1 — Current Build: Verified ✅ (76/76)
 
 ### Core Chat
 - [x] Streaming AI chat (claude-sonnet-4-6, haiku, opus selectable)
@@ -47,6 +47,8 @@
 - [x] Schema pre-loading into system prompt (getOrFetchSchema() verified)
 - [x] RCA keyword detection and workflow trigger
 - [x] RCA synthesis producing rca_blocks (verified 3 blocks in DB)
+- [x] Tool result truncation — 3-layer cap (8K string, 500-char cells, 60K history trim) prevents 429 / context overflow
+- [x] Lazy-loaded Recharts — chat page chunk 135 kB → 78 kB; bar/line/pie load on demand only
 
 ### Smart Database Selection
 - [x] Auto-inject all connections into system prompt
@@ -89,6 +91,10 @@
 - [x] SAP OData V2/V4 ($filter, $select hints)
 - [x] Token expiry warning in connections list
 - [x] Mock SAP OData bearer auth + pagination verified
+- [x] OAuth2 error fully propagated to UI — upstream provider message (e.g. Zoho invalid_client) surfaces in chat and Try-It panel
+- [x] OAuth2 token cache evicted on revocation signals (invalid_grant, invalid_token, token_expired, access_denied)
+- [x] SSRF path guard — blocked paths show friendly "Request blocked by security policy" banner in Try-It instead of raw JSON
+- [x] SSRF blocklist hardened — removed 'localhost' literal, added '::1' (IPv6 loopback)
 
 ### Data Connections — File Servers
 - [x] SFTP (password + SSH key)
@@ -146,6 +152,7 @@
 ### Monitoring & Analytics
 - [x] Usage analytics (token counts, cost, by model, by user)
 - [x] System monitoring (14 services, live health + latency)
+- [x] Stats Engine in System Health (green/down status, "12 analysis types available")
 - [x] Rate limiting (50 req/hr/user)
 
 ### Settings & Admin
@@ -157,6 +164,27 @@
 - [x] Notifications tab (renamed from Integrations)
 - [x] System health tab (renamed from Monitoring)
 - [x] TypeScript errors resolved (zero tsc errors)
+- [x] Saving spinner always clears — setSaving(false) in finally blocks across TabDatabases, TabGuardrails, TabAuth
+
+### Guardrails (8 types — complete)
+- [x] T1 AI Output Rules — injected into system prompt, plain-English policies
+- [x] T2 Data Access — blocked_columns / row_filter per connection per role
+- [x] T3 Action Controls — global read-only toggle + per-tool/method blocks
+- [x] T4 Usage Limits — daily/monthly token + request budgets, hard block at limit
+- [x] T5 Content Filtering — blocklist/allowlist + regex on user message before Claude
+- [x] T6 Egress Audit — every chat logged: user, sources, tokens, model, preview
+- [x] T7 Human-in-the-Loop — write API calls pause for human confirmation
+- [x] T8 Injection Defense — tool results wrapped with safety delimiter; JSON structure preserved
+- [x] Guardrails UI — collapsible sections, count badge, global search, per-section search + pagination
+- [x] SQLite JSON auto-parse bug fixed — enforcement was silently failing on all 8 types
+
+### Analysis Capabilities (Stats Engine)
+- [x] 12 statistical analyses: control_chart, process_capability, trend, anomaly_detection, changepoint_detection, pareto, correlation, regression, weibull, mtbf, oee_decomposition, hypothesis_test
+- [x] Stats sidecar (FastAPI, port 8001) auto-starts with npm run dev via concurrently
+- [x] Stats Engine health check in System Health monitor
+- [x] Demo modal on every analysis card — live result from sidecar on realistic industrial sample data
+- [x] SVG mini-charts in demo modal (sparkline with UCL/LCL, bar chart for Pareto)
+- [x] Admin can disable individual analysis types
 
 ---
 
@@ -249,8 +277,8 @@
 - [ ] Integration into existing chat route (alongside usage_events insert)
 
 ### Phase G — Guardrails & Policy System
-- [ ] guardrail_policies table
-- [ ] policy_assignments table (user/role/connection scope)
+- [x] 8-type guardrails system (T1–T8) — shipped session 7
+- [x] Guardrails UI with global search, collapsible sections, pagination — shipped session 7
 - [ ] Schema allowlists per connection (tables/columns visible to Claude)
 - [ ] Column-level exclusions
 - [ ] Row-level filter injection (auto-WHERE per connection)
@@ -259,7 +287,6 @@
 - [ ] Persona lock (admin-set system prompt, not user-editable)
 - [ ] Tool-level permissions per role
 - [ ] Query review / approval queue for sensitive operations
-- [ ] lib/guardrails.ts — resolveGuardrails(userId, connectionId)
 - [ ] Policy builder UI in Settings → Policies
 - [ ] Policy assignment matrix (roles × policies)
 - [ ] Guardrail activity log (blocked queries, redirected topics)
@@ -469,6 +496,8 @@
 | AI Transparency Ledger as trust instrument | Turns security concern into a proof point |
 | Superset config baked into Docker image, not volume | Eliminates config loss on volume recreation |
 | Superset Public role permissions set via Mosaic startup API | Automated first-run, no manual Superset config steps |
+| Stats sidecar auto-starts via concurrently in npm run dev | No manual sidecar management; always available in dev |
+| npm run build kills dev server first | Prevents .next cache corruption from concurrent build + dev |
 
 ---
 
