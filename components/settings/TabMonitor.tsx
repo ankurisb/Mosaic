@@ -1,16 +1,43 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle, PageSub, Btn, StatusDot, Spinner } from './ui'
 
 interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string }
 interface Data { services: Svc[]; summary: { healthy: number; degraded: number; down: number; total: number } }
 
+interface LogEntry {
+  time: string
+  level: string
+  service: string
+  msg: string
+  err?: string
+  [key: string]: unknown
+}
+
 const CAT: Record<string, string> = { infrastructure: 'Infrastructure', database: 'Databases', api: 'External APIs', api_service: 'API Services' }
 
+const LEVEL_COLOR: Record<string, string> = {
+  info:  'var(--text3)',
+  warn:  'var(--amber-t)',
+  error: 'var(--red-t)',
+  fatal: 'var(--red-t)',
+  debug: 'var(--text4)',
+  trace: 'var(--text4)',
+}
+
 export default function TabMonitor() {
-  const [data, setData] = useState<Data | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [last, setLast] = useState('')
+  const [data,        setData]        = useState<Data | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [last,        setLast]        = useState('')
+  const [logs,        setLogs]        = useState<LogEntry[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [levelFilter, setLevelFilter] = useState('all')
+  const [svcFilter,   setSvcFilter]   = useState('all')
+  const [services,    setServices]    = useState<string[]>([])
+  const [autoScroll,  setAutoScroll]  = useState(true)
+  const [logNote,     setLogNote]     = useState('')
+  const logEndRef = useRef<HTMLDivElement>(null)
+  const logBoxRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -18,9 +45,50 @@ export default function TabMonitor() {
     finally { setLoading(false) }
   }, [])
 
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true)
+    try {
+      const params = new URLSearchParams({ lines: '200', level: levelFilter, service: svcFilter })
+      const r = await fetch(`/api/logs?${params}`)
+      if (r.ok) {
+        const d = await r.json()
+        setLogs(d.entries || [])
+        setServices(d.services || [])
+        if (d.note) setLogNote(d.note)
+        else setLogNote('')
+      }
+    } finally { setLogsLoading(false) }
+  }, [levelFilter, svcFilter])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadLogs() }, [loadLogs])
+
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (autoScroll && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, autoScroll])
+
+  // Detect manual scroll up to pause auto-scroll
+  function handleLogScroll() {
+    const box = logBoxRef.current
+    if (!box) return
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    setAutoScroll(atBottom)
+  }
+
+  function formatTime(iso: string) {
+    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
+    catch { return iso }
+  }
 
   const byCat = data ? data.services.reduce((a, s) => { if (!a[s.category]) a[s.category] = []; a[s.category].push(s); return a }, {} as Record<string, Svc[]>) : {}
+
+  const sel: React.CSSProperties = {
+    background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)',
+    padding: '4px 8px', fontSize: 12, color: 'var(--text)', fontFamily: 'inherit', cursor: 'pointer',
+  }
 
   return (
     <div className="fade-in">
@@ -29,18 +97,19 @@ export default function TabMonitor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {loading && <Spinner />}
           {last && <span style={{ fontSize: 12, color: 'var(--text3)' }}>checked {last}</span>}
-          <Btn size="sm" onClick={load}> Refresh</Btn>
+          <Btn size="sm" onClick={load}>Refresh</Btn>
         </div>
       </div>
       <PageSub>Live health status of all connected services.</PageSub>
 
+      {/* Summary cards */}
       {data && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
           {[
-            { label: 'Healthy', value: data.summary.healthy, color: 'var(--green-t)' },
+            { label: 'Healthy',  value: data.summary.healthy,  color: 'var(--green-t)' },
             { label: 'Degraded', value: data.summary.degraded, color: 'var(--amber-t)' },
-            { label: 'Down', value: data.summary.down, color: 'var(--red-t)' },
-            { label: 'Total', value: data.summary.total, color: 'var(--text)' },
+            { label: 'Down',     value: data.summary.down,     color: 'var(--red-t)' },
+            { label: 'Total',    value: data.summary.total,    color: 'var(--text)' },
           ].map(c => (
             <div key={c.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '16px 18px' }}>
               <div style={{ fontSize: 28, fontWeight: 600, color: c.color, lineHeight: 1 }}>{c.value}</div>
@@ -50,6 +119,7 @@ export default function TabMonitor() {
         </div>
       )}
 
+      {/* Service rows */}
       {loading && !data ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spinner size={24} /></div>
       ) : (
@@ -70,7 +140,6 @@ export default function TabMonitor() {
                     <div style={{ textAlign: 'right', minWidth: 54 }}>
                       <div style={{ fontSize: 12, color: 'var(--text2)' }}>{s.latencyMs != null ? `${s.latencyMs}ms` : '--'}</div>
                     </div>
-                    {/* Latency bar */}
                     <div style={{ width: 64, height: 4, background: 'var(--bg3)', borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
                       {s.latencyMs != null && <div style={{ height: '100%', borderRadius: 99, width: `${Math.min(100, s.latencyMs / 10)}%`, background: s.latencyMs > 500 ? 'var(--red)' : s.latencyMs > 200 ? 'var(--amber)' : 'var(--green)', transition: 'width .3s' }} />}
                     </div>
@@ -80,6 +149,77 @@ export default function TabMonitor() {
             </div>
           )
         })
+      )}
+
+      {/* ── Server Logs ─────────────────────────────────────────────── */}
+      <div style={{ marginTop: 32, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Server logs</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Level filter */}
+          <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={sel}>
+            <option value="all">All levels</option>
+            <option value="warn">Warn +</option>
+            <option value="error">Errors only</option>
+          </select>
+          {/* Service filter */}
+          {services.length > 0 && (
+            <select value={svcFilter} onChange={e => setSvcFilter(e.target.value)} style={sel}>
+              <option value="all">All services</option>
+              {services.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+          <Btn size="sm" onClick={loadLogs}>Refresh</Btn>
+        </div>
+      </div>
+
+      <div
+        ref={logBoxRef}
+        onScroll={handleLogScroll}
+        style={{
+          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          height: 360, overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11,
+          padding: '10px 0',
+        }}
+      >
+        {logsLoading && logs.length === 0 ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Spinner size={16} /></div>
+        ) : logNote ? (
+          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12 }}>{logNote}</div>
+        ) : logs.length === 0 ? (
+          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12 }}>No log entries found.</div>
+        ) : (
+          logs.map((entry, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: 10, padding: '2px 14px',
+                background: entry.level === 'error' || entry.level === 'fatal' ? 'rgba(220,38,38,.04)' :
+                            entry.level === 'warn' ? 'rgba(217,119,6,.04)' : 'transparent',
+              }}
+            >
+              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 54 }}>{formatTime(entry.time)}</span>
+              <span style={{ color: LEVEL_COLOR[entry.level] || 'var(--text3)', flexShrink: 0, minWidth: 38, textTransform: 'uppercase', fontWeight: 600, fontSize: 10 }}>{entry.level}</span>
+              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.service}</span>
+              <span style={{ color: 'var(--text)', flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {entry.msg}
+                {entry.err && <span style={{ color: 'var(--red-t)', marginLeft: 6 }}>{String(entry.err)}</span>}
+              </span>
+            </div>
+          ))
+        )}
+        <div ref={logEndRef} />
+      </div>
+
+      {/* Auto-scroll indicator */}
+      {!autoScroll && (
+        <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => { setAutoScroll(true); logEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+            style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', fontSize: 11, color: 'var(--text3)', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Scroll to bottom
+          </button>
+        </div>
       )}
     </div>
   )
