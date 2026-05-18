@@ -71,7 +71,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # ── Airbyte ─────────────────────────────────────────────────
   # Uses Airbyte's official Docker Compose services
@@ -199,7 +199,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   # ── n8n ─────────────────────────────────────────────────────
   # Self-hosted workflow automation. Invisible to end users.

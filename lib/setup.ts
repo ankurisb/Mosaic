@@ -611,8 +611,10 @@ export async function setupDatabase() {
   // Fire-and-forget: never blocks Mosaic startup
   initSupersetPublicRole().catch(() => {})
 
-  // -- Superset: set Public role permissions for embedded dashboards ----
-  // Fire-and-forget: never blocks Mosaic startup
+  // Auto-discover Airbyte workspace ID on first boot (Docker Compose)
+  // Runs after DB setup so airbyte_instances table exists.
+  // Idempotent — skips if workspace_id already stored or no AIRBYTE_URL set.
+  initAirbyteWorkspace().catch(() => {})
 
   // ── Guardrails ────────────────────────────────────────────────────────────
   // Type 1: AI output rules (system prompt injection)
@@ -721,6 +723,78 @@ export async function setupDatabase() {
     done = true
 }
 
+async function initAirbyteWorkspace(): Promise<void> {
+  const airbyteUrl = process.env.AIRBYTE_URL
+  if (!airbyteUrl) return
+
+  try {
+    const sql = getDb()
+
+    // Check if we have an instance with no workspace_id yet
+    const instances = await sql`SELECT * FROM airbyte_instances WHERE active = 1 AND (workspace_id IS NULL OR workspace_id = '') LIMIT 1`
+
+    let inst = instances[0] as Record<string, unknown> | undefined
+
+    // If no instance row at all, auto-register the Docker Compose Airbyte
+    if (!inst) {
+      const existing = await sql`SELECT id FROM airbyte_instances WHERE active = 1 LIMIT 1`
+      if (existing.length) return  // already registered with workspace_id
+      // Register from env vars
+      const user = process.env.AIRBYTE_USER || 'airbyte'
+      const pass = process.env.AIRBYTE_PASSWORD || 'password'
+      const { encrypt } = await import('./encrypt')
+      await sql`INSERT INTO airbyte_instances (label, url, username, password_enc)
+        VALUES ('Local Airbyte', ${airbyteUrl}, ${user}, ${encrypt(pass)})`
+      const newRows = await sql`SELECT * FROM airbyte_instances WHERE active = 1 LIMIT 1`
+      inst = newRows[0] as Record<string, unknown>
+      console.log('[airbyte-init] Registered Airbyte instance:', airbyteUrl)
+    }
+
+    if (!inst) return
+
+    // Wait up to 120s for Airbyte to be ready (it can take a while on first boot)
+    const base = (inst.url as string).replace(/\/$/, '')
+    const user = inst.username as string
+    const { decrypt } = await import('./encrypt')
+    const pass = inst.password_enc ? decrypt(inst.password_enc as string) : 'password'
+    const authHeader = 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64')
+
+    let ready = false
+    for (let i = 0; i < 24; i++) {
+      try {
+        const r = await fetch(`${base}/api/public/v1/workspaces`, {
+          headers: { Authorization: authHeader },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (r.ok) { ready = true; break }
+      } catch {}
+      await new Promise(r => setTimeout(r, 5000))
+    }
+    if (!ready) {
+      console.warn('[airbyte-init] Airbyte not ready after 120s — workspace discovery skipped')
+      return
+    }
+
+    // Fetch workspace list and cache the first workspace ID
+    const wsRes = await fetch(`${base}/api/public/v1/workspaces`, {
+      headers: { Authorization: authHeader },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!wsRes.ok) return
+    const wsData = await wsRes.json() as { data?: Array<{workspaceId?: string; id?: string}> }
+    const workspaces = wsData.data || []
+    if (!workspaces.length) return
+
+    const wsId = workspaces[0].workspaceId || workspaces[0].id
+    if (!wsId) return
+
+    await sql`UPDATE airbyte_instances SET workspace_id = ${wsId} WHERE id = ${inst.id as string}`
+    console.log('[airbyte-init] Workspace ID discovered and cached:', wsId)
+  } catch (err) {
+    console.warn('[airbyte-init] Non-fatal error discovering workspace:', (err as Error).message)
+  }
+}
+
 async function initSupersetPublicRole(): Promise<void> {
   const supersetUrl = process.env.SUPERSET_URL
   const supersetUser = process.env.SUPERSET_ADMIN_USER || 'admin'
@@ -728,9 +802,9 @@ async function initSupersetPublicRole(): Promise<void> {
   if (!supersetUrl || !supersetPass) return
 
   try {
-    // Wait up to 30s for Superset to be ready
+    // Wait up to 120s for Superset to be ready (it runs db upgrade + init on first boot)
     let ready = false
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 24; i++) {
       try {
         const h = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(5000) })
         if (h.ok) { ready = true; break }
