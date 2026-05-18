@@ -24,8 +24,6 @@ const ALL_TABS = [
   { id: 'keys',          label: 'API keys',             adminOnly: false },
   { id: 'auth',          label: 'Authentication',       adminOnly: false },
   { id: 'users',         label: 'Users',                adminOnly: false },
-  { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
-  { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
   { id: 'system-health', label: 'System health',        adminOnly: false },
   { id: 'data-sources',  label: 'Data sources',         adminOnly: false },
@@ -33,6 +31,8 @@ const ALL_TABS = [
   { id: 'analytics',     label: 'Analysis capabilities',adminOnly: false },
   { id: 'guardrails',    label: 'Guardrails',           adminOnly: false },
   { id: 'notifications', label: 'Notifications',        adminOnly: false },
+  { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
+  { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
   { id: 'about',         label: 'About',                adminOnly: false },
 ]
 
