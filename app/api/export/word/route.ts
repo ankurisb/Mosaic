@@ -156,14 +156,15 @@ export async function POST(req: NextRequest) {
       properties: {
         page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } }
       },
-      children: children as Parameters<typeof Document>[0]['sections'][0]['children']
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      children: children as any
     }]
   })
 
   const buffer = await Packer.toBuffer(doc)
   const filename = `RCA_${String(conv.title || 'Report').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)}_${new Date().toISOString().slice(0, 10)}.docx`
 
-  return new Response(buffer, {
+  return new Response(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': `attachment; filename="${filename}"`,
