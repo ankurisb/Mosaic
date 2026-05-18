@@ -4,7 +4,7 @@ import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
 
-interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number }
+interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null }
 interface ApiConn { id: string; service_id: string; label: string; description: string; base_path: string; pagination_style: string }
 
 interface TryItState {
@@ -62,6 +62,10 @@ interface ImportConnection {
   method: string
   folder: string       // folder path, e.g. "Invoices" or "Sales/Invoices"
   selected: boolean    // user's checkbox state
+  paginationStyle?: string
+  paginationLimitParam?: string
+  paginationCursorParam?: string
+  dataPath?: string
 }
 
 interface ImportPreview {
@@ -968,7 +972,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
               {openApiLoading ? <><Spinner size={12} /> Fetching...</> : 'Import'}
             </Btn>
           </div>
-          {importError && <Alert variant="error" style={{ marginTop: 8 }}>{importError}</Alert>}
+          {importError && <div style={{ marginTop: 8 }}><Alert variant="error">{importError}</Alert></div>}
         </div>
       )}
 
