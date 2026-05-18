@@ -50,7 +50,16 @@ export async function GET() {
   const rows = allRows
 
   const result: Record<string, { configured: boolean; preview: string }> = {}
-  KNOWN_KEYS.forEach(k => { result[k] = { configured: false, preview: '' } })
+  // Seed from env vars first (lowest priority — kv_settings overrides below)
+  KNOWN_KEYS.forEach(k => {
+    if (process.env[k]) {
+      const v = process.env[k] as string
+      result[k] = { configured: true, preview: v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***' }
+    } else {
+      result[k] = { configured: false, preview: '' }
+    }
+  })
+  // kv_settings values take precedence (more recently set)
   for (const row of rows as { key: string; value_enc: string }[]) {
     try {
       const plain = decrypt(row.value_enc)
