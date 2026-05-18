@@ -715,6 +715,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
             <select style={{ ...SEL, width: 110, fontSize: 11 }} value={a.type} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, type: e.target.value } : x) }))}>
               <option value="notify">Notify</option>
               <option value="api_call">API call</option>
+              <option value="n8n_webhook">n8n webhook</option>
             </select>
             {a.type === 'notify' && (
               <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={a.channel_id || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, channel_id: e.target.value } : x) }))}>
@@ -724,6 +725,12 @@ export default function RulesPage({ user }: { user: SessionUser }) {
             )}
             {a.type === 'api_call' && (
               <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={a.path || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, path: e.target.value } : x) }))} placeholder="/webhook/trigger" />
+            )}
+            {a.type === 'n8n_webhook' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}>
+                <input style={{ ...INP, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={a.path || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, path: e.target.value } : x) }))} placeholder="n8n webhook URL — e.g. http://localhost:5678/webhook/abc123" />
+                <input style={{ ...INP, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={a.payload_template || ''} onChange={e => setForm(p => ({ ...p, actions: p.actions.map((x, i) => i === ai ? { ...x, payload_template: e.target.value } : x) }))} placeholder='Payload template — e.g. {"rule":"{{group_name}}","value":"{{value}}","asset":"{{asset_id}}"}' />
+              </div>
             )}
             <button onClick={() => setForm(p => ({ ...p, actions: p.actions.filter((_, i) => i !== ai) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>
           </div>

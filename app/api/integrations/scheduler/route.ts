@@ -475,6 +475,62 @@ export async function POST(req: Request) {
             }
           }
 
+          // -- n8n webhook action --------------------------------
+          else if (actionType === 'n8n_webhook') {
+            const webhookUrl  = (action.path as string || '').trim()
+            const payloadTpl  = (action.payload_template as string) || '{}'
+
+            if (!webhookUrl) {
+              errors.push(`${groupId}/n8n_webhook: no webhook URL configured`)
+            } else {
+              // Render payload template with rule variables
+              const renderedPayload = renderTemplate(
+                payloadTpl.replace(/{{(\w+)}}/g, '{$1}'),
+                templateVars
+              )
+
+              let body: Record<string, unknown>
+              try {
+                body = JSON.parse(renderedPayload)
+              } catch {
+                // If template produces invalid JSON, wrap as plain message
+                body = { message: renderedPayload }
+              }
+
+              // Enrich with standard Mosaic context fields
+              const enrichedBody = {
+                ...body,
+                _mosaic: {
+                  rule_id:    groupId,
+                  rule_name:  g.name as string,
+                  fired_at:   now.toISOString(),
+                  conditions: templateVars.triggered_conditions || '',
+                  value:      templateVars.value ?? null,
+                }
+              }
+
+              try {
+                const res = await fetch(webhookUrl, {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify(enrichedBody),
+                  signal:  AbortSignal.timeout(10000),
+                })
+
+                const ok = res.ok || res.status < 400
+                await sql`
+                  INSERT INTO integration_runs (rule_id, status, message_sent, error, latency_ms)
+                  VALUES (${groupId}, ${ok ? 'sent' : 'error'}, ${JSON.stringify(enrichedBody)}, ${ok ? null : 'HTTP ' + res.status}, ${Date.now() - startTime})`
+                .catch(() => {})
+
+                if (ok) fired.push(`${groupId}:n8n_webhook`)
+                else    errors.push(`${groupId}/n8n_webhook: HTTP ${res.status}`)
+              } catch (e) {
+                errors.push(`${groupId}/n8n_webhook: ${(e as Error).message}`)
+              }
+            }
+          }
+
           // -- Start RCA action -----------------------------------
           else if (actionType === 'rca') {
             const contextTpl = (action.rca_context as string) || 'Automated trigger: {{group_name}} -- {{triggered_conditions}}'
@@ -563,8 +619,8 @@ export async function POST(req: Request) {
 
     try {
       // Parse cron expression and check if due
-      const parser = await import('cron-parser')
-      const interval = parser.parseExpression(schedule, { currentDate: now })
+      const { CronExpressionParser } = await import('cron-parser')
+      const interval = CronExpressionParser.parse(schedule, { currentDate: now })
       const prev     = interval.prev().toDate()
       const lastRun  = t.last_scheduled_run as string | null
 
