@@ -33,6 +33,8 @@ export default function TabMonitor() {
   const [logsLoading, setLogsLoading] = useState(false)
   const [levelFilter, setLevelFilter] = useState('all')
   const [svcFilter,   setSvcFilter]   = useState('all')
+  const [sinceFilter, setSinceFilter] = useState('1h')
+  const [linesLimit,  setLinesLimit]  = useState('200')
   const [services,    setServices]    = useState<string[]>([])
   const [autoScroll,  setAutoScroll]  = useState(true)
   const [logNote,     setLogNote]     = useState('')
@@ -48,7 +50,7 @@ export default function TabMonitor() {
   const loadLogs = useCallback(async () => {
     setLogsLoading(true)
     try {
-      const params = new URLSearchParams({ lines: '200', level: levelFilter, service: svcFilter })
+      const params = new URLSearchParams({ lines: linesLimit, level: levelFilter, service: svcFilter, since: sinceFilter })
       const r = await fetch(`/api/logs?${params}`)
       if (r.ok) {
         const d = await r.json()
@@ -58,7 +60,7 @@ export default function TabMonitor() {
         else setLogNote('')
       }
     } finally { setLogsLoading(false) }
-  }, [levelFilter, svcFilter])
+  }, [levelFilter, svcFilter, sinceFilter, linesLimit])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { loadLogs() }, [loadLogs])
@@ -153,8 +155,24 @@ export default function TabMonitor() {
 
       {/* ── Server Logs ─────────────────────────────────────────────── */}
       <div style={{ marginTop: 32, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Server logs</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+          Server logs {logs.length > 0 && <span style={{ fontWeight: 400, textTransform: 'none', marginLeft: 4 }}>({logs.length} entries)</span>}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Since filter */}
+          <select value={sinceFilter} onChange={e => setSinceFilter(e.target.value)} style={sel}>
+            <option value="15m">Last 15 min</option>
+            <option value="1h">Last 1 hour</option>
+            <option value="6h">Last 6 hours</option>
+            <option value="24h">Last 24 hours</option>
+            <option value="all">All time</option>
+          </select>
+          {/* Lines limit */}
+          <select value={linesLimit} onChange={e => setLinesLimit(e.target.value)} style={sel}>
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+            <option value="500">500 lines</option>
+          </select>
           {/* Level filter */}
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={sel}>
             <option value="all">All levels</option>
