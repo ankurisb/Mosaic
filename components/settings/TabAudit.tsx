@@ -244,6 +244,18 @@ export default function TabAudit({ user }: { user: SessionUser }) {
               ref: 'A.6.3',
               desc: 'Staff awareness training register. User list auto-populated from all active Mosaic accounts.',
             },
+            {
+              doc: 'isms-policy',
+              title: 'ISMS Policy',
+              ref: '5.2',
+              desc: 'Information Security Policy skeleton. Requires management review and signature before use in audit.',
+            },
+            {
+              doc: 'statement-of-applicability',
+              title: 'Statement of Applicability',
+              ref: '6.1.3',
+              desc: 'All 93 Annex A controls with applicability, implementation status, and justification. Live implementation counts.',
+            },
           ].map(item => (
             <div key={item.doc} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
