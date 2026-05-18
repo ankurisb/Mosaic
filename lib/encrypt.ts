@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
+import { getSecret } from './secret'
 
 function getKey(): Buffer {
-  const secret = process.env.AUTH_SECRET || 'fallback-key-32-chars-minimum!!'
-  // Derive a 32-byte key from AUTH_SECRET
+  const secret = getSecret()
   return Buffer.from(secret.slice(0, 32).padEnd(32, '0'))
 }
 

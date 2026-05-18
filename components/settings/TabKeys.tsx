@@ -4,6 +4,7 @@ import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, Btn, Badge, Alert, Spinner } from './ui'
 
 const KEY_SECTIONS = [
+  { title: 'Anthropic',                keys: ['ANTHROPIC_API_KEY'] },
   { title: 'AI & Search',              keys: ['TAVILY_API_KEY'] },
   { title: 'App Configuration',        keys: ['NEXT_PUBLIC_APP_URL', 'CRON_SECRET'] },
   { title: 'Database',                 keys: ['DATABASE_URL'] },
@@ -15,6 +16,7 @@ const KEY_SECTIONS = [
 ]
 
 const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean }> = {
+  ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · 1,000 searches/month',                   placeholder: 'tvly-...', secret: true },
   NEXT_PUBLIC_APP_URL:     { label: 'App URL',                  hint: 'Public URL of this Mosaic instance · used in emails and SSO callbacks',              placeholder: 'https://mosaic.yourcompany.com' },
   CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · set a random string',                              placeholder: 'Random secret string', secret: true },
@@ -95,22 +97,6 @@ export default function TabKeys({ user }: { user: SessionUser }) {
           {toast}
         </div>
       )}
-
-      {/* Anthropic key — env-only, read-only */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>Anthropic</div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '14px 18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>
-                Anthropic API key <Badge label="env only" color="gray" />
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text3)' }}>Set via ANTHROPIC_API_KEY in .env.local · required for all AI features</div>
-            </div>
-            <Badge label={process.env.NEXT_PUBLIC_ANTHROPIC_SET === '1' ? 'configured' : 'check .env.local'} color="green" />
-          </div>
-        </div>
-      </div>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center' }}><Spinner size={20} /></div>

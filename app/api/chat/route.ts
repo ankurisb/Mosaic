@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
+import { getKey } from '@/lib/keys'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
 import {
   getAiRulesInjection,
@@ -13,7 +14,7 @@ import {
   type GuardrailContext,
 } from '@/lib/guardrails'
 export const runtime = 'nodejs'
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// Note: Anthropic client is instantiated per-request using getKey() below
 
 // Pricing per million tokens (input / output)
 const MODEL_PRICING: Record<string, { input: number; output: number; label: string }> = {
@@ -344,6 +345,17 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   }
 
   const enc = new TextEncoder()
+
+  // Resolve Anthropic API key at request time (env → kv_settings)
+  const apiKey = await getKey('ANTHROPIC_API_KEY')
+  if (!apiKey) {
+    return Response.json(
+      { error: 'Anthropic API key not configured. Go to Settings → API Keys to add it.' },
+      { status: 503 }
+    )
+  }
+  const anthropic = new Anthropic({ apiKey })
+
   const stream = new ReadableStream({
     async start(ctrl) {
       const send = (o: object) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'))

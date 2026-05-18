@@ -14,6 +14,8 @@ async function ensureTable() {
 }
 
 const KNOWN_KEYS = [
+  // AI
+  'ANTHROPIC_API_KEY',
   // AI & Search
   'TAVILY_API_KEY',
   // Notifications

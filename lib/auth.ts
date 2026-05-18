@@ -2,13 +2,12 @@ import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
 import { getDb } from './db'
+import { getSecret } from './secret'
 
 export const COOKIE_NAME = 'claude_session'
 
 function secret() {
-  const s = process.env.AUTH_SECRET
-  if (!s) throw new Error('AUTH_SECRET is not set')
-  // Fix #14: use SHA-256 derived key so short secrets are safe
+  const s = getSecret()
   return new TextEncoder().encode(s.padEnd(32, s).slice(0, 64))
 }
 

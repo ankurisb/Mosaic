@@ -578,7 +578,7 @@ export async function setupDatabase() {
   await sql`CREATE INDEX IF NOT EXISTS idx_usage_created     ON usage_events(created_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_rca_wf_type       ON rca_workflows(problem_type, active)`.catch(() => {})
 
-  // -- Bootstrap admin -------------------------------------------
+  // -- Bootstrap admin (legacy env-var path — kept for Docker/CI deployments) ---
   const email    = process.env.ADMIN_EMAIL
   const password = process.env.ADMIN_PASSWORD
   const name     = process.env.ADMIN_NAME || 'Admin'
@@ -590,6 +590,10 @@ export async function setupDatabase() {
         INSERT INTO users(email, name, password_hash, role)
         VALUES(${email.toLowerCase()}, ${name}, ${hash}, 'admin')
         ON CONFLICT(email) DO NOTHING`
+      // Mark setup complete so the first-run wizard is skipped
+      await sql`INSERT INTO kv_settings (key, value_enc, updated_by)
+        VALUES ('SETUP_COMPLETE', 'true', 'env-bootstrap')
+        ON CONFLICT(key) DO NOTHING`.catch(() => {})
       console.log('Admin created:', email)
     }
   }
