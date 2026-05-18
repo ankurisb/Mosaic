@@ -1369,6 +1369,19 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
         const svc = services.find(s => s.id === tryIt.serviceId)
         const conn = connections.find(c => c.id === tryIt.connectionId)
         const statusColor = tryResult ? (tryResult.ok ? 'var(--green-t)' : 'var(--red-t)') : 'var(--text3)'
+        // Derive friendly message for SSRF / security rejections
+        const tryErrMsg = tryResult
+          ? ((tryResult.error as string) || (tryResult.body && typeof tryResult.body === 'object' ? ((tryResult.body as Record<string,unknown>).error as string) : ''))
+          : ''
+        const SECURITY_MESSAGES: Array<[string, string]> = [
+          ['Path not allowed',             'This path was blocked by Mosaic\u2019s request security rules. Paths pointing to internal addresses (localhost, 127.0.0.1, 169.254.x.x, cloud metadata) or using path traversal (../) are not permitted.'],
+          ['Service base URL must be http', 'The API service base URL must use http:// or https://. Other protocols (file://, ftp://, etc.) are not allowed.'],
+          ['Invalid method',               'The HTTP method you selected is not permitted by Mosaic\u2019s API security policy.'],
+          ['Invalid path',                 'The path you entered could not be validated. Remove unsupported characters or patterns and try again.'],
+        ]
+        const securityBannerText = tryErrMsg
+          ? SECURITY_MESSAGES.find(([k]) => tryErrMsg.includes(k))?.[1]
+          : undefined
         return (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 20, marginBottom: 20 }}>
             {/* Header */}
@@ -1452,8 +1465,19 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                   </span>
                   <span style={{ fontSize: 12, color: 'var(--text3)' }}>{tryResult.latencyMs}ms</span>
                   <code style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', padding: '2px 7px', borderRadius: 4, border: '1px solid var(--border)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tryResult.url}</code>
-                  {tryResult.error && <span style={{ fontSize: 12, color: 'var(--red-t)' }}>{tryResult.error}</span>}
+                  {tryResult.error && !securityBannerText && <span style={{ fontSize: 12, color: 'var(--red-t)' }}>{tryResult.error}</span>}
                 </div>
+
+                {/* Security rejection banner */}
+                {securityBannerText && (
+                  <div style={{ display: 'flex', gap: 10, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 10 }}>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>🛡️</span>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', marginBottom: 2 }}>Request blocked by security policy</div>
+                      <div style={{ fontSize: 12, color: '#991b1b', lineHeight: 1.5 }}>{securityBannerText}</div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
@@ -1488,7 +1512,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                 })()}
 
                 {/* Response body */}
-                {tryTab === 'response' && (
+                {tryTab === 'response' && !securityBannerText && (
                   <pre style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text2)', overflowX: 'auto', maxHeight: 320, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                     {tryResult.body !== undefined
                       ? JSON.stringify(tryResult.body, null, 2)
