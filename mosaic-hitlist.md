@@ -84,6 +84,7 @@
 - [x] Dashboard panels against Airbyte-synced data verified
 
 ### Data Connections — REST APIs
+<!-- OAuth2 auth helper (lib/api-auth.ts) is implemented and error-propagation is complete. Unit tests tracked in Phase A. -->
 - [x] Generic REST (GET/POST/PUT/PATCH/DELETE)
 - [x] SAP OData V2/V4 ($filter, $select hints)
 - [x] Token expiry warning in connections list
@@ -190,6 +191,7 @@
 - [ ] Vitest setup + test runner
 - [ ] Unit tests: lib/encrypt.ts, lib/auth.ts, lib/db.ts
 - [ ] API route tests: /api/auth, /api/connections, /api/chat
+- [ ] **Unit tests: lib/api-auth.ts** — token fetcher (success, HTTP error, network error), refresh_token vs client_credentials branching, header_prefix application, RFC 6749 error parsing, cache eviction on invalid_grant/invalid_token
 - [ ] SQL injection guard on all raw query paths
 - [ ] Read-only enforcement tests
 - [ ] CI pipeline (GitHub Actions on every push)
