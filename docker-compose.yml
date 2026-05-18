@@ -57,6 +57,9 @@ services:
       # n8n integration
       - N8N_URL=${N8N_URL:-http://localhost:5678}
       - N8N_API_KEY=${N8N_API_KEY:-}
+      # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
+      - SSO_ENABLED=${SSO_ENABLED:-false}
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
     volumes:
       - mosaic-data:/data
     depends_on:
@@ -201,6 +204,40 @@ services:
       retries: 5
       start_period: 120s
 
+  # ── Keycloak (optional SSO — enable with SSO_ENABLED=true) ─
+  # Self-hosted OIDC identity provider. Connects to AD/LDAP for enterprise SSO.
+  # Admin UI: http://localhost:8080 (admin / ${KEYCLOAK_ADMIN_PASSWORD:-admin})
+  # Set SSO_ENABLED=true in .env to include this service.
+  # After first start: create a realm 'mosaic', add a client 'mosaic' (confidential,
+  # standard flow), set redirect URI to http://localhost:3001/api/auth/callback/keycloak,
+  # then paste Server URL + Realm + Client ID + Secret into Settings → Authentication.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: mosaic-keycloak
+    restart: unless-stopped
+    command: start-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_DB=dev-file
+      - KC_HOSTNAME_STRICT=false
+      - KC_HTTP_ENABLED=true
+      - KC_PROXY=edge
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - mosaic-net
+    profiles:
+      - sso
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   # ── n8n ─────────────────────────────────────────────────────
   # Self-hosted workflow automation. Invisible to end users.
   # Admin UI accessible at http://localhost:5678 (admin only)
@@ -290,6 +327,7 @@ volumes:
   superset-data:
   n8n-data:
   es-data:
+  keycloak-data:
 
 # ── Network ──────────────────────────────────────────────────
 networks:

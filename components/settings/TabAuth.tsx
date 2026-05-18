@@ -3,9 +3,21 @@ import React, { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, SectionLabel, Card, CardRow, Btn, Badge, Alert, Field, INP } from './ui'
 
-interface SsoProvider { provider: string; client_id: string; tenant_id?: string; enabled: number }
+interface SsoProvider { provider: string; client_id: string; tenant_id?: string; realm?: string; server_url?: string; discovery_url?: string; enabled: number }
 
 const PROVIDERS = [
+  {
+    id: 'keycloak',
+    name: 'Keycloak',
+    desc: 'Self-hosted OIDC — enterprise AD/LDAP federation via your own Keycloak server',
+    color: '#4a90d9',
+    letter: 'K',
+    tenantRequired: false,
+    docsUrl: 'https://www.keycloak.org/docs/latest/server_admin/',
+    docsLabel: 'Keycloak Admin Docs',
+    redirectPath: '/api/auth/callback/keycloak',
+    isOidc: true,
+  },
   {
     id: 'microsoft',
     name: 'Microsoft Entra ID',
@@ -18,6 +30,7 @@ const PROVIDERS = [
     docsUrl: 'https://portal.azure.com',
     docsLabel: 'Azure Portal',
     redirectPath: '/api/auth/callback/microsoft',
+    isOidc: false,
   },
   {
     id: 'google',
@@ -29,13 +42,14 @@ const PROVIDERS = [
     docsUrl: 'https://console.cloud.google.com',
     docsLabel: 'Google Cloud Console',
     redirectPath: '/api/auth/callback/google',
+    isOidc: false,
   },
 ]
 
 export default function TabAuth({ user }: { user: SessionUser }) {
   const [providers, setProviders] = useState<SsoProvider[]>([])
   const [configuring, setConfiguring] = useState<string | null>(null)
-  const [form, setForm] = useState({ client_id: '', client_secret: '', tenant_id: '' })
+  const [form, setForm] = useState({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -93,9 +107,12 @@ export default function TabAuth({ user }: { user: SessionUser }) {
   const getProvider = (id: string) => providers.find(p => p.provider === id)
 
   async function save(providerId: string) {
-    if (!form.client_id || !form.client_secret) { setError('Client ID and Client Secret are required'); return }
-    const pc = PROVIDERS.find(p => p.id === providerId)
-    if (pc?.tenantRequired && !form.tenant_id) { setError('Tenant ID is required for Microsoft Entra ID'); return }
+    const pc = PROVIDERS.find(p => p.id === providerId)!
+    if (!form.client_id) { setError('Client ID is required'); return }
+    if (pc.tenantRequired && !form.tenant_id) { setError('Tenant ID is required for Microsoft Entra ID'); return }
+    if (pc.isOidc && !form.discovery_url && !(form.server_url && form.realm)) {
+      setError('Keycloak requires Server URL + Realm (or a custom Discovery URL)'); return
+    }
     setSaving(true); setError(''); setSuccess('')
     try {
       const r = await fetch('/api/auth', {
@@ -106,7 +123,7 @@ export default function TabAuth({ user }: { user: SessionUser }) {
       if (!r.ok) { setError(d.error || 'Save failed'); return }
       setSuccess('SSO configured successfully')
       setConfiguring(null)
-      setForm({ client_id: '', client_secret: '', tenant_id: '' })
+      setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' })
       const updated = await fetch('/api/auth').then(r => r.json())
       setProviders(updated.providers || [])
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
@@ -167,8 +184,8 @@ export default function TabAuth({ user }: { user: SessionUser }) {
                   <>
                     {configured && <Btn size="sm" variant="danger" onClick={() => remove(pc.id)}>Remove</Btn>}
                     <Btn size="sm" onClick={() => {
-                      if (isConfiguring) { setConfiguring(null); setError(''); setForm({ client_id: '', client_secret: '', tenant_id: '' }) }
-                      else { setConfiguring(pc.id); setError(''); setForm({ client_id: configured?.client_id || '', client_secret: '', tenant_id: configured?.tenant_id || '' }) }
+                      if (isConfiguring) { setConfiguring(null); setError(''); setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' }) }
+                      else { setConfiguring(pc.id); setError(''); setForm({ client_id: configured?.client_id || '', client_secret: '', tenant_id: configured?.tenant_id || '', realm: configured?.realm || '', server_url: configured?.server_url || '', discovery_url: configured?.discovery_url || '' }) }
                     }}>{isConfiguring ? 'Cancel' : configured ? 'Edit' : 'Configure'}</Btn>
                   </>
                 )}
@@ -184,9 +201,9 @@ export default function TabAuth({ user }: { user: SessionUser }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <Field label="Client ID">
-                    <input style={INP} value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} placeholder="Application (client) ID" />
+                    <input style={INP} value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} placeholder={pc.isOidc ? 'mosaic (from Keycloak client)' : 'Application (client) ID'} />
                   </Field>
-                  <Field label="Client Secret">
+                  <Field label="Client Secret" hint="Leave blank to keep existing">
                     <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 12 }} type="password" value={form.client_secret} onChange={e => setForm(f => ({ ...f, client_secret: e.target.value }))} placeholder="Client secret value" />
                   </Field>
                   {pc.tenantRequired && (
@@ -194,6 +211,17 @@ export default function TabAuth({ user }: { user: SessionUser }) {
                       <input style={INP} value={form.tenant_id} onChange={e => setForm(f => ({ ...f, tenant_id: e.target.value }))} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
                     </Field>
                   )}
+                  {pc.isOidc && (<>
+                    <Field label="Keycloak Server URL" hint="Base URL of your Keycloak server">
+                      <input style={INP} value={form.server_url} onChange={e => setForm(f => ({ ...f, server_url: e.target.value }))} placeholder="https://auth.company.com" />
+                    </Field>
+                    <Field label="Realm" hint="The Keycloak realm name (not 'master')">
+                      <input style={INP} value={form.realm} onChange={e => setForm(f => ({ ...f, realm: e.target.value }))} placeholder="mosaic" />
+                    </Field>
+                    <Field label="Discovery URL (optional)" hint="Auto-built from Server URL + Realm. Override only if needed.">
+                      <input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 11 }} value={form.discovery_url} onChange={e => setForm(f => ({ ...f, discovery_url: e.target.value }))} placeholder="https://auth.company.com/realms/mosaic/.well-known/openid-configuration" />
+                    </Field>
+                  </>)}
                 </div>
 
                 {error && <Alert variant="error" style={{ marginBottom: 12 }}>{error}</Alert>}

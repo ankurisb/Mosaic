@@ -9,7 +9,7 @@ const OPTS = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sa
 export async function GET() {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT provider, client_id, tenant_id, enabled FROM sso_config`
+    const rows = await sql`SELECT provider, client_id, tenant_id, realm, server_url, discovery_url, enabled FROM sso_config`
     return Response.json({ providers: rows })
   } catch { return Response.json({ providers: [] }) }
 }
@@ -49,12 +49,24 @@ export async function POST(req: Request) {
     }
 
     if (action === 'saveSsoConfig') {
-      const { provider, client_id, client_secret, tenant_id, enabled } = body
-      if (!provider || !client_id || !client_secret) return Response.json({ error: 'provider, client_id and client_secret are required' }, { status: 400 })
+      const { provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url } = body
+      if (!provider || !client_id) return Response.json({ error: 'provider and client_id are required' }, { status: 400 })
+      // Keycloak/OIDC: require either (server_url + realm) or discovery_url; skip for Microsoft/Google
+      const isOidc = !['microsoft', 'google'].includes(provider)
+      if (isOidc && !discovery_url && !(server_url && realm)) {
+        return Response.json({ error: 'Keycloak requires Server URL + Realm, or a Discovery URL' }, { status: 400 })
+      }
       const sql = getDb()
-      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, tenant_id, enabled)
-        VALUES (${provider}, ${provider}, ${client_id}, ${client_secret}, ${tenant_id || null}, ${enabled ? 1 : 0})
-        ON CONFLICT(id) DO UPDATE SET client_id=${client_id}, client_secret=${client_secret}, tenant_id=${tenant_id || null}, enabled=${enabled ? 1 : 0}`
+      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url)
+        VALUES (${provider}, ${provider}, ${client_id}, ${client_secret || null}, ${tenant_id || null}, ${enabled ? 1 : 0}, ${realm || null}, ${server_url || null}, ${discovery_url || null})
+        ON CONFLICT(id) DO UPDATE SET
+          client_id=${client_id},
+          client_secret=COALESCE(${client_secret || null}, client_secret),
+          tenant_id=${tenant_id || null},
+          enabled=${enabled ? 1 : 0},
+          realm=${realm || null},
+          server_url=${server_url || null},
+          discovery_url=${discovery_url || null}`
       const session = await getSession()
       audit(req, session ? { id: session.id, email: session.email, role: session.role } : null, AUDIT.SETTINGS_UPDATE, `sso_config:${provider}`, 'success', { provider, enabled })
       return Response.json({ ok: true })
