@@ -570,7 +570,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         // Parse recipients
         let recipients: RecipientEntry[] = []
         try {
-          const raw = JSON.parse(t.recipients as string)
+          const raw = Array.isArray(t.recipients) ? t.recipients : JSON.parse(t.recipients as string)
           if (Array.isArray(raw)) {
             recipients = raw.map((r: unknown) => {
               const entry = r as Record<string, unknown>
@@ -587,7 +587,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
           type: t.type || 'operational',
           scheduleState,
           recipients,
-          sections: (() => { try { return JSON.parse(t.sections) } catch { return [] } })(),
+          sections: (() => { if (Array.isArray(t.sections)) return t.sections; try { return JSON.parse(t.sections as string) } catch { return [] } })(),
         })
       })
       .finally(() => setLoading(false))
