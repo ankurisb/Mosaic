@@ -35,6 +35,8 @@ interface DeploymentInfo {
 
 export default function TabAbout() {
   const [deploy, setDeploy] = useState<DeploymentInfo | null>(null)
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
+  const toggleVersion = (v: string) => setExpandedVersions(prev => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); return n })
 
   useEffect(() => {
     fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {})
@@ -121,28 +123,46 @@ export default function TabAbout() {
       </Card>
 
       <SectionLabel>Changelog</SectionLabel>
-      {(deploy?.changelog || []).map((release, ri) => (
-        <Card key={release.version} style={{ marginBottom: 12 }}>
-          <div style={{ padding: '18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 16, color: 'var(--text)' }}>v{release.version}</span>
+      {(deploy?.changelog || []).map((release, ri) => {
+        const isExpanded = expandedVersions.has(release.version)
+        const totalItems = Object.values(release.sections).reduce((acc, items) => acc + items.length, 0)
+        return (
+          <Card key={release.version} style={{ marginBottom: 8 }}>
+            <button onClick={() => toggleVersion(release.version)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                style={{ flexShrink: 0, color: 'var(--text3)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
+                <path d="M4 2l4 4-4 4"/>
+              </svg>
+              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, color: 'var(--text)' }}>v{release.version}</span>
               <span style={{ fontSize: 12, color: 'var(--text3)' }}>{release.date}</span>
               {ri === 0 && <Badge label="latest" color="blue" />}
               {release.version === '1.0.0' && <Badge label="initial release" color="green" />}
-            </div>
-            {Object.entries(release.sections).map(([section, items]) => (
-              <div key={section} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{section}</div>
-                {items.map((item, i) => (
-                  <div key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.9, display: 'flex', gap: 8 }}>
-                    <span style={{ color: 'var(--text4)', flexShrink: 0 }}>·</span>{item}
-                  </div>
-                ))}
+              {!isExpanded && (
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>
+                  {totalItems} {totalItems === 1 ? 'change' : 'changes'}
+                </span>
+              )}
+            </button>
+            {isExpanded && (
+              <div style={{ padding: '0 18px 16px' }}>
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                  {Object.entries(release.sections).map(([section, items]) => (
+                    <div key={section} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: 6 }}>{section}</div>
+                      {(items as string[]).map((item, i) => (
+                        <div key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.9, display: 'flex', gap: 8 }}>
+                          <span style={{ color: 'var(--text4)', flexShrink: 0 }}>·</span>{item}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        </Card>
-      ))}
+            )}
+          </Card>
+        )
+      })}
 
       <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 8 }}>
         Mosaic v{deploy?.currentVersion || '1.0.0'} · build {deploy?.buildDate || '...'} · ugx.ai · powered by UGX Systems
