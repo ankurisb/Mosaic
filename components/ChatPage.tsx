@@ -358,7 +358,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         a.download = res.headers.get('Content-Disposition')?.split('filename="')[1]?.replace('"', '') || 'RCA_Report.docx'
         a.click()
         URL.revokeObjectURL(url)
-      } catch (e) { console.error(e); alert('Export failed') }
+      } catch (e) { console.error('[ChatPage] export_docx failed:', e); alert('Export failed') } // intentional: client component, Pino is server-only
       return
     }
 
@@ -377,7 +377,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         a.download = res.headers.get('Content-Disposition')?.split('filename="')[1]?.replace('"', '') || 'RCA_Report.pdf'
         a.click()
         URL.revokeObjectURL(url)
-      } catch (e) { console.error(e); alert('PDF export failed') }
+      } catch (e) { console.error('[ChatPage] export_pdf failed:', e); alert('PDF export failed') } // intentional: client component, Pino is server-only
       return
     }
 

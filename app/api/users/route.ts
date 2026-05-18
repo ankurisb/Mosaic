@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { log } from '@/lib/logger'
+import { log, newRequestId } from '@/lib/logger'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
 import { getDb } from '@/lib/db'
 import bcrypt from 'bcryptjs'
@@ -14,6 +14,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const requestId = req.headers.get('x-request-id') || newRequestId()
+  const reqLog = log.child({ requestId, service: 'users' })
   const session = await getSession()
   if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   const sql = getDb()

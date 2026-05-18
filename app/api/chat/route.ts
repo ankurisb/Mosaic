@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { log } from '@/lib/logger'
+import { log, newRequestId } from '@/lib/logger'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
@@ -26,8 +26,12 @@ const MODEL_PRICING: Record<string, { input: number; output: number; label: stri
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 
 export async function POST(req: Request) {
+  const requestId = req.headers.get('x-request-id') || newRequestId()
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+
+  const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
+  reqLog.info('Chat request received')
   const { messages, system, conversation_id, title, model: requestedModel } = await req.json()
   if (!messages?.length) return Response.json({ error: 'No messages' }, { status: 400 })
 
@@ -278,7 +282,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // Type 8 — prompt injection detection (log and flag but don't hard-block)
   const injectionSuspected = checkInputForInjection(lastUserContent)
   if (injectionSuspected) {
-    log.warn({ service: 'chat', data: session.email }, '[guardrails] Potential prompt injection in user message from')
+    reqLog.warn({ event: 'injection_suspected' }, 'Potential prompt injection detected in user message')
   }
 
   // Fix #7: per-user rate limit -- max 50 requests per hour per user
@@ -516,7 +520,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 ${JSON.stringify((rcaBlock as {renderers?: unknown[]}).renderers?.map((r: unknown) => (r as {type:string}).type) || [])},
                 ${JSON.stringify(rcaBlock)},
                 ${session.id}
-              )`.catch((e: unknown) => { log.error({ service: 'chat', err: e }, '[rca_sessions] insert failed:') })
+              )`.catch((e: unknown) => { reqLog.error({ err: e }, 'rca_sessions insert failed') })
           }
         } catch { /* don't block on session save failure */ }
 
@@ -542,7 +546,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           } catch { /* non-blocking */ }
         } catch {}
         send({ type: 'done' })
+        reqLog.info({ model, inputTokens: totalInput, outputTokens: totalOutput, toolCalls: toolCallsUsed }, 'Chat request completed')
       } catch (err) {
+        reqLog.error({ err }, 'Chat request failed')
         send({ type: 'error', message: err instanceof Error ? err.message : 'Something went wrong' })
       } finally { ctrl.close() }
     },

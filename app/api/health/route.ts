@@ -1,4 +1,5 @@
 import { APP_VERSION } from '@/lib/version'
+import { log, newRequestId } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { getSecret } from '@/lib/secret'

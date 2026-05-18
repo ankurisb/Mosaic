@@ -4,6 +4,7 @@
 
 import { getDb } from './db'
 import bcrypt from 'bcryptjs'
+import { log } from './logger'
 
 export async function setupDatabasePostgres(): Promise<void> {
   const sql = getDb()
@@ -494,7 +495,7 @@ export async function setupDatabasePostgres(): Promise<void> {
                 ${JSON.stringify(wf.keywords)}, ${JSON.stringify(wf.data_steps)},
                 ${JSON.stringify(wf.renderers)}, ${JSON.stringify(wf.output_config)}, ${wf.sort_order})`
     }
-    console.log('[setup-pg] RCA workflow defaults seeded')
+    log.info({ service: 'setup-pg' }, 'RCA workflow defaults seeded')
   }
 
   // Bootstrap admin
@@ -508,9 +509,9 @@ export async function setupDatabasePostgres(): Promise<void> {
       await sql`INSERT INTO users(email, name, password_hash, role)
         VALUES(${email.toLowerCase()}, ${name}, ${hash}, 'admin')
         ON CONFLICT(email) DO NOTHING`
-      console.log('[setup-pg] Admin created:', email)
+      log.info({ service: 'setup-pg', email }, 'Admin account created from env vars')
     }
   }
 
-  console.log('[setup-pg] Postgres schema ready')
+  log.info({ service: 'setup-pg' }, 'Postgres schema ready')
 }

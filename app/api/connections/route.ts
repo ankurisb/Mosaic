@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { log, newRequestId } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { syncToSuperset } from '@/lib/superset-sync'
@@ -15,6 +16,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const requestId = req.headers.get('x-request-id') || newRequestId()
+  const reqLog = log.child({ requestId, service: 'connections' })
   const session = await getSession()
   if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   const sql = getDb()

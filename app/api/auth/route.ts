@@ -1,4 +1,5 @@
 import { signInUser, COOKIE_NAME } from '@/lib/auth'
+import { log, newRequestId } from '@/lib/logger'
 import { cookies } from 'next/headers'
 import { getDb } from '@/lib/db'
 export const runtime = 'nodejs'
@@ -13,6 +14,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const requestId = req.headers.get('x-request-id') || newRequestId()
+  const reqLog = log.child({ requestId, service: 'auth' })
   try {
     const body = await req.json()
     const { action } = body

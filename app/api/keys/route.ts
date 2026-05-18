@@ -1,4 +1,5 @@
 import { getSession }       from '@/lib/auth'
+import { log, newRequestId } from '@/lib/logger'
 import { getDb }            from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 export const runtime = 'nodejs'
@@ -73,6 +74,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const requestId = req.headers.get('x-request-id') || newRequestId()
+  const reqLog = log.child({ requestId, service: 'keys' })
   const session = await getSession()
   if (!session || session.role !== 'admin')
     return Response.json({ error: 'Admin only' }, { status: 403 })
