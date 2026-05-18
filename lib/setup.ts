@@ -477,6 +477,20 @@ export async function setupDatabase() {
 
   // -- Airbyte integration --------------------------------------
   // -- Reports -----------------------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS rca_sessions (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    workflow_id     TEXT REFERENCES rca_workflows(id) ON DELETE SET NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    problem         TEXT NOT NULL DEFAULT '',
+    renderers_used  TEXT NOT NULL DEFAULT '[]',
+    rca_block       TEXT NOT NULL DEFAULT '{}',
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`
+
+  await sql`CREATE INDEX IF NOT EXISTS idx_rca_sessions_conv ON rca_sessions(conversation_id, created_at DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_rca_sessions_wf   ON rca_sessions(workflow_id, created_at DESC)`.catch(() => {})
+
   // Migration: add last_scheduled_run to report_templates
   await sql`ALTER TABLE report_templates ADD COLUMN last_scheduled_run TEXT`.catch(() => {})
 
