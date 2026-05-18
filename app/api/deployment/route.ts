@@ -1,6 +1,16 @@
 import fs from 'fs'
 import path from 'path'
+import { execSync } from 'child_process'
 export const runtime = 'nodejs'
+
+function getBuildDate(): string {
+  try {
+    const d = execSync('git log -1 --format=%cd --date=format:%Y%m%d', { cwd: process.cwd(), timeout: 3000 }).toString().trim()
+    return d || new Date().toISOString().slice(0,10).replace(/-/g,'')
+  } catch {
+    return new Date().toISOString().slice(0,10).replace(/-/g,'')
+  }
+}
 
 function parseChangelog(md: string) {
   const releases: Array<{ version: string; date: string; sections: Record<string, string[]> }> = []
@@ -33,11 +43,17 @@ export async function GET() {
     changelog = parseChangelog(md)
   } catch { /* CHANGELOG.md not found */ }
 
+  // Read current version from package.json
+  let currentVersion = '1.0.0'
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'))
+    currentVersion = pkg.version || '1.0.0'
+  } catch { /* use fallback */ }
+
   // Check for updates via GitHub releases API
   let latestVersion: string | null = null
   let latestReleaseUrl: string | null = null
   let updateAvailable = false
-  const currentVersion = '1.1.0'
   try {
     const { getKey } = await import('@/lib/keys')
     const token = await getKey('GITHUB_TOKEN')
@@ -64,8 +80,9 @@ export async function GET() {
     mode: isVercel ? 'vercel' : 'self-hosted',
     scheduler: isVercel ? 'Vercel Cron' : 'Built-in',
     database: isSqlite ? 'SQLite (local)' : isNeon ? 'Neon Postgres (cloud)' : 'Postgres',
-    appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001',
+    appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     nodeEnv: process.env.NODE_ENV || 'development',
+    buildDate: getBuildDate(),
     changelog,
     currentVersion,
     latestVersion,

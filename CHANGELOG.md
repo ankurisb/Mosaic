@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-18
+
+### Added
+- Report template builder — section types (KPI, table, chart, AI narrative, static text), data bindings, schedule, recipients
+- Report scheduler — cron-based generation, PDF via Puppeteer, email delivery with attachment
+- Report history — downloadable PDF instances, run log
+- Friendly schedule builder — Daily/Weekly/Monthly picker with day/time selectors, human summary (no cron strings exposed)
+- Structured recipients — notification group pills + individual email input, matching Rules page pattern
+- Elasticsearch database connector — Query DSL + GET discovery, API key and Basic auth
+- Elasticsearch test harness — 4 indices (maintenance_logs, alarm_events, quality_events, operator_logbook), 372 documents aligned with PRESS-01/CNC-03 RCA scenarios
+- SharePoint file server transport — Microsoft Graph API, OAuth2 client credentials (tenant_id, client_id, client secret)
+- SharePoint test handler — validates credentials against Azure AD, surfaces AADSTS errors in UI
+- n8n webhook action type in Workflow rules — configurable URL + payload template with {{variables}}, _mosaic context block appended
+- rca_sessions table — records every RCA completion with workflow_id, problem, renderers_used, rca_block
+- Backfill migration for historical rca_sessions from messages table
+
+### Fixed
+- rca_sessions write gated on matchedWorkflow (generic RCA path never wrote sessions)
+- integration_runs FK constraint — rule_id referenced integration_rules only, blocking rule_groups (workflow rules) from logging
+- integration_runs schema migration — drops FK on boot for existing SQLite DBs
+- TabAPIs.tsx — 13 pre-existing TypeScript errors (ImportConnection missing 4 fields, ApiService missing auth_status/last_auth_error, Alert style prop)
+- app/api/export/word/route.ts — Buffer not assignable to BodyInit (→ Uint8Array), Parameters<typeof Document> DOM type conflict
+- cron-parser API change — parseExpression → CronExpressionParser.parse
+- Collapsed sidebar — Dashboards/Reports/Rules labels truncated; now shows icon-only rail with tooltips when collapsed
+- User row collapsed state — avatar only, name/role/version hidden; ThemeToggle hidden when collapsed
+- About page — version badge, build date and footer all hardcoded; now read from package.json and git log
+- appUrl default was localhost:3001 — corrected to localhost:3000
+- react-markdown version in deps list showed 9.x — corrected to 10.1.0
+
 ## [1.1.0] - 2026-05-11
 
 ### Added

@@ -9,7 +9,7 @@ const DEPS = [
   { name: 'bcryptjs',                version: '2.4.3',  ok: true },
   { name: 'jose',                    version: '5.9.6',  ok: true },
   { name: 'react',                   version: '19.1.0', ok: true },
-  { name: 'react-markdown',          version: '9.x',    ok: true },
+  { name: 'react-markdown',          version: '10.1.0', ok: true },
   { name: 'typescript',              version: '5.7.3',  ok: true },
 ]
 
@@ -30,6 +30,7 @@ interface DeploymentInfo {
   latestVersion: string | null
   latestReleaseUrl: string | null
   updateAvailable: boolean
+  buildDate: string
 }
 
 export default function TabAbout() {
@@ -50,10 +51,10 @@ export default function TabAbout() {
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 28, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
           <span style={{ fontFamily: 'var(--font-serif)', fontSize: 28, color: 'var(--text)' }}>Mosaic</span>
-          <span style={{ fontSize: 14, color: 'var(--text2)', background: 'var(--bg3)', padding: '3px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', fontWeight: 500 }}>v1.0.0</span>
+          <span style={{ fontSize: 14, color: 'var(--text2)', background: 'var(--bg3)', padding: '3px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', fontWeight: 500 }}>v{deploy?.currentVersion || '...'}</span>
           <Badge label="stable" color="green" />
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>Build 20260408 · Released 8 April 2026 · ugx.ai</p>
+        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>Build {deploy?.buildDate || '...'} · v{deploy?.currentVersion || '...'} · ugx.ai</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
@@ -144,7 +145,7 @@ export default function TabAbout() {
       ))}
 
       <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 8 }}>
-        Mosaic v1.0.0 · build 20260408 · ugx.ai · powered by UGX Systems
+        Mosaic v{deploy?.currentVersion || '1.0.0'} · build {deploy?.buildDate || '...'} · ugx.ai · powered by UGX Systems
       </div>
     </div>
   )
