@@ -591,49 +591,51 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
         {/* Footer nav */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '8px' }}>
-          <button onClick={() => router.push('/dashboards')}
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+          <button onClick={() => router.push('/dashboards')} title="Dashboards"
+            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/>
             </svg>
-            Dashboards
+            {!sidebarCollapsed && 'Dashboards'}
           </button>
-          <button onClick={() => router.push('/reports')}
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+          <button onClick={() => router.push('/reports')} title="Reports"
+            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/>
             </svg>
-            Reports
+            {!sidebarCollapsed && 'Reports'}
           </button>
-          <button onClick={() => router.push('/rules')}
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+          <button onClick={() => router.push('/rules')} title="Rules"
+            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/>
             </svg>
-            Rules
+            {!sidebarCollapsed && 'Rules'}
           </button>
 
         </div>
 
         {/* User + theme */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <button onClick={() => setShowUserMenu(v => !v)}
+        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', gap: 8 }}>
+          <div style={{ position: 'relative', flex: sidebarCollapsed ? 'none' : 1 }}>
+            <button onClick={() => setShowUserMenu(v => !v)} title={sidebarCollapsed ? user.name : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
               <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg4)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>
                 {user.name.slice(0, 2).toUpperCase()}
               </div>
-              <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
-                <div style={{ fontSize: 10, color: 'var(--text4)' }}>v1.0.0</div>
-              </div>
+              {!sidebarCollapsed && (
+                <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v1.0.0</div>
+                </div>
+              )}
             </button>
             {showUserMenu && (
               <>
@@ -661,7 +663,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               </>
             )}
           </div>
-          <ThemeToggle />
+          {!sidebarCollapsed && <ThemeToggle />}
         </div>
       </div>
 
