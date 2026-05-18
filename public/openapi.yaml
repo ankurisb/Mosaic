@@ -3,7 +3,7 @@ info:
   title: Mosaic Developer API
   version: 1.0.0
   description: |
-    Machine-to-machine API for Mosaic — industrial AI intelligence platform.
+    API for Mosaic — Industrial AI intelligence platform.
 
     All endpoints require a Bearer API key issued from Settings → Developer API.
 
