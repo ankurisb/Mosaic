@@ -177,32 +177,32 @@ export default function TabMonitor() {
         onScroll={handleLogScroll}
         style={{
           background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-          height: 360, overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11,
+          height: 360, overflowY: 'auto',
           padding: '10px 0',
         }}
       >
         {logsLoading && logs.length === 0 ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Spinner size={16} /></div>
         ) : logNote ? (
-          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12 }}>{logNote}</div>
+          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit' }}>{logNote}</div>
         ) : logs.length === 0 ? (
-          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12 }}>No log entries found.</div>
+          <div style={{ padding: '16px 16px', color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit' }}>No log entries found.</div>
         ) : (
           logs.map((entry, i) => (
             <div
               key={i}
               style={{
-                display: 'flex', alignItems: 'baseline', gap: 10, padding: '2px 14px',
+                display: 'flex', alignItems: 'baseline', gap: 10, padding: '3px 14px',
                 background: entry.level === 'error' || entry.level === 'fatal' ? 'rgba(220,38,38,.04)' :
                             entry.level === 'warn' ? 'rgba(217,119,6,.04)' : 'transparent',
               }}
             >
-              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 54 }}>{formatTime(entry.time)}</span>
-              <span style={{ color: LEVEL_COLOR[entry.level] || 'var(--text3)', flexShrink: 0, minWidth: 38, textTransform: 'uppercase', fontWeight: 600, fontSize: 10 }}>{entry.level}</span>
-              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.service}</span>
-              <span style={{ color: 'var(--text)', flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 54, fontSize: 11, fontFamily: 'var(--font-mono)' }}>{formatTime(entry.time)}</span>
+              <span style={{ color: LEVEL_COLOR[entry.level] || 'var(--text3)', flexShrink: 0, minWidth: 38, textTransform: 'uppercase', fontWeight: 600, fontSize: 10, fontFamily: 'var(--font-sans)' }}>{entry.level}</span>
+              <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'var(--font-sans)' }}>{entry.service}</span>
+              <span style={{ color: 'var(--text)', flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, fontFamily: 'var(--font-sans)' }}>
                 {entry.msg}
-                {entry.err && <span style={{ color: 'var(--red-t)', marginLeft: 6 }}>{String(entry.err)}</span>}
+                {entry.err && <span style={{ color: 'var(--red-t)', marginLeft: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>{String(entry.err)}</span>}
               </span>
             </div>
           ))
