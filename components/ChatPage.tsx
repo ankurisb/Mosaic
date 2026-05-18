@@ -8,6 +8,7 @@ import ThemeToggle from './ThemeToggle'
 import { APP_VERSION } from '@/lib/version'
 import RcaRenderer from './rca/RcaRenderer'
 import ReactMarkdown from 'react-markdown'
+import SetupBanner from './SetupBanner'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
 import type { RcaBlock, RcaAction } from '@/lib/rca'
 
@@ -671,7 +672,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       {/* -- Main -- */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-
+        <SetupBanner isAdmin={user.role === 'admin'} />
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 0' }}>

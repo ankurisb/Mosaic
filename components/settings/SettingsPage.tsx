@@ -14,25 +14,28 @@ import TabRcaWorkflows from './TabRcaWorkflows'
 import TabAnalytics from './TabAnalytics'
 import TabIntegrations from './TabIntegrations'
 import TabGuardrails from './TabGuardrails'
+import TabSetup from './TabSetup'
 import { APP_VERSION } from '@/lib/version'
 
-const TABS = [
-  { id: 'keys',          label: 'API keys' },
-  { id: 'auth',          label: 'Authentication' },
-  { id: 'users',         label: 'Users' },
-  { id: 'usage',         label: 'Usage analytics' },
-  { id: 'system-health', label: 'System health' },
-  { id: 'data-sources',  label: 'Data sources' },
-  { id: 'rca-workflows', label: 'RCA workflows' },
-  { id: 'analytics',     label: 'Analysis capabilities' },
-  { id: 'guardrails',    label: 'Guardrails' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'about',         label: 'About' },
+const ALL_TABS = [
+  { id: 'setup',         label: 'Setup',                adminOnly: true  },
+  { id: 'keys',          label: 'API keys',             adminOnly: false },
+  { id: 'auth',          label: 'Authentication',       adminOnly: false },
+  { id: 'users',         label: 'Users',                adminOnly: false },
+  { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
+  { id: 'system-health', label: 'System health',        adminOnly: false },
+  { id: 'data-sources',  label: 'Data sources',         adminOnly: false },
+  { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
+  { id: 'analytics',     label: 'Analysis capabilities',adminOnly: false },
+  { id: 'guardrails',    label: 'Guardrails',           adminOnly: false },
+  { id: 'notifications', label: 'Notifications',        adminOnly: false },
+  { id: 'about',         label: 'About',                adminOnly: false },
 ]
 
 function TabIcon({ id }: { id: string }) {
   const p = { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' as const }
   switch (id) {
+    case 'setup':        return <svg {...p}><path d="M2 4h10M2 7h6M2 10h8"/><circle cx="11" cy="10" r="2" fill="none"/><path d="M12.5 11.5l1.5 1.5"/></svg>
     case 'keys':         return <svg {...p}><circle cx="5.5" cy="5.5" r="2.5"/><path d="M7.5 7.5l4 4M9.5 9.5l1.5-1.5"/></svg>
     case 'auth':         return <svg {...p}><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg>
     case 'users':        return <svg {...p}><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/><path d="M11 8.5c1.4 0 2.5.9 2.5 2"/></svg>
@@ -52,13 +55,15 @@ function TabIcon({ id }: { id: string }) {
 
 export default function SettingsPage({ user }: { user: SessionUser }) {
   const router = useRouter()
+  const TABS = ALL_TABS.filter(t => !t.adminOnly || user.role === 'admin')
+  const validTabIds = TABS.map(t => t.id)
+
   const [tab, setTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','analytics','guardrails','notifications','about']
-      if (validTabs.includes(hash)) return hash
+      if (validTabIds.includes(hash)) return hash
     }
-    return 'keys'
+    return user.role === 'admin' ? 'setup' : 'keys'
   })
 
   return (
@@ -106,6 +111,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
         <div style={{ maxWidth: tab === 'analytics' ? 1100 : 820, margin: '0 auto', padding: '40px 40px' }}>
+          {tab === 'setup'      && <TabSetup user={user} />}
           {tab === 'keys'      && <TabKeys user={user} />}
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}
