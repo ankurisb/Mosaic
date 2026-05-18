@@ -1,0 +1,391 @@
+openapi: 3.1.0
+info:
+  title: Mosaic Developer API
+  version: 1.0.0
+  description: |
+    Machine-to-machine API for Mosaic — industrial AI intelligence platform.
+
+    All endpoints require a Bearer API key issued from Settings → Developer API.
+
+    **Base URL:** `{your-mosaic-url}/api/v1`
+
+    **Rate limiting:** Configurable per key (default 100 req/hr). Returns 429 with `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers when exceeded.
+
+servers:
+  - url: /api/v1
+    description: Mosaic v1 API
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Developer API key from Settings → Developer API
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    User:
+      type: object
+      properties:
+        id:         { type: string }
+        email:      { type: string }
+        name:       { type: string }
+        role:       { type: string, enum: [admin, user] }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time, nullable: true }
+
+    Conversation:
+      type: object
+      properties:
+        id:            { type: string }
+        title:         { type: string }
+        user_email:    { type: string }
+        user_name:     { type: string }
+        message_count: { type: integer }
+        created_at:    { type: string, format: date-time }
+        updated_at:    { type: string, format: date-time }
+
+    DatabaseConnection:
+      type: object
+      properties:
+        id:           { type: string }
+        label:        { type: string }
+        dialect:      { type: string, enum: [postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch] }
+        environment:  { type: string, enum: [production, staging, development] }
+        host:         { type: string, nullable: true }
+        port:         { type: integer, nullable: true }
+        database_name: { type: string, nullable: true }
+        read_only:    { type: boolean }
+        description:  { type: string, nullable: true }
+        created_at:   { type: string, format: date-time }
+
+    ConnectionHealth:
+      type: object
+      properties:
+        id:         { type: string }
+        type:       { type: string, enum: [database, api] }
+        label:      { type: string }
+        status:     { type: string, enum: [ok, degraded, error] }
+        latency_ms: { type: integer }
+        error:      { type: string, nullable: true }
+
+paths:
+  /users:
+    get:
+      summary: List users
+      description: Returns all active users in the Mosaic instance.
+      tags: [Users]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  total: { type: integer }
+        '401': { description: Invalid or missing API key }
+        '403': { description: Insufficient scope }
+
+  /conversations:
+    get:
+      summary: List conversations
+      description: Returns conversations across all users, optionally filtered by user.
+      tags: [Conversations]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: user_id
+          in: query
+          schema: { type: string }
+          description: Filter conversations by user ID
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Conversation' }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+
+  /connections:
+    get:
+      summary: List all data sources
+      description: Returns all connected databases, APIs, and file servers.
+      tags: [Connections]
+      responses:
+        '200':
+          description: All data sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databases:
+                    type: array
+                    items: { $ref: '#/components/schemas/DatabaseConnection' }
+                  apis:
+                    type: array
+                    items: { type: object }
+                  file_servers:
+                    type: array
+                    items: { type: object }
+                  summary:
+                    type: object
+                    properties:
+                      databases:     { type: integer }
+                      api_endpoints: { type: integer }
+                      file_servers:  { type: integer }
+
+  /connections/airbyte:
+    get:
+      summary: List Airbyte sources and connections
+      description: Returns all data sources and sync connections configured in Airbyte.
+      tags: [Connections]
+      responses:
+        '200':
+          description: Airbyte sources and connections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance:
+                    type: object
+                    properties:
+                      url:          { type: string }
+                      workspace_id: { type: string }
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:          { type: string }
+                        name:        { type: string }
+                        source_type: { type: string }
+                        status:      { type: string }
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:        { type: string }
+                        name:      { type: string }
+                        status:    { type: string }
+                        schedule:  { type: string }
+                        last_sync: { type: string, nullable: true }
+        '503': { description: Airbyte unreachable }
+
+  /connections/{id}/health:
+    get:
+      summary: Check health of a data source
+      description: Tests connectivity to a specific database or API connection.
+      tags: [Connections]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Connection ID from /connections
+      responses:
+        '200':
+          description: Health check result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealth' }
+        '404': { description: Connection not found }
+
+  /query:
+    post:
+      summary: Natural language query
+      description: |
+        Run a natural language query against one or all connected data sources.
+        Mosaic translates the query into SQL/API calls and returns the raw result.
+      tags: [Query]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  description: Natural language question
+                  example: "Show me OEE for each machine over the last 7 days"
+                connection_id:
+                  type: string
+                  description: Limit query to a specific connection ID (optional)
+                limit:
+                  type: integer
+                  default: 100
+                  description: Row limit applied to the underlying query
+            examples:
+              oee_query:
+                summary: OEE query
+                value: { query: "Show me OEE for each machine over the last 7 days", limit: 50 }
+              downtime_query:
+                summary: Downtime query
+                value: { query: "Which machines had the most unplanned downtime last month?", limit: 20 }
+      responses:
+        '200':
+          description: Query result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:      { type: string }
+                  results:    { description: Raw query result (rows array or API response) }
+                  tool_calls: { type: array, items: { type: object } }
+                  text:       { type: string, nullable: true }
+                  latency_ms: { type: integer }
+        '400': { description: Missing query }
+        '503': { description: Anthropic API key not configured }
+
+  /chat:
+    post:
+      summary: Chat completion
+      description: |
+        Send a message to Mosaic and receive a response. Supports multi-turn
+        conversations and automatically uses connected data sources as tools.
+      tags: [Chat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:    { type: string, enum: [user, assistant] }
+                      content: { type: string }
+                model:
+                  type: string
+                  enum: [claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6]
+                  default: claude-sonnet-4-6
+                system:
+                  type: string
+                  description: Optional system prompt override
+                max_tokens:
+                  type: integer
+                  default: 4096
+                conversation_id:
+                  type: string
+                  description: Optional conversation ID for tracking
+            examples:
+              simple_chat:
+                summary: Simple question
+                value:
+                  messages: [{ role: user, content: "What is the current OEE on Line A?" }]
+              multi_turn:
+                summary: Multi-turn conversation
+                value:
+                  messages:
+                    - { role: user, content: "Show me downtime on CNC-01 last week" }
+                    - { role: assistant, content: "CNC-01 had 4.2 hours of downtime last week..." }
+                    - { role: user, content: "What were the top causes?" }
+      responses:
+        '200':
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:        { type: string }
+                  model:           { type: string }
+                  tool_calls:      { type: array, items: { type: object }, nullable: true }
+                  usage:
+                    type: object
+                    properties:
+                      input_tokens:  { type: integer }
+                      output_tokens: { type: integer }
+                  latency_ms:      { type: integer }
+                  conversation_id: { type: string, nullable: true }
+
+  /rca:
+    post:
+      summary: Trigger RCA analysis
+      description: |
+        Programmatically trigger a Root Cause Analysis. Mosaic queries all relevant
+        data sources and returns a structured analysis with findings and corrective actions.
+      tags: [RCA]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [problem]
+              properties:
+                problem:
+                  type: string
+                  description: Problem description in natural language
+                  example: "CNC-01 has been producing high scrap rates since Monday morning"
+                workflow_id:
+                  type: string
+                  description: Optional RCA workflow template ID to guide the analysis
+                context:
+                  type: string
+                  description: Additional context (shift, operator, time window, etc.)
+            examples:
+              quality_defect:
+                summary: Quality defect RCA
+                value:
+                  problem: "Line B quality rejection rate jumped from 2% to 8% at 06:00 today"
+                  context: "Morning shift, CNC-02 and CNC-03 affected"
+              machine_downtime:
+                summary: Machine downtime RCA
+                value:
+                  problem: "Hydraulic press HPR-04 stopped unexpectedly at 14:32"
+                  workflow_id: "your-workflow-id-here"
+      responses:
+        '200':
+          description: RCA analysis result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  problem:     { type: string }
+                  analysis:    { type: string, description: "Full narrative analysis" }
+                  rca_output:
+                    type: object
+                    nullable: true
+                    description: Structured RCA output (pareto data, fishbone, 5-whys, CAP)
+                  tool_calls:  { type: array, items: { type: object }, nullable: true }
+                  usage:
+                    type: object
+                    properties:
+                      input_tokens:  { type: integer }
+                      output_tokens: { type: integer }
+                  latency_ms:  { type: integer }
