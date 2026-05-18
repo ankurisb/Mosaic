@@ -19,6 +19,7 @@
 #   minio console   9001
 #   sftp            2222
 #   mock-sap-api    4001
+#   elasticsearch  9201
 
 services:
   # ─── PostgreSQL: "Plant Operations" ────────────────────────────────
@@ -240,8 +241,47 @@ services:
       timeout: 5s
       retries: 10
 
+  # ─── Elasticsearch: "Maintenance Logs, Alarms, Quality, Operator Logbook" ───
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: mosaic-test-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9201:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Seeds four indices: maintenance_logs, alarm_events, quality_events, operator_logbook
+  elasticsearch-seed:
+    image: curlimages/curl:latest
+    container_name: mosaic-test-elasticsearch-seed
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./seed/elasticsearch:/seed:ro
+    entrypoint: >
+      sh -c "
+        apk add --no-cache python3 2>/dev/null || true;
+        sh /seed/seed_elasticsearch.sh;
+      "
+    environment:
+      - ES_URL=http://elasticsearch:9200
+    restart: on-failure
+
 volumes:
   postgres-data:
+  elasticsearch-data:
   mysql-data:
   mssql-data:
   influxdb-data:

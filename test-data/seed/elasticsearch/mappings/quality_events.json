@@ -1,0 +1,28 @@
+{
+  "mappings": {
+    "properties": {
+      "event_id":       { "type": "keyword" },
+      "asset_id":       { "type": "keyword" },
+      "asset_name":     { "type": "keyword" },
+      "line":           { "type": "keyword" },
+      "plant":          { "type": "keyword" },
+      "defect_code":    { "type": "keyword" },
+      "defect_type":    { "type": "keyword" },
+      "severity":       { "type": "keyword" },
+      "timestamp":      { "type": "date" },
+      "batch_id":       { "type": "keyword" },
+      "part_number":    { "type": "keyword" },
+      "quantity":       { "type": "integer" },
+      "defect_qty":     { "type": "integer" },
+      "disposition":    { "type": "keyword" },
+      "inspector":      { "type": "keyword" },
+      "description":    { "type": "text", "analyzer": "english" },
+      "root_cause_cat": { "type": "keyword" },
+      "corrective_action": { "type": "text" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

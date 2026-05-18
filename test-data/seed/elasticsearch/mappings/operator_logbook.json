@@ -1,0 +1,25 @@
+{
+  "mappings": {
+    "properties": {
+      "entry_id":    { "type": "keyword" },
+      "shift":       { "type": "keyword" },
+      "shift_date":  { "type": "date" },
+      "operator":    { "type": "keyword" },
+      "line":        { "type": "keyword" },
+      "plant":       { "type": "keyword" },
+      "asset_id":    { "type": "keyword" },
+      "timestamp":   { "type": "date" },
+      "category":    { "type": "keyword" },
+      "entry_type":  { "type": "keyword" },
+      "title":       { "type": "text", "analyzer": "english" },
+      "body":        { "type": "text", "analyzer": "english" },
+      "tags":        { "type": "keyword" },
+      "related_wo":  { "type": "keyword" },
+      "related_alarm": { "type": "keyword" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

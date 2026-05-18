@@ -1,0 +1,25 @@
+{
+  "mappings": {
+    "properties": {
+      "log_id":        { "type": "keyword" },
+      "asset_id":      { "type": "keyword" },
+      "asset_name":    { "type": "keyword" },
+      "line":          { "type": "keyword" },
+      "plant":         { "type": "keyword" },
+      "log_type":      { "type": "keyword" },
+      "technician":    { "type": "keyword" },
+      "work_order":    { "type": "keyword" },
+      "timestamp":     { "type": "date" },
+      "duration_min":  { "type": "integer" },
+      "description":   { "type": "text", "analyzer": "english" },
+      "parts_used":    { "type": "keyword" },
+      "fault_code":    { "type": "keyword" },
+      "resolved":      { "type": "boolean" },
+      "cost_usd":      { "type": "float" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

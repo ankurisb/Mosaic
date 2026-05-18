@@ -16,6 +16,7 @@ no external services.
 | **File Server (S3)** | CSVs, Excel, PDF, XML, JSON files | MinIO (S3-compatible) |
 | **File Server (SFTP)** | Same files over SSH | atmoz/sftp |
 | **Mock SAP OData** | Production Orders, Equipment, Maintenance Notifications | REST / OData V2 |
+| **Elasticsearch** | Maintenance logs, alarm events, quality events, operator logbook | Elasticsearch 8.13 / Query DSL |
 
 Asset codes are **aligned across sources** (`CNC-01`, `PRESS-01`, etc.) so you can
 test cross-source queries like *"Which machines on Line B have open CMMS work
@@ -28,14 +29,42 @@ Seed data is engineered to surface realistically in Mosaic's features:
 - **PRESS-01** is chronically broken — low OEE, frequent hydraulic-seal breakdowns across Postgres, CMMS, SAP notifications, and a sensor fault on 2026-04-20 09:00 UTC visible in InfluxDB. Ideal for testing the **Machine Downtime RCA** workflow.
 - **CNC-03** shows recurring `DIM-01` dimensional defects plus a gradual bearing-wear trend in the telemetry. Ideal for the **Quality Defect RCA** workflow.
 - **SP-HS-002** (hydraulic seal kit 75mm) and **SP-BR-002** (spindle bearing) are **below min-stock** in CMMS, useful for testing alert rules.
+- **Elasticsearch** holds 372 documents across 4 indices with all events cross-referenced to the same asset codes — operator logbook entries, alarm events, and maintenance logs all reference `PRESS-01` and `CNC-03` by the same IDs.
 
 ---
 
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine) with Docker Compose v2
-- Ports free on `127.0.0.1`: 5433, 3307, 1434, 8087, 27018, 9000, 9001, 2222, 4001
+- Ports free on `127.0.0.1`: 5433, 3307, 1434, 8087, 27018, 9000, 9001, 2222, 4001, 9201
 - About 3 GB of free disk for container images + data
+
+## Elasticsearch connection details
+
+| Field | Value |
+|---|---|
+| Host | `localhost` |
+| Port | `9201` |
+| Security | Disabled (no auth needed) |
+| Indices | `maintenance_logs`, `alarm_events`, `quality_events`, `operator_logbook` |
+
+In Mosaic, add it as a new Database Connection with dialect `elasticsearch`, host `localhost`, port `9201`.
+
+Example Query DSL query:
+```json
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"term": {"asset_id": "PRESS-01"}},
+        {"term": {"log_type": "corrective"}}
+      ]
+    }
+  },
+  "sort": [{"timestamp": "desc"}],
+  "size": 20
+}
+```
 
 ## Start everything
 

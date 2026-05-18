@@ -1,0 +1,28 @@
+{
+  "mappings": {
+    "properties": {
+      "alarm_id":      { "type": "keyword" },
+      "asset_id":      { "type": "keyword" },
+      "asset_name":    { "type": "keyword" },
+      "line":          { "type": "keyword" },
+      "plant":         { "type": "keyword" },
+      "alarm_code":    { "type": "keyword" },
+      "alarm_type":    { "type": "keyword" },
+      "severity":      { "type": "keyword" },
+      "timestamp":     { "type": "date" },
+      "acknowledged":  { "type": "boolean" },
+      "ack_by":        { "type": "keyword" },
+      "ack_at":        { "type": "date" },
+      "value":         { "type": "float" },
+      "setpoint":      { "type": "float" },
+      "unit":          { "type": "keyword" },
+      "message":       { "type": "text", "analyzer": "english" },
+      "cleared_at":    { "type": "date" },
+      "duration_min":  { "type": "integer" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}
