@@ -154,12 +154,16 @@ export default function TabMonitor() {
       )}
 
       {/* ── Server Logs ─────────────────────────────────────────────── */}
-      <div style={{ marginTop: 32, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
-          Server logs {logs.length > 0 && <span style={{ fontWeight: 400, textTransform: 'none', marginLeft: 4 }}>({logs.length} entries)</span>}
+      <div style={{ marginTop: 32, marginBottom: 8 }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            Server logs {logs.length > 0 && <span style={{ fontWeight: 400, textTransform: 'none', marginLeft: 4 }}>({logs.length} entries)</span>}
+          </div>
+          <Btn size="sm" onClick={loadLogs}>Refresh</Btn>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Since filter */}
+        {/* Controls row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
           <select value={sinceFilter} onChange={e => setSinceFilter(e.target.value)} style={sel}>
             <option value="15m">Last 15 min</option>
             <option value="1h">Last 1 hour</option>
@@ -167,26 +171,22 @@ export default function TabMonitor() {
             <option value="24h">Last 24 hours</option>
             <option value="all">All time</option>
           </select>
-          {/* Lines limit */}
           <select value={linesLimit} onChange={e => setLinesLimit(e.target.value)} style={sel}>
             <option value="100">100 lines</option>
             <option value="200">200 lines</option>
             <option value="500">500 lines</option>
           </select>
-          {/* Level filter */}
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={sel}>
             <option value="all">All levels</option>
             <option value="warn">Warn +</option>
             <option value="error">Errors only</option>
           </select>
-          {/* Service filter */}
           {services.length > 0 && (
             <select value={svcFilter} onChange={e => setSvcFilter(e.target.value)} style={sel}>
               <option value="all">All services</option>
               {services.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
-          <Btn size="sm" onClick={loadLogs}>Refresh</Btn>
         </div>
       </div>
 
