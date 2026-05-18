@@ -220,6 +220,7 @@ export default function TabMonitor() {
               <span style={{ color: 'var(--text4)', flexShrink: 0, minWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'var(--font-sans)' }}>{entry.service}</span>
               <span style={{ color: 'var(--text)', flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, fontFamily: 'var(--font-sans)' }}>
                 {entry.msg}
+                {entry.requestId && <span style={{ color: 'var(--text4)', marginLeft: 8, fontSize: 10, fontFamily: 'var(--font-mono)' }}>#{entry.requestId}</span>}
                 {entry.err && <span style={{ color: 'var(--red-t)', marginLeft: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>{String(entry.err)}</span>}
               </span>
             </div>

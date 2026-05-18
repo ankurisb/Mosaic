@@ -11,6 +11,8 @@ export interface LogEntry {
   level: string
   service: string
   msg: string
+  requestId?: string
+  userId?: string
   err?: string
   [key: string]: unknown
 }
@@ -63,12 +65,14 @@ export async function GET(req: Request) {
       if (cutoff > 0 && entryTime < cutoff) continue
 
       const entry: LogEntry = {
-        time:    new Date(entryTime).toISOString(),
-        level:   LEVEL_MAP[parsed.level] || 'info',
-        service: parsed.service || 'app',
-        msg:     parsed.msg || '',
-        ...(parsed.err  ? { err: String(parsed.err) } : {}),
-        ...(parsed.data ? { data: parsed.data }        : {}),
+        time:      new Date(entryTime).toISOString(),
+        level:     LEVEL_MAP[parsed.level] || 'info',
+        service:   parsed.service || 'app',
+        msg:       parsed.msg || '',
+        ...(parsed.requestId ? { requestId: parsed.requestId }   : {}),
+        ...(parsed.userId    ? { userId: parsed.userId }         : {}),
+        ...(parsed.err       ? { err: String(parsed.err) }       : {}),
+        ...(parsed.data      ? { data: parsed.data }             : {}),
       }
 
       // Level filter
