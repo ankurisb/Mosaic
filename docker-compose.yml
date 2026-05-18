@@ -12,8 +12,6 @@
 # All services use a shared internal network. Only Mosaic (3001),
 # Airbyte (8000), and Superset (8088) are exposed to the host.
 
-version: '3.8'
-
 services:
 
   # ── Mosaic ──────────────────────────────────────────────────

@@ -87,8 +87,8 @@ export async function setupDatabase() {
     rca_block       TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
   )`
-  await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_calls TEXT`.catch(() => {})
-  await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS rca_block  TEXT`.catch(() => {})
+  await sql`ALTER TABLE messages ADD COLUMN tool_calls TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE messages ADD COLUMN rca_block  TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
 
   // -- Database connections --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS db_connections (
@@ -114,18 +114,18 @@ export async function setupDatabase() {
     mcp_token           TEXT,
     created_at          TEXT DEFAULT (datetime('now'))
   )`
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS mcp_endpoint TEXT`.catch(() => {})
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS mcp_token           TEXT`.catch(() => {})
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS full_text_search    INTEGER DEFAULT 0`.catch(() => {})
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS fts_airbyte_conn_id TEXT`.catch(() => {})
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS description         TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN mcp_endpoint TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE db_connections ADD COLUMN mcp_token           TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE db_connections ADD COLUMN full_text_search    INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE db_connections ADD COLUMN fts_airbyte_conn_id TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE db_connections ADD COLUMN description         TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
 
   // -- Auto-register internal Elasticsearch (Mosaic Search Index) --------
   // If ELASTICSEARCH_INTERNAL_URL is set (Docker Compose deployment),
   // upsert a db_connections row for it. Idempotent — safe on every boot.
   // The connection is marked with label 'Mosaic Search Index' and is
   // never shown in the admin delete flow (managed = 1).
-  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS managed INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN managed INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
   const esUrl = process.env.ELASTICSEARCH_INTERNAL_URL
   if (esUrl) {
     const existing = await sql`SELECT id FROM db_connections WHERE managed = 1 AND dialect = 'elasticsearch' LIMIT 1`
@@ -165,9 +165,9 @@ export async function setupDatabase() {
     retry_count         INTEGER DEFAULT 3,
     created_at          TEXT DEFAULT (datetime('now'))
   )`
-  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS auth_status     TEXT DEFAULT 'unknown'`.catch(() => {})
-  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS last_auth_error TEXT`.catch(() => {})
-  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS last_auth_check INTEGER`.catch(() => {})
+  await sql`ALTER TABLE api_services ADD COLUMN auth_status     TEXT DEFAULT 'unknown'`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE api_services ADD COLUMN last_auth_error TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE api_services ADD COLUMN last_auth_check INTEGER`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
 
   await sql`CREATE TABLE IF NOT EXISTS api_connections (
     id                      TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
