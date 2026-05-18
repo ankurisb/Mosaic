@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
+import { audit, AUDIT } from '@/lib/audit'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { syncToSuperset } from '@/lib/superset-sync'
@@ -48,7 +49,9 @@ export async function POST(req: Request) {
         schema_name: schema_name || undefined,
       }).catch(() => {})
       refreshSchemaInBackground((rows[0] as { id: string }).id)
-      return Response.json({ id: (rows[0] as { id: string }).id })
+      const newId = (rows[0] as { id: string }).id
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_CREATE, `connection:${newId}`, 'success', { label, dialect, environment, host, database_name })
+      return Response.json({ id: newId })
     } else {
       await sql`
         UPDATE db_connections SET
@@ -74,13 +77,16 @@ export async function POST(req: Request) {
         WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_UPDATE, `connection:${id}`, 'success', { label, dialect })
       return Response.json({ ok: true })
     }
   }
 
   if (action === 'delete') {
-    await sql`DELETE FROM db_connections WHERE id=${body.id}`
-    await invalidateSchema(body.id)
+    const { id: delId, label: delLabel } = body
+    await sql`DELETE FROM db_connections WHERE id=${delId}`
+    await invalidateSchema(delId)
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_DELETE, `connection:${delId}`, 'success', { label: delLabel })
     return Response.json({ ok: true })
   }
 

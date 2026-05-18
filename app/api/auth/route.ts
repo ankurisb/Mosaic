@@ -1,5 +1,6 @@
-import { signInUser, COOKIE_NAME } from '@/lib/auth'
+import { signInUser, getSession, COOKIE_NAME } from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
+import { audit, AUDIT, getActorIp } from '@/lib/audit'
 import { cookies } from 'next/headers'
 import { getDb } from '@/lib/db'
 export const runtime = 'nodejs'
@@ -24,13 +25,24 @@ export async function POST(req: Request) {
       const { email, password } = body
       if (!email || !password) return Response.json({ error: 'Email and password required' }, { status: 400 })
       const result = await signInUser(email, password)
-      if (!result) return Response.json({ error: 'Incorrect email or password' }, { status: 401 })
+      if (!result) {
+        // Audit failed login — fire and forget
+        audit(req, { email }, AUDIT.LOGIN_FAILED, `user:${email}`, 'failure', { reason: 'invalid_credentials' })
+        reqLog.warn({ email }, 'Login failed')
+        return Response.json({ error: 'Incorrect email or password' }, { status: 401 })
+      }
       const store = await cookies()
       store.set(COOKIE_NAME, result.token, OPTS)
+      audit(req, { id: result.user.id, email: result.user.email, role: result.user.role }, AUDIT.LOGIN, `user:${result.user.email}`, 'success', { method: 'password' })
+      reqLog.info({ email: result.user.email }, 'Login successful')
       return Response.json({ user: result.user })
     }
 
     if (action === 'signout') {
+      const session = await getSession()
+      if (session) {
+        audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.LOGOUT, `user:${session.email}`, 'success', null)
+      }
       const store = await cookies()
       store.delete(COOKIE_NAME)
       return Response.json({ ok: true })
@@ -43,6 +55,8 @@ export async function POST(req: Request) {
       await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, tenant_id, enabled)
         VALUES (${provider}, ${provider}, ${client_id}, ${client_secret}, ${tenant_id || null}, ${enabled ? 1 : 0})
         ON CONFLICT(id) DO UPDATE SET client_id=${client_id}, client_secret=${client_secret}, tenant_id=${tenant_id || null}, enabled=${enabled ? 1 : 0}`
+      const session = await getSession()
+      audit(req, session ? { id: session.id, email: session.email, role: session.role } : null, AUDIT.SETTINGS_UPDATE, `sso_config:${provider}`, 'success', { provider, enabled })
       return Response.json({ ok: true })
     }
 
@@ -50,6 +64,8 @@ export async function POST(req: Request) {
       const { provider } = body
       const sql = getDb()
       await sql`DELETE FROM sso_config WHERE id=${provider}`
+      const session = await getSession()
+      audit(req, session ? { id: session.id, email: session.email, role: session.role } : null, AUDIT.SETTINGS_UPDATE, `sso_config:${provider}`, 'success', { action: 'delete', provider })
       return Response.json({ ok: true })
     }
 

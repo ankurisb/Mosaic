@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
+import { audit, AUDIT } from '@/lib/audit'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
 import { getDb } from '@/lib/db'
 import bcrypt from 'bcryptjs'

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { log, newRequestId } from '@/lib/logger'
+import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
@@ -34,6 +35,9 @@ export async function POST(req: Request) {
   reqLog.info('Chat request received')
   const { messages, system, conversation_id, title, model: requestedModel } = await req.json()
   if (!messages?.length) return Response.json({ error: 'No messages' }, { status: 400 })
+
+  // Audit chat start now that we have the body
+  audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHAT_START, `conversation:${conversation_id || 'new'}`, 'success', { model: requestedModel || 'default' })
 
   // Validate model -- fall back to default if unrecognised
   const model = MODEL_PRICING[requestedModel] ? requestedModel : DEFAULT_MODEL
@@ -497,7 +501,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             const persistSql = getDb()
             // Extract rca_block from finalText if present
             const rcaMatch = finalText.match(/<rca_output>([\s\S]*?)<\/rca_output>/)
-            rcaBlock = rcaMatch ? (() => { try { return JSON.parse(rcaMatch[1].trim()) } catch { return null } })() : null
+            rcaBlock = rcaMatch ? (() => { try { return JSON.parse(rcaMatch[1].trim()) } catch { return null } })()
+        : null
+        if (rcaBlock) audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_TRIGGER, `conversation:${convId}`, 'success', { problem: lastUserContent.slice(0, 100), workflow_id: matchedWorkflow ? (matchedWorkflow as Record<string,unknown>).id : null })
             const cleanText = finalText.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
             await persistSql`
               INSERT INTO messages (conversation_id, role, content, tool_calls, rca_block)

@@ -16,6 +16,7 @@ import TabIntegrations from './TabIntegrations'
 import TabGuardrails from './TabGuardrails'
 import TabSetup from './TabSetup'
 import TabDeveloperAPI from './TabDeveloperAPI'
+import TabAudit from './TabAudit'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -24,6 +25,7 @@ const ALL_TABS = [
   { id: 'auth',          label: 'Authentication',       adminOnly: false },
   { id: 'users',         label: 'Users',                adminOnly: false },
   { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
+  { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
   { id: 'system-health', label: 'System health',        adminOnly: false },
   { id: 'data-sources',  label: 'Data sources',         adminOnly: false },
@@ -39,6 +41,7 @@ function TabIcon({ id }: { id: string }) {
   switch (id) {
     case 'setup':        return <svg {...p}><path d="M2 4h10M2 7h6M2 10h8"/><circle cx="11" cy="10" r="2" fill="none"/><path d="M12.5 11.5l1.5 1.5"/></svg>
     case 'developer-api':return <svg {...p}><path d="M4 5l-3 2 3 2M10 5l3 2-3 2M7 3l-1 8"/></svg>
+    case 'audit':        return <svg {...p}><path d="M2 4h10M2 7h7M2 10h5"/><path d="M11 8l1.5 1.5L15 7"/></svg>
     case 'keys':         return <svg {...p}><circle cx="5.5" cy="5.5" r="2.5"/><path d="M7.5 7.5l4 4M9.5 9.5l1.5-1.5"/></svg>
     case 'auth':         return <svg {...p}><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg>
     case 'users':        return <svg {...p}><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/><path d="M11 8.5c1.4 0 2.5.9 2.5 2"/></svg>
@@ -132,6 +135,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
         <div style={{ maxWidth: tab === 'analytics' ? 1100 : 820, margin: '0 auto', padding: '40px 40px' }}>
           {tab === 'setup'        && <TabSetup user={user} onNavigate={navigateTab} />}
           {tab === 'developer-api'&& <TabDeveloperAPI user={user} />}
+          {tab === 'audit'        && <TabAudit user={user} />}
           {tab === 'keys'         && <TabKeys user={user} />}
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}

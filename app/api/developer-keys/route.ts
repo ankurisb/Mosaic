@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { generateApiKey } from '@/lib/dev-api-auth'
 import { log, newRequestId } from '@/lib/logger'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 export async function GET(req: Request) {
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
               ${JSON.stringify(scopes)}, ${rate_limit}, ${expires_at || null}, ${session.id})`
 
     reqLog.info({ name }, 'Developer API key created')
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.API_KEY_CREATE, `api_key:${preview}`, 'success', { name, scopes, rate_limit })
     // Return plaintext ONCE — never stored
     return Response.json({ ok: true, key: plaintext, preview })
   }
@@ -69,6 +71,7 @@ export async function POST(req: Request) {
     const active = action === 'enable' ? 1 : 0
     await sql`UPDATE developer_api_keys SET active = ${active} WHERE id = ${id}`
     reqLog.info({ id, action }, 'Developer API key updated')
+    audit(req, { id: session.id, email: session.email, role: session.role }, action === 'revoke' ? AUDIT.API_KEY_REVOKE : AUDIT.SETTINGS_UPDATE, `api_key:${id}`, 'success', { action })
     return Response.json({ ok: true })
   }
 
