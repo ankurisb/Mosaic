@@ -13,6 +13,7 @@ import TabAbout from './TabAbout'
 import TabRcaWorkflows from './TabRcaWorkflows'
 import TabAnalytics from './TabAnalytics'
 import TabIntegrations from './TabIntegrations'
+import TabGuardrails from './TabGuardrails'
 
 const TABS = [
   { id: 'keys',          label: 'API keys' },
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'data-sources',  label: 'Data sources' },
   { id: 'rca-workflows', label: 'RCA workflows' },
   { id: 'analytics',     label: 'Analysis capabilities' },
+  { id: 'guardrails',    label: 'Guardrails' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'about',         label: 'About' },
 ]
@@ -41,6 +43,7 @@ function TabIcon({ id }: { id: string }) {
     case 'analytics':    return <svg {...p}><polyline points="2,12 7,6 11,10 14,4 18,8"/><line x1="2" y1="12" x2="18" y2="12" opacity={0.3}/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>
     case 'rca-workflows':return <svg {...p}><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="10" width="4" height="3" rx="1"/><rect x="9" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="10"/><line x1="3" y1="7" x2="9" y2="7"/></svg>
     case 'notifications': return <svg {...p}><circle cx="3" cy="7" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="11" cy="11" r="1.5"/><path d="M4.5 7h2l2-4M4.5 7h2l2 4"/></svg>
+    case 'guardrails':   return <svg {...p}><path d="M7 1l5 2v4c0 2.5-2 4.5-5 6C4 11.5 2 9.5 2 7V3l5-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
     default:             return null
   }
@@ -51,7 +54,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','analytics','notifications','about']
+      const validTabs = ['keys','auth','users','usage','system-health','data-sources','rca-workflows','analytics','guardrails','notifications','about']
       if (validTabs.includes(hash)) return hash
     }
     return 'keys'
@@ -112,6 +115,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}
           {tab === 'notifications' && <TabIntegrations user={user} />}
+          {tab === 'guardrails' && <TabGuardrails user={user} />}
         </div>
       </div>
     </div>

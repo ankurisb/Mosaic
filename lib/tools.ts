@@ -1,5 +1,11 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { getDb } from './db'
+import {
+  applyDataAccessRules,
+  checkActionAllowed,
+  isHITLRequired,
+  wrapQueryResultsForSafety,
+} from './guardrails'
 import { decrypt } from './encrypt'
 import * as aws4 from 'aws4'
 
@@ -152,11 +158,49 @@ IMPORTANT: After running statistical analysis, present results as narrative or t
   },
 ]
 
-export async function runTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+export async function runTool(
+  name: string,
+  input: Record<string, unknown>,
+  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string }
+): Promise<unknown> {
+  const role = guardrailCtx?.userRole || 'user'
+
+  // Type 3 — Action controls: check before every tool call
+  try {
+    const method = name === 'call_api' ? String(input.method || 'GET') : undefined
+    const sqlQ = name === 'query_database' ? String(input.sql || '') : undefined
+    const srcId = String(input.connection_id || input.server_id || input.service_id || '')
+    const actionCheck = await checkActionAllowed(name, method, sqlQ, srcId, role)
+    if (!actionCheck.allowed) {
+      return { error: actionCheck.reason, blocked: true }
+    }
+  } catch { /* non-blocking */ }
+
   switch (name) {
     case 'web_search': return webSearch(String(input.query))
-    case 'query_database': return queryDatabase(String(input.connection_id), String(input.sql))
-    case 'call_api': return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
+    case 'query_database': {
+      // Type 2 — data access rules
+      try {
+        const accessCheck = await applyDataAccessRules(String(input.sql || ''), String(input.connection_id || ''), 'database', role)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+        if (accessCheck.modified && accessCheck.modifiedQuery) input = { ...input, sql: accessCheck.modifiedQuery }
+      } catch { }
+      return queryDatabase(String(input.connection_id), String(input.sql))
+    }
+    case 'call_api': {
+      // Type 7 — HITL: require confirmation for write API calls
+      try {
+        if (guardrailCtx && await isHITLRequired('call_api', String(input.method || 'GET'))) {
+          return {
+            __hitl_required: true,
+            pending_description: `API call: ${String(input.method || 'GET').toUpperCase()} ${String(input.path || '/')}`,
+            tool_name: name,
+            tool_input: input,
+          }
+        }
+      } catch { }
+      return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
+    }
     case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)

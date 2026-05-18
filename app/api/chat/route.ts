@@ -3,6 +3,14 @@ import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/t
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
+import {
+  getAiRulesInjection,
+  checkContentAllowed,
+  checkUsageLimits,
+  logEgressEvent,
+  checkInputForInjection,
+  type GuardrailContext,
+} from '@/lib/guardrails'
 export const runtime = 'nodejs'
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -251,7 +259,25 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   } catch { }
   const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses)
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition + analyticsBlock
+  // Type 1 — AI output rules injection
+  let aiRulesBlock = ''
+  try { aiRulesBlock = await getAiRulesInjection() } catch { }
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition + analyticsBlock + aiRulesBlock
+  // Type 5 — content filtering (check before calling Claude at all)
+  try {
+    const contentCheck = await checkContentAllowed(lastUserContent)
+    if (!contentCheck.allowed) {
+      return Response.json({ error: contentCheck.reason }, { status: 403 })
+    }
+  } catch { /* non-blocking */ }
+
+  // Type 8 — prompt injection detection (log and flag but don't hard-block)
+  const injectionSuspected = checkInputForInjection(lastUserContent)
+  if (injectionSuspected) {
+    console.warn('[guardrails] Potential prompt injection in user message from', session.email)
+  }
+
   // Fix #7: per-user rate limit -- max 50 requests per hour per user
   try {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -261,6 +287,16 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       return Response.json({ error: 'Rate limit exceeded. You have reached 50 requests per hour. Please wait before sending more messages.' }, { status: 429 })
     }
   } catch { /* don't block on rate limit check failure */ }
+
+  // Type 4 — token/request budget guardrails
+  try {
+    const guardrailCtx: GuardrailContext = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined }
+    const usageCheck = await checkUsageLimits(guardrailCtx)
+    if (!usageCheck.allowed) {
+      return Response.json({ error: usageCheck.reason }, { status: 429 })
+    }
+    // Note: soft_warn is passed through in the stream if needed (future: surface in UI)
+  } catch { /* non-blocking */ }
 
   // Fix #9: truncate message history to last 40 messages to prevent context overflow
   const MAX_HISTORY = 40
@@ -367,10 +403,27 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           }
           const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
             try {
-              const result = await runTool(block.name, block.input as Record<string, unknown>)
+              const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined }
+              const result = await runTool(block.name, block.input as Record<string, unknown>, guardrailCtx)
+              // HITL: if tool requires confirmation, surface to client and halt
+              if (result && typeof result === 'object' && (result as Record<string,unknown>).__hitl_required) {
+                const r = result as Record<string,unknown>
+                send({ type: 'hitl_required', pending_description: r.pending_description, tool_name: r.tool_name, tool_input: r.tool_input })
+                return { type: 'tool_result' as const, tool_use_id: block.id, content: `Action requires your approval: ${r.pending_description}. Please confirm in the UI.` }
+              }
+              // Type 8 — wrap query results with injection defense
+              let resultStr = JSON.stringify(result)
+              if (['query_database','call_api','read_file_server'].includes(block.name)) {
+                try {
+                  const inp = block.input as Record<string,unknown>
+                  const label = String(inp.connection_id || inp.server_id || inp.service_id || block.name)
+                  const { wrapped } = await wrapQueryResultsForSafety(resultStr, label)
+                  resultStr = wrapped
+                } catch { }
+              }
               send({ type: 'tool_result', name: block.name, result })
               finalToolCalls.push({ name: block.name, input: block.input, result })
-              return { type: 'tool_result' as const, tool_use_id: block.id, content: JSON.stringify(result) }
+              return { type: 'tool_result' as const, tool_use_id: block.id, content: resultStr }
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Tool failed'
               send({ type: 'tool_result', name: block.name, result: { error: msg } })
@@ -419,6 +472,21 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           const cost = totalInput * pricing.input + totalOutput * pricing.output
           const usageSql = getDb()
           await usageSql`INSERT INTO usage_events(user_id,user_email,type,model,input_tokens,output_tokens,cost_usd) VALUES(${session.id},${session.email},'chat',${model},${totalInput},${totalOutput},${cost})`
+
+          // Type 6 — egress audit logging
+          try {
+            const egressCtx: GuardrailContext = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, model }
+            const sourcesAccessed = finalToolCalls
+              .filter(tc => tc.name === 'query_database' || tc.name === 'call_api' || tc.name === 'read_file_server')
+              .map(tc => {
+                const inp = tc.input as Record<string, unknown>
+                const webSearch = tc.name === 'web_search'
+                return { type: tc.name === 'query_database' ? 'database' as const : tc.name === 'call_api' ? 'api' as const : 'file_server' as const, id: String(inp.connection_id || inp.service_id || ''), label: String(inp.connection_id || inp.service_id || tc.name), webSearch }
+              })
+            const hasWebSearch = finalToolCalls.some(tc => tc.name === 'web_search')
+            if (hasWebSearch) sourcesAccessed.push({ type: 'api' as const, id: 'web_search', label: 'Tavily Web Search', webSearch: true })
+            await logEgressEvent(egressCtx, sourcesAccessed, totalInput, totalOutput, lastUserContent.slice(0, 200))
+          } catch { /* non-blocking */ }
         } catch {}
         send({ type: 'done' })
       } catch (err) {

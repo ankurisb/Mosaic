@@ -639,7 +639,112 @@ export async function setupDatabase() {
   // -- Superset: set Public role permissions for embedded dashboards ----
   // Fire-and-forget: never blocks Mosaic startup
 
-  done = true
+
+  // ── Guardrails ────────────────────────────────────────────────────────────
+  // Type 1: AI output rules (system prompt injection)
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_ai_rules (
+    id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name        TEXT NOT NULL DEFAULT 'Default Policy',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    rules_text  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Type 2: Data access rules (per-role source/column restrictions)
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_data_access (
+    id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    role             TEXT NOT NULL DEFAULT 'user',
+    source_id        TEXT,
+    source_type      TEXT NOT NULL DEFAULT 'database',
+    allowed_tables   TEXT DEFAULT '[]',
+    blocked_columns  TEXT DEFAULT '[]',
+    row_filter       TEXT DEFAULT '',
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Type 3: Action controls (read-only, blocked tools, allowed HTTP methods)
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_actions (
+    id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    role             TEXT NOT NULL DEFAULT 'user',
+    source_id        TEXT,
+    read_only        INTEGER NOT NULL DEFAULT 0,
+    blocked_tools    TEXT DEFAULT '[]',
+    allowed_methods  TEXT DEFAULT '["GET","POST","PUT","PATCH","DELETE"]',
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Type 4: Usage limits (per-role token/request budgets)
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_usage_limits (
+    id                    TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    role                  TEXT NOT NULL DEFAULT 'user',
+    user_id               TEXT,
+    daily_token_limit     INTEGER,
+    monthly_token_limit   INTEGER,
+    daily_request_limit   INTEGER,
+    soft_warn_pct         INTEGER NOT NULL DEFAULT 90,
+    enabled               INTEGER NOT NULL DEFAULT 1,
+    created_at            TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Type 5: Content filtering (input topic blocklist/allowlist)
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_content (
+    id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name             TEXT NOT NULL DEFAULT 'Content Policy',
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    mode             TEXT NOT NULL DEFAULT 'blocklist',
+    patterns         TEXT DEFAULT '[]',
+    block_message    TEXT NOT NULL DEFAULT 'This topic is outside the scope of Mosaic.',
+    created_at       TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Type 6: Egress audit log (data leaving the network)
+  await sql`CREATE TABLE IF NOT EXISTS egress_events (
+    id                   TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    conversation_id      TEXT,
+    user_id              TEXT,
+    user_email           TEXT,
+    timestamp            TEXT DEFAULT (datetime('now')),
+    sources_accessed     TEXT DEFAULT '[]',
+    web_search_used      INTEGER NOT NULL DEFAULT 0,
+    prompt_tokens        INTEGER DEFAULT 0,
+    completion_tokens    INTEGER DEFAULT 0,
+    model                TEXT,
+    data_classifications TEXT DEFAULT '[]',
+    message_preview      TEXT
+  )`.catch(() => {})
+
+  // Type 7: Human-in-the-loop pending confirmations
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_pending_actions (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    conversation_id TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    tool_name       TEXT NOT NULL,
+    tool_input      TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT DEFAULT (datetime('now')),
+    resolved_at     TEXT
+  )`.catch(() => {})
+
+  // Guardrail settings: hitl enabled, injection detection, egress logging
+  await sql`CREATE TABLE IF NOT EXISTS guardrail_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`.catch(() => {})
+
+  // Seed defaults
+  await sql`INSERT OR IGNORE INTO guardrail_settings (key, value) VALUES
+    ('hitl_enabled', 'false'),
+    ('hitl_write_methods', '["POST","PUT","PATCH","DELETE"]'),
+    ('egress_logging', 'true'),
+    ('injection_defense', 'true'),
+    ('global_read_only', 'false')
+  `.catch(() => {})
+
+    done = true
 }
 
 async function initSupersetPublicRole(): Promise<void> {
@@ -744,4 +849,5 @@ async function initSupersetPublicRole(): Promise<void> {
   } catch (err) {
     console.warn('[superset-init] Non-fatal error setting Public role:', err)
   }
+
 }
