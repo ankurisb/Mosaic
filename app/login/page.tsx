@@ -13,8 +13,12 @@ export default function LoginPage() {
       const p = new URLSearchParams(window.location.search).get('error')
       if (p === 'account_not_provisioned') return 'Your account has not been set up yet. Contact your administrator.'
       if (p === 'account_banned') return 'Your account has been disabled.'
-      if (p === 'sso_failed') return 'SSO sign-in failed. Please try again or use email and password.'
-      if (p) return `SSO error: ${p.replace(/_/g, ' ')}`
+      if (p === 'sso_failed') return 'Single sign-on failed. Please try again or use email and password.'
+      if (p === 'oidc_discovery_failed') return 'The identity provider is not reachable. Please use email and password or contact your administrator.'
+      if (p === 'token_exchange_failed') return 'Sign-in was cancelled or timed out. Please try again.'
+      if (p === 'missing_code') return 'Sign-in was interrupted. Please try again.'
+      if (p === 'account_not_provisioned') return 'Your account has not been set up yet. Contact your administrator.'
+      if (p) return 'Sign-in failed. Please try again or use email and password.'
     }
     return ''
   })
