@@ -9,6 +9,7 @@ import {
   checkUsageLimits,
   logEgressEvent,
   checkInputForInjection,
+  wrapQueryResultsForSafety,
   type GuardrailContext,
 } from '@/lib/guardrails'
 export const runtime = 'nodejs'
@@ -304,6 +305,44 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     ? messages.slice(messages.length - MAX_HISTORY)
     : messages
 
+  // ── Tool result truncation ───────────────────────────────────────────────────
+  // Large results (wide DB rows, big API payloads, file contents) can easily
+  // blow past 200K context if sent verbatim. Cap each result string and attach
+  // a summary note so Claude knows data was trimmed.
+  const MAX_TOOL_RESULT_CHARS = 8_000   // ~2K tokens — enough for 50 wide rows
+  const MAX_HISTORY_CHARS     = 60_000  // soft cap on total serialised history
+
+  function truncateResult(resultStr: string, toolName: string): string {
+    if (resultStr.length <= MAX_TOOL_RESULT_CHARS) return resultStr
+    const trimmed = resultStr.slice(0, MAX_TOOL_RESULT_CHARS)
+    const pct = Math.round(resultStr.length / MAX_TOOL_RESULT_CHARS * 100)
+    return trimmed + `\n...[TRUNCATED: result was ${resultStr.length.toLocaleString()} chars (${pct}x the limit). ` +
+      `The first ${MAX_TOOL_RESULT_CHARS.toLocaleString()} chars are shown. ` +
+      `To get a smaller result: add WHERE/LIMIT clauses, filter by date range, or request specific columns only.]`
+  }
+
+  // Estimate token count (rough: 1 token ≈ 4 chars)
+  function estimateTokens(str: string): number { return Math.ceil(str.length / 4) }
+
+  // Drop oldest tool-result/assistant turns from history when it grows too large,
+  // always keeping the first user message (context anchor) and all recent turns.
+  function trimHistory(hist: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    const serialised = JSON.stringify(hist)
+    if (serialised.length <= MAX_HISTORY_CHARS) return hist
+    // Keep first message + last 10 turns minimum
+    const anchor = hist.slice(0, 1)
+    const recent  = hist.slice(-10)
+    const middle  = hist.slice(1, -10)
+    // Drop oldest middle turns one at a time until under budget
+    let i = 0
+    while (i < middle.length) {
+      const candidate = [...anchor, ...middle.slice(i), ...recent]
+      if (JSON.stringify(candidate).length <= MAX_HISTORY_CHARS) return candidate
+      i++
+    }
+    return [...anchor, ...recent]
+  }
+
   const enc = new TextEncoder()
   const stream = new ReadableStream({
     async start(ctrl) {
@@ -333,6 +372,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           const synthesisNudge = forceSynthesis
             ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
             : ''
+          history = trimHistory(history)
           const resp = await anthropic.messages.create({
             model,
             max_tokens: 16384,
@@ -423,7 +463,8 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
               }
               send({ type: 'tool_result', name: block.name, result })
               finalToolCalls.push({ name: block.name, input: block.input, result })
-              return { type: 'tool_result' as const, tool_use_id: block.id, content: resultStr }
+              const truncatedResult = truncateResult(resultStr, block.name)
+              return { type: 'tool_result' as const, tool_use_id: block.id, content: truncatedResult }
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Tool failed'
               send({ type: 'tool_result', name: block.name, result: { error: msg } })

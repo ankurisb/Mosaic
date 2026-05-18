@@ -335,6 +335,26 @@ async function queryViaMcp(endpoint: string, token: string | undefined, sql: str
   return { result, via: 'mcp' }
 }
 
+// Truncate individual cell values that are excessively long (e.g. CLOB columns,
+// base64 blobs, HTML bodies) to prevent single rows from blowing out context.
+const MAX_CELL_CHARS = 500
+const MAX_RESULT_ROWS = 200
+
+function sanitiseRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (!rows.length) return rows
+  return rows.slice(0, MAX_RESULT_ROWS).map(row => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'string' && v.length > MAX_CELL_CHARS) {
+        out[k] = v.slice(0, MAX_CELL_CHARS) + `…[${v.length - MAX_CELL_CHARS} chars truncated]`
+      } else {
+        out[k] = v
+      }
+    }
+    return out
+  })
+}
+
 async function queryDatabase(connectionId: string, queryInput: string) {
   // Bug 4.6: strip trailing semicolons (and any whitespace after them) so they
   // don't break the `SELECT * FROM (${q}) _q LIMIT 200` wrap below.
@@ -400,7 +420,7 @@ async function queryDatabase(connectionId: string, queryInput: string) {
     }
     entry.lastUsed = Date.now()
     const result = await entry.pool.query(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
-    return { rows: result.rows, rowCount: result.rowCount, fields: result.fields.map(f => f.name) }
+    return { rows: sanitiseRows(result.rows), rowCount: result.rowCount, fields: result.fields.map(f => f.name) }
   }
 
   // -- MySQL ----------------------------------------------------
@@ -408,7 +428,7 @@ async function queryDatabase(connectionId: string, queryInput: string) {
     const pool = await getMysqlPool(connectionId, conn)
     const [results, fields] = await pool.execute(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
     return {
-      rows: results,
+      rows: sanitiseRows(results as Record<string,unknown>[]),
       rowCount: (results as unknown[]).length,
       fields: (fields as Array<{ name: string }>).map(f => f.name),
     }
@@ -487,8 +507,8 @@ async function queryDatabase(connectionId: string, queryInput: string) {
 
     try {
       const stmt = db2.prepare(trimmed)
-      const results = stmt.all()
-      const fields = results.length > 0 ? Object.keys(results[0] as object) : []
+      const results = sanitiseRows(stmt.all() as Record<string,unknown>[])
+      const fields = results.length > 0 ? Object.keys(results[0]) : []
       return { rows: results, rowCount: results.length, fields }
     } finally {
       db2.close()
@@ -517,7 +537,8 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       if (query.projection) cursor.project(query.projection as object)
       const limit = Math.min((query.limit as number) || 20, 200)
       cursor.limit(limit)
-      const results = await cursor.toArray()
+      const rawResults = await cursor.toArray()
+      const results = sanitiseRows(rawResults as Record<string,unknown>[])
       const fields = results.length > 0 ? Object.keys(results[0]) : []
       return { rows: results, rowCount: results.length, fields }
     } finally {
