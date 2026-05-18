@@ -144,8 +144,6 @@ function SectionBox({ type, children, active, onToggle, count }: SectionBoxProps
           style={{ flexShrink: 0, color: 'var(--text3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
           <path d="M4 2l4 4-4 4"/>
         </svg>
-        {/* Type badge */}
-        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text4)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>T{type}</span>
         {/* Title */}
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{SECTION_LABELS[type]}</span>
         {/* Count badge */}
