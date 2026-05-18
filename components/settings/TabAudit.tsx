@@ -41,12 +41,16 @@ const SINCE_OPTIONS = [
 ]
 
 export default function TabAudit({ user }: { user: SessionUser }) {
-  const [events,      setEvents]      = useState<AuditEvent[]>([])
-  const [total,       setTotal]       = useState(0)
-  const [loading,     setLoading]     = useState(true)
-  const [offset,      setOffset]      = useState(0)
-  const [actionTypes, setActionTypes] = useState<string[]>([])
-  const [chain,       setChain]       = useState<{ valid: boolean; totalRows: number } | null>(null)
+  const [events,        setEvents]        = useState<AuditEvent[]>([])
+  const [total,         setTotal]         = useState(0)
+  const [loading,       setLoading]       = useState(true)
+  const [offset,        setOffset]        = useState(0)
+  const [actionTypes,   setActionTypes]   = useState<string[]>([])
+  const [chain,         setChain]         = useState<{ valid: boolean; totalRows: number } | null>(null)
+  const [settings,      setSettings]      = useState<Record<string, string>>({})
+  const [retDays,       setRetDays]       = useState('')
+  const [savingRet,     setSavingRet]     = useState(false)
+  const [retMsg,        setRetMsg]        = useState('')
 
   // Filters
   const [sinceIdx,    setSinceIdx]    = useState(1)  // default: last 24h
@@ -78,6 +82,10 @@ export default function TabAudit({ user }: { user: SessionUser }) {
       setOffset(newOffset + d.events.length)
       if (d.actionTypes?.length) setActionTypes(d.actionTypes)
       if (d.chain) setChain(d.chain)
+      if (d.settings) {
+        setSettings(d.settings)
+        setRetDays(d.settings.retention_days || '365')
+      }
     } finally { setLoading(false) }
   }, [sinceIdx, actorFilter, actionFilter, outcomeFilter])
 
@@ -93,6 +101,21 @@ export default function TabAudit({ user }: { user: SessionUser }) {
       ...(since         ? { since }                 : {}),
     })
     window.open(`/api/audit?${params}`, '_blank')
+  }
+
+  async function saveRetention() {
+    const days = parseInt(retDays)
+    if (isNaN(days) || days < 30) { setRetMsg('Minimum 30 days'); return }
+    setSavingRet(true)
+    try {
+      const r = await fetch('/api/audit', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retention_days: days })
+      })
+      const d = await r.json()
+      setRetMsg(d.ok ? `Saved — events older than ${days} days will be purged nightly` : d.error)
+      setTimeout(() => setRetMsg(''), 4000)
+    } finally { setSavingRet(false) }
   }
 
   function formatTime(iso: string) {
@@ -148,6 +171,51 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>
           {total > 0 && `${total.toLocaleString()} event${total !== 1 ? 's' : ''}`}
         </span>
+      </div>
+
+      {/* Retention + integrity status panel */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+        {/* Retention policy */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Retention policy</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+            Events older than this are purged nightly. ISO 27001 requires minimum 1 year.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="number" min={30} max={3650} value={retDays}
+              onChange={e => setRetDays(e.target.value)}
+              style={{ ...inp, width: 80 }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>days</span>
+            <Btn size="sm" onClick={saveRetention} disabled={savingRet}>{savingRet ? 'Saving…' : 'Save'}</Btn>
+          </div>
+          {retMsg && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{retMsg}</div>}
+          {settings.last_purge_at && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Last purge: {formatTime(settings.last_purge_at)} ({settings.last_purge_count || 0} events)</div>}
+        </div>
+
+        {/* Chain integrity */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Chain integrity</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+            Every event is SHA-256 chained. Verification runs daily and is logged.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {chain ? (
+              <span style={{ fontSize: 12, fontWeight: 500, color: chain.valid ? 'var(--green-t)' : 'var(--red-t)' }}>
+                {chain.valid ? `✓ Intact` : `⚠ BROKEN`} — {chain.totalRows} events
+              </span>
+            ) : (
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>Loading…</span>
+            )}
+          </div>
+          {settings.last_chain_verify_at && (
+            <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>
+              Last verified: {formatTime(settings.last_chain_verify_at)}
+              {settings.last_chain_verify_ok && <span style={{ marginLeft: 6, color: settings.last_chain_verify_ok === 'true' ? 'var(--green-t)' : 'var(--red-t)' }}>{settings.last_chain_verify_ok === 'true' ? '✓ passed' : '⚠ failed'}</span>}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Event list */}

@@ -31,20 +31,21 @@ export async function POST(req: Request) {
     if ((role || 'user') === 'admin') {
       syncUserToSuperset({ email: email.toLowerCase(), name: name || email, password: tempPassword, role: 'admin' }).catch(() => {})
     }
-    // Track invite timestamp
     await sql`UPDATE users SET invite_sent_at=datetime('now') WHERE id=${rows[0].id}`
-    // Send welcome email (non-blocking — don't fail invite if email fails)
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
     import('@/lib/mailer').then(({ sendWelcomeEmail }) =>
       sendWelcomeEmail(email.toLowerCase(), name || email.split('@')[0], tempPassword, appUrl)
         .then(r => { if (!r.ok) log.warn({ service: 'users', err: r.error }, 'Welcome email failed') })
         .catch(e => log.warn({ service: 'users', err: e }, 'Welcome email error'))
     )
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_CREATE, `user:${email.toLowerCase()}`, 'success', { email: email.toLowerCase(), role: role || 'user', invited_by: session.email })
     return Response.json({ user: rows[0], tempPassword })
   }
 
   if (action === 'setRole') {
     if (userId === session.id) return Response.json({ error: 'Cannot change your own role' }, { status: 400 })
+    const prevRows = await sql`SELECT email, role FROM users WHERE id=${userId}`
+    const prevRole = (prevRows[0] as { role: string } | undefined)?.role || 'unknown'
     await sql`UPDATE users SET role=${role} WHERE id=${userId}`
     if (role === 'admin') {
       const urows = await sql`SELECT email, name FROM users WHERE id=${userId}`
@@ -52,23 +53,46 @@ export async function POST(req: Request) {
         syncUserToSuperset({ email: urows[0].email as string, name: urows[0].name as string, password: '', role: 'admin' }).catch(() => {})
       }
     }
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_ROLE_CHANGE, `user:${userId}`, 'success', { from: prevRole, to: role, target_email: (prevRows[0] as { email: string } | undefined)?.email })
     return Response.json({ ok: true })
   }
 
   if (action === 'ban') {
     if (userId === session.id) return Response.json({ error: 'Cannot ban yourself' }, { status: 400 })
+    const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
     await sql`UPDATE users SET banned=true WHERE id=${userId}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_BAN, `user:${userId}`, 'success', { target_email: (uRows[0] as { email: string } | undefined)?.email })
     return Response.json({ ok: true })
   }
 
   if (action === 'unban') {
+    const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
     await sql`UPDATE users SET banned=false WHERE id=${userId}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_UNBAN, `user:${userId}`, 'success', { target_email: (uRows[0] as { email: string } | undefined)?.email })
     return Response.json({ ok: true })
   }
 
   if (action === 'delete') {
     if (userId === session.id) return Response.json({ error: 'Cannot delete yourself' }, { status: 400 })
+    const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
     await sql`DELETE FROM users WHERE id=${userId}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_DELETE, `user:${userId}`, 'success', { target_email: (uRows[0] as { email: string } | undefined)?.email })
+    return Response.json({ ok: true })
+  }
+
+  if (action === 'changePassword') {
+    // Self-service password change
+    const { currentPassword, newPassword } = await req.json().catch(() => ({}))
+    if (!currentPassword || !newPassword) return Response.json({ error: 'currentPassword and newPassword required' }, { status: 400 })
+    const uRows = await sql`SELECT password_hash FROM users WHERE id=${session.id}`
+    const valid = uRows.length && await bcrypt.compare(currentPassword, (uRows[0] as { password_hash: string }).password_hash)
+    if (!valid) {
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'failure', { reason: 'wrong_current_password' })
+      return Response.json({ error: 'Current password incorrect' }, { status: 401 })
+    }
+    const newHash = await bcrypt.hash(newPassword, 12)
+    await sql`UPDATE users SET password_hash=${newHash} WHERE id=${session.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'success', null)
     return Response.json({ ok: true })
   }
 

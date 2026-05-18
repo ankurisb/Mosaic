@@ -19,12 +19,16 @@ export const AUDIT = {
   LOGIN:               'LOGIN',
   LOGOUT:              'LOGOUT',
   LOGIN_FAILED:        'LOGIN_FAILED',
+  PASSWORD_CHANGE:     'PASSWORD_CHANGE',
+  SESSION_EXPIRED:     'SESSION_EXPIRED',
   // Users
   USER_CREATE:         'USER_CREATE',
   USER_UPDATE:         'USER_UPDATE',
   USER_DELETE:         'USER_DELETE',
   USER_INVITE:         'USER_INVITE',
   USER_BAN:            'USER_BAN',
+  USER_UNBAN:          'USER_UNBAN',
+  USER_ROLE_CHANGE:    'USER_ROLE_CHANGE',
   // Data connections
   CONNECTION_CREATE:   'CONNECTION_CREATE',
   CONNECTION_UPDATE:   'CONNECTION_UPDATE',
@@ -43,6 +47,11 @@ export const AUDIT = {
   // Settings
   SETTINGS_UPDATE:     'SETTINGS_UPDATE',
   GUARDRAIL_UPDATE:    'GUARDRAIL_UPDATE',
+  // Audit system itself
+  AUDIT_LOG_VIEW:      'AUDIT_LOG_VIEW',
+  AUDIT_LOG_EXPORT:    'AUDIT_LOG_EXPORT',
+  CHAIN_VERIFY:        'CHAIN_VERIFY',
+  AUDIT_PURGE:         'AUDIT_PURGE',
 } as const
 
 export type AuditAction = typeof AUDIT[keyof typeof AUDIT]
@@ -177,4 +186,85 @@ function sanitiseDetail(obj: Record<string, unknown>): Record<string, unknown> {
     }
   }
   return out
+}
+
+// ── Retention policy ──────────────────────────────────────────────────────
+// Purge events older than retention_days (default 365).
+// Called nightly by the built-in scheduler.
+// After purge, re-anchors the chain from the new oldest row.
+export async function purgeOldAuditEvents(): Promise<{ purged: number; retentionDays: number }> {
+  const sql = getDb()
+  try {
+    // Read retention policy
+    const setting = await sql`SELECT value FROM audit_settings WHERE key = 'retention_days' LIMIT 1`
+    const retentionDays = parseInt((setting[0] as { value: string } | undefined)?.value || '365')
+    const cutoff = new Date(Date.now() - retentionDays * 86400_000).toISOString()
+
+    // Count before delete
+    const countRows = await sql`SELECT COUNT(*) as cnt FROM audit_events WHERE timestamp < ${cutoff}`
+    const purged = Number((countRows[0] as { cnt: string })?.cnt || 0)
+
+    if (purged > 0) {
+      await sql`DELETE FROM audit_events WHERE timestamp < ${cutoff}`
+      // Re-anchor: update prev_hash of the new oldest row to '0'
+      // so chain verification doesn't fail on missing ancestors
+      await sql`UPDATE audit_events SET prev_hash = '0'
+        WHERE id = (SELECT id FROM audit_events ORDER BY timestamp ASC LIMIT 1)`
+        .catch(() => {})
+      log.info({ service: 'audit', purged, retentionDays, cutoff }, 'Audit log purge complete')
+    }
+
+    // Record purge metadata
+    await sql`UPDATE audit_settings SET value = ${new Date().toISOString()}, updated_at = ${new Date().toISOString()} WHERE key = 'last_purge_at'`
+    await sql`UPDATE audit_settings SET value = ${String(purged)}, updated_at = ${new Date().toISOString()} WHERE key = 'last_purge_count'`
+
+    // Write audit event for the purge itself (using internal actor)
+    await audit(null, { email: 'system', role: 'system' }, AUDIT.AUDIT_PURGE, 'audit_log:purge', 'success', { purged, retentionDays, cutoff })
+
+    return { purged, retentionDays }
+  } catch (err) {
+    log.error({ service: 'audit', err }, 'Audit purge failed')
+    return { purged: 0, retentionDays: 365 }
+  }
+}
+
+// ── Scheduled chain integrity check ──────────────────────────────────────
+// Run daily. Writes CHAIN_VERIFY event with result so auditors can see
+// integrity checks in the log itself.
+export async function scheduledChainVerify(): Promise<void> {
+  const sql = getDb()
+  try {
+    const setting = await sql`SELECT value FROM audit_settings WHERE key = 'chain_verify_enabled' LIMIT 1`
+    const enabled = (setting[0] as { value: string } | undefined)?.value !== 'false'
+    if (!enabled) return
+
+    const result = await verifyAuditChain()
+
+    // Write the verify result into the audit log
+    await audit(null, { email: 'system', role: 'system' }, AUDIT.CHAIN_VERIFY, 'audit_log:integrity', result.valid ? 'success' : 'failure', {
+      totalRows: result.totalRows,
+      brokenAt: result.brokenAt || null,
+    })
+
+    // Update last_chain_verify_at metadata
+    await sql`UPDATE audit_settings SET value = ${new Date().toISOString()}, updated_at = ${new Date().toISOString()} WHERE key = 'last_chain_verify_at'`
+    await sql`UPDATE audit_settings SET value = ${result.valid ? 'true' : 'false'}, updated_at = ${new Date().toISOString()} WHERE key = 'last_chain_verify_ok'`
+
+    if (!result.valid) {
+      log.error({ service: 'audit', brokenAt: result.brokenAt }, 'AUDIT CHAIN INTEGRITY FAILURE — log may have been tampered with')
+    } else {
+      log.info({ service: 'audit', totalRows: result.totalRows }, 'Scheduled chain verify passed')
+    }
+  } catch (err) {
+    log.error({ service: 'audit', err }, 'Scheduled chain verify failed')
+  }
+}
+
+// ── Get retention settings for display ───────────────────────────────────
+export async function getAuditSettings(): Promise<Record<string, string>> {
+  const sql = getDb()
+  try {
+    const rows = await sql`SELECT key, value FROM audit_settings` as { key: string; value: string }[]
+    return Object.fromEntries(rows.map(r => [r.key, r.value]))
+  } catch { return {} }
 }

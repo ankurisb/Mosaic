@@ -610,6 +610,19 @@ export async function setupDatabase() {
     setInterval(() => {
       fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
     }, 60_000)
+
+    // Daily audit tasks: chain verify + retention purge
+    // Run once at startup (after a short delay) then every 24h
+    const runDailyAuditTasks = async () => {
+      try {
+        const { scheduledChainVerify, purgeOldAuditEvents } = await import('./audit')
+        await scheduledChainVerify()
+        await purgeOldAuditEvents()
+      } catch (e) { log.warn({ service: 'audit-scheduler', err: e }, 'Daily audit tasks failed') }
+    }
+    setTimeout(runDailyAuditTasks, 10_000) // 10s after startup
+    setInterval(runDailyAuditTasks, 24 * 60 * 60_000) // then every 24h
+
     log.info({ service: 'scheduler' }, 'Built-in scheduler started — firing every 60s')
   }
 

@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
-import { verifyAuditChain } from '@/lib/audit'
+import { audit, AUDIT, verifyAuditChain, getAuditSettings } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 export async function GET(req: Request) {
@@ -11,13 +11,22 @@ export async function GET(req: Request) {
   const url     = new URL(req.url)
   const limit   = Math.min(parseInt(url.searchParams.get('limit')   || '100'), 500)
   const offset  = parseInt(url.searchParams.get('offset')  || '0')
-  const actor   = url.searchParams.get('actor')   || null   // email substring
-  const action  = url.searchParams.get('action')  || null   // exact action
-  const outcome = url.searchParams.get('outcome') || null   // success | failure | error
-  const since   = url.searchParams.get('since')   || null   // ISO timestamp
+  const actor   = url.searchParams.get('actor')   || null
+  const action  = url.searchParams.get('action')  || null
+  const outcome = url.searchParams.get('outcome') || null
+  const since   = url.searchParams.get('since')   || null
   const until   = url.searchParams.get('until')   || null
-  const format  = url.searchParams.get('format')  || 'json' // json | csv
+  const format  = url.searchParams.get('format')  || 'json'
   const verify  = url.searchParams.get('verify')  === 'true'
+
+  // Log audit log access (self-referential — only on first page, not paginated loads)
+  // Use setImmediate so the audit event doesn't slow the response
+  if (offset === 0) {
+    const auditAction = format === 'csv' ? AUDIT.AUDIT_LOG_EXPORT : AUDIT.AUDIT_LOG_VIEW
+    audit(req, { id: session.id, email: session.email, role: session.role }, auditAction, 'audit_log:access', 'success', {
+      filters: { actor, action, outcome, since, until, format },
+    })
+  }
 
   const sql = getDb()
 
@@ -88,5 +97,23 @@ export async function GET(req: Request) {
     hasMore: offset + rows.length < total,
     actionTypes: (actionTypes as { action: string }[]).map(r => r.action),
     chain: chainStatus,
+    settings: offset === 0 ? await getAuditSettings() : undefined,
   })
+}
+
+// PATCH /api/audit — update retention policy
+export async function PATCH(req: Request) {
+  const session = await getSession()
+  if (!session || session.role !== 'admin')
+    return Response.json({ error: 'Admin only' }, { status: 403 })
+
+  const { retention_days } = await req.json()
+  if (!retention_days || isNaN(Number(retention_days)) || Number(retention_days) < 30) {
+    return Response.json({ error: 'retention_days must be a number >= 30' }, { status: 400 })
+  }
+
+  const sql = getDb()
+  await sql`UPDATE audit_settings SET value = ${String(retention_days)}, updated_by = ${session.email}, updated_at = ${new Date().toISOString()} WHERE key = 'retention_days'`
+  audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.SETTINGS_UPDATE, 'audit_settings:retention', 'success', { retention_days: Number(retention_days) })
+  return Response.json({ ok: true, retention_days: Number(retention_days) })
 }
