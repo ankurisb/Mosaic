@@ -13,7 +13,7 @@ function validatePath(path: string): string {
     .replace(/@/g, '')                   // no @ (URL auth bypass)
     .replace(/\/\//g, '/')               // no double slashes
   // Block access to cloud metadata endpoints via query string tricks
-  const blocked = ['169.254', 'metadata', 'localhost', '127.0.0.1', '0.0.0.0']
+  const blocked = ['169.254', 'metadata', '127.0.0.1', '::1', '0.0.0.0']
   if (blocked.some(b => cleaned.toLowerCase().includes(b))) {
     throw new Error('Path not allowed')
   }
