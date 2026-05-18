@@ -173,6 +173,33 @@ export async function POST(req: Request) {
         return Response.json({ ok, latency_ms: Date.now() - start, message: ok ? `S3 endpoint reachable (${res.status})` : `S3 returned ${res.status}` })
       }
 
+      if (transport === 'sharepoint') {
+        // SharePoint: attempt token acquisition to verify credentials
+        const { getSharePointToken } = await import('@/lib/tools').then(m => ({ getSharePointToken: (m as unknown as Record<string, unknown>).__test_getSharePointToken as unknown }))
+        // Since getSharePointToken is not exported, test via a lightweight token fetch
+        const tenantId    = fs.tenant_id    as string
+        const clientId    = fs.client_id    as string
+        const clientSecret = fs.password_enc
+          ? (await import('@/lib/encrypt')).decrypt(fs.password_enc as string)
+          : null
+        if (!tenantId || !clientId || !clientSecret) {
+          return Response.json({ ok: false, latency_ms: Date.now() - start, message: 'SharePoint: missing tenant_id, client_id, or client secret' })
+        }
+        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+        const tokenRes = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, scope: 'https://graph.microsoft.com/.default' }).toString(),
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!tokenRes.ok) {
+          const errBody = await tokenRes.text()
+          const errMsg = (() => { try { return JSON.parse(errBody).error_description || JSON.parse(errBody).error || `HTTP ${tokenRes.status}` } catch { return `HTTP ${tokenRes.status}` } })()
+          return Response.json({ ok: false, latency_ms: Date.now() - start, message: `SharePoint auth failed: ${errMsg.slice(0, 120)}` })
+        }
+        return Response.json({ ok: true, latency_ms: Date.now() - start, message: 'SharePoint credentials verified — token acquired successfully' })
+      }
+
       return Response.json({ ok: false, message: `Unknown transport: ${transport}` })
     } catch (err) {
       return Response.json({ ok: false, latency_ms: Date.now() - start, message: err instanceof Error ? err.message : 'Connection failed' })

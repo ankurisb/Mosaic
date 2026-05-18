@@ -993,7 +993,7 @@ async function getSharePointSiteId(token: string, siteUrl: string): Promise<stri
 // List files in a SharePoint document library / folder path
 async function listSharePointFiles(
   token: string, siteId: string, folderPath: string,
-  allowedExts: string[], maxFiles: number
+  allowedExts: string[], maxCount: number
 ): Promise<FileEntry[]> {
   // GET /v1.0/sites/{site-id}/drive/root:/{folder}:/children
   const encoded = folderPath ? encodeURIComponent(folderPath) : ''
@@ -1001,7 +1001,7 @@ async function listSharePointFiles(
     ? `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encoded}:/children`
     : `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children`
 
-  const res = await fetch(`${graphUrl}?$top=${maxFiles}&$select=name,size,lastModifiedDateTime,@microsoft.graph.downloadUrl,file`, {
+  const res = await fetch(`${graphUrl}?$top=${maxCount}&$select=name,size,lastModifiedDateTime,@microsoft.graph.downloadUrl,file`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     signal: AbortSignal.timeout(15000),
   })
@@ -1020,10 +1020,11 @@ async function listSharePointFiles(
     files.push({
       name:      item.name,
       path:      item['@microsoft.graph.downloadUrl'] || item.name,
-      size:      item.size,
+      size:      item.size || 0,
+      modified:  item.lastModifiedDateTime || '',
       timestamp: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : undefined,
     })
-    if (files.length >= maxFiles) break
+    if (files.length >= maxCount) break
   }
   return files
 }
@@ -1164,7 +1165,9 @@ async function listFiles(
       if (!siteUrl) return []
       const siteId  = await getSharePointSiteId(token, siteUrl)
       const folder  = (fs.sub_path as string) || (fs.share_path as string) || ''
-      return await listSharePointFiles(token, siteId, folder, filterExt, maxFiles)
+      const maxF = (fs.max_files as number) || 20
+      const exts  = filterExt ? [filterExt.toLowerCase()] : fileTypes.map(t => '.' + t.replace(/^\./, ''))
+      return await listSharePointFiles(token, siteId, folder, exts, maxF)
     } catch (e) {
       console.error('[sharepoint] listFiles error:', (e as Error).message)
       return []
