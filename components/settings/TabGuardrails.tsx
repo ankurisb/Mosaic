@@ -131,9 +131,10 @@ const SECTION_DESCS: Record<string, string> = {
   '8': 'Sanitize query results to prevent prompt injection from data sources.',
 }
 
-interface SectionBoxProps { type: string; children: React.ReactNode; active?: boolean; onToggle?: (v: boolean) => void; count?: number }
-function SectionBox({ type, children, active, onToggle, count }: SectionBoxProps) {
+interface SectionBoxProps { type: string; children: React.ReactNode; active?: boolean; onToggle?: (v: boolean) => void; count?: number; hidden?: boolean }
+function SectionBox({ type, children, active, onToggle, count, hidden }: SectionBoxProps) {
   const [open, setOpen] = useState(false)
+  if (hidden) return null
   return (
     <div style={{ marginBottom: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
       {/* Header row — always visible */}
@@ -252,6 +253,9 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
     setSaving(false)
   }
 
+  // ── Global search ────────────────────────────────────────────────────────────
+  const [globalQuery, setGlobalQuery] = useState('')
+
   // ── Search/pagination state per section ──────────────────────────────────────
   const aiSearch = useSearchPage<AiRule>(aiRules, (r, q) => r.name.toLowerCase().includes(q) || String(r.rules_text).toLowerCase().includes(q))
   const contentSearch = useSearchPage<ContentPolicy>(contentPolicies, (p, q) => p.name.toLowerCase().includes(q) || p.mode.includes(q))
@@ -260,6 +264,15 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
   const usageSearch = useSearchPage<UsageLimit>(usageLimits, (l, q) => l.role.includes(q) || (l.user_id||'').includes(q))
   const egressSearch = useSearchPage<EgressEvent>(egressEvents, (e, q) => e.user_email.includes(q) || (e.message_preview||'').toLowerCase().includes(q))
 
+  // ── Global search matching ───────────────────────────────────────────────────
+  const gq = globalQuery.toLowerCase().trim()
+  const sectionMatches = (type: string, items: Array<Record<string,unknown>>, itemTextFn: (i: Record<string,unknown>) => string) => {
+    if (!gq) return false // not hidden when no query
+    const labelMatch = SECTION_LABELS[type].toLowerCase().includes(gq) || SECTION_DESCS[type].toLowerCase().includes(gq)
+    const itemMatch = items.some(i => itemTextFn(i).toLowerCase().includes(gq))
+    return !labelMatch && !itemMatch // hidden = true when nothing matches
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="fade-in">
@@ -267,10 +280,31 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       <PageSub>Control what Mosaic can say, access, execute, and spend. All 8 protection layers.</PageSub>
 
       {toast && <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, color: 'var(--text)', boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>}
-      {loading && <div style={{ fontSize: 12, color: 'var(--text4)', marginBottom: 12 }}>Loading...</div>}
+
+      {/* ── Global search + summary ───────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
+          <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text4)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="5.5" cy="5.5" r="4"/><path d="M9 9l2.5 2.5"/></svg>
+          <input
+            style={{ ...INP, paddingLeft: 30, fontSize: 13 }}
+            value={globalQuery}
+            onChange={e => setGlobalQuery(e.target.value)}
+            placeholder="Search guardrails..."
+          />
+        </div>
+        {globalQuery && (
+          <button onClick={() => setGlobalQuery('')}
+            style={{ fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}>
+            Clear
+          </button>
+        )}
+        <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text4)' }}>
+          {loading ? 'Loading...' : `${[aiRules, contentPolicies, dataRules, actionRules, usageLimits].reduce((a,b) => a + b.length, 0)} rules across 8 sections`}
+        </div>
+      </div>
 
       {/* ── T1: AI Output Rules ─────────────────────────────────────────────── */}
-      <SectionBox type="1" count={aiRules.length}>
+      <SectionBox type="1" count={aiRules.length} hidden={sectionMatches("1", aiRules as unknown as Array<Record<string,unknown>>, i => `${i.name} ${i.rules_text}`)}>
         <SearchPaginate query={aiSearch.query} onQuery={aiSearch.setQuery} page={aiSearch.page} setPage={aiSearch.setPage} totalPages={aiSearch.totalPages} total={aiRules.length} />
         {aiSearch.paged.map(r => (
           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -308,7 +342,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T5: Content Filtering ───────────────────────────────────────────── */}
-      <SectionBox type="5" count={contentPolicies.length}>
+      <SectionBox type="5" count={contentPolicies.length} hidden={sectionMatches("5", contentPolicies as unknown as Array<Record<string,unknown>>, i => `${i.name} ${i.mode} ${Array.isArray(i.patterns)?i.patterns.join(" "):""}` )}>
         <SearchPaginate query={contentSearch.query} onQuery={contentSearch.setQuery} page={contentSearch.page} setPage={contentSearch.setPage} totalPages={contentSearch.totalPages} total={contentPolicies.length} />
         {contentSearch.paged.map(p => (
           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -353,7 +387,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T3: Action Controls ─────────────────────────────────────────────── */}
-      <SectionBox type="3" count={actionRules.length}>
+      <SectionBox type="3" count={actionRules.length} hidden={sectionMatches("3", actionRules as unknown as Array<Record<string,unknown>>, i => `${i.role} ${i.source_id}`)}>
         {/* Global read-only */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 12 }}>
           <div>
@@ -416,7 +450,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T4: Usage Limits ────────────────────────────────────────────────── */}
-      <SectionBox type="4" count={usageLimits.length}>
+      <SectionBox type="4" count={usageLimits.length} hidden={sectionMatches("4", usageLimits as unknown as Array<Record<string,unknown>>, i => `${i.role} ${i.user_id}`)}>
         <SearchPaginate query={usageSearch.query} onQuery={usageSearch.setQuery} page={usageSearch.page} setPage={usageSearch.setPage} totalPages={usageSearch.totalPages} total={usageLimits.length} />
         {usageSearch.paged.map(l => (
           <div key={l.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12, alignItems: 'center' }}>
@@ -459,7 +493,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T2: Data Access ─────────────────────────────────────────────────── */}
-      <SectionBox type="2" count={dataRules.length}>
+      <SectionBox type="2" count={dataRules.length} hidden={sectionMatches("2", dataRules as unknown as Array<Record<string,unknown>>, i => `${i.role} ${i.source_id} ${i.row_filter}`)}>
         <SearchPaginate query={dataSearch.query} onQuery={dataSearch.setQuery} page={dataSearch.page} setPage={dataSearch.setPage} totalPages={dataSearch.totalPages} total={dataRules.length} />
         {dataSearch.paged.map(r => (
           <div key={r.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12, alignItems: 'center' }}>
@@ -497,7 +531,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T7: Human-in-the-Loop ───────────────────────────────────────────── */}
-      <SectionBox type="7" active={settings.hitl_enabled === 'true'}
+      <SectionBox type="7" hidden={sectionMatches("7", [], () => "")} active={settings.hitl_enabled === 'true'}
         onToggle={isAdmin ? v => { const s = { ...settings, hitl_enabled: v ? 'true' : 'false' }; setSettings(s); fetch('/api/guardrails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_settings', settings: s }) }) } : undefined}>
         <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
           When enabled, any API call using a write method will pause and ask the user to confirm before executing. The exact payload is shown.
@@ -525,7 +559,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T8: Injection Defense ───────────────────────────────────────────── */}
-      <SectionBox type="8" active={settings.injection_defense === 'true'}
+      <SectionBox type="8" hidden={sectionMatches("8", [], () => "")} active={settings.injection_defense === 'true'}
         onToggle={isAdmin ? v => { const s = { ...settings, injection_defense: v ? 'true' : 'false' }; setSettings(s); fetch('/api/guardrails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_settings', settings: s }) }) } : undefined}>
         <div style={{ fontSize: 13, color: 'var(--text2)' }}>
           All query results are wrapped with clear data delimiters before being sent to Claude, preventing malicious database content from hijacking AI behaviour.
@@ -534,7 +568,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       </SectionBox>
 
       {/* ── T6: Egress Audit ────────────────────────────────────────────────── */}
-      <SectionBox type="6" active={settings.egress_logging === 'true'} count={egressEvents.length}
+      <SectionBox type="6" hidden={sectionMatches("6", egressEvents as unknown as Array<Record<string,unknown>>, i => `${i.user_email} ${i.message_preview}`)} active={settings.egress_logging === 'true'} count={egressEvents.length}
         onToggle={isAdmin ? v => { const s = { ...settings, egress_logging: v ? 'true' : 'false' }; setSettings(s); fetch('/api/guardrails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_settings', settings: s }) }) } : undefined}>
         {egressSummary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
@@ -575,6 +609,11 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
           })}
         </div>
       </SectionBox>
+      {gq && ![1,2,3,4,5,6,7,8].some(t => !sectionMatches(String(t), [], () => '')) && (
+        <div style={{ textAlign: 'center', padding: '40px 0', fontSize: 13, color: 'var(--text4)' }}>
+          No sections match <strong style={{ color: 'var(--text2)' }}>"{globalQuery}"</strong>
+        </div>
+      )}
     </div>
   )
 }
