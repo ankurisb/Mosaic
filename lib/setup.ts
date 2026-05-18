@@ -19,8 +19,6 @@ export async function setupDatabase() {
 
   const pg = isPostgres()
 
-
-
   // -- Core auth tables ------------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -56,18 +54,6 @@ export async function setupDatabase() {
     created_at   TEXT DEFAULT (datetime('now'))
   )`
 
-  await sql`CREATE TABLE IF NOT EXISTS smtp_config (
-    id           TEXT PRIMARY KEY DEFAULT 'default',
-    host         TEXT NOT NULL,
-    port         INTEGER NOT NULL DEFAULT 587,
-    username     TEXT,
-    password_enc TEXT,
-    from_address TEXT NOT NULL,
-    from_name    TEXT NOT NULL DEFAULT 'Mosaic',
-    enabled      INTEGER DEFAULT 1,
-    created_at   TEXT DEFAULT (datetime('now'))
-  )`
-
   // Migrations: add SSO columns to existing users table
   // SQLite doesn't support IF NOT EXISTS on ALTER TABLE — use .catch() to ignore "duplicate column" errors
   await sql`ALTER TABLE users ADD COLUMN sso_provider TEXT`.catch((e: unknown) => {
@@ -82,12 +68,7 @@ export async function setupDatabase() {
   await sql`ALTER TABLE users ADD COLUMN last_login_at TEXT`.catch((e: unknown) => {
     if (!String(e).includes('duplicate column')) throw e
   })
-  await sql`ALTER TABLE users ADD COLUMN invite_sent_at TEXT`.catch((e: unknown) => {
-    if (!String(e).includes('duplicate column')) throw e
-  })
-  await sql`ALTER TABLE users ADD COLUMN last_login_at TEXT`.catch((e: unknown) => {
-    if (!String(e).includes('duplicate column')) throw e
-  })
+
 
   await sql`CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -245,7 +226,6 @@ export async function setupDatabase() {
     created_at            TEXT DEFAULT (datetime('now'))
   )`
 
-
   // Migration: add SharePoint columns to file_servers
   await sql`ALTER TABLE file_servers ADD COLUMN tenant_id TEXT`.catch(() => {})
   await sql`ALTER TABLE file_servers ADD COLUMN client_id TEXT`.catch(() => {})
@@ -285,8 +265,6 @@ export async function setupDatabase() {
   await sql`CREATE INDEX IF NOT EXISTS idx_panels_dashboard ON dashboard_panels(dashboard_id, sort_order)`.catch(() => {})
   await sql`ALTER TABLE dashboards ADD COLUMN superset_embed_uuid TEXT`.catch(() => {})
 
-
-
   // -- Notification recipient groups ----------------------------
   await sql`CREATE TABLE IF NOT EXISTS notification_groups (
     id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -296,7 +274,6 @@ export async function setupDatabase() {
     created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at  TEXT DEFAULT (datetime('now'))
   )`
-
 
   // -- Rule groups -----------------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS rule_groups (
@@ -391,8 +368,6 @@ export async function setupDatabase() {
       } catch (e) { console.warn('[setup] integration_runs migration skipped:', (e as Error).message) }
     }
   }
-
-
 
   // -- RCA workflow templates ------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS rca_workflows (
@@ -638,7 +613,6 @@ export async function setupDatabase() {
 
   // -- Superset: set Public role permissions for embedded dashboards ----
   // Fire-and-forget: never blocks Mosaic startup
-
 
   // ── Guardrails ────────────────────────────────────────────────────────────
   // Type 1: AI output rules (system prompt injection)
