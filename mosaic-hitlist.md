@@ -1,6 +1,6 @@
 # Mosaic — Master Feature Hit List
 **Last updated:** 18 May 2026  
-**Baseline:** Session 7 complete (HEAD: 582a100)  
+**Baseline:** Session 7 complete (HEAD: d140456)  
 **Purpose:** Tick off as you go. Organised by current state → near-term → strategic.
 
 ---
@@ -10,17 +10,17 @@
 | Category | Done | Remaining | Total |
 |---|---|---|---|
 | Core platform (Part 1) | 76 | 0 | 76 |
-| Near-term / blockers (Part 2) | 3 | 15 | 18 |
+| Near-term / blockers (Part 2) | 4 | 14 | 18 |
 | Enterprise roadmap (Part 3, Phases A–P) | 8 | 113 | 121 |
 | ThingsBoard IoT (Part 4) | 0 | 15 | 15 |
 | Predictive Maintenance (Part 5) | 0 | 18 | 18 |
 | Reporting (Part 6) | 0 | 9 | 9 |
 | Multi-Tenant SaaS (Part 7) | 0 | 7 | 7 |
 | Air-Gapped / Local LLM (Part 8) | 0 | 6 | 6 |
-| **Total** | **87** | **183** | **270** |
+| **Total** | **88** | **182** | **270** |
 
-> **Deployment readiness:** 1 blocker remaining — Docker Compose validation from fresh clone.  
-> Once cleared, Mosaic v1.0.0 is customer-deployable.
+> **Deployment readiness:** Docker Compose validation complete. Mosaic v1.0.0 is customer-deployable on-prem.  
+> Remaining: Production Vercel deploy verification (pdf-parse, aws4 serverless behaviour).
 
 ---
 
@@ -191,7 +191,7 @@
 ## Part 2 — Immediate Pending (Near-Term)
 
 ### Deployment Blockers
-- [ ] **Docker Compose validation** — fresh `git clone` + `docker compose up -d` never validated (CRITICAL PATH)
+- [x] **Docker Compose validation** — validated end-to-end. 6 bugs found and fixed (see commits 76428bf, d140456)
 - [ ] Production deploy verification (Vercel — pdf-parse, aws4 serverless quirks, streaming UX)
 - [ ] OSIsoft PI Web API connection template (basic auth + bearer; NTLM deferred)
 
