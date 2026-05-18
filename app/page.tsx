@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth'
 import { setupDatabase } from '@/lib/setup'
 import ChatPage from '@/components/ChatPage'
 
+export const dynamic = 'force-dynamic'
+
 export default async function Home() {
   try { await setupDatabase() } catch (e) { console.error('DB setup:', e) }
   const session = await getSession()

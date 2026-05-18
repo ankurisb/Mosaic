@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { setupDatabase } from '@/lib/setup'
 import ReportsPage from '@/components/reports/ReportsPage'
 
+export const dynamic = 'force-dynamic'
+
 export default async function Page() {
   await setupDatabase()
   const session = await getSession()

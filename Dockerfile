@@ -4,8 +4,10 @@
 # Stage 1: Install dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
+# Install build tools needed for native modules (better-sqlite3, etc.)
+RUN apk add --no-cache python3 make g++
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 # Stage 2: Build
 FROM node:20-alpine AS builder

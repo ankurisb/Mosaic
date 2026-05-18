@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"next dev\" \"cd services/stats-sidecar && python3 main.py\"",
-    "build": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build",
+    "build": "next build",
     "start": "next start",
-    "stats": "cd services/stats-sidecar && python3 main.py"
+    "stats": "cd services/stats-sidecar && python3 main.py",
+    "build:local": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

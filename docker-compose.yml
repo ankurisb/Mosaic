@@ -37,7 +37,7 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - CRON_SECRET=${CRON_SECRET:-}
       # SQLite path inside container
-      - SQLITE_PATH=/data/mosaic.db
+      - DATABASE_URL=sqlite:///data/mosaic.db
       # Superset (internal Docker network URL)
       - SUPERSET_URL=http://superset:8088
       - SUPERSET_ADMIN_USER=admin
@@ -48,6 +48,7 @@ services:
       - ELASTICSEARCH_INTERNAL_URL=http://elasticsearch:9200
       # Stats sidecar (internal Docker network URL)
       - STATS_SIDECAR_URL=http://mosaic-stats:8001
+      - NEXT_PUBLIC_APP_URL=http://localhost:3001
       - AIRBYTE_USER=airbyte
       - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}
       # SMTP (optional)
