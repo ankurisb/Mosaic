@@ -218,6 +218,51 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         </div>
       </div>
 
+      {/* ISO 27001 Compliance Documents */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>
+          ISO 27001 Compliance Documents
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {[
+            {
+              doc: 'retention-policy',
+              title: 'Retention Policy Statement',
+              ref: 'A.8.15',
+              desc: 'Defines retention period, purge schedule, and tamper-evidence controls. Auto-populated with live configuration.',
+            },
+            {
+              doc: 'risk-assessment',
+              title: 'Risk Assessment',
+              ref: '6.1.2',
+              desc: 'Asset inventory, risk register, and controls status. Populated with live counts from the platform.',
+            },
+            {
+              doc: 'training-records',
+              title: 'Training Records',
+              ref: 'A.6.3',
+              desc: 'Staff awareness training register. User list auto-populated from all active Mosaic accounts.',
+            },
+          ].map(item => (
+            <div key={item.doc} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text4)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 3, padding: '1px 6px', fontFamily: 'var(--font-mono)' }}>{item.ref}</span>
+                <a
+                  href={`/api/docs/${item.doc}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 11, color: 'var(--text2)', textDecoration: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  View →
+                </a>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 5 }}>{item.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Event list */}
       {loading && events.length === 0 ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spinner size={20} /></div>
