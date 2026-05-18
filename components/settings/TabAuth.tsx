@@ -110,7 +110,7 @@ export default function TabAuth({ user }: { user: SessionUser }) {
       const updated = await fetch('/api/auth').then(r => r.json())
       setProviders(updated.providers || [])
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
-    setSaving(false)
+    finally { setSaving(false) }
   }
 
   async function remove(providerId: string) {

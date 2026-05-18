@@ -250,7 +250,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
       await load()
       showToast('Saved')
     } catch (e) { showToast('Error: ' + (e instanceof Error ? e.message : 'Failed')) }
-    setSaving(false)
+    finally { setSaving(false) }
   }
 
   // ── Global search ────────────────────────────────────────────────────────────

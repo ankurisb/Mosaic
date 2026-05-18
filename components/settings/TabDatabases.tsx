@@ -203,10 +203,13 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   async function save() {
     if (!form.label) { setError('Label is required'); return }
     setSaving(true)
-    const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editing ? 'update' : 'create', id: editing, ...form }) })
-    const d = await r.json()
-    if (!r.ok) { setError(d.error); setSaving(false); return }
-    setSaving(false); setShowForm(false); setEditing(null); setForm(EMPTY); setError(''); load()
+    try {
+      const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editing ? 'update' : 'create', id: editing, ...form }) })
+      const d = await r.json()
+      if (!r.ok) { setError(d.error); return }
+      setShowForm(false); setEditing(null); setForm(EMPTY); setError(''); load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
+    finally { setSaving(false) }
   }
 
   async function test(id: string) {
