@@ -3,6 +3,7 @@ import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT, getActorIp } from '@/lib/audit'
 import { cookies } from 'next/headers'
 import { getDb } from '@/lib/db'
+import { encrypt, decrypt } from '@/lib/encrypt'
 export const runtime = 'nodejs'
 const OPTS = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, maxAge: 60*60*24*7, path: '/' }
 
@@ -51,17 +52,18 @@ export async function POST(req: Request) {
     if (action === 'saveSsoConfig') {
       const { provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url } = body
       if (!provider || !client_id) return Response.json({ error: 'provider and client_id are required' }, { status: 400 })
-      // Keycloak/OIDC: require either (server_url + realm) or discovery_url; skip for Microsoft/Google
       const isOidc = !['microsoft', 'google'].includes(provider)
       if (isOidc && !discovery_url && !(server_url && realm)) {
         return Response.json({ error: 'Keycloak requires Server URL + Realm, or a Discovery URL' }, { status: 400 })
       }
       const sql = getDb()
-      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url)
-        VALUES (${provider}, ${provider}, ${client_id}, ${client_secret || null}, ${tenant_id || null}, ${enabled ? 1 : 0}, ${realm || null}, ${server_url || null}, ${discovery_url || null})
+      const clientSecretEnc = client_secret ? encrypt(client_secret) : null
+      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, client_secret_enc, tenant_id, enabled, realm, server_url, discovery_url)
+        VALUES (${provider}, ${provider}, ${client_id}, '', ${clientSecretEnc}, ${tenant_id || null}, ${enabled ? 1 : 0}, ${realm || null}, ${server_url || null}, ${discovery_url || null})
         ON CONFLICT(id) DO UPDATE SET
           client_id=${client_id},
-          client_secret=COALESCE(${client_secret || null}, client_secret),
+          client_secret='',
+          client_secret_enc=COALESCE(${clientSecretEnc}, client_secret_enc),
           tenant_id=${tenant_id || null},
           enabled=${enabled ? 1 : 0},
           realm=${realm || null},

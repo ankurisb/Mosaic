@@ -3,6 +3,7 @@
 // Flow: exchange auth code → verify id_token via JWKS → look up pre-provisioned user → issue JWT cookie.
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { decrypt } from '@/lib/encrypt'
 import { audit, AUDIT } from '@/lib/audit'
 import { createToken, COOKIE_NAME } from '@/lib/auth'
 import { cookies } from 'next/headers'
@@ -69,6 +70,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     const cfgRows = await sql`SELECT * FROM sso_config WHERE id=${provider} AND enabled=1`
     if (!cfgRows.length) return Response.redirect(`${APP_URL}/login?error=sso_not_configured`)
     const cfg = cfgRows[0] as Record<string, unknown>
+    // Decrypt client_secret — stored in client_secret_enc (migrated) or legacy client_secret
+    cfg.client_secret = cfg.client_secret_enc
+      ? decrypt(cfg.client_secret_enc as string)
+      : (cfg.client_secret as string || '')
 
     const redirectUri = `${APP_URL}/api/auth/callback/${provider}`
     let tokenUrl: string, jwksUrl: string, issuer: string | string[]

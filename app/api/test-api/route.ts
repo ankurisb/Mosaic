@@ -68,9 +68,9 @@ export async function POST(req: Request) {
 
   const authConfig = parseAuthConfig(svc.auth_config as string)
   const authType = svc.auth_type as string
-  const authResult = await applyAuth(svc.id as string, authType, authConfig, headers)
+  const authResult = await applyAuth(svc.id as string, authType, authConfig, headers, svc.base_url as string)
   if (!authResult.ok) {
-    return Response.json({ ok: false, error: authResult.error }, { status: 400 })
+    return Response.json({ ok: false, error: (authResult as { ok: false; error: string }).error }, { status: 400 })
   }
 
   if (svc.api_version && svc.version_header) headers[svc.version_header as string] = svc.api_version as string

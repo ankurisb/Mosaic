@@ -107,6 +107,14 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [parsedOk, setParsedOk] = useState(false)
+  const formRef = useRef<HTMLDivElement>(null)
+
+  // Scroll edit form into view when it opens
+  useEffect(() => {
+    if (showForm && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showForm, editing])
   // .env import state
   const envFileRef = useRef<HTMLInputElement>(null)
   const [envPreview, setEnvPreview] = useState<Array<{ key: string; value: string; selected: boolean; parsed: Partial<typeof EMPTY> | null }> | null>(null)
@@ -239,8 +247,6 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       </div>
       <PageSub>Direct database connections for live queries. Use Airbyte below to connect SaaS systems, ERP, and APIs.</PageSub>
 
-      <Alert variant="info"> Once connected, ask Mosaic: <em>"Query the [connection label] database for all customers ordered by revenue"</em></Alert>
-
       {/* Sandbox test DB */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ flex: 1 }}>
@@ -322,7 +328,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       )}
 
       {showForm && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, marginBottom: 20 }}>
+        <div ref={formRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, marginBottom: 20 }}>
           <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 20 }}>{editing ? 'Edit connection' : 'New database connection'}</div>
 
           {/* -- Connection string -- primary input -- */}

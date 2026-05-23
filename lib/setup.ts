@@ -1,6 +1,7 @@
 import { getDb, isPostgres } from './db'
 import bcrypt from 'bcryptjs'
 import { log } from './logger'
+import { encrypt } from './encrypt'
 
 let done = false
 
@@ -187,17 +188,28 @@ export async function setupDatabase() {
 
   // -- Usage events ----------------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS usage_events (
-    id            TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
-    user_id       TEXT NOT NULL,
-    user_email    TEXT,
-    type          TEXT NOT NULL,
-    model         TEXT,
-    input_tokens  INTEGER DEFAULT 0,
-    output_tokens INTEGER DEFAULT 0,
-    cost_usd      NUMERIC(10,6) DEFAULT 0,
-    latency_ms    INT,
-    created_at    TEXT DEFAULT (datetime('now'))
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    user_id         TEXT NOT NULL,
+    user_email      TEXT,
+    type            TEXT NOT NULL,
+    model           TEXT,
+    input_tokens    INTEGER DEFAULT 0,
+    output_tokens   INTEGER DEFAULT 0,
+    cost_usd        NUMERIC(10,6) DEFAULT 0,
+    latency_ms      INT,
+    conversation_id TEXT,
+    tool_calls_count INTEGER DEFAULT 0,
+    tool_types      TEXT,
+    source_types    TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
   )`
+
+  // Backfill new columns on existing databases (safe — all nullable)
+  await sql`ALTER TABLE usage_events ADD COLUMN conversation_id  TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN tool_calls_count INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN tool_types       TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN source_types     TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN latency_ms       INT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
 
   // -- File server connections -----------------------------------
   await sql`CREATE TABLE IF NOT EXISTS file_servers (
@@ -566,6 +578,25 @@ export async function setupDatabase() {
     created_at  TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
 
+  // -- Prism IoT platform connections ----------------------------
+  // Stores credentials for Prism (IoT intelligence platform) instances.
+  // username + password are used once to mint a JWT; token + refreshToken
+  // are cached and auto-refreshed. token_expiry is unix ms decoded from JWT.
+  await sql`CREATE TABLE IF NOT EXISTS prism_instances (
+    id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    label            TEXT NOT NULL,
+    base_url         TEXT NOT NULL,
+    environment      TEXT NOT NULL DEFAULT 'production',
+    username         TEXT NOT NULL,
+    password_enc     TEXT NOT NULL,
+    token_enc        TEXT,
+    refresh_token_enc TEXT,
+    token_expiry     INTEGER,
+    active           INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS connection_schemas (
     connection_id TEXT PRIMARY KEY,
     schema_json   TEXT NOT NULL,
@@ -578,6 +609,47 @@ export async function setupDatabase() {
   await sql`CREATE INDEX IF NOT EXISTS idx_usage_user        ON usage_events(user_id, created_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_usage_created     ON usage_events(created_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_rca_wf_type       ON rca_workflows(problem_type, active)`.catch(() => {})
+
+  // ── At-rest encryption migrations ─────────────────────────────────────────
+  // Encrypts any plaintext credentials that pre-date the enc2 column additions.
+  // All migrations are idempotent: already-encrypted values (enc2:...) are skipped.
+  // Uses the same AES-256-GCM encrypt() as the rest of the app.
+
+  // 1. sso_config.client_secret → encrypted in-place
+  //    Column rename isn't possible in SQLite, so we add client_secret_enc and
+  //    migrate existing rows, then read/write through the new column going forward.
+  await sql`ALTER TABLE sso_config ADD COLUMN client_secret_enc TEXT`.catch((e: unknown) => {
+    if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e
+  })
+  {
+    const ssoRows = await sql`SELECT id, client_secret, client_secret_enc FROM sso_config WHERE client_secret IS NOT NULL AND client_secret != ''`
+    for (const row of ssoRows as { id: string; client_secret: string; client_secret_enc: string | null }[]) {
+      if (row.client_secret_enc && row.client_secret_enc.startsWith('enc2:')) continue  // already encrypted
+      if (!row.client_secret) continue
+      const enc = encrypt(row.client_secret)
+      await sql`UPDATE sso_config SET client_secret_enc = ${enc}, client_secret = '' WHERE id = ${row.id}`
+    }
+  }
+
+  // 2. db_connections.connection_string — encrypt any plaintext rows
+  {
+    const connRows = await sql`SELECT id, connection_string FROM db_connections WHERE connection_string IS NOT NULL AND connection_string != ''`
+    for (const row of connRows as { id: string; connection_string: string }[]) {
+      if (row.connection_string.startsWith('enc2:')) continue  // already encrypted
+      const enc = encrypt(row.connection_string)
+      await sql`UPDATE db_connections SET connection_string = ${enc} WHERE id = ${row.id}`
+    }
+  }
+
+  // 3. db_connections.mcp_token — encrypt any plaintext rows
+  {
+    const tokenRows = await sql`SELECT id, mcp_token FROM db_connections WHERE mcp_token IS NOT NULL AND mcp_token != ''`
+    for (const row of tokenRows as { id: string; mcp_token: string }[]) {
+      if (row.mcp_token.startsWith('enc2:')) continue  // already encrypted
+      const enc = encrypt(row.mcp_token)
+      await sql`UPDATE db_connections SET mcp_token = ${enc} WHERE id = ${row.id}`
+    }
+  }
 
   // -- Bootstrap admin (legacy env-var path — kept for Docker/CI deployments) ---
   const email    = process.env.ADMIN_EMAIL

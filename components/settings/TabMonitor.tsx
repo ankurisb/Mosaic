@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle, PageSub, Btn, StatusDot, Spinner } from './ui'
 
-interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string }
+interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string; url?: string }
 interface Data { services: Svc[]; summary: { healthy: number; degraded: number; down: number; total: number } }
 
 interface LogEntry {
@@ -135,7 +135,14 @@ export default function TabMonitor() {
                   <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 18px', borderBottom: i < svcs.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <StatusDot status={s.status} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{s.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {s.label}
+                        {s.url && (
+                          <a href={s.url} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 11, color: 'var(--text3)', textDecoration: 'none', opacity: .7, lineHeight: 1 }}
+                            title={`Open ${s.label}`}>↗</a>
+                        )}
+                      </div>
                       {s.message && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.message}</div>}
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 500, color: s.status === 'healthy' ? 'var(--green-t)' : s.status === 'degraded' ? 'var(--amber-t)' : 'var(--red-t)' }}>{s.status}</span>

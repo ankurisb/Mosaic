@@ -57,6 +57,8 @@ services:
       # n8n integration
       - N8N_URL=${N8N_URL:-http://localhost:5678}
       - N8N_API_KEY=${N8N_API_KEY:-}
+      # OpenMeter metering (internal Docker network URL)
+      - OPENMETER_URL=http://openmeter:8888
       # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
       - SSO_ENABLED=${SSO_ENABLED:-false}
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
@@ -66,6 +68,8 @@ services:
       superset:
         condition: service_healthy
       elasticsearch:
+        condition: service_healthy
+      openmeter:
         condition: service_healthy
     networks:
       - mosaic-net
@@ -306,6 +310,130 @@ services:
       retries: 5
       start_period: 60s
 
+  # ── OpenMeter (Usage Metering) ──────────────────────────────
+  # Self-hosted metering infrastructure — collects structured usage
+  # events from Mosaic (chat completions, tool calls, RCA runs, etc.)
+  # and stores them in ClickHouse for high-cardinality time-series queries.
+  #
+  # ISOLATION: openmeter-clickhouse runs on internal port 19000 only.
+  # It is completely separate from any ClickHouse a customer may run
+  # for their own IoT/telemetry data. Never exposed to the host.
+  #
+  # Mosaic emits events via: POST http://openmeter:8888/v1/events
+  # OpenMeter UI (when needed): http://localhost:10000
+  # Lago wires in later for invoice generation — not included yet.
+  # ── Redpanda (Kafka-compatible message broker for OpenMeter) ─
+  # OpenMeter requires Kafka for event ingestion. Redpanda is a
+  # single-binary Kafka-compatible broker — no ZooKeeper, no JVM.
+  # Internal only — never exposed to host.
+  openmeter-postgres:
+    image: postgres:15-alpine
+    container_name: mosaic-openmeter-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=openmeter
+      - POSTGRES_USER=openmeter
+      - POSTGRES_PASSWORD=${OPENMETER_POSTGRES_PASSWORD:-openmeter-pg-secret}
+    volumes:
+      - openmeter-postgres-data:/var/lib/postgresql/data
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmeter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  openmeter-redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: mosaic-openmeter-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://openmeter-redpanda:9092,external://localhost:19092
+      - --smp 1
+      - --memory 512M
+      - --mode dev-container
+      - --default-log-level=warn
+    volumes:
+      - openmeter-redpanda-data:/var/lib/redpanda/data
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  openmeter-clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: mosaic-openmeter-clickhouse
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_DB=openmeter
+      - CLICKHOUSE_USER=openmeter
+      - CLICKHOUSE_PASSWORD=${OPENMETER_CLICKHOUSE_PASSWORD:-openmeter-ch-secret}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      # Force IPv4 listen — Docker Desktop on macOS disables IPv6
+      - CLICKHOUSE_LISTEN_HOST=0.0.0.0
+    volumes:
+      - openmeter-clickhouse-data:/var/lib/clickhouse
+    # Port 19000 intentionally NOT exposed to host — internal only.
+    # openmeter container talks to it over mosaic-net.
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+  openmeter:
+    image: ghcr.io/openmeterio/openmeter:latest
+    container_name: mosaic-openmeter
+    restart: unless-stopped
+    command: ["/bin/sh", "/etc/openmeter/start.sh"]
+    ports:
+      - "10000:10000"   # Admin UI — accessible locally for inspection
+      - "8888:8888"     # Ingest API — exposed for local dev (npm run dev)
+    volumes:
+      - ./docker/openmeter/config.yaml:/etc/openmeter/config.yaml:ro
+      - ./docker/openmeter/start.sh:/etc/openmeter/start.sh:ro
+    depends_on:
+      openmeter-clickhouse:
+        condition: service_healthy
+      openmeter-redpanda:
+        condition: service_healthy
+      openmeter-postgres:
+        condition: service_healthy
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:10000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Consumes events from Kafka (om_sys.api_events) and writes to ClickHouse.
+  # Required for events to flow from ingest → storage. Runs alongside openmeter.
+  openmeter-sink-worker:
+    image: ghcr.io/openmeterio/openmeter:latest
+    container_name: mosaic-openmeter-sink-worker
+    restart: unless-stopped
+    command: ["/usr/local/bin/openmeter-sink-worker", "--config", "/etc/openmeter/config.yaml"]
+    volumes:
+      - ./docker/openmeter/config.yaml:/etc/openmeter/config.yaml:ro
+    depends_on:
+      openmeter:
+        condition: service_healthy
+    networks:
+      - mosaic-net
+
   # ── Stats Sidecar ───────────────────────────────────────────
   # Python FastAPI service for statistical analysis.
   # Internal only — never exposed to host.
@@ -335,6 +463,9 @@ volumes:
   n8n-data:
   es-data:
   keycloak-data:
+  openmeter-clickhouse-data:
+  openmeter-redpanda-data:
+  openmeter-postgres-data:
 
 # ── Network ──────────────────────────────────────────────────
 networks:

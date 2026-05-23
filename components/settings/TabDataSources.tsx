@@ -4,8 +4,9 @@ import type { SessionUser } from '@/lib/auth'
 import TabDatabases from './TabDatabases'
 import TabAPIs from './TabAPIs'
 import TabFileServers from './TabFileServers'
+import TabPrism from './TabPrism'
 
-type SubTab = 'databases' | 'apis' | 'files'
+type SubTab = 'databases' | 'apis' | 'files' | 'prism'
 
 export default function TabDataSources({ user }: { user: SessionUser }) {
   const [activeTab, setActiveTab] = useState<SubTab>('databases')
@@ -14,6 +15,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
     { id: 'databases', label: 'Databases' },
     { id: 'apis',      label: 'API connections' },
     { id: 'files',     label: 'File servers' },
+    { id: 'prism',     label: 'Prism' },
   ]
 
   return (
@@ -31,6 +33,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       {activeTab === 'databases' && <TabDatabases user={user} />}
       {activeTab === 'apis'      && <TabAPIs user={user} />}
       {activeTab === 'files'     && <TabFileServers user={user} />}
+      {activeTab === 'prism'     && <TabPrism user={user} />}
     </div>
   )
 }

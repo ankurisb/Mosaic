@@ -932,7 +932,6 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       </div>
       <PageSub>Group related endpoints under a service. Auth is shared across all connections within a service.</PageSub>
 
-      <Alert variant="info"> Once connected, ask Mosaic: <em>"Fetch my latest HubSpot contacts"</em> or <em>"Get last month's Stripe revenue"</em></Alert>
 
       {error && <Alert variant="error">{error}</Alert>}
 

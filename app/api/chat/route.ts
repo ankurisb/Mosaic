@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
+import { emitEvent } from '@/lib/metering'
 import {
   getAiRulesInjection,
   checkContentAllowed,
@@ -28,6 +29,7 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6'
 
 export async function POST(req: Request) {
   const requestId = req.headers.get('x-request-id') || newRequestId()
+  const requestStart = Date.now()
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
 
@@ -83,10 +85,11 @@ export async function POST(req: Request) {
 
   // Inject available connections into system prompt
   const sql = getDb()
-  const [dbConns, apiConns, fileServers] = await Promise.all([
+  const [dbConns, apiConns, fileServers, prismInstances] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
     sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = 1 ORDER BY created_at ASC`.catch(() => []),
   ])
   const dialectHint = (dialect: unknown) => {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
@@ -141,7 +144,16 @@ export async function POST(req: Request) {
       }).join('\n') +
       (apiOverflow > 0 ? `\n(+${apiOverflow} more endpoints — ask to list them)` : '')
     : ''
-  const hasSources = dbConns.length > 0 || apiConns.length > 0
+  const prismList = (prismInstances as Record<string,unknown>[]).length
+    ? '\n\n## Prism IoT (query_prism tool — use instance_id)\n' +
+      (prismInstances as Record<string,unknown>[]).map((p: Record<string,unknown>) =>
+        `- id:"${p.id}" | "${p.label}" | ${p.base_url} | ${p.environment}\n` +
+        `  operations: telemetry_latest, telemetry_history, attributes, devices, assets, customers, alarms, dashboards\n` +
+        `  Use query_prism with operation + entity_id (device/asset UUID) for telemetry and attributes.\n` +
+        `  Use devices/assets/customers operations first to discover entity IDs if unknown.`
+      ).join('\n')
+    : ''
+  const hasSources = dbConns.length > 0 || apiConns.length > 0 || (prismInstances as unknown[]).length > 0
   const baseSystem = system || (hasSources
     ? `You are Mosaic, an intelligent assistant built for industrial and operational teams. You are knowledgeable, direct, and genuinely helpful — like a trusted analyst who knows the business deeply.
 
@@ -274,7 +286,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + rcaAddition + analyticsBlock + aiRulesBlock
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + rcaAddition + analyticsBlock + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
@@ -530,11 +542,49 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           }
         } catch { /* don't block on session save failure */ }
 
-        // Log usage
+        // Log usage — enriched with billing dimensions
         try {
           const cost = totalInput * pricing.input + totalOutput * pricing.output
+          const latencyMs = Date.now() - requestStart
           const usageSql = getDb()
-          await usageSql`INSERT INTO usage_events(user_id,user_email,type,model,input_tokens,output_tokens,cost_usd) VALUES(${session.id},${session.email},'chat',${model},${totalInput},${totalOutput},${cost})`
+
+          // Collect tool call dimensions for metering
+          const toolTypes = [...new Set(finalToolCalls.map(tc => tc.name))]
+          const sourceTypes = [...new Set(finalToolCalls
+            .map(tc => {
+              if (tc.name === 'query_database') return 'database'
+              if (tc.name === 'call_api') return 'api'
+              if (tc.name === 'read_file_server') return 'file_server'
+              if (tc.name === 'query_prism') return 'prism'
+              if (tc.name === 'web_search') return 'web_search'
+              if (tc.name === 'run_statistical_analysis') return 'stats'
+              return null
+            })
+            .filter(Boolean) as string[]
+          )]
+
+          await usageSql`
+            INSERT INTO usage_events
+              (user_id, user_email, type, model, input_tokens, output_tokens, cost_usd,
+               latency_ms, conversation_id, tool_calls_count, tool_types, source_types)
+            VALUES
+              (${session.id}, ${session.email}, 'chat', ${model}, ${totalInput}, ${totalOutput}, ${cost},
+               ${latencyMs}, ${convId || null}, ${toolCallsUsed},
+               ${toolTypes.length ? JSON.stringify(toolTypes) : null},
+               ${sourceTypes.length ? JSON.stringify(sourceTypes) : null})`
+
+          // Emit to OpenMeter — awaited with 3s timeout, never blocks chat
+          await emitEvent(session.id, 'chat_completion', {
+            model,
+            input_tokens: totalInput,
+            output_tokens: totalOutput,
+            cost_usd: cost,
+            latency_ms: latencyMs,
+            conversation_id: convId || undefined,
+            tool_calls_count: toolCallsUsed,
+            tool_types: toolTypes.length ? toolTypes : undefined,
+            source_types: sourceTypes.length ? sourceTypes : undefined,
+          } as Record<string, unknown>)
 
           // Type 6 — egress audit logging
           try {

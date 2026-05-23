@@ -48,6 +48,7 @@ function TabIcon({ id }: { id: string }) {
     case 'usage':        return <svg {...p}><rect x="1" y="7" width="3" height="6" rx="0.5"/><rect x="5.5" y="4" width="3" height="9" rx="0.5"/><rect x="10" y="1" width="3" height="12" rx="0.5"/></svg>
     case 'system-health':      return <svg {...p}><rect x="1" y="2" width="12" height="8" rx="1.5"/><path d="M4 13h6M7 10v3"/><path d="M3 6l2 2 2-3 2 2 1.5-1.5"/></svg>
     case 'data-sources': return <svg {...p}><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
+    case 'query-runner': return <svg {...p}><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5" strokeLinejoin="round"/></svg>
     case 'apis':         return <svg {...p}><rect x="1" y="4" width="12" height="6" rx="1.5"/><path d="M3.5 7h2M8.5 7h2"/></svg>
     case 'files':        return <svg {...p}><path d="M2 3h4l1.5 2H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>
     case 'analytics':    return <svg {...p}><polyline points="2,12 7,6 11,10 14,4 18,8"/><line x1="2" y1="12" x2="18" y2="12" opacity={0.3}/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>
@@ -64,13 +65,13 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   const TABS = ALL_TABS.filter(t => !t.adminOnly || user.role === 'admin')
   const validTabIds = TABS.map(t => t.id)
 
-  const [tab, setTab] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '')
-      if (validTabIds.includes(hash)) return hash
-    }
-    return user.role === 'admin' ? 'setup' : 'keys'
-  })
+  const [tab, setTab] = useState(user.role === 'admin' ? 'setup' : 'keys')
+
+  // Sync from URL hash after mount (SSR-safe — no window access during SSR)
+  useEffect(() => {
+    const hash = window.location.hash.replace('#', '')
+    if (validTabIds.includes(hash)) setTab(hash)
+  }, [])
 
   // Listen for hash changes so TabSetup action buttons can navigate here
   useEffect(() => {

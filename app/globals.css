@@ -128,6 +128,8 @@ input, textarea, button, select { font-family: inherit; }
 .conv-item:hover .conv-del-btn { opacity: 0.6 !important; }
 .conv-del-btn:hover { opacity: 1 !important; color: var(--text2) !important; }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Superset embedded dashboard iframe */
 [data-superset-embed] iframe,
 div[class*="superset"] iframe {

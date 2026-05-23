@@ -35,6 +35,12 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'Paste into n8n as Header Auth credential · n8n uses this to call Mosaic',           placeholder: 'Generate below' },
 }
 
+const SECTION_LINKS: Record<string, { envKey: string; defaultUrl: string }> = {
+  'Superset Analytics': { envKey: 'SUPERSET_URL',  defaultUrl: 'http://localhost:8088' },
+  'Airbyte Connectors': { envKey: 'AIRBYTE_URL',   defaultUrl: 'http://localhost:8080' },
+  'n8n Automation':     { envKey: 'N8N_URL',        defaultUrl: 'http://localhost:5678' },
+}
+
 export default function TabKeys({ user }: { user: SessionUser }) {
   const [keys,    setKeys]    = useState<Record<string, { configured: boolean; preview: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -104,7 +110,19 @@ export default function TabKeys({ user }: { user: SessionUser }) {
         <>
           {KEY_SECTIONS.map(section => (
             <div key={section.title} style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>{section.title}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {section.title}
+                {SECTION_LINKS[section.title] && (() => {
+                  const link = SECTION_LINKS[section.title]
+                  const urlKey = keys[link.envKey]
+                  const href = urlKey?.configured ? undefined : link.defaultUrl
+                  return (
+                    <a href={href ?? link.defaultUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 10, color: 'var(--text4)', textDecoration: 'none', fontWeight: 500, opacity: .8, textTransform: 'none', letterSpacing: 0 }}
+                      title={`Open ${section.title}`}>↗</a>
+                  )
+                })()}
+              </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
                 {section.keys.map((key, i) => {
                   const meta = KEY_META[key]

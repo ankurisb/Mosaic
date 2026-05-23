@@ -99,7 +99,6 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
       </div>
       <PageSub>Connect SMB shares, SFTP, S3 buckets, or local paths. Mosaic can read CSV, Excel, PDF, XML, and JSON files.</PageSub>
 
-      <Alert variant="info">Once connected, ask Mosaic: <em>"Read the latest OEE report from the [label] file server"</em></Alert>
 
       {error && <Alert variant="error">{error}</Alert>}
 

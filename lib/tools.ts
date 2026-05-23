@@ -8,6 +8,7 @@ import {
   wrapQueryResultsForSafety,
 } from './guardrails'
 import { decrypt } from './encrypt'
+import { getPrismToken, invalidatePrismToken } from './api-auth'
 import * as aws4 from 'aws4'
 
 // Bug 4.13: S3 reader was sending unauthenticated requests against private
@@ -157,6 +158,42 @@ IMPORTANT: After running statistical analysis, present results as narrative or t
       required: ['type', 'title']
     },
   },
+  {
+    name: 'query_prism',
+    description: `Query a connected Prism IoT platform instance for device data, asset information, telemetry, alarms, or dashboards.
+Use this tool when the user asks about IoT devices, sensors, real-time or historical telemetry, energy assets, alarms, or anything relating to a Prism instance.
+
+Operations:
+- telemetry_latest    — Latest values for one or more telemetry keys on a device. Use when user asks "what is the current X".
+- telemetry_history   — Historical timeseries for keys over a time range. Use when user asks for trends, charts, or historical data.
+- attributes          — Server-scope attributes for a device (configuration, rated capacity, tariffs, etc).
+- devices             — List all devices, optionally filtered by customer or asset.
+- assets              — List all assets in the platform.
+- customers           — List all customers/tenants.
+- alarms              — Active or recent alarms for a device or the whole instance.
+- dashboards          — List available dashboards.
+
+Always use telemetry_latest before telemetry_history when the user just wants the current value.
+For time ranges use Unix ms timestamps (startTs/endTs). If not given, default to last 24 hours.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        instance_id: { type: 'string', description: 'Prism instance ID from settings. If only one is configured, omit this and the tool will use it automatically.' },
+        operation: { type: 'string', enum: ['telemetry_latest', 'telemetry_history', 'attributes', 'devices', 'assets', 'customers', 'alarms', 'dashboards'], description: 'What to fetch.' },
+        entity_id: { type: 'string', description: 'Device or asset UUID. Required for telemetry_latest, telemetry_history, attributes, alarms.' },
+        entity_type: { type: 'string', enum: ['DEVICE', 'ASSET'], description: 'Entity type. Defaults to DEVICE for telemetry operations.' },
+        keys: { type: 'array', items: { type: 'string' }, description: 'Telemetry keys to fetch, e.g. ["stack_soc", "stack_power"]. For telemetry_latest and telemetry_history.' },
+        startTs: { type: 'number', description: 'Start timestamp in Unix ms. For telemetry_history.' },
+        endTs: { type: 'number', description: 'End timestamp in Unix ms. For telemetry_history.' },
+        limit: { type: 'number', description: 'Max data points to return. Default 1000 for history, 1 for latest.' },
+        agg: { type: 'string', enum: ['NONE', 'AVG', 'MIN', 'MAX', 'SUM', 'COUNT'], description: 'Aggregation function for telemetry_history. Default NONE.' },
+        interval: { type: 'number', description: 'Aggregation interval in ms. Only used with agg != NONE.' },
+        customer_id: { type: 'string', description: 'Filter devices/assets by customer ID.' },
+        page_size: { type: 'number', description: 'Page size for list operations (devices, assets, customers). Default 100.' },
+      },
+      required: ['operation']
+    },
+  },
 ]
 
 export async function runTool(
@@ -206,6 +243,7 @@ export async function runTool(
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
     case 'render_chart': return renderChart(input)
+    case 'query_prism': return queryPrism(input)
     default: throw new Error(`Unknown tool: ${name}`)
   }
 }
@@ -798,8 +836,8 @@ async function callApi(connectionId: string, method: string, path: string, body?
   try { Object.assign(headers, JSON.parse((conn.default_headers as string) || '{}')) } catch {}
   const authConfig = parseAuthConfig(conn.auth_config as string)
   const authType = (conn.auth_type as string) || ''
-  const authResult = await applyAuth(conn.service_id as string, authType, authConfig, headers)
-  if (!authResult.ok) throw new Error(authResult.error)
+  const authResult = await applyAuth(conn.service_id as string, authType, authConfig, headers, conn.base_url as string)
+  if (!authResult.ok) throw new Error((authResult as { ok: false; error: string }).error)
   if (conn.api_version && conn.version_header) headers[conn.version_header as string] = conn.api_version as string
   // SAP OData: auto-inject correct format headers/params based on path
   const isSap = basePath.includes('/sap/opu/')
@@ -836,10 +874,10 @@ async function callApi(connectionId: string, method: string, path: string, body?
     }
     if (data && typeof data === 'object') {
       const obj = data as Record<string, unknown>
-      for (const key of ['data', 'results', 'items', 'invoices', 'contacts', 'records', 'value']) {
-        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > MAX_RECORDS) {
-          return { ...obj, [key]: (obj[key] as unknown[]).slice(0, MAX_RECORDS), _capped: true, _total: (obj[key] as unknown[]).length, _returned: MAX_RECORDS }
-        }
+      // Auto-detect the array key (handles any envelope: invoices, contacts, equipment, purchase_orders, etc.)
+      const arrayKey = Object.keys(obj).find(k => Array.isArray(obj[k]) && (obj[k] as unknown[]).length > 0 && typeof (obj[k] as unknown[])[0] === 'object')
+      if (arrayKey && (obj[arrayKey] as unknown[]).length > MAX_RECORDS) {
+        return { ...obj, [arrayKey]: (obj[arrayKey] as unknown[]).slice(0, MAX_RECORDS), _capped: true, _total: (obj[arrayKey] as unknown[]).length, _returned: MAX_RECORDS }
       }
     }
     return data
@@ -2264,6 +2302,189 @@ export interface ChartSpec {
 export interface ChartArtifact {
   kind: 'chart_artifact'
   spec: ChartSpec
+}
+
+// -- Prism IoT query -------------------------------------------
+
+async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
+  const db = getDb()
+
+  // Resolve instance — use explicit id or fall back to single active instance
+  let instance: Record<string, unknown> | null = null
+  if (input.instance_id) {
+    const rows = await db`SELECT * FROM prism_instances WHERE id = ${String(input.instance_id)} AND active = 1`
+    instance = rows[0] ?? null
+  } else {
+    const rows = await db`SELECT * FROM prism_instances WHERE active = 1 ORDER BY created_at ASC LIMIT 1`
+    instance = rows[0] ?? null
+  }
+  if (!instance) return { error: 'No active Prism instance found. Add one in Settings → Data sources → Prism.' }
+
+  const base = (instance.base_url as string).replace(/\/$/, '')
+  const username = instance.username as string
+  const password = instance.password_enc ? decrypt(instance.password_enc as string) : ''
+  const instanceId = instance.id as string
+
+  // getPrismToken handles in-memory cache, DB-seeded cold-start, and refresh automatically
+  const authConfig: Record<string, string> = { username, password }
+  const tokenResult = await getPrismToken(instanceId, base, authConfig)
+  if (!tokenResult.ok) return { error: (tokenResult as { ok: false; error: string }).error }
+  const token = (tokenResult as { ok: true; token: string }).token
+  const hdr = { 'X-Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+  const op = String(input.operation || '')
+  const entityId = input.entity_id ? String(input.entity_id) : null
+  const entityType = String(input.entity_type || 'DEVICE')
+  const pageSize = Number(input.page_size || 100)
+
+  async function tbGet(path: string): Promise<unknown> {
+    const res = await fetch(`${base}${path}`, { headers: hdr, signal: AbortSignal.timeout(30000) })
+    if (res.status === 401) {
+      invalidatePrismToken(instanceId)
+      return { error: 'Prism session expired — retry the request' }
+    }
+    if (!res.ok) {
+      const text = await res.text()
+      return { error: `Prism API error ${res.status}: ${text.slice(0, 200)}` }
+    }
+    return res.json()
+  }
+
+  switch (op) {
+
+    case 'telemetry_latest': {
+      if (!entityId) return { error: 'entity_id required for telemetry_latest' }
+      const keys = Array.isArray(input.keys) && input.keys.length ? (input.keys as string[]).join(',') : ''
+      const path = `/api/plugins/telemetry/${entityType}/${entityId}/values/timeseries`
+        + (keys ? `?keys=${encodeURIComponent(keys)}&useStrictDataTypes=true` : '?useStrictDataTypes=true')
+      const data = await tbGet(path) as Record<string, { ts: number; value: unknown }[]>
+      if ('error' in (data as Record<string,unknown>)) return data
+      // Flatten to { key: { value, timestamp } }
+      const result: Record<string, { value: unknown; timestamp: string }> = {}
+      for (const [k, pts] of Object.entries(data)) {
+        if (pts?.length) result[k] = { value: pts[0].value, timestamp: new Date(pts[0].ts).toISOString() }
+      }
+      return { entity_id: entityId, entity_type: entityType, telemetry: result }
+    }
+
+    case 'telemetry_history': {
+      if (!entityId) return { error: 'entity_id required for telemetry_history' }
+      const keys = Array.isArray(input.keys) && input.keys.length ? (input.keys as string[]).join(',') : ''
+      if (!keys) return { error: 'keys required for telemetry_history' }
+      const endTs = Number(input.endTs || Date.now())
+      const startTs = Number(input.startTs || endTs - 86400000)
+      const limit = Number(input.limit || 1000)
+      const agg = String(input.agg || 'NONE')
+      const interval = input.interval ? `&interval=${input.interval}` : ''
+      const path = `/api/plugins/telemetry/${entityType}/${entityId}/values/timeseries`
+        + `?keys=${encodeURIComponent(keys)}&startTs=${startTs}&endTs=${endTs}`
+        + `&limit=${limit}&agg=${agg}&orderBy=ASC&useStrictDataTypes=true${interval}`
+      const data = await tbGet(path) as Record<string, { ts: number; value: unknown }[]>
+      if ('error' in (data as Record<string,unknown>)) return data
+      // Return condensed series: { key: [{ts, value},...] }
+      return { entity_id: entityId, entity_type: entityType, startTs, endTs, series: data }
+    }
+
+    case 'attributes': {
+      if (!entityId) return { error: 'entity_id required for attributes' }
+      const scopes = ['SERVER_SCOPE', 'SHARED_SCOPE', 'CLIENT_SCOPE']
+      const results: Record<string, unknown> = {}
+      for (const scope of scopes) {
+        const data = await tbGet(`/api/plugins/telemetry/${entityType}/${entityId}/values/attributes/${scope}`) as unknown[]
+        if (Array.isArray(data)) {
+          for (const attr of data as { key: string; value: unknown }[]) {
+            results[attr.key] = attr.value
+          }
+        }
+      }
+      return { entity_id: entityId, entity_type: entityType, attributes: results }
+    }
+
+    case 'devices': {
+      const customerFilter = input.customer_id ? `/customer/${input.customer_id}` : ''
+      const path = `/api${customerFilter}/tenant/devices?pageSize=${pageSize}&page=0`
+      const data = await tbGet(path) as { data: unknown[]; totalElements: number }
+      if ('error' in (data as Record<string,unknown>)) return data
+      return {
+        total: data.totalElements,
+        devices: (data.data || []).map((d: Record<string,unknown>) => ({
+          id: (d.id as Record<string,unknown>)?.id,
+          name: d.name,
+          type: d.type,
+          label: d.label,
+          active: d.active,
+        }))
+      }
+    }
+
+    case 'assets': {
+      const customerFilter = input.customer_id ? `/customer/${input.customer_id}` : ''
+      const path = `/api${customerFilter}/tenant/assets?pageSize=${pageSize}&page=0`
+      const data = await tbGet(path) as { data: unknown[]; totalElements: number }
+      if ('error' in (data as Record<string,unknown>)) return data
+      return {
+        total: data.totalElements,
+        assets: (data.data || []).map((a: Record<string,unknown>) => ({
+          id: (a.id as Record<string,unknown>)?.id,
+          name: a.name,
+          type: a.type,
+          label: a.label,
+        }))
+      }
+    }
+
+    case 'customers': {
+      const data = await tbGet(`/api/customers?pageSize=${pageSize}&page=0`) as { data: unknown[]; totalElements: number }
+      if ('error' in (data as Record<string,unknown>)) return data
+      return {
+        total: data.totalElements,
+        customers: (data.data || []).map((c: Record<string,unknown>) => ({
+          id: (c.id as Record<string,unknown>)?.id,
+          title: c.title,
+          email: c.email,
+          phone: c.phone,
+        }))
+      }
+    }
+
+    case 'alarms': {
+      const entityPath = entityId ? `/${entityType}/${entityId}` : ''
+      const path = entityId
+        ? `/api/alarm${entityPath}?pageSize=${pageSize}&page=0&searchStatus=ANY&fetchOriginator=true`
+        : `/api/alarms?pageSize=${pageSize}&page=0&searchStatus=ACTIVE&fetchOriginator=true`
+      const data = await tbGet(path) as { data: unknown[]; totalElements: number }
+      if ('error' in (data as Record<string,unknown>)) return data
+      return {
+        total: data.totalElements,
+        alarms: (data.data || []).map((a: Record<string,unknown>) => ({
+          id: (a.id as Record<string,unknown>)?.id,
+          type: a.type,
+          severity: a.severity,
+          status: a.status,
+          originator: (a.originator as Record<string,unknown>)?.entityType + ':' + (a.originator as Record<string,unknown>)?.id,
+          originatorName: a.originatorName,
+          createdTime: a.createdTime ? new Date(a.createdTime as number).toISOString() : null,
+          details: a.details,
+        }))
+      }
+    }
+
+    case 'dashboards': {
+      const data = await tbGet(`/api/tenant/dashboards?pageSize=${pageSize}&page=0`) as { data: unknown[]; totalElements: number }
+      if ('error' in (data as Record<string,unknown>)) return data
+      return {
+        total: data.totalElements,
+        dashboards: (data.data || []).map((d: Record<string,unknown>) => ({
+          id: (d.id as Record<string,unknown>)?.id,
+          title: d.title,
+          assignedCustomers: d.assignedCustomers,
+        }))
+      }
+    }
+
+    default:
+      return { error: `Unknown Prism operation: ${op}` }
+  }
 }
 
 function renderChart(input: Record<string, unknown>): ChartArtifact {

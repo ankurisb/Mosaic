@@ -167,7 +167,7 @@ export async function GET() {
     } catch {}
     const start = Date.now()
     const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(3000) })
-    results.push({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+    results.push({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: n8nUrl })
   } catch {
     results.push({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running' })
   }
@@ -178,7 +178,7 @@ export async function GET() {
     if (airbytes.length) {
       const start = Date.now()
       const res = await fetch(`${airbytes[0].url}/api/v1/health`, { signal: AbortSignal.timeout(4000) })
-      results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+      results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: airbytes[0].url })
     } else {
       results.push({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
     }
@@ -198,12 +198,38 @@ export async function GET() {
     results.push({ id: 'stats_sidecar', label: 'Stats Engine', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running — start with: cd services/stats-sidecar && python3 main.py' })
   }
 
+  // Check OpenMeter (Usage Metering)
+  const openMeterUrl = process.env.OPENMETER_URL || 'http://localhost:8888'
+  try {
+    const start = Date.now()
+    // OpenMeter health is on the telemetry port (10000), not the ingest port (8888)
+    const telemetryUrl = openMeterUrl.replace(':8888', ':10000')
+    const res = await fetch(`${telemetryUrl}/healthz`, { signal: AbortSignal.timeout(3000) })
+    if (res.ok) {
+      // Also fetch 24h ingest count for operational visibility
+      let eventsMsg = 'Running'
+      try {
+        const metricsRes = await fetch(`${telemetryUrl}/metrics`, { signal: AbortSignal.timeout(2000) })
+        if (metricsRes.ok) {
+          const metricsText = await metricsRes.text()
+          const match = metricsText.match(/openmeter_ingest_events_total[^\n]*\s+([\d.]+)/)
+          if (match) eventsMsg = `${Number(match[1]).toLocaleString()} events ingested total`
+        }
+      } catch { /* metrics fetch optional */ }
+      results.push({ id: 'openmeter', label: 'Usage Metering', category: 'infrastructure', status: 'healthy', latencyMs: Date.now() - start, message: eventsMsg, url: 'http://localhost:10000' })
+    } else {
+      results.push({ id: 'openmeter', label: 'Usage Metering', category: 'infrastructure', status: 'degraded', latencyMs: Date.now() - start, message: `HTTP ${res.status}` })
+    }
+  } catch {
+    results.push({ id: 'openmeter', label: 'Usage Metering', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running — start with: docker compose up -d openmeter' })
+  }
+
   // Check Superset
   const supersetUrl = process.env.SUPERSET_URL || 'http://localhost:8088'
   try {
     const start = Date.now()
     const res = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(4000) })
-    results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+    results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: supersetUrl })
   } catch {
     results.push({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null })
   }

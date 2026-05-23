@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
+import AppShell from '@/components/AppShell'
 
 type Tab = 'library' | 'templates' | 'history'
 
@@ -110,36 +111,34 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
   const filteredHistory = history.filter(r => !search || String(r.name).toLowerCase().includes(search.toLowerCase()) || String(r.trigger).toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)' }}>
-      {/* Header */}
-      <div style={{ padding: '20px 28px 0', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', padding: 0 }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L4 6l4 4"/></svg>
-            Back to chat
-          </button>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Reports</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
-          <div style={{ display: 'flex', gap: 0 }}>
-            {(['library', 'templates', 'history'] as Tab[]).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                style={{ padding: '10px 18px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--blue)' : '2px solid transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? 'var(--blue-t)' : 'var(--text3)', fontFamily: 'inherit', textTransform: 'capitalize' }}>
-                {t === 'library' ? 'Report library' : t === 'templates' ? 'Templates' : 'History'}
-              </button>
-            ))}
-          </div>
-          {isAdmin && tab === 'templates' && (
-            <button onClick={() => router.push('/reports/template/new')}
-              style={{ padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--blue)', color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              + New template
-            </button>
-          )}
-        </div>
+    <AppShell user={user}>
+      {/* Breadcrumb header */}
+      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <span style={{ fontSize: 13, color: 'var(--text3)' }}>Chat</span>
+        <span style={{ fontSize: 13, color: 'var(--text3)' }}>/</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Reports</span>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {(['library', 'templates', 'history'] as Tab[]).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              style={{ padding: '12px 18px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? 'var(--text)' : 'var(--text3)', fontFamily: 'inherit' }}>
+              {t === 'library' ? 'Report library' : t === 'templates' ? 'Templates' : 'History'}
+            </button>
+          ))}
+        </div>
+        {isAdmin && tab === 'templates' && (
+          <button onClick={() => router.push('/reports/template/new')}
+            style={{ padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + New template
+          </button>
+        )}
+      </div>
+
+      {/* Scrollable content — centred with max-width like other modules */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 900, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
 
         {/* Search */}
         {(tab === 'library' || tab === 'history') && (
@@ -311,6 +310,6 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   )
 }

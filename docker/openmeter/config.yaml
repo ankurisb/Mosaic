@@ -1,0 +1,28 @@
+address: 0.0.0.0:8888
+
+telemetry:
+  address: 0.0.0.0:10000
+
+namespace:
+  default: mosaic
+
+ingest:
+  kafka:
+    brokers: openmeter-redpanda:9092
+    broker: openmeter-redpanda:9092
+
+sink:
+  kafka:
+    brokers: openmeter-redpanda:9092
+    broker: openmeter-redpanda:9092
+    brokerAddressFamily: v4
+
+aggregation:
+  clickhouse:
+    address: openmeter-clickhouse:9000
+    database: openmeter
+    username: openmeter
+    password: openmeter-ch-secret
+
+postgres:
+  url: postgresql://openmeter:openmeter-pg-secret@openmeter-postgres:5432/openmeter?sslmode=disable
