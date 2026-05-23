@@ -810,6 +810,34 @@ export async function setupDatabase() {
     ('global_read_only', 'false')
   `.catch(() => {})
 
+  // ── Data retention settings ────────────────────────────────────────────────
+  // Per-dataset retention policies — configurable per deployment tier.
+  // All values are in days. 0 = disabled (keep forever). -1 = delete immediately.
+  await sql`CREATE TABLE IF NOT EXISTS data_retention_settings (
+    dataset       TEXT PRIMARY KEY,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    retention_days INTEGER NOT NULL DEFAULT 90,
+    last_purge_at TEXT,
+    last_purge_count INTEGER NOT NULL DEFAULT 0,
+    updated_at    TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  // Seed defaults — connector tier gets minimal defaults, full AI tier gets fuller ones.
+  // Admin can override any of these from the UI.
+  const retentionDefaults: Array<[string, number]> = [
+    ['conversations',    90],   // Chat history
+    ['messages',         90],   // Chat messages (follows conversations)
+    ['usage_events',     365],  // Token/cost metering (ISO 27001 — keep 1yr)
+    ['egress_events',    365],  // Data egress log (ISO 27001)
+    ['rca_sessions',     180],  // RCA analysis sessions
+    ['query_history',     90],  // Query builder history
+    ['integration_runs',  30],  // Notification/rule run log
+  ]
+  for (const [dataset, days] of retentionDefaults) {
+    await sql`INSERT OR IGNORE INTO data_retention_settings (dataset, retention_days)
+              VALUES (${dataset}, ${days})`.catch(() => {})
+  }
+
     done = true
 }
 

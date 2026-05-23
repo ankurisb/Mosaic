@@ -664,11 +664,23 @@ export async function POST(req: Request) {
     }
   }
 
+  // ============================================================
+  // NIGHTLY DATA RETENTION PURGE
+  // Run once per day — only if last purge was > 20 hours ago
+  // ============================================================
+  let retentionPurged = 0
+  try {
+    const { runDataRetentionPurge } = await import('@/lib/data-retention')
+    const retResults = await runDataRetentionPurge()
+    retentionPurged = retResults.reduce((s, r) => s + r.purged, 0)
+  } catch { /* non-blocking — never fail the scheduler */ }
+
   return Response.json({
     ok:              true,
     rules_checked:   rules.length,
     groups_checked:  groups.length,
     reports_run:     reportsRun,
+    retention_purged: retentionPurged,
     fired:           fired.length,
     errors:          errors.length,
     fired_ids:       fired,

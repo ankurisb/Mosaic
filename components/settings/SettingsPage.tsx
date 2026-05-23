@@ -17,6 +17,7 @@ import TabGuardrails from './TabGuardrails'
 import TabSetup from './TabSetup'
 import TabDeveloperAPI from './TabDeveloperAPI'
 import TabAudit from './TabAudit'
+import TabDataRetention from './TabDataRetention'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -33,6 +34,7 @@ const ALL_TABS = [
   { id: 'notifications', label: 'Notifications',        adminOnly: false },
   { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
   { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
+  { id: 'data-retention',label: 'Data retention',       adminOnly: true  },
   { id: 'about',         label: 'About',                adminOnly: false },
 ]
 
@@ -55,6 +57,7 @@ function TabIcon({ id }: { id: string }) {
     case 'rca-workflows':return <svg {...p}><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="10" width="4" height="3" rx="1"/><rect x="9" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="10"/><line x1="3" y1="7" x2="9" y2="7"/></svg>
     case 'notifications': return <svg {...p}><circle cx="3" cy="7" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="11" cy="11" r="1.5"/><path d="M4.5 7h2l2-4M4.5 7h2l2 4"/></svg>
     case 'guardrails':   return <svg {...p}><path d="M7 1l5 2v4c0 2.5-2 4.5-5 6C4 11.5 2 9.5 2 7V3l5-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
+    case 'data-retention': return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.5l2 1.5"/><path d="M2 7h1M12 7h1M7 2v1M7 12v1"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
     default:             return null
   }
@@ -148,6 +151,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
         {tab === 'analytics' && <TabAnalytics />}
           {tab === 'notifications' && <TabIntegrations user={user} />}
           {tab === 'guardrails' && <TabGuardrails user={user} />}
+          {tab === 'data-retention' && <TabDataRetention user={user} />}
         </div>
       </div>
     </div>
