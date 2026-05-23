@@ -6,6 +6,8 @@ import {
   checkActionAllowed,
   isHITLRequired,
   wrapQueryResultsForSafety,
+  stripBlockedColumnsFromResult,
+  type GuardrailAuditCtx,
 } from './guardrails'
 import { decrypt } from './encrypt'
 import { getPrismToken, invalidatePrismToken } from './api-auth'
@@ -202,13 +204,16 @@ export async function runTool(
   guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string }
 ): Promise<unknown> {
   const role = guardrailCtx?.userRole || 'user'
+  const auditCtx: GuardrailAuditCtx | undefined = guardrailCtx
+    ? { userId: guardrailCtx.userId, userEmail: guardrailCtx.userEmail, userRole: role, conversationId: guardrailCtx.conversationId }
+    : undefined
 
   // Type 3 — Action controls: check before every tool call
   try {
     const method = name === 'call_api' ? String(input.method || 'GET') : undefined
     const sqlQ = name === 'query_database' ? String(input.sql || '') : undefined
     const srcId = String(input.connection_id || input.server_id || input.service_id || '')
-    const actionCheck = await checkActionAllowed(name, method, sqlQ, srcId, role)
+    const actionCheck = await checkActionAllowed(name, method, sqlQ, srcId, role, auditCtx)
     if (!actionCheck.allowed) {
       return { error: actionCheck.reason, blocked: true }
     }
@@ -216,16 +221,28 @@ export async function runTool(
 
   switch (name) {
     case 'web_search': return webSearch(String(input.query))
+
     case 'query_database': {
-      // Type 2 — data access rules
+      const srcId = String(input.connection_id || '')
+      // Type 2 — data access rules (pre-query: table whitelist, column block, row filter)
       try {
-        const accessCheck = await applyDataAccessRules(String(input.sql || ''), String(input.connection_id || ''), 'database', role)
+        const accessCheck = await applyDataAccessRules(String(input.sql || ''), srcId, 'database', role, auditCtx)
         if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
         if (accessCheck.modified && accessCheck.modifiedQuery) input = { ...input, sql: accessCheck.modifiedQuery }
       } catch { }
-      return queryDatabase(String(input.connection_id), String(input.sql))
+      // Execute
+      const result = await queryDatabase(srcId, String(input.sql))
+      // Post-query: strip any blocked columns from returned results (defence-in-depth)
+      try { return await stripBlockedColumnsFromResult(result, srcId, 'database', role) } catch { return result }
     }
+
     case 'call_api': {
+      const srcId = String(input.connection_id || input.service_id || '')
+      // Type 2 — data access rules for API sources
+      try {
+        const accessCheck = await applyDataAccessRules(String(input.path || ''), srcId, 'api', role, auditCtx)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+      } catch { }
       // Type 7 — HITL: require confirmation for write API calls
       try {
         if (guardrailCtx && await isHITLRequired('call_api', String(input.method || 'GET'))) {
@@ -237,13 +254,35 @@ export async function runTool(
           }
         }
       } catch { }
-      return callApi(String(input.connection_id), String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
+      return callApi(srcId, String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
     }
-    case 'read_file_server': return readFileServer(String(input.server_id), String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
+
+    case 'read_file_server': {
+      const srcId = String(input.server_id || '')
+      // Type 2 — data access rules for file server sources
+      try {
+        const accessCheck = await applyDataAccessRules(String(input.file_hint || ''), srcId, 'file_server', role, auditCtx)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+      } catch { }
+      const result = await readFileServer(srcId, String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
+      // Post-read: strip blocked columns from file results
+      try { return await stripBlockedColumnsFromResult(result, srcId, 'file_server', role) } catch { return result }
+    }
+
+    case 'query_prism': {
+      const srcId = String((input as Record<string, unknown>).instance_id || '')
+      // Type 2 — data access rules for Prism IoT sources
+      try {
+        const accessCheck = await applyDataAccessRules(String(input.query || JSON.stringify(input)), srcId, 'api', role, auditCtx)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+      } catch { }
+      const result = await queryPrism(input)
+      try { return await stripBlockedColumnsFromResult(result, srcId, 'api', role) } catch { return result }
+    }
+
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
     case 'render_chart': return renderChart(input)
-    case 'query_prism': return queryPrism(input)
     default: throw new Error(`Unknown tool: ${name}`)
   }
 }

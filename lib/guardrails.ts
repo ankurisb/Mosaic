@@ -5,6 +5,16 @@
  */
 
 import { getDb } from './db'
+import { audit, AUDIT } from './audit'
+
+// Map GuardrailAuditCtx → AuditActor shape expected by audit()
+function toActor(ctx: GuardrailAuditCtx) {
+  return {
+    id:    ctx.id    ?? ctx.userId,
+    email: ctx.email ?? ctx.userEmail,
+    role:  ctx.role  ?? ctx.userRole,
+  }
+}
 
 
 // ── Safe JSON column parser (SQLite auto-parses JSON; Postgres returns strings) ─
@@ -23,6 +33,19 @@ export interface GuardrailContext {
   userRole: string
   conversationId?: string
   model?: string
+}
+
+// Minimal context needed to emit audit events from guardrail blocks.
+// Matches the AuditActor shape expected by lib/audit.ts.
+export interface GuardrailAuditCtx {
+  userId?: string
+  userEmail?: string
+  userRole?: string
+  conversationId?: string
+  // AuditActor-compatible aliases used when calling audit()
+  id?: string
+  email?: string
+  role?: string
 }
 
 export interface SourceAccess {
@@ -86,7 +109,8 @@ export async function applyDataAccessRules(
   sql_query: string,
   sourceId: string,
   sourceType: string,
-  role: string
+  role: string,
+  auditCtx?: GuardrailAuditCtx
 ): Promise<GuardrailResult> {
   try {
     const sql = getDb()
@@ -107,10 +131,15 @@ export async function applyDataAccessRules(
       if (allowedTables.length > 0) {
         const mentionsAllowed = allowedTables.some(t => upper.includes(t.toUpperCase()))
         if (!mentionsAllowed) {
-          return {
-            allowed: false,
-            reason: `Access denied: your role (${role}) may only query: ${allowedTables.join(', ')}`
+          const reason = `Access denied: your role (${role}) may only query: ${allowedTables.join(', ')}`
+          if (auditCtx) {
+            audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `source:${sourceId}`, 'failure', {
+              guardrail_type: 'data_access', rule: 'allowed_tables',
+              role, sourceId, sourceType, blocked_reason: reason,
+              conversationId: auditCtx.conversationId,
+            })
           }
+          return { allowed: false, reason }
         }
       }
 
@@ -118,10 +147,15 @@ export async function applyDataAccessRules(
       const blockedCols: string[] = jsonCol<string[]>(row.blocked_columns, [])
       for (const col of blockedCols) {
         if (upper.includes(col.toUpperCase())) {
-          return {
-            allowed: false,
-            reason: `Access denied: column "${col}" is restricted for your role.`
+          const reason = `Access denied: column "${col}" is restricted for your role.`
+          if (auditCtx) {
+            audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `source:${sourceId}`, 'failure', {
+              guardrail_type: 'data_access', rule: 'blocked_column',
+              role, sourceId, sourceType, blocked_column: col,
+              conversationId: auditCtx.conversationId,
+            })
           }
+          return { allowed: false, reason }
         }
       }
 
@@ -165,7 +199,8 @@ export async function checkActionAllowed(
   method: string | undefined,
   sqlQuery: string | undefined,
   sourceId: string | undefined,
-  role: string
+  role: string,
+  auditCtx?: GuardrailAuditCtx
 ): Promise<GuardrailResult> {
   try {
     // Global read-only check
@@ -173,7 +208,9 @@ export async function checkActionAllowed(
     if (globalRO === 'true' && sqlQuery) {
       const upper = sqlQuery.toUpperCase().trim()
       if (upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') || upper.startsWith('DROP') || upper.startsWith('TRUNCATE')) {
-        return { allowed: false, reason: 'System is in global read-only mode. Write operations are not permitted.' }
+        const reason = 'System is in global read-only mode. Write operations are not permitted.'
+        if (auditCtx) audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `tool:${toolName}`, 'failure', { guardrail_type: 'action', rule: 'global_read_only', role, toolName })
+        return { allowed: false, reason }
       }
     }
 
@@ -190,14 +227,18 @@ export async function checkActionAllowed(
       // Blocked tools
       const blocked: string[] = jsonCol<string[]>(row.blocked_tools, [])
       if (blocked.includes(toolName)) {
-        return { allowed: false, reason: `Tool "${toolName}" is disabled for your role.` }
+        const reason = `Tool "${toolName}" is disabled for your role.`
+        if (auditCtx) audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `tool:${toolName}`, 'failure', { guardrail_type: 'action', rule: 'blocked_tool', role, toolName })
+        return { allowed: false, reason }
       }
 
       // Read-only enforcement
       if (row.read_only && sqlQuery) {
         const upper = sqlQuery.toUpperCase().trim()
         if (upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') || upper.startsWith('DROP') || upper.startsWith('TRUNCATE')) {
-          return { allowed: false, reason: 'This data source is configured as read-only. Write operations are not permitted.' }
+          const reason = 'This data source is configured as read-only. Write operations are not permitted.'
+          if (auditCtx) audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `source:${sourceId}`, 'failure', { guardrail_type: 'action', rule: 'read_only', role, toolName, sourceId })
+          return { allowed: false, reason }
         }
       }
 
@@ -205,7 +246,9 @@ export async function checkActionAllowed(
       if (method && toolName === 'call_api') {
         const allowedMethods: string[] = jsonCol<string[]>(row.allowed_methods, ['GET','POST','PUT','PATCH','DELETE'])
         if (!allowedMethods.includes(method.toUpperCase())) {
-          return { allowed: false, reason: `HTTP method ${method.toUpperCase()} is not allowed for your role. Permitted: ${allowedMethods.join(', ')}` }
+          const reason = `HTTP method ${method.toUpperCase()} is not allowed for your role. Permitted: ${allowedMethods.join(', ')}`
+          if (auditCtx) audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `tool:call_api`, 'failure', { guardrail_type: 'action', rule: 'http_method', role, method, allowedMethods })
+          return { allowed: false, reason }
         }
       }
     }
@@ -419,4 +462,58 @@ export async function wrapQueryResultsForSafety(
 
 export function checkInputForInjection(userMessage: string): boolean {
   return INJECTION_PATTERNS.some(p => p.test(userMessage))
+}
+
+// ── Column stripping from returned results ────────────────────────────────────
+// Even if a query got through, strip blocked columns from the returned JSON.
+// Called after query execution for defence-in-depth (ISO 27001 A.9.4.1).
+
+export async function stripBlockedColumnsFromResult(
+  result: unknown,
+  sourceId: string,
+  sourceType: string,
+  role: string
+): Promise<unknown> {
+  try {
+    const sql = getDb()
+    const rows = await sql`
+      SELECT blocked_columns FROM guardrail_data_access
+      WHERE enabled = 1 AND role = ${role}
+      AND (source_id IS NULL OR source_id = ${sourceId})
+      AND source_type = ${sourceType}
+    `
+    if (!rows.length) return result
+
+    const blocked: string[] = []
+    for (const row of rows as Record<string, unknown>[]) {
+      const cols = jsonCol<string[]>(row.blocked_columns, [])
+      blocked.push(...cols)
+    }
+    if (!blocked.length) return result
+
+    const blockedLower = blocked.map(c => c.toLowerCase())
+
+    // Strip from array of objects (typical SQL result)
+    if (Array.isArray(result)) {
+      return result.map(item => {
+        if (typeof item !== 'object' || !item) return item
+        const out: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(item as Record<string, unknown>)) {
+          if (!blockedLower.includes(k.toLowerCase())) out[k] = v
+        }
+        return out
+      })
+    }
+
+    // Strip from single object
+    if (typeof result === 'object' && result !== null) {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(result as Record<string, unknown>)) {
+        if (!blockedLower.includes(k.toLowerCase())) out[k] = v
+      }
+      return out
+    }
+
+    return result
+  } catch { return result }
 }

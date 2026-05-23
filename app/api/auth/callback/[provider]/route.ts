@@ -135,15 +135,41 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     const user = userRows[0]
     if (user.banned) return Response.redirect(`${APP_URL}/login?error=account_banned`)
 
+    // ── SSO Role Federation (ISO 27001 A.9.2 — user access management) ──────
+    // Extract roles from Keycloak JWT claims and map to Mosaic role.
+    // Keycloak puts roles in: payload.realm_access.roles[]
+    // Any role named "admin", "mosaic-admin", or "mosaic_admin" → Mosaic admin.
+    // All other SSO users default to 'user'.
+    let derivedRole: 'admin' | 'user' = user.role as 'admin' | 'user'
+    const realmAccess = payload.realm_access as { roles?: string[] } | undefined
+    const resourceAccess = payload.resource_access as Record<string, { roles?: string[] }> | undefined
+    const ssoRoles: string[] = [
+      ...(realmAccess?.roles || []),
+      ...(resourceAccess?.[String(cfg.client_id)]?.roles || []),
+    ].map(r => r.toLowerCase())
+
+    const ADMIN_ROLE_NAMES = ['admin', 'mosaic-admin', 'mosaic_admin', 'administrator']
+    const isAdminViaSso = ssoRoles.some(r => ADMIN_ROLE_NAMES.includes(r))
+    const newRole: 'admin' | 'user' = isAdminViaSso ? 'admin' : 'user'
+
+    // Only update if role has changed — avoids unnecessary writes and audit noise
+    if (newRole !== derivedRole) {
+      await sql`UPDATE users SET role = ${newRole} WHERE id = ${user.id}`
+      derivedRole = newRole
+      audit(req, { id: user.id as string, email: user.email as string, role: newRole }, AUDIT.SSO_ROLE_ASSIGNED, `user:${user.email}`, 'success', {
+        provider, previous_role: user.role, new_role: newRole, sso_roles: ssoRoles,
+      })
+    }
+
     // Update sso_provider/sso_sub and last_login_at
     await sql`UPDATE users SET sso_provider=${provider}, sso_sub=${sub}, last_login_at=datetime('now') WHERE id=${user.id}`
 
-    // Issue Mosaic JWT cookie — same as email/password flow
+    // Issue Mosaic JWT cookie — use derived role
     const token = await createToken({
       id:    user.id    as string,
       email: user.email as string,
       name:  (user.name || name || email) as string,
-      role:  user.role  as 'admin' | 'user',
+      role:  derivedRole,
     })
     const store = await cookies()
     store.set(COOKIE_NAME, token, OPTS)

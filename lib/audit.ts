@@ -47,6 +47,11 @@ export const AUDIT = {
   // Settings
   SETTINGS_UPDATE:     'SETTINGS_UPDATE',
   GUARDRAIL_UPDATE:    'GUARDRAIL_UPDATE',
+  // Guardrail enforcement events (ISO 27001 A.9.4 access control logging)
+  GUARDRAIL_BLOCK:     'GUARDRAIL_BLOCK',     // Access denied by guardrail rule
+  DATA_ACCESS_DENY:    'DATA_ACCESS_DENY',    // Data source access denied
+  // SSO role federation
+  SSO_ROLE_ASSIGNED:   'SSO_ROLE_ASSIGNED',   // Keycloak group → Mosaic role assignment
   // Audit system itself
   AUDIT_LOG_VIEW:      'AUDIT_LOG_VIEW',
   AUDIT_LOG_EXPORT:    'AUDIT_LOG_EXPORT',

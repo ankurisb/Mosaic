@@ -29,6 +29,8 @@ const ACTION_COLOR: Record<string, string> = {
   API_KEY_CREATE: 'blue', API_KEY_REVOKE: 'red',
   USER_CREATE: 'blue', USER_UPDATE: 'blue', USER_DELETE: 'red', USER_BAN: 'red',
   SETTINGS_UPDATE: 'amber', GUARDRAIL_UPDATE: 'amber',
+  GUARDRAIL_BLOCK: 'red', DATA_ACCESS_DENY: 'red',
+  SSO_ROLE_ASSIGNED: 'blue',
   RULE_FIRE: 'amber', NOTIFICATION_SEND: 'gray',
 }
 
