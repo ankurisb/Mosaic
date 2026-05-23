@@ -453,6 +453,75 @@ services:
       retries: 3
       start_period: 30s
 
+  # ── CISO Assistant (GRC Platform) ───────────────────────────
+  # Self-hosted GRC platform: ISO 27001, SOC 2, NIST CSF, and
+  # 130+ frameworks. Handles risk register, control evidence,
+  # audit documentation, and Statement of Applicability.
+  #
+  # Complements Mosaic's automated technical controls layer:
+  #   Mosaic     → Settings → Audit trail → "Show live checks"
+  #                automated evidence (logging, encryption, RBAC)
+  #   CISO Asst. → http://localhost:8443
+  #                governance docs (risk register, SOPs, SoA)
+  #
+  # First run creates the superuser from CISO_SUPERUSER_EMAIL /
+  # CISO_SUPERUSER_PASSWORD in .env.local automatically.
+  # Access: http://localhost:8443
+
+  ciso-backend:
+    image: ghcr.io/intuitem/ciso-assistant-community/backend:latest
+    container_name: ciso-backend
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - ALLOWED_HOSTS=ciso-backend,localhost,127.0.0.1
+      - CISO_ASSISTANT_URL=http://localhost:8443
+      - DJANGO_DEBUG=False
+      - AUTH_TOKEN_TTL=7200
+      - CISO_ASSISTANT_SUPERUSER_EMAIL=${CISO_SUPERUSER_EMAIL:-admin@mosaic.local}
+      - CISO_ASSISTANT_SUPERUSER_PASSWORD=${CISO_SUPERUSER_PASSWORD:-changeme}
+    volumes:
+      - ciso-data:/code/db
+    networks:
+      - mosaic-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/build || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  ciso-frontend:
+    image: ghcr.io/intuitem/ciso-assistant-community/frontend:latest
+    container_name: ciso-frontend
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - PUBLIC_BACKEND_API_URL=http://ciso-backend:8000/api
+      - PUBLIC_BACKEND_API_EXPOSED_URL=http://localhost:8443/api
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
+    depends_on:
+      ciso-backend:
+        condition: service_healthy
+    networks:
+      - mosaic-net
+
+  ciso-caddy:
+    image: caddy:2.11.2
+    container_name: ciso-caddy
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./docker/ciso/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ciso-caddy-data:/data/caddy
+    depends_on:
+      - ciso-frontend
+      - ciso-backend
+    networks:
+      - mosaic-net
+
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
   mosaic-data:
@@ -466,6 +535,8 @@ volumes:
   openmeter-clickhouse-data:
   openmeter-redpanda-data:
   openmeter-postgres-data:
+  ciso-data:
+  ciso-caddy-data:
 
 # ── Network ──────────────────────────────────────────────────
 networks:
