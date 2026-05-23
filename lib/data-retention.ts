@@ -116,9 +116,9 @@ async function purgeDataset(
     return n
   }
   if (dataset === 'query_history') {
-    const r = await sql`SELECT COUNT(*) as cnt FROM query_history WHERE created_at < ${cutoff}`
+    const r = await sql`SELECT COUNT(*) as cnt FROM query_history WHERE executed_at < ${cutoff}`
     const n = Number((r[0] as { cnt: unknown })?.cnt || 0)
-    if (n > 0) await sql`DELETE FROM query_history WHERE created_at < ${cutoff}`
+    if (n > 0) await sql`DELETE FROM query_history WHERE executed_at < ${cutoff}`
     return n
   }
   if (dataset === 'integration_runs') {
