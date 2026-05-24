@@ -588,6 +588,27 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           </div>
         </div>
 
+        {/* Primary nav */}
+        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+          {([ 
+            { label: 'Chats',         href: null,              active: true,  icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg> },
+            { label: 'Dashboards',    href: '/dashboards',     active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg> },
+            { label: 'Reports',       href: '/reports',        active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/></svg> },
+            { label: 'Query Builder', href: '/query-builder',  active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5"/></svg> },
+            { label: 'Rules',         href: '/rules',          active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/></svg> },
+          ] as { label: string; href: string | null; active: boolean; icon: React.ReactNode }[]).map(item => (
+            <button key={item.label}
+              onClick={() => item.href ? router.push(item.href) : undefined}
+              title={sidebarCollapsed ? item.label : undefined}
+              style={{ width: '100%', padding: '7px 10px', background: item.active ? 'var(--bg3)' : 'none', border: `1px solid ${item.active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: item.href ? 'pointer' : 'default', fontSize: 12, color: item.active ? 'var(--text)' : 'var(--text2)', fontWeight: item.active ? 500 : 400, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 1 }}
+              onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = 'var(--bg3)' }}
+              onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = 'none' }}>
+              <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{item.icon}</span>
+              {!sidebarCollapsed && item.label}
+            </button>
+          ))}
+        </div>
+
         {/* Conversations */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
           {sidebarCollapsed ? (
@@ -618,47 +639,6 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               ))}
             </>
           )}
-        </div>
-
-        {/* Footer nav */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '8px' }}>
-          <button onClick={() => router.push('/dashboards')} title="Dashboards"
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/>
-            </svg>
-            {!sidebarCollapsed && 'Dashboards'}
-          </button>
-          <button onClick={() => router.push('/reports')} title="Reports"
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/>
-            </svg>
-            {!sidebarCollapsed && 'Reports'}
-          </button>
-          <button onClick={() => router.push('/query-builder')} title="Query Builder"
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5" strokeLinejoin="round"/>
-            </svg>
-            {!sidebarCollapsed && 'Query Builder'}
-          </button>
-          <button onClick={() => router.push('/rules')} title="Rules"
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: '1px solid transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/>
-            </svg>
-            {!sidebarCollapsed && 'Rules'}
-          </button>
-
         </div>
 
         {/* User + theme */}
