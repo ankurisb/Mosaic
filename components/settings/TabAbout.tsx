@@ -58,19 +58,20 @@ export default function TabAbout() {
         </div>
         <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>Build {deploy?.buildDate || '...'} · v{deploy?.currentVersion || '...'} · ugx.ai</p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
           {[
-            { label: 'Platform',       value: deploy ? (isVercel ? 'Vercel (serverless)' : 'Self-hosted (Node.js)') : '—', sub: deploy ? (isVercel ? 'Serverless functions' : deploy.appUrl) : 'Loading...' },
-            { label: 'AI model',       value: 'claude-sonnet-4-6', sub: 'Anthropic · streaming' },
-            { label: 'Database',       value: deploy?.database || '—', sub: deploy ? (deploy.database.includes('SQLite') ? 'Local file · zero-config' : 'Cloud · auto-scaling') : 'Loading...' },
-            { label: 'Authentication', value: 'JWT + bcrypt', sub: '7-day sessions' },
-            { label: 'Scheduler',      value: deploy ? (deploy.scheduler + ' · every 60s') : '—', sub: deploy ? (isVercel ? 'vercel.json crons' : 'Built-in Node timer') : 'Loading...' },
-            { label: 'Environment',    value: deploy?.nodeEnv || '—', sub: deploy ? (deploy.nodeEnv === 'production' ? 'Production build' : 'Development mode') : 'Loading...' },
-          ].map(item => (
-            <div key={item.label} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: 5 }}>{item.label}</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>{item.value}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{item.sub}</div>
+            { label: 'Platform',       value: deploy ? (isVercel ? 'Vercel (serverless)' : 'Self-hosted (Node.js)') : '—', sub: deploy ? (isVercel ? 'Serverless functions' : deploy.appUrl) : 'Loading...', icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="12" height="9" rx="1.5"/><path d="M4 13h6M7 11v2"/></svg> },
+            { label: 'AI model',       value: 'claude-sonnet-4-6', sub: 'Anthropic · streaming',                                                                                                               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M5 7l2 2 2-3"/></svg> },
+            { label: 'Database',       value: deploy?.database || '—', sub: deploy ? (deploy.database.includes('SQLite') ? 'Local file · zero-config' : 'Cloud · auto-scaling') : 'Loading...',               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg> },
+            { label: 'Authentication', value: 'JWT + bcrypt', sub: '7-day sessions',                                                                                                                           icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg> },
+            { label: 'Scheduler',      value: deploy ? (deploy.scheduler + ' · every 60s') : '—', sub: deploy ? (isVercel ? 'vercel.json crons' : 'Built-in Node timer') : 'Loading...',                     icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/></svg> },
+            { label: 'Environment',    value: deploy?.nodeEnv || '—', sub: deploy ? (deploy.nodeEnv === 'production' ? 'Production build' : 'Development mode') : 'Loading...',                               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h6M2 10h8"/></svg> },
+          ].map((item, i, arr) => (
+            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: 'var(--surface)' }}>
+              <span style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center', flexShrink: 0, width: 16 }}>{item.icon}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.07em', width: 110, flexShrink: 0 }}>{item.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', flex: 1 }}>{item.value}</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'right' as const }}>{item.sub}</span>
             </div>
           ))}
         </div>
