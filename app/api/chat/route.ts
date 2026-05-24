@@ -7,6 +7,7 @@ import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
+import { writeTransparencyLog } from '@/lib/transparency'
 import {
   getAiRulesInjection,
   checkContentAllowed,
@@ -508,6 +509,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         }
         // Persist assistant message + update conversation timestamp
         let rcaBlock: unknown = null
+        let persistedMessageId: string | null = null
         try {
           if (convId && finalText) {
             const persistSql = getDb()
@@ -517,9 +519,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         : null
         if (rcaBlock) audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_TRIGGER, `conversation:${convId}`, 'success', { problem: lastUserContent.slice(0, 100), workflow_id: matchedWorkflow ? (matchedWorkflow as Record<string,unknown>).id : null })
             const cleanText = finalText.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
-            await persistSql`
+            const msgRows = await persistSql`
               INSERT INTO messages (conversation_id, role, content, tool_calls, rca_block)
-              VALUES (${convId}, 'assistant', ${cleanText}, ${finalToolCalls.length ? JSON.stringify(finalToolCalls) : null}, ${rcaBlock ? JSON.stringify(rcaBlock) : null})`
+              VALUES (${convId}, 'assistant', ${cleanText}, ${finalToolCalls.length ? JSON.stringify(finalToolCalls) : null}, ${rcaBlock ? JSON.stringify(rcaBlock) : null})
+              RETURNING id`
+            persistedMessageId = (msgRows[0] as { id: string } | undefined)?.id ?? null
             await persistSql`UPDATE conversations SET updated_at = datetime('now') WHERE id = ${convId}`
           }
         } catch { /* don't block on persistence failure */ }
@@ -601,6 +605,25 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             await logEgressEvent(egressCtx, sourcesAccessed, totalInput, totalOutput, lastUserContent.slice(0, 200))
           } catch { /* non-blocking */ }
         } catch {}
+
+        // Phase F — AI Transparency Ledger
+        // Write a human-readable record of what this response did, fire-and-forget.
+        writeTransparencyLog({
+          messageId:      persistedMessageId,
+          conversationId: convId ?? null,
+          userId:         session.id ?? '',
+          userEmail:      session.email ?? '',
+          question:       lastUserContent,
+          answerSummary:  finalText.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim(),
+          toolCalls:      finalToolCalls,
+          inputTokens:    totalInput,
+          outputTokens:   totalOutput,
+          costUsd:        totalInput * pricing.input + totalOutput * pricing.output,
+          latencyMs:      Date.now() - requestStart,
+          model,
+          isRca:          !!rcaBlock,
+        }).catch(() => {})
+
         send({ type: 'done' })
         reqLog.info({ model, inputTokens: totalInput, outputTokens: totalOutput, toolCalls: toolCallsUsed }, 'Chat request completed')
       } catch (err) {
