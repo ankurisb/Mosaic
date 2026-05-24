@@ -337,11 +337,12 @@ export default function TabAudit({ user }: { user: SessionUser }) {
             ISO 27001 Compliance Documents
           </div>
           {/* CISO Assistant link — GRC governance layer */}
-          <a href="http://localhost:8443" target="_blank" rel="noopener noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none', background: 'rgba(59,130,246,.07)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-sm)', padding: '4px 10px' }}>
+          <button
+            onClick={() => window.open('http://localhost:8443', '_blank', 'noopener,noreferrer')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none', background: 'rgba(59,130,246,.07)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 1l3 2v4c0 2-1.5 3.5-3 4.5C4.5 10.5 3 9 3 7V3l3-2z"/><path d="M5 7l1.2 1.2L9 5"/></svg>
             Open CISO Assistant
-          </a>
+          </button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {[
@@ -368,11 +369,9 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(59,130,246,.05)', border: '1px solid rgba(59,130,246,.15)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--blue-t)" strokeWidth="1.6" style={{ marginTop: 1, flexShrink: 0 }}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v3M7 4.5v.5"/></svg>
           <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--text2)' }}>ISO 27001 requires two layers.</strong>{' '}
-            These documents cover <em>technical evidence</em> — automated controls Mosaic verifies continuously.
-            The <em>governance layer</em> (risk register, SoA sign-off, SOPs, supplier register) lives in{' '}
-            <a href="http://localhost:8443" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue-t)', fontWeight: 500 }}>CISO Assistant ↗</a>.
-            Both are required for certification.
+            Go to{' '}
+            <button onClick={() => window.open('http://localhost:8443', '_blank', 'noopener,noreferrer')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--blue-t)', fontWeight: 500, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>CISO Assistant ↗</button>
+            {' '}to view governance related artefacts (risk register, SoA sign-off, SOPs, supplier register).
           </div>
         </div>
       </div>
