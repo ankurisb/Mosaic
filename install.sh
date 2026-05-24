@@ -80,6 +80,9 @@ sed -i.bak "s|ADMIN_NAME=Your Name|ADMIN_NAME=$admin_name|" .env
 sed -i.bak "s|ADMIN_EMAIL=admin@yourcompany.com|ADMIN_EMAIL=$admin_email|" .env
 sed -i.bak "s|ADMIN_PASSWORD=choose-a-strong-password|ADMIN_PASSWORD=$admin_pass|" .env
 sed -i.bak "s|SUPERSET_ADMIN_PASSWORD=same-as-admin-password|SUPERSET_ADMIN_PASSWORD=$admin_pass|" .env
+# CISO Assistant uses the same admin account by default
+sed -i.bak "s|CISO_SUPERUSER_EMAIL=admin@yourcompany.com|CISO_SUPERUSER_EMAIL=$admin_email|" .env
+sed -i.bak "s|CISO_SUPERUSER_PASSWORD=choose-a-strong-password|CISO_SUPERUSER_PASSWORD=$admin_pass|" .env
 rm -f .env.bak
 echo -e "${GREEN}  ✓ Admin account configured${NC}"
 
