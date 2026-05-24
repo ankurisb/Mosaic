@@ -586,6 +586,7 @@ export async function setupDatabase() {
     id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
     label            TEXT NOT NULL,
     base_url         TEXT NOT NULL,
+    ui_url           TEXT,
     environment      TEXT NOT NULL DEFAULT 'production',
     username         TEXT NOT NULL,
     password_enc     TEXT NOT NULL,
@@ -596,6 +597,9 @@ export async function setupDatabase() {
     created_at       TEXT DEFAULT (datetime('now')),
     updated_at       TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
+
+  // Migrate existing installations — add ui_url if the column doesn't exist yet
+  await sql`ALTER TABLE prism_instances ADD COLUMN ui_url TEXT`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS connection_schemas (
     connection_id TEXT PRIMARY KEY,

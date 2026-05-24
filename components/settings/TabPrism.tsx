@@ -4,11 +4,11 @@ import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Field, Alert } from './ui'
 
 interface PrismInstance {
-  id: string; label: string; base_url: string
+  id: string; label: string; base_url: string; ui_url?: string
   environment: string; username: string; active: number; created_at: string
 }
 
-const EMPTY = { label: '', base_url: '', environment: 'production', username: '', password: '' }
+const EMPTY = { label: '', base_url: '', ui_url: '', environment: 'production', username: '', password: '' }
 
 export default function TabPrism({ user }: { user: SessionUser }) {
   const [instances, setInstances] = useState<PrismInstance[]>([])
@@ -39,7 +39,7 @@ export default function TabPrism({ user }: { user: SessionUser }) {
   }
   function openEdit(inst: PrismInstance) {
     setEditId(inst.id)
-    setForm({ label: inst.label, base_url: inst.base_url, environment: inst.environment, username: inst.username, password: '' })
+    setForm({ label: inst.label, base_url: inst.base_url, ui_url: inst.ui_url || '', environment: inst.environment, username: inst.username, password: '' })
     setTestResult(null); setError(''); setSuccess(''); setShowForm(true)
   }
   function cancel() { setShowForm(false); setEditId(null); setForm({ ...EMPTY }); setTestResult(null); setError('') }
@@ -70,7 +70,7 @@ export default function TabPrism({ user }: { user: SessionUser }) {
     try {
       const body: Record<string, string> = {
         label: form.label.trim(), base_url: form.base_url.trim().replace(/\/$/, ''),
-        environment: form.environment, username: form.username.trim(),
+        ui_url: form.ui_url.trim(), environment: form.environment, username: form.username.trim(),
       }
       if (form.password) body.password = form.password
       if (editId) body.id = editId
@@ -116,6 +116,23 @@ export default function TabPrism({ user }: { user: SessionUser }) {
           <Field label="Platform URL" hint="Base URL of your Prism instance — IP address, hostname, or domain">
             <input style={INP} value={form.base_url} onChange={set('base_url')} placeholder="http://192.168.1.50:8080" />
           </Field>
+
+          {/* Prism UI URL — optional, browser-facing link to open the instance */}
+          <div style={{ marginTop: 14 }}>
+            <Field label="Prism URL" hint="Browser URL to open your Prism instance — optional">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input style={{ ...INP, flex: 1 }} value={form.ui_url} onChange={set('ui_url')} placeholder="http://192.168.1.50:8080" />
+                {form.ui_url.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(form.ui_url.trim(), '_blank', 'noopener,noreferrer')}
+                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, color: 'var(--blue-t)', background: 'rgba(59,130,246,.07)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                    Open ↗
+                  </button>
+                )}
+              </div>
+            </Field>
+          </div>
 
           {/* Username + Password */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
@@ -169,12 +186,22 @@ export default function TabPrism({ user }: { user: SessionUser }) {
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: inst.active ? 'var(--green)' : 'var(--text4)', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{inst.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span>{inst.base_url}</span>
                   <span>·</span>
                   <span>{inst.username}</span>
                   <span>·</span>
                   <span style={{ color: ENV_COLOR[inst.environment] ?? 'var(--text3)', fontWeight: 500 }}>{inst.environment}</span>
+                  {inst.ui_url && (
+                    <>
+                      <span>·</span>
+                      <button
+                        onClick={() => window.open(inst.ui_url!, '_blank', 'noopener,noreferrer')}
+                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--blue-t)', fontWeight: 500, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Open Prism ↗
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>

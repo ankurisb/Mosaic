@@ -10,7 +10,7 @@ export async function GET() {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const sql = getDb()
   const instances = await sql`
-    SELECT id, label, base_url, environment, username, active, created_at
+    SELECT id, label, base_url, ui_url, environment, username, active, created_at
     FROM prism_instances
     WHERE active = 1
     ORDER BY created_at ASC`
@@ -21,13 +21,14 @@ export async function POST(req: Request) {
   const session = await getSession()
   if (!session || session.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
   const body = await req.json()
-  const { id, label, base_url, environment, username, password } = body
+  const { id, label, base_url, ui_url, environment, username, password } = body
 
   if (!label?.trim()) return Response.json({ error: 'Label is required' }, { status: 400 })
   if (!base_url?.trim()) return Response.json({ error: 'URL is required' }, { status: 400 })
   if (!username?.trim()) return Response.json({ error: 'Username is required' }, { status: 400 })
 
   const sql = getDb()
+  const cleanUiUrl = ui_url?.trim().replace(/\/$/, '') || null
 
   if (id) {
     if (password) {
@@ -35,8 +36,9 @@ export async function POST(req: Request) {
       await sql`
         UPDATE prism_instances
         SET label=${label.trim()}, base_url=${base_url.trim().replace(/\/$/, '')},
-            environment=${environment || 'production'}, username=${username.trim()},
-            password_enc=${password_enc}, token_enc=NULL, refresh_token_enc=NULL,
+            ui_url=${cleanUiUrl}, environment=${environment || 'production'},
+            username=${username.trim()}, password_enc=${password_enc},
+            token_enc=NULL, refresh_token_enc=NULL,
             token_expiry=NULL, updated_at=datetime('now')
         WHERE id=${id}`
       invalidatePrismToken(id)
@@ -44,8 +46,8 @@ export async function POST(req: Request) {
       await sql`
         UPDATE prism_instances
         SET label=${label.trim()}, base_url=${base_url.trim().replace(/\/$/, '')},
-            environment=${environment || 'production'}, username=${username.trim()},
-            updated_at=datetime('now')
+            ui_url=${cleanUiUrl}, environment=${environment || 'production'},
+            username=${username.trim()}, updated_at=datetime('now')
         WHERE id=${id}`
     }
     return Response.json({ ok: true, id })
@@ -53,8 +55,8 @@ export async function POST(req: Request) {
     if (!password?.trim()) return Response.json({ error: 'Password is required' }, { status: 400 })
     const password_enc = encrypt(password)
     const rows = await sql`
-      INSERT INTO prism_instances (label, base_url, environment, username, password_enc)
-      VALUES (${label.trim()}, ${base_url.trim().replace(/\/$/, '')}, ${environment || 'production'}, ${username.trim()}, ${password_enc})
+      INSERT INTO prism_instances (label, base_url, ui_url, environment, username, password_enc)
+      VALUES (${label.trim()}, ${base_url.trim().replace(/\/$/, '')}, ${cleanUiUrl}, ${environment || 'production'}, ${username.trim()}, ${password_enc})
       RETURNING id`
     return Response.json({ ok: true, id: rows[0]?.id })
   }
