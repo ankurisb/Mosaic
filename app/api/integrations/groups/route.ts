@@ -4,6 +4,7 @@
 
 import { getSession } from '@/lib/auth'
 import { getDb }      from '@/lib/db'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
       INSERT INTO notification_groups (name, description, members, created_by)
       VALUES (${name.trim()}, ${description ?? ''}, ${JSON.stringify(members ?? [])}, ${session.id})
       RETURNING id`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GROUP_CREATE, `notification_group:${rows[0].id}`, 'success', { name: name.trim() })
     return Response.json({ id: rows[0].id })
   }
 
@@ -41,12 +43,14 @@ export async function POST(req: Request) {
       SET name = ${name?.trim() ?? ''}, description = ${description ?? ''},
           members = ${JSON.stringify(members ?? [])}
       WHERE id = ${id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GROUP_UPDATE, `notification_group:${id}`, 'success', { name: name?.trim() })
     return Response.json({ ok: true })
   }
 
   if (action === 'delete') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`DELETE FROM notification_groups WHERE id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GROUP_DELETE, `notification_group:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 

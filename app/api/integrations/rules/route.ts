@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { getDb }      from '@/lib/db'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 // -- GET -- list all rules with channel info --------------------
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
          ${query ?? null}, ${JSON.stringify(condition ?? {})}, ${channel_id},
          ${message_template ?? ''}, ${nextRun}, ${session.id})
       RETURNING id`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RULE_CREATE, `integration_rule:${rows[0].id}`, 'success', { name: name.trim(), trigger_type, channel_id })
     return Response.json({ id: rows[0].id })
   }
 
@@ -97,6 +99,7 @@ export async function POST(req: Request) {
         message_template = ${message_template ?? ''},
         next_run_at      = ${nextRun}
       WHERE id = ${id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RULE_UPDATE, `integration_rule:${id}`, 'success', { name: name?.trim(), trigger_type, active })
     return Response.json({ ok: true })
   }
 
@@ -104,6 +107,7 @@ export async function POST(req: Request) {
   if (action === 'delete') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`DELETE FROM integration_rules WHERE id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RULE_DELETE, `integration_rule:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -111,6 +115,7 @@ export async function POST(req: Request) {
   if (action === 'toggle') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`UPDATE integration_rules SET active = NOT active WHERE id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RULE_TOGGLE, `integration_rule:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 

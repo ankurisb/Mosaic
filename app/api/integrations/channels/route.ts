@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb }      from '@/lib/db'
 import { encrypt }    from '@/lib/encrypt'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 // -- GET -- list all channels -----------------------------------
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
       INSERT INTO integration_channels (name, type, config, created_by)
       VALUES (${name.trim()}, ${type}, ${JSON.stringify(safeConfig)}, ${session.id})
       RETURNING id`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHANNEL_CREATE, `integration_channel:${rows[0].id}`, 'success', { name: name.trim(), type })
     return Response.json({ id: rows[0].id })
   }
 
@@ -76,6 +78,7 @@ export async function POST(req: Request) {
       SET name = ${name?.trim() ?? ''}, type = ${type}, active = ${active ?? true},
           config = ${JSON.stringify(mergedConfig)}
       WHERE id = ${id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHANNEL_UPDATE, `integration_channel:${id}`, 'success', { name: name?.trim(), type, active })
     return Response.json({ ok: true })
   }
 
@@ -83,6 +86,7 @@ export async function POST(req: Request) {
   if (action === 'delete') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`DELETE FROM integration_channels WHERE id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHANNEL_DELETE, `integration_channel:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 

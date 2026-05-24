@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 // -- GET -- list all workflows ----------------------------------
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
          ${session.id})
       RETURNING id`
 
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_CREATE, `rca_workflow:${rows[0].id}`, 'success', { name: name.trim(), problem_type })
     return Response.json({ id: rows[0].id })
   }
 
@@ -130,6 +132,7 @@ export async function POST(req: Request) {
         updated_at    = datetime('now')
       WHERE id = ${id}`
 
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_UPDATE, `rca_workflow:${id}`, 'success', { name: name.trim() })
     return Response.json({ ok: true })
   }
 
@@ -137,6 +140,7 @@ export async function POST(req: Request) {
   if (action === 'delete') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`DELETE FROM rca_workflows WHERE id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_DELETE, `rca_workflow:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -147,6 +151,7 @@ export async function POST(req: Request) {
       UPDATE rca_workflows
       SET    active = NOT active, updated_at = datetime('now')
       WHERE  id = ${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_TOGGLE, `rca_workflow:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -189,6 +194,7 @@ export async function POST(req: Request) {
          ${session.id})
       RETURNING id`
 
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_DUPLICATE, `rca_workflow:${rows[0].id}`, 'success', { source_id: body.id, name: String(wf.name) + ' (copy)' })
     return Response.json({ id: rows[0].id })
   }
 

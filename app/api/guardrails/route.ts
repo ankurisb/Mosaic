@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { invalidateGuardrailCache } from '@/lib/guardrails'
+import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
 export async function GET(req: Request) {
@@ -83,6 +84,7 @@ export async function POST(req: Request) {
         ON CONFLICT (key) DO UPDATE SET value = ${value}`
     }
     invalidateGuardrailCache()
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_SETTINGS, 'guardrail:settings', 'success', { keys: Object.keys(body.settings) })
     return Response.json({ ok: true })
   }
 
@@ -91,8 +93,10 @@ export async function POST(req: Request) {
     const { id, name, enabled, rules_text } = body
     if (id) {
       await sql`UPDATE guardrail_ai_rules SET name=${name}, enabled=${enabled?1:0}, rules_text=${rules_text}, updated_at=datetime('now') WHERE id=${id}`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_ai_rule:${id}`, 'success', { name, enabled })
     } else {
-      await sql`INSERT INTO guardrail_ai_rules (name, enabled, rules_text) VALUES (${name||'Policy'}, ${enabled?1:0}, ${rules_text})`
+      const rows = await sql`INSERT INTO guardrail_ai_rules (name, enabled, rules_text) VALUES (${name||'Policy'}, ${enabled?1:0}, ${rules_text}) RETURNING id`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_CREATE, `guardrail_ai_rule:${rows[0]?.id}`, 'success', { name, enabled, type: 'ai_rules' })
     }
     invalidateGuardrailCache()
     return Response.json({ ok: true })
@@ -100,6 +104,7 @@ export async function POST(req: Request) {
   if (action === 'delete_ai_rules') {
     await sql`DELETE FROM guardrail_ai_rules WHERE id=${body.id}`
     invalidateGuardrailCache()
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_DELETE, `guardrail_ai_rule:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -109,8 +114,10 @@ export async function POST(req: Request) {
     const patternsJson = JSON.stringify(Array.isArray(patterns) ? patterns : [])
     if (id) {
       await sql`UPDATE guardrail_content SET name=${name}, enabled=${enabled?1:0}, mode=${mode}, patterns=${patternsJson}, block_message=${block_message} WHERE id=${id}`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_content:${id}`, 'success', { name, enabled, mode })
     } else {
-      await sql`INSERT INTO guardrail_content (name, enabled, mode, patterns, block_message) VALUES (${name||'Policy'}, ${enabled?1:0}, ${mode||'blocklist'}, ${patternsJson}, ${block_message||'This topic is restricted.'})`
+      const rows = await sql`INSERT INTO guardrail_content (name, enabled, mode, patterns, block_message) VALUES (${name||'Policy'}, ${enabled?1:0}, ${mode||'blocklist'}, ${patternsJson}, ${block_message||'This topic is restricted.'}) RETURNING id`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_CREATE, `guardrail_content:${rows[0]?.id}`, 'success', { name, enabled, mode, type: 'content' })
     }
     invalidateGuardrailCache()
     return Response.json({ ok: true })
@@ -118,6 +125,7 @@ export async function POST(req: Request) {
   if (action === 'delete_content') {
     await sql`DELETE FROM guardrail_content WHERE id=${body.id}`
     invalidateGuardrailCache()
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_DELETE, `guardrail_content:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -128,8 +136,10 @@ export async function POST(req: Request) {
     const bc = JSON.stringify(Array.isArray(blocked_columns) ? blocked_columns : [])
     if (id) {
       await sql`UPDATE guardrail_data_access SET role=${role}, source_id=${source_id||null}, source_type=${source_type}, allowed_tables=${at}, blocked_columns=${bc}, row_filter=${row_filter||''}, enabled=${enabled?1:0} WHERE id=${id}`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_data_access:${id}`, 'success', { role, source_type, enabled })
     } else {
-      await sql`INSERT INTO guardrail_data_access (role, source_id, source_type, allowed_tables, blocked_columns, row_filter, enabled) VALUES (${role||'user'}, ${source_id||null}, ${source_type||'database'}, ${at}, ${bc}, ${row_filter||''}, ${enabled?1:0})`
+      const rows = await sql`INSERT INTO guardrail_data_access (role, source_id, source_type, allowed_tables, blocked_columns, row_filter, enabled) VALUES (${role||'user'}, ${source_id||null}, ${source_type||'database'}, ${at}, ${bc}, ${row_filter||''}, ${enabled?1:0}) RETURNING id`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_CREATE, `guardrail_data_access:${rows[0]?.id}`, 'success', { role, source_type, type: 'data_access' })
     }
     invalidateGuardrailCache()
     return Response.json({ ok: true })
@@ -137,6 +147,7 @@ export async function POST(req: Request) {
   if (action === 'delete_data_access') {
     await sql`DELETE FROM guardrail_data_access WHERE id=${body.id}`
     invalidateGuardrailCache()
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_DELETE, `guardrail_data_access:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -147,8 +158,10 @@ export async function POST(req: Request) {
     const am = JSON.stringify(Array.isArray(allowed_methods) ? allowed_methods : ['GET','POST','PUT','PATCH','DELETE'])
     if (id) {
       await sql`UPDATE guardrail_actions SET role=${role}, source_id=${source_id||null}, read_only=${read_only?1:0}, blocked_tools=${bt}, allowed_methods=${am}, enabled=${enabled?1:0} WHERE id=${id}`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_action:${id}`, 'success', { role, read_only, enabled })
     } else {
-      await sql`INSERT INTO guardrail_actions (role, source_id, read_only, blocked_tools, allowed_methods, enabled) VALUES (${role||'user'}, ${source_id||null}, ${read_only?1:0}, ${bt}, ${am}, ${enabled?1:0})`
+      const rows = await sql`INSERT INTO guardrail_actions (role, source_id, read_only, blocked_tools, allowed_methods, enabled) VALUES (${role||'user'}, ${source_id||null}, ${read_only?1:0}, ${bt}, ${am}, ${enabled?1:0}) RETURNING id`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_CREATE, `guardrail_action:${rows[0]?.id}`, 'success', { role, read_only, type: 'action_control' })
     }
     invalidateGuardrailCache()
     return Response.json({ ok: true })
@@ -156,6 +169,7 @@ export async function POST(req: Request) {
   if (action === 'delete_action_control') {
     await sql`DELETE FROM guardrail_actions WHERE id=${body.id}`
     invalidateGuardrailCache()
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_DELETE, `guardrail_action:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -164,13 +178,16 @@ export async function POST(req: Request) {
     const { id, role, user_id, daily_token_limit, monthly_token_limit, daily_request_limit, soft_warn_pct, enabled } = body
     if (id) {
       await sql`UPDATE guardrail_usage_limits SET role=${role}, user_id=${user_id||null}, daily_token_limit=${daily_token_limit||null}, monthly_token_limit=${monthly_token_limit||null}, daily_request_limit=${daily_request_limit||null}, soft_warn_pct=${soft_warn_pct||90}, enabled=${enabled?1:0} WHERE id=${id}`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_usage_limit:${id}`, 'success', { role, daily_token_limit, enabled })
     } else {
-      await sql`INSERT INTO guardrail_usage_limits (role, user_id, daily_token_limit, monthly_token_limit, daily_request_limit, soft_warn_pct, enabled) VALUES (${role||'user'}, ${user_id||null}, ${daily_token_limit||null}, ${monthly_token_limit||null}, ${daily_request_limit||null}, ${soft_warn_pct||90}, ${enabled?1:0})`
+      const rows = await sql`INSERT INTO guardrail_usage_limits (role, user_id, daily_token_limit, monthly_token_limit, daily_request_limit, soft_warn_pct, enabled) VALUES (${role||'user'}, ${user_id||null}, ${daily_token_limit||null}, ${monthly_token_limit||null}, ${daily_request_limit||null}, ${soft_warn_pct||90}, ${enabled?1:0}) RETURNING id`
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_CREATE, `guardrail_usage_limit:${rows[0]?.id}`, 'success', { role, type: 'usage_limit' })
     }
     return Response.json({ ok: true })
   }
   if (action === 'delete_usage_limit') {
     await sql`DELETE FROM guardrail_usage_limits WHERE id=${body.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_DELETE, `guardrail_usage_limit:${body.id}`, 'success', {})
     return Response.json({ ok: true })
   }
 
@@ -178,6 +195,7 @@ export async function POST(req: Request) {
   if (action === 'resolve_pending') {
     const { pending_id, approved } = body
     await sql`UPDATE guardrail_pending_actions SET status=${approved?'approved':'rejected'}, resolved_at=datetime('now') WHERE id=${pending_id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_pending:${pending_id}`, approved ? 'success' : 'failure', { approved })
     return Response.json({ ok: true })
   }
 
