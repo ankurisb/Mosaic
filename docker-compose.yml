@@ -71,6 +71,8 @@ services:
         condition: service_healthy
       openmeter:
         condition: service_healthy
+      ciso-caddy:
+        condition: service_started
     networks:
       - mosaic-net
     healthcheck:
