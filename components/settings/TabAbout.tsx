@@ -89,6 +89,10 @@ export default function TabAbout() {
               See what's new →
             </a>
           )}
+          <a href="https://github.com/ankurisb/Mosaic/blob/main/docs/UPDATING.md" target="_blank" rel="noreferrer"
+            style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', textDecoration: 'none', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+            How to update →
+          </a>
         </div>
       )}
 
@@ -166,6 +170,26 @@ export default function TabAbout() {
 
       <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 8 }}>
         Mosaic v{deploy?.currentVersion || '1.0.0'} · build {deploy?.buildDate || '...'} · ugx.ai · powered by UGX Systems
+      </div>
+
+      {/* Documentation links */}
+      <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12 }}>
+        <div style={{ fontWeight: 600, color: 'var(--text2)', marginBottom: 8 }}>Documentation</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {[
+            { label: 'Install guide',    href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/INSTALL.md' },
+            { label: 'First steps',      href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/FIRST_STEPS.md' },
+            { label: 'Updating',         href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/UPDATING.md' },
+            { label: 'Secrets & credentials', href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/SECRETS.md' },
+            { label: 'Network requirements',  href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/NETWORK.md' },
+            { label: 'SSO / Keycloak',   href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/KEYCLOAK.md' },
+          ].map(link => (
+            <a key={link.label} href={link.href} target="_blank" rel="noreferrer"
+              style={{ color: 'var(--text3)', textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '2px 8px' }}>
+              {link.label} ↗
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   )
