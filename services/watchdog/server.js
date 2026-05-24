@@ -113,6 +113,29 @@ function suggestFix(name, state, health, errors) {
   return null
 }
 
+// ── Snapshot cache ─────────────────────────────────────────────
+// Build the snapshot in the background every 10s so HTTP requests
+// are served instantly from cache rather than blocking on Docker calls.
+let _cache = null
+let _cacheBuilding = false
+
+async function refreshCache() {
+  if (_cacheBuilding) return
+  _cacheBuilding = true
+  try { _cache = buildSnapshot() } catch (e) { console.error('[cache] build failed:', e.message) }
+  finally { _cacheBuilding = false }
+}
+
+// Build immediately on startup, then every 10s
+refreshCache()
+setInterval(refreshCache, 10_000)
+
+function getSnapshot() {
+  // If cache isn't ready yet (first startup), build synchronously once
+  if (!_cache) _cache = buildSnapshot()
+  return _cache
+}
+
 // ── Build snapshot ─────────────────────────────────────────────
 function buildSnapshot() {
   const ts = new Date().toISOString()
@@ -247,7 +270,7 @@ function renderHTML(snap) {
         <span style="font-size:14px;color:#b0b0b0">/</span>
         <span style="font-size:14px;color:#4a4a4a">System Health</span>
       </div>
-      <div style="font-size:11px;color:#b0b0b0">Refreshes every 15s · ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+      <div style="font-size:11px;color:#b0b0b0">Refreshes every 15s · last data: ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
     </div>
   </div>
 
@@ -475,7 +498,7 @@ function renderBundle() {
 const server = http.createServer((req, res) => {
   if (req.url === '/health.json') {
     // Machine-readable JSON for monitoring tools
-    const snap = buildSnapshot()
+    const snap = getSnapshot()
     res.writeHead(snap.issues === 0 ? 200 : 503, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       ok: snap.issues === 0, issues: snap.issues, ts: snap.ts,
@@ -484,7 +507,7 @@ const server = http.createServer((req, res) => {
     }, null, 2))
   } else if (req.url === '/health') {
     // Human-readable health page
-    const snap = buildSnapshot()
+    const snap = getSnapshot()
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(renderHealthPage(snap))
   } else if (req.url === '/bundle') {
@@ -498,7 +521,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(content ? renderNetworkPage(content) : pageShell('Network Requirements', 'Network Requirements', '<p style="color:#8a8a8a;font-size:13px">NETWORK.md not found. Please ensure it is mounted into the container.</p>'))
   } else {
-    const snap = buildSnapshot()
+    const snap = getSnapshot()
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(renderHTML(snap))
   }
