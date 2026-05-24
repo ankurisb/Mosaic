@@ -87,6 +87,29 @@ function ToolCalls({
   const uniqueNames = [...new Set(names)]
   const allOk = tools.every(t => t.result !== undefined && !String(JSON.stringify(t.result)).includes('"error"'))
 
+  // Resolve a friendly display name for a tool call (used in pill + expanded rows)
+  function resolveToolLabel(tc: { name: string; input: unknown }): string {
+    const inp = (tc.input || {}) as Record<string, unknown>
+    if (tc.name === 'query_database') {
+      const ds = dataSources?.find(d => d.id === String(inp.connection_id || ''))
+      return ds ? ds.label : 'Database'
+    }
+    if (tc.name === 'call_api') {
+      const ds = dataSources?.find(d => d.id === String(inp.service_id || inp.connection_id || ''))
+      return ds ? ds.label : 'API'
+    }
+    if (tc.name === 'read_file_server') {
+      const ds = dataSources?.find(d => d.id === String(inp.connection_id || ''))
+      return ds ? ds.label : 'File server'
+    }
+    if (tc.name === 'web_search') return `Web: "${String(inp.query || '').slice(0, 30)}"`
+    return toolLabel[tc.name] || tc.name
+  }
+
+  // Pill summary: unique source names e.g. "Plant Operations · Sensor Telemetry"
+  const resolvedNames = tools.map(resolveToolLabel)
+  const uniqueResolved = [...new Set(resolvedNames)]
+
   // The "currently running" tool is the most recent one without a result.
   const running = streaming ? [...tools].reverse().find(t => t.result === undefined) : undefined
 
@@ -115,7 +138,7 @@ function ToolCalls({
       <button onClick={() => setOpen(o => !o)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', fontSize: 11, color: 'var(--text3)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s' }}>
         <span style={{ color: streaming ? 'var(--accent-bg)' : (allOk ? 'var(--green-t)' : 'var(--amber-t)'), fontSize: 9, animation: streaming ? 'blink 1s step-end infinite' : 'none' }}>●</span>
-        {uniqueNames.join(' · ')}{streamingSuffix}
+        {uniqueResolved.join(' · ')}{streamingSuffix}
         <span style={{ fontSize: 9, opacity: 0.6 }}>{open ? '▲' : '▼'}</span>
       </button>
       {running && (
@@ -132,7 +155,7 @@ function ToolCalls({
           )}
           {tools.map((tc, j) => (
             <div key={j} style={{ marginBottom: j < tools.length - 1 ? 10 : 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 3 }}>{toolLabel[tc.name] || tc.name}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 3 }}>{resolveToolLabel(tc)}</div>
               <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {typeof tc.input === 'object' ? JSON.stringify(tc.input) : String(tc.input)}
               </div>
