@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, getRawDb } from '@/lib/db'
 import { audit, AUDIT, verifyAuditChain, getAuditSettings } from '@/lib/audit'
 export const runtime = 'nodejs'
 
@@ -16,6 +16,7 @@ export async function GET(req: Request) {
   const outcome = url.searchParams.get('outcome') || null
   const since   = url.searchParams.get('since')   || null
   const until   = url.searchParams.get('until')   || null
+  const q       = url.searchParams.get('q')?.trim() || null   // free-text search
   const format  = url.searchParams.get('format')  || 'json'
   const verify  = url.searchParams.get('verify')  === 'true'
 
@@ -29,35 +30,40 @@ export async function GET(req: Request) {
   }
 
   const sql = getDb()
+  const rawDb = getRawDb()
 
-  // Build query with optional filters
-  // SQLite doesn't support parameterised LIKE in all drivers — use conditional approach
-  let rows: Record<string, unknown>[]
+  // Build WHERE clause dynamically — avoids a combinatorial if/else explosion
+  const conditions: string[] = []
+  const values: unknown[] = []
 
-  if (actor && action && outcome && since && until) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE actor_email LIKE ${'%' + actor + '%'} AND action = ${action} AND outcome = ${outcome} AND timestamp >= ${since} AND timestamp <= ${until} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (actor && action && since) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE actor_email LIKE ${'%' + actor + '%'} AND action = ${action} AND timestamp >= ${since} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (actor && since) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE actor_email LIKE ${'%' + actor + '%'} AND timestamp >= ${since} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (action && since) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE action = ${action} AND timestamp >= ${since} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (actor && action) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE actor_email LIKE ${'%' + actor + '%'} AND action = ${action} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (actor) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE actor_email LIKE ${'%' + actor + '%'} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (action) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE action = ${action} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (outcome) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE outcome = ${outcome} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else if (since) {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events WHERE timestamp >= ${since} ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-  } else {
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
+  if (actor)   { conditions.push(`actor_email LIKE ?`);  values.push(`%${actor}%`) }
+  if (action)  { conditions.push(`action = ?`);           values.push(action) }
+  if (outcome) { conditions.push(`outcome = ?`);          values.push(outcome) }
+  if (since)   { conditions.push(`timestamp >= ?`);       values.push(since) }
+  if (until)   { conditions.push(`timestamp <= ?`);       values.push(until) }
+  if (q) {
+    // Free-text: match across email, action, resource, and detail (JSON blob)
+    conditions.push(`(actor_email LIKE ? OR action LIKE ? OR resource LIKE ? OR detail LIKE ?)`)
+    values.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`)
   }
 
-  const totalRows = await sql`SELECT COUNT(*) as cnt FROM audit_events`
-  const total = Number((totalRows[0] as { cnt: string })?.cnt || 0)
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const selectBase = `SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events`
+
+  let rows: Record<string, unknown>[]
+  let total: number
+
+  if (rawDb) {
+    rows = rawDb.prepare(`${selectBase} ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
+                .all([...values, limit, offset]) as Record<string, unknown>[]
+    total = (rawDb.prepare(`SELECT COUNT(*) as cnt FROM audit_events ${where}`)
+                  .get([...values]) as { cnt: number }).cnt
+  } else {
+    // Neon/postgres path — basic unfiltered fallback
+    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}` as Record<string, unknown>[]
+    const totalRows = await sql`SELECT COUNT(*) as cnt FROM audit_events`
+    total = Number((totalRows[0] as { cnt: string })?.cnt || 0)
+  }
 
   // Verify chain integrity if requested
   let chainStatus: { valid: boolean; totalRows: number; brokenAt?: unknown } | null = null

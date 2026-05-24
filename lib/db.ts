@@ -26,6 +26,17 @@ const SKIP_AUTO_PARSE = new Set([
 
 let _client: SqlQuery | null = null
 let _driver: 'sqlite' | 'postgres' | 'neon' = 'sqlite'
+let _rawDb: import('better-sqlite3').Database | null = null
+
+/** Returns the raw better-sqlite3 Database instance, or null on Postgres/Neon.
+ *  Use for dynamic queries that can't be expressed as tagged-template literals
+ *  (e.g. variable WHERE clauses with arbitrary filter combinations). */
+export function getRawDb(): import('better-sqlite3').Database | null {
+  if (_rawDb) return _rawDb
+  // Trigger getDb() to initialise _rawDb as a side-effect if not done yet
+  getDb()
+  return _rawDb
+}
 
 export function getDbDriver(): 'sqlite' | 'postgres' | 'neon' {
   return _driver
@@ -52,6 +63,7 @@ export function getDb(): SqlQuery {
     const db = new Database(path === ':memory:' ? ':memory:' : path)
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
+    _rawDb = db
 
     // Wrap in a tagged-template function matching Neon's interface
     _client = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<SqlRow[]> => {

@@ -75,6 +75,7 @@ export default function TabAudit({ user }: { user: SessionUser }) {
 
   // Filters
   const [sinceIdx,     setSinceIdx]     = useState(1)
+  const [qFilter,      setQFilter]      = useState('')
   const [actorFilter,  setActorFilter]  = useState('')
   const [actionFilter, setActionFilter] = useState('')
   const [outcomeFilter,setOutcomeFilter]= useState('')
@@ -87,6 +88,7 @@ export default function TabAudit({ user }: { user: SessionUser }) {
       const since = SINCE_OPTIONS[sinceIdx].value()
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE), offset: String(p * PAGE_SIZE),
+        ...(qFilter       ? { q: qFilter }            : {}),
         ...(actorFilter   ? { actor: actorFilter }    : {}),
         ...(actionFilter  ? { action: actionFilter }  : {}),
         ...(outcomeFilter ? { outcome: outcomeFilter } : {}),
@@ -102,11 +104,11 @@ export default function TabAudit({ user }: { user: SessionUser }) {
       if (d.chain) setChain(d.chain)
       if (d.settings) { setSettings(d.settings); setRetDays(d.settings.retention_days || '365') }
     } finally { setLoading(false) }
-  }, [sinceIdx, actorFilter, actionFilter, outcomeFilter])
+  }, [sinceIdx, qFilter, actorFilter, actionFilter, outcomeFilter])
 
   useEffect(() => { load(page) }, [load, page])
   // Reset to page 0 when filters change
-  useEffect(() => { setPage(0) }, [sinceIdx, actorFilter, actionFilter, outcomeFilter])
+  useEffect(() => { setPage(0) }, [sinceIdx, qFilter, actorFilter, actionFilter, outcomeFilter])
 
   async function loadCompliance() {
     setCompLoading(true)
@@ -121,6 +123,7 @@ export default function TabAudit({ user }: { user: SessionUser }) {
     const since = SINCE_OPTIONS[sinceIdx].value()
     const params = new URLSearchParams({
       format: 'csv', limit: '500', offset: '0',
+      ...(qFilter       ? { q: qFilter }            : {}),
       ...(actorFilter   ? { actor: actorFilter }    : {}),
       ...(actionFilter  ? { action: actionFilter }  : {}),
       ...(outcomeFilter ? { outcome: outcomeFilter } : {}),
@@ -175,8 +178,16 @@ export default function TabAudit({ user }: { user: SessionUser }) {
         <select value={sinceIdx} onChange={e => setSinceIdx(Number(e.target.value))} style={sel}>
           {SINCE_OPTIONS.map((o, i) => <option key={o.label} value={i}>{o.label}</option>)}
         </select>
-        <input style={{ ...sel, outline: 'none', width: 160 }} placeholder="Filter by email"
-          value={actorFilter} onChange={e => setActorFilter(e.target.value)} />
+        <input
+          style={{ ...sel, outline: 'none', width: 220 }}
+          placeholder="Search events…"
+          value={qFilter}
+          onChange={e => setQFilter(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { setPage(0); load(0) } }}
+        />
+        <input style={{ ...sel, outline: 'none', width: 140 }} placeholder="Filter by email"
+          value={actorFilter} onChange={e => setActorFilter(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { setPage(0); load(0) } }} />
         <select value={actionFilter} onChange={e => setActionFilter(e.target.value)} style={sel}>
           <option value="">All actions</option>
           {actionTypes.map(a => <option key={a} value={a}>{a}</option>)}
@@ -188,6 +199,9 @@ export default function TabAudit({ user }: { user: SessionUser }) {
           <option value="error">Error</option>
         </select>
         <Btn size="sm" onClick={() => { setPage(0); load(0) }}>Search</Btn>
+        {(qFilter || actorFilter || actionFilter || outcomeFilter) && (
+          <Btn size="sm" variant="ghost" onClick={() => { setQFilter(''); setActorFilter(''); setActionFilter(''); setOutcomeFilter('') }}>Clear</Btn>
+        )}
         <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>
           {total > 0 && `${total.toLocaleString()} event${total !== 1 ? 's' : ''}`}
         </span>
