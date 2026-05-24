@@ -129,9 +129,30 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
     if (!email) return Response.redirect(`${APP_URL}/login?error=no_email_in_token`)
 
-    // Pre-provisioned check — user must already exist in Mosaic
-    const userRows = await sql`SELECT id,email,name,role,banned FROM users WHERE LOWER(email)=LOWER(${email}) LIMIT 1`
-    if (!userRows.length) return Response.redirect(`${APP_URL}/login?error=account_not_provisioned`)
+    // ── User lookup — with optional JIT provisioning ──────────────────────
+    // If jit_enabled = 1 on this provider's config, auto-create the user on
+    // first login (role = 'user'; SSO role federation then applies immediately).
+    // If jit_enabled = 0 (default), user must be pre-provisioned in Mosaic.
+    const jitEnabled = Number(cfg.jit_enabled) === 1
+    let userRows = await sql`SELECT id,email,name,role,banned FROM users WHERE LOWER(email)=LOWER(${email}) LIMIT 1`
+
+    if (!userRows.length) {
+      if (!jitEnabled) {
+        return Response.redirect(`${APP_URL}/login?error=account_not_provisioned`)
+      }
+      // JIT: create user now — no password (SSO-only account)
+      const displayName = (name || email.split('@')[0]) as string
+      await sql`
+        INSERT INTO users (email, name, password_hash, role, sso_provider, sso_sub)
+        VALUES (${email.toLowerCase()}, ${displayName}, NULL, 'user', ${provider}, ${sub})`
+      audit(req, { email: email.toLowerCase(), role: 'user' }, AUDIT.USER_CREATE, `user:${email.toLowerCase()}`, 'success', {
+        method: 'jit', provider, name: displayName,
+      })
+      log.info({ service: 'sso-callback', provider, email }, 'JIT user provisioned')
+      // Re-fetch so the rest of the flow has the full user row
+      userRows = await sql`SELECT id,email,name,role,banned FROM users WHERE LOWER(email)=LOWER(${email}) LIMIT 1`
+    }
+
     const user = userRows[0]
     if (user.banned) return Response.redirect(`${APP_URL}/login?error=account_banned`)
 

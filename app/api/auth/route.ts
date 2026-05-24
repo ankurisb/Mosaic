@@ -10,7 +10,7 @@ const OPTS = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sa
 export async function GET() {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT provider, client_id, tenant_id, realm, server_url, discovery_url, enabled FROM sso_config`
+    const rows = await sql`SELECT provider, client_id, tenant_id, realm, server_url, discovery_url, enabled, jit_enabled FROM sso_config`
     return Response.json({ providers: rows })
   } catch { return Response.json({ providers: [] }) }
 }
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     }
 
     if (action === 'saveSsoConfig') {
-      const { provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url } = body
+      const { provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url, jit_enabled } = body
       if (!provider || !client_id) return Response.json({ error: 'provider and client_id are required' }, { status: 400 })
       const isOidc = !['microsoft', 'google'].includes(provider)
       if (isOidc && !discovery_url && !(server_url && realm)) {
@@ -58,8 +58,8 @@ export async function POST(req: Request) {
       }
       const sql = getDb()
       const clientSecretEnc = client_secret ? encrypt(client_secret) : null
-      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, client_secret_enc, tenant_id, enabled, realm, server_url, discovery_url)
-        VALUES (${provider}, ${provider}, ${client_id}, '', ${clientSecretEnc}, ${tenant_id || null}, ${enabled ? 1 : 0}, ${realm || null}, ${server_url || null}, ${discovery_url || null})
+      await sql`INSERT INTO sso_config (id, provider, client_id, client_secret, client_secret_enc, tenant_id, enabled, realm, server_url, discovery_url, jit_enabled)
+        VALUES (${provider}, ${provider}, ${client_id}, '', ${clientSecretEnc}, ${tenant_id || null}, ${enabled ? 1 : 0}, ${realm || null}, ${server_url || null}, ${discovery_url || null}, ${jit_enabled ? 1 : 0})
         ON CONFLICT(id) DO UPDATE SET
           client_id=${client_id},
           client_secret='',
@@ -68,9 +68,10 @@ export async function POST(req: Request) {
           enabled=${enabled ? 1 : 0},
           realm=${realm || null},
           server_url=${server_url || null},
-          discovery_url=${discovery_url || null}`
+          discovery_url=${discovery_url || null},
+          jit_enabled=${jit_enabled ? 1 : 0}`
       const session = await getSession()
-      audit(req, session ? { id: session.id, email: session.email, role: session.role } : null, AUDIT.SETTINGS_UPDATE, `sso_config:${provider}`, 'success', { provider, enabled })
+      audit(req, session ? { id: session.id, email: session.email, role: session.role } : null, AUDIT.SETTINGS_UPDATE, `sso_config:${provider}`, 'success', { provider, enabled, jit_enabled: !!jit_enabled })
       return Response.json({ ok: true })
     }
 

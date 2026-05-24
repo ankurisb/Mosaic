@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, SectionLabel, Card, CardRow, Btn, Badge, Alert, Field, INP } from './ui'
 
-interface SsoProvider { provider: string; client_id: string; tenant_id?: string; realm?: string; server_url?: string; discovery_url?: string; enabled: number }
+interface SsoProvider { provider: string; client_id: string; tenant_id?: string; realm?: string; server_url?: string; discovery_url?: string; enabled: number; jit_enabled?: number }
 
 const PROVIDERS = [
   {
@@ -49,7 +49,7 @@ const PROVIDERS = [
 export default function TabAuth({ user }: { user: SessionUser }) {
   const [providers, setProviders] = useState<SsoProvider[]>([])
   const [configuring, setConfiguring] = useState<string | null>(null)
-  const [form, setForm] = useState({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' })
+  const [form, setForm] = useState({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '', jit_enabled: false })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -117,13 +117,13 @@ export default function TabAuth({ user }: { user: SessionUser }) {
     try {
       const r = await fetch('/api/auth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'saveSsoConfig', provider: providerId, ...form, enabled: true }),
+        body: JSON.stringify({ action: 'saveSsoConfig', provider: providerId, ...form, enabled: true, jit_enabled: form.jit_enabled }),
       })
       const d = await r.json()
       if (!r.ok) { setError(d.error || 'Save failed'); return }
       setSuccess('SSO configured successfully')
       setConfiguring(null)
-      setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' })
+      setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '', jit_enabled: false })
       const updated = await fetch('/api/auth').then(r => r.json())
       setProviders(updated.providers || [])
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
@@ -184,8 +184,8 @@ export default function TabAuth({ user }: { user: SessionUser }) {
                   <>
                     {configured && <Btn size="sm" variant="danger" onClick={() => remove(pc.id)}>Remove</Btn>}
                     <Btn size="sm" onClick={() => {
-                      if (isConfiguring) { setConfiguring(null); setError(''); setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '' }) }
-                      else { setConfiguring(pc.id); setError(''); setForm({ client_id: configured?.client_id || '', client_secret: '', tenant_id: configured?.tenant_id || '', realm: configured?.realm || '', server_url: configured?.server_url || '', discovery_url: configured?.discovery_url || '' }) }
+                      if (isConfiguring) { setConfiguring(null); setError(''); setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '', jit_enabled: false }) }
+                      else { setConfiguring(pc.id); setError(''); setForm({ client_id: configured?.client_id || '', client_secret: '', tenant_id: configured?.tenant_id || '', realm: configured?.realm || '', server_url: configured?.server_url || '', discovery_url: configured?.discovery_url || '', jit_enabled: !!(configured?.jit_enabled) }) }
                     }}>{isConfiguring ? 'Cancel' : configured ? 'Edit' : 'Configure'}</Btn>
                   </>
                 )}
@@ -226,6 +226,18 @@ export default function TabAuth({ user }: { user: SessionUser }) {
 
                 {error && <Alert variant="error" style={{ marginBottom: 12 }}>{error}</Alert>}
 
+                {/* JIT provisioning toggle */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16, padding: '12px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                  <input type="checkbox" id={`jit-${pc.id}`} checked={!!form.jit_enabled} onChange={e => setForm(f => ({ ...f, jit_enabled: e.target.checked }))} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <label htmlFor={`jit-${pc.id}`} style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', cursor: 'pointer' }}>Auto-provision users on first sign-in</label>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, lineHeight: 1.5 }}>
+                      When enabled, any user in your identity provider can sign in and a Mosaic account is created automatically (role: User).
+                      When disabled, users must be added manually in the Users tab before they can sign in via SSO.
+                    </div>
+                  </div>
+                </div>
+
                 <Btn variant="primary" onClick={() => save(pc.id)} disabled={saving}>
                   {saving ? 'Saving...' : 'Save configuration'}
                 </Btn>
@@ -236,7 +248,7 @@ export default function TabAuth({ user }: { user: SessionUser }) {
       })}
 
       <Alert variant="info" style={{ marginTop: 16 }}>
-        SSO is additive — users can still sign in with email and password. Only pre-provisioned accounts (added in the Users tab) can sign in via SSO.
+        SSO is additive — users can still sign in with email and password. With auto-provision off, users must be added in the Users tab first. With auto-provision on, any identity provider user can sign in and an account is created automatically.
       </Alert>
 
       <div style={{ marginTop: 32 }}>
