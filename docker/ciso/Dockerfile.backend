@@ -1,0 +1,8 @@
+FROM ghcr.io/intuitem/ciso-assistant-community/backend:latest
+
+# Patch Django settings so CISO Assistant works over plain HTTP on-prem.
+# Caddy adds X-Forwarded-Proto: https automatically; without this patch
+# Django marks session/CSRF cookies as Secure, browsers refuse to send
+# them over HTTP, and login silently fails.
+RUN printf '\n# HTTP-safe cookie settings for on-prem deployment\nSECURE_PROXY_SSL_HEADER = None\nSESSION_COOKIE_SECURE = False\nCSRF_COOKIE_SECURE = False\nSECURE_SSL_REDIRECT = False\n' \
+    >> /code/ciso_assistant/settings.py

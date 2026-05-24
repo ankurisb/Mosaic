@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-24
+
+### Added
+- CISO Assistant GRC platform integrated into Mosaic stack (docker-compose.yml — 3 services: ciso-backend, ciso-frontend, ciso-caddy)
+- Caddy reverse proxy routing for CISO Assistant on port 8443 (plain HTTP, on-prem safe)
+- Custom backend Dockerfile patches Django cookie security flags so login works over plain HTTP without TLS
+- ISO 27001:2022 library (264 frameworks available; 123 requirements, 93 Annex A SoA controls)
+- "Open CISO Assistant" button in Settings → Audit tab with two-layer compliance explanation
+- .env.example — CISO_SUPERUSER_EMAIL / CISO_SUPERUSER_PASSWORD entries
+
+### Fixed
+- Caddy auto-adds X-Forwarded-Proto: https which caused Django to set Secure cookies over HTTP, silently breaking login — fixed by stripping header in Caddyfile and patching SESSION_COOKIE_SECURE / CSRF_COOKIE_SECURE in Dockerfile.backend
+- Removed orphaned docker/ciso/mosaic_settings.py and docker/ciso/local_settings.py
+
 ## [1.2.0] - 2026-05-18
 
 ### Added

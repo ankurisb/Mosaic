@@ -469,23 +469,27 @@ services:
   # Access: http://localhost:8443
 
   ciso-backend:
-    image: ghcr.io/intuitem/ciso-assistant-community/backend:latest
+    build:
+      context: ./docker/ciso
+      dockerfile: Dockerfile.backend
     container_name: ciso-backend
-    pull_policy: always
     restart: unless-stopped
     environment:
       - ALLOWED_HOSTS=ciso-backend,localhost,127.0.0.1
       - CISO_ASSISTANT_URL=http://localhost:8443
-      - DJANGO_DEBUG=False
+      - DJANGO_DEBUG=True
       - AUTH_TOKEN_TTL=7200
-      - CISO_ASSISTANT_SUPERUSER_EMAIL=${CISO_SUPERUSER_EMAIL:-admin@mosaic.local}
-      - CISO_ASSISTANT_SUPERUSER_PASSWORD=${CISO_SUPERUSER_PASSWORD:-changeme}
+      # Django createsuperuser --noinput uses DJANGO_SUPERUSER_* vars
+      - DJANGO_SUPERUSER_EMAIL=${CISO_SUPERUSER_EMAIL:-admin@mosaic.local}
+      - DJANGO_SUPERUSER_PASSWORD=${CISO_SUPERUSER_PASSWORD:-changeme}
+      - CSRF_TRUSTED_ORIGINS=http://localhost:8443
+      # Custom settings — overrides cookie security flags for plain HTTP on-prem
     volumes:
       - ciso-data:/code/db
     networks:
       - mosaic-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/build || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/schema/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
@@ -499,8 +503,7 @@ services:
     environment:
       - PUBLIC_BACKEND_API_URL=http://ciso-backend:8000/api
       - PUBLIC_BACKEND_API_EXPOSED_URL=http://localhost:8443/api
-      - PROTOCOL_HEADER=x-forwarded-proto
-      - HOST_HEADER=x-forwarded-host
+      - ORIGIN=http://localhost:8443
     depends_on:
       ciso-backend:
         condition: service_healthy

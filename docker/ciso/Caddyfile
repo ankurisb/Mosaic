@@ -1,24 +1,26 @@
-# CISO Assistant reverse proxy
-# Routes :8443 → SvelteKit frontend + Django backend
-# No TLS (internal on-prem use). For production with a real domain,
-# replace ":8443" with your FQDN and Caddy auto-provisions TLS.
+# CISO Assistant reverse proxy — plain HTTP for on-prem internal use.
+# For production with a real domain, replace ":8443" with your FQDN
+# and Caddy will auto-provision a TLS certificate.
 
 :8443 {
-    # Django REST API
     handle /api/* {
-        reverse_proxy ciso-backend:8000
+        reverse_proxy ciso-backend:8000 {
+            header_up -X-Forwarded-Proto
+        }
     }
-
-    # Django static + media files
     handle /static/* {
-        reverse_proxy ciso-backend:8000
+        reverse_proxy ciso-backend:8000 {
+            header_up -X-Forwarded-Proto
+        }
     }
     handle /media/* {
-        reverse_proxy ciso-backend:8000
+        reverse_proxy ciso-backend:8000 {
+            header_up -X-Forwarded-Proto
+        }
     }
-
-    # SvelteKit frontend (everything else)
     handle {
-        reverse_proxy ciso-frontend:3000
+        reverse_proxy ciso-frontend:3000 {
+            header_up -X-Forwarded-Proto
+        }
     }
 }
