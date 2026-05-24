@@ -14,6 +14,26 @@
 
 services:
 
+  # ── Tunnel (Remote Support) ───────────────────────────────────
+  # Managed cloudflared tunnel for support sessions.
+  # Internal only — no ports exposed to host.
+  # Mosaic talks to it via http://mosaic-tunnel:3100.
+  # Tunnel only runs when admin starts a session from Settings → Remote Support.
+  mosaic-tunnel:
+    build:
+      context: ./services/tunnel
+      dockerfile: Dockerfile
+    container_name: mosaic-tunnel
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TARGET=http://mosaic:3001
+    # No ports exposed — internal only. Mosaic reaches it via
+    # http://mosaic-tunnel:3100 on the Docker network.
+    # For local dev add: ports: ["3100:3100"] and set
+    # TUNNEL_MANAGER_URL=http://localhost:3100 in .env.local
+    networks:
+      - mosaic-net
+
   # ── Watchdog ─────────────────────────────────────────────────
   # Always-on diagnostic sidecar. Works even when Mosaic is down.
   # Open http://localhost:3099 if Mosaic isn't loading.
@@ -28,6 +48,7 @@ services:
       - "3099:3099"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./NETWORK.md:/mosaic/NETWORK.md:ro
     networks:
       - mosaic-net
 
@@ -63,6 +84,8 @@ services:
       - ELASTICSEARCH_INTERNAL_URL=http://elasticsearch:9200
       # Stats sidecar (internal Docker network URL)
       - STATS_SIDECAR_URL=http://mosaic-stats:8001
+      # Tunnel manager (internal Docker network URL — remote support sessions)
+      - TUNNEL_MANAGER_URL=http://mosaic-tunnel:3100
       - NEXT_PUBLIC_APP_URL=http://localhost:3001
       - AIRBYTE_USER=airbyte
       - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}

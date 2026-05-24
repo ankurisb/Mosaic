@@ -57,6 +57,9 @@ export const AUDIT = {
   AUDIT_LOG_EXPORT:    'AUDIT_LOG_EXPORT',
   CHAIN_VERIFY:        'CHAIN_VERIFY',
   AUDIT_PURGE:         'AUDIT_PURGE',
+  // Remote support sessions
+  SUPPORT_SESSION_START: 'SUPPORT_SESSION_START',
+  SUPPORT_SESSION_END:   'SUPPORT_SESSION_END',
 } as const
 
 export type AuditAction = typeof AUDIT[keyof typeof AUDIT]

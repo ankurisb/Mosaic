@@ -211,7 +211,7 @@ ${resourceHtml ? `<div class="resources">${resourceHtml}</div>` : ''}
   <tbody>${rows}</tbody>
 </table>
 <div class="footer">
-  <span>Mosaic Watchdog v${VERSION} · <a href="/health">JSON health</a> · <a href="/bundle">Download support bundle</a></span>
+  <span>Mosaic Watchdog v${VERSION} · <a href="/health">JSON health</a> · <a href="/bundle">Download support bundle</a> · <a href="/network">Network requirements</a></span>
   <span>If Mosaic is down: run <code>bash mosaic-doctor.sh</code> for full diagnostics</span>
 </div>
 </body>
@@ -258,6 +258,27 @@ const server = http.createServer((req, res) => {
       'Content-Disposition': `attachment; filename="mosaic-support-bundle-${Date.now()}.txt"`,
     })
     res.end(renderBundle())
+  } else if (req.url === '/network') {
+    // Serve NETWORK.md as plain text — useful when IT teams can't reach GitHub
+    const fs = require('fs')
+    const path = require('path')
+    // Try a few locations — works both in dev and Docker
+    const candidates = [
+      '/mosaic/NETWORK.md',
+      path.join(__dirname, '../../NETWORK.md'),
+      path.join(__dirname, '../../../NETWORK.md'),
+    ]
+    let content = null
+    for (const p of candidates) {
+      try { content = fs.readFileSync(p, 'utf8'); break } catch {}
+    }
+    if (content) {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end(content)
+    } else {
+      res.writeHead(302, { 'Location': 'https://github.com/your-org/mosaic/blob/main/NETWORK.md' })
+      res.end()
+    }
   } else {
     const snap = buildSnapshot()
     res.writeHead(200, { 'Content-Type': 'text/html' })
@@ -267,7 +288,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Mosaic Watchdog v${VERSION} running on http://0.0.0.0:${PORT}`)
-  console.log(`UI:     http://localhost:${PORT}`)
-  console.log(`Health: http://localhost:${PORT}/health`)
-  console.log(`Bundle: http://localhost:${PORT}/bundle`)
+  console.log(`UI:      http://localhost:${PORT}`)
+  console.log(`Health:  http://localhost:${PORT}/health`)
+  console.log(`Bundle:  http://localhost:${PORT}/bundle`)
+  console.log(`Network: http://localhost:${PORT}/network`)
 })
