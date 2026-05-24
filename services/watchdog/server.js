@@ -290,7 +290,8 @@ function renderHTML(snap) {
     <!-- Footer links -->
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div style="display:flex;gap:16px;font-size:12px">
-        <a href="/health">JSON health</a>
+        <a href="/health">Health</a>
+        <a href="/health.json">JSON health</a>
         <a href="/bundle">Download support bundle</a>
         <a href="/network">Network requirements</a>
       </div>
@@ -304,13 +305,159 @@ function renderHTML(snap) {
 </html>`
 }
 
-// ── JSON health endpoint ───────────────────────────────────────
-function renderJSON(snap) {
-  return JSON.stringify({
-    ok: snap.issues === 0, issues: snap.issues, ts: snap.ts,
-    services: snap.services.map(s => ({ name: s.name, state: s.state, health: s.health, level: s.level })),
-    disk: snap.disk, mem: snap.mem,
-  }, null, 2)
+// ── Shared page shell ──────────────────────────────────────────
+function pageShell(title, breadcrumb, content) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mosaic — ${title}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #f5f5f5; color: #0f0f0f; min-height: 100vh }
+  a { color: #2563eb; text-decoration: none } a:hover { text-decoration: underline }
+  code { font-family: ui-monospace, 'SF Mono', monospace }
+</style>
+</head>
+<body>
+  <div style="background:#ffffff;border-bottom:1px solid rgba(0,0,0,.08);padding:0 24px">
+    <div style="max-width:960px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:28px;height:28px;background:#0f0f0f;border-radius:8px;display:flex;align-items:center;justify-content:center">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="white" stroke-width="1.6"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>
+        </div>
+        <span style="font-size:14px;font-weight:600;color:#0f0f0f">Mosaic</span>
+        <span style="font-size:14px;color:#b0b0b0">/</span>
+        <a href="/" style="font-size:14px;color:#4a4a4a">System Health</a>
+        <span style="font-size:14px;color:#b0b0b0">/</span>
+        <span style="font-size:14px;color:#4a4a4a">${breadcrumb}</span>
+      </div>
+      <a href="/" style="font-size:12px;color:#8a8a8a">← Back to health</a>
+    </div>
+  </div>
+  <div style="max-width:960px;margin:0 auto;padding:24px">${content}</div>
+</body>
+</html>`
+}
+
+// ── Health page ────────────────────────────────────────────────
+function renderHealthPage(snap) {
+  const { ts, services, issues, disk, mem } = snap
+  const ok = issues === 0
+
+  const rows = services.map(svc => {
+    const levelColors = { healthy: '#16a34a', running: '#2563eb', warning: '#d97706', error: '#dc2626' }
+    const badgeStyles = {
+      healthy: 'background:#f0fdf4;color:#16a34a;border:1px solid rgba(22,163,74,.2)',
+      running: 'background:#eff6ff;color:#2563eb;border:1px solid rgba(37,99,235,.2)',
+      warning: 'background:#fffbeb;color:#d97706;border:1px solid rgba(217,119,6,.2)',
+      error:   'background:#fef2f2;color:#dc2626;border:1px solid rgba(220,38,38,.2)',
+    }
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${levelColors[svc.level] || '#8a8a8a'};margin-right:8px"></span>`
+    const badge = `<span style="${badgeStyles[svc.level] || 'background:#f5f5f5;color:#8a8a8a;border:1px solid rgba(0,0,0,.08)'};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">${svc.statusLabel}</span>`
+    const optTag = svc.optional ? `<span style="font-size:10px;color:#b0b0b0;border:1px solid rgba(0,0,0,.08);border-radius:4px;padding:0 4px;margin-left:6px">optional</span>` : ''
+    const rowBg = (svc.level === 'error' && !svc.optional) ? 'background:#fef2f2' : ''
+    return `<tr>
+      <td style="padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.06);${rowBg}">${dot}<strong style="font-size:13px">${svc.label}</strong>${optTag}<div style="font-size:11px;color:#b0b0b0;margin-top:1px;margin-left:16px">${svc.name}</div></td>
+      <td style="padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.06);${rowBg}">${badge}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.06);${rowBg};font-size:12px;color:#8a8a8a">${svc.state}${svc.health ? ` · ${svc.health}` : ''}</td>
+    </tr>`
+  }).join('')
+
+  const resourceHtml = [
+    disk ? `<div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:14px 16px;flex:1">
+      <div style="font-size:11px;color:#8a8a8a;margin-bottom:4px">Disk</div>
+      <div style="font-size:16px;font-weight:600">${disk.freeGB} GB free <span style="font-size:12px;font-weight:400;color:#8a8a8a">of ${disk.totalGB} GB</span></div>
+      <div style="margin-top:8px;height:4px;background:rgba(0,0,0,.06);border-radius:2px"><div style="height:100%;width:${100-disk.pctFree}%;background:${disk.pctFree<10?'#dc2626':disk.pctFree<20?'#d97706':'#16a34a'};border-radius:2px"></div></div>
+    </div>` : '',
+    mem ? `<div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:14px 16px;flex:1">
+      <div style="font-size:11px;color:#8a8a8a;margin-bottom:4px">Memory</div>
+      <div style="font-size:16px;font-weight:600">${mem.freeMB} MB free <span style="font-size:12px;font-weight:400;color:#8a8a8a">of ${mem.totalMB} MB</span></div>
+      <div style="margin-top:8px;height:4px;background:rgba(0,0,0,.06);border-radius:2px"><div style="height:100%;width:${Math.round(((mem.totalMB-mem.freeMB)/mem.totalMB)*100)}%;background:${mem.freeMB<512?'#dc2626':mem.freeMB<1024?'#d97706':'#2563eb'};border-radius:2px"></div></div>
+    </div>` : '',
+  ].filter(Boolean).join('')
+
+  const content = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <h1 style="font-size:20px;font-weight:600;margin-bottom:4px">Health Status</h1>
+        <div style="font-size:12px;color:#8a8a8a">Last checked: ${new Date(ts).toLocaleString()}</div>
+      </div>
+      <div style="background:${ok?'#f0fdf4':'#fef2f2'};border:1px solid ${ok?'rgba(22,163,74,.2)':'rgba(220,38,38,.2)'};border-radius:999px;padding:6px 16px;font-size:13px;font-weight:600;color:${ok?'#16a34a':'#dc2626'}">
+        ${ok ? '✓ All systems running' : `⚠ ${issues} issue${issues>1?'s':''} detected`}
+      </div>
+    </div>
+
+    ${resourceHtml ? `<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">${resourceHtml}</div>` : ''}
+
+    <div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:12px;overflow:hidden;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#8a8a8a;background:#f5f5f5;border-bottom:1px solid rgba(0,0,0,.08);width:40%">Service</th>
+          <th style="text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#8a8a8a;background:#f5f5f5;border-bottom:1px solid rgba(0,0,0,.08);width:15%">Status</th>
+          <th style="text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#8a8a8a;background:#f5f5f5;border-bottom:1px solid rgba(0,0,0,.08)">Details</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <div style="font-size:12px;color:#8a8a8a">
+      This page is for human reference. Monitoring tools should use the raw JSON endpoint:
+      <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;font-size:11px">GET /health.json</code>
+    </div>`
+
+  return pageShell('Health Status', 'Health', content)
+}
+
+// ── Network requirements page ──────────────────────────────────
+function renderNetworkPage(rawMd) {
+  // Convert markdown to readable HTML — handles headings, tables, code, bold
+  function mdToHtml(md) {
+    return md
+      .split('\n')
+      .map(line => {
+        if (/^# /.test(line))   return `<h1 style="font-size:20px;font-weight:600;margin:24px 0 8px">${line.slice(2)}</h1>`
+        if (/^## /.test(line))  return `<h2 style="font-size:15px;font-weight:600;margin:20px 0 8px;color:#0f0f0f">${line.slice(3)}</h2>`
+        if (/^### /.test(line)) return `<h3 style="font-size:13px;font-weight:600;margin:16px 0 6px;color:#4a4a4a">${line.slice(4)}</h3>`
+        if (/^\|/.test(line)) {
+          if (/^\|[-| ]+\|$/.test(line)) return '' // separator row
+          const cells = line.split('|').slice(1,-1).map(c => c.trim())
+          const isHeader = false // simplification — treat all as td
+          return `<tr>${cells.map(c => `<td style="padding:8px 12px;border-bottom:1px solid rgba(0,0,0,.06);font-size:12px">${mdInline(c)}</td>`).join('')}</tr>`
+        }
+        if (/^```/.test(line))  return line === '```' ? '</code></pre>' : `<pre style="background:#f0f0f0;border-radius:8px;padding:12px 16px;margin:8px 0;overflow-x:auto"><code style="font-family:ui-monospace,monospace;font-size:12px;color:#0f0f0f">`
+        if (/^- /.test(line))   return `<li style="font-size:13px;color:#4a4a4a;margin:4px 0 4px 20px">${mdInline(line.slice(2))}</li>`
+        if (/^\*/.test(line) && line.startsWith('*Last')) return `<div style="font-size:11px;color:#b0b0b0;margin-top:16px">${mdInline(line)}</div>`
+        if (line.trim() === '') return '<div style="height:8px"></div>'
+        return `<p style="font-size:13px;color:#4a4a4a;line-height:1.7;margin:4px 0">${mdInline(line)}</p>`
+      })
+      .join('\n')
+  }
+
+  function mdInline(text) {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code style="background:#f0f0f0;padding:1px 5px;border-radius:4px;font-size:11px;font-family:ui-monospace,monospace">$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#2563eb">$1</a>')
+  }
+
+  // Wrap table rows in a proper table element
+  let html = mdToHtml(rawMd)
+  html = html.replace(/(<tr>[\s\S]*?<\/tr>\n?)+/g, match =>
+    `<div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:12px;overflow:hidden;margin:8px 0"><table style="width:100%;border-collapse:collapse">${match}</table></div>`
+  )
+
+  const content = `
+    <div style="margin-bottom:24px">
+      <h1 style="font-size:20px;font-weight:600;margin-bottom:4px">Network Requirements</h1>
+      <p style="font-size:13px;color:#8a8a8a">Share this with your IT or network security team before deployment.</p>
+    </div>
+    <div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:24px;margin-bottom:16px">
+      ${html}
+    </div>`
+
+  return pageShell('Network Requirements', 'Network Requirements', content)
 }
 
 // ── Support bundle ─────────────────────────────────────────────
@@ -326,10 +473,20 @@ function renderBundle() {
 
 // ── HTTP server ────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  if (req.url === '/health') {
+  if (req.url === '/health.json') {
+    // Machine-readable JSON for monitoring tools
     const snap = buildSnapshot()
     res.writeHead(snap.issues === 0 ? 200 : 503, { 'Content-Type': 'application/json' })
-    res.end(renderJSON(snap))
+    res.end(JSON.stringify({
+      ok: snap.issues === 0, issues: snap.issues, ts: snap.ts,
+      services: snap.services.map(s => ({ name: s.name, state: s.state, health: s.health, level: s.level })),
+      disk: snap.disk, mem: snap.mem,
+    }, null, 2))
+  } else if (req.url === '/health') {
+    // Human-readable health page
+    const snap = buildSnapshot()
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(renderHealthPage(snap))
   } else if (req.url === '/bundle') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': `attachment; filename="mosaic-support-bundle-${Date.now()}.txt"` })
     res.end(renderBundle())
@@ -338,8 +495,8 @@ const server = http.createServer((req, res) => {
     const candidates = ['/mosaic/NETWORK.md', path.join(__dirname, '../../NETWORK.md'), path.join(__dirname, '../../../NETWORK.md')]
     let content = null
     for (const p of candidates) { try { content = fs.readFileSync(p, 'utf8'); break } catch {} }
-    if (content) { res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(content) }
-    else { res.writeHead(302, { 'Location': 'https://github.com/your-org/mosaic/blob/main/NETWORK.md' }); res.end() }
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(content ? renderNetworkPage(content) : pageShell('Network Requirements', 'Network Requirements', '<p style="color:#8a8a8a;font-size:13px">NETWORK.md not found. Please ensure it is mounted into the container.</p>'))
   } else {
     const snap = buildSnapshot()
     res.writeHead(200, { 'Content-Type': 'text/html' })
