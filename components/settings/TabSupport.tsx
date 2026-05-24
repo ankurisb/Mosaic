@@ -17,7 +17,6 @@ export default function TabSupport({ user }: { user: SessionUser }) {
   const [loading,  setLoading]  = useState(true)
   const [acting,   setActing]   = useState(false)
   const [error,    setError]    = useState('')
-  const [copied,   setCopied]   = useState(false)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
   async function fetchStatus() {
@@ -61,13 +60,6 @@ export default function TabSupport({ user }: { user: SessionUser }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error')
     } finally { setActing(false) }
-  }
-
-  function copyUrl() {
-    if (!state?.url) return
-    navigator.clipboard.writeText(state.url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   function timeLeft(expiresAt: string | null) {
@@ -149,24 +141,11 @@ export default function TabSupport({ user }: { user: SessionUser }) {
           </div>
 
           <div style={{ padding: '16px 20px' }}>
-            {/* Session ID — most important thing to share */}
+            {/* Session ID — the only thing the customer needs to share */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Session ID — share this with support</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ flex: 1, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, letterSpacing: 4, color: 'var(--text)', textAlign: 'center' }}>
-                  {state.sessionId}
-                </div>
-              </div>
-            </div>
-
-            {/* URL row */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Tunnel URL</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <code style={{ flex: 1, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {state.url}
-                </code>
-                <Btn size="sm" onClick={copyUrl}>{copied ? '✓ Copied' : 'Copy'}</Btn>
+              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, letterSpacing: 4, color: 'var(--text)', textAlign: 'center' }}>
+                {state.sessionId}
               </div>
             </div>
 
