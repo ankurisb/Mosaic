@@ -89,7 +89,7 @@ export default function TabAbout() {
               See what's new →
             </a>
           )}
-          <a href="https://github.com/ankurisb/Mosaic/blob/main/docs/UPDATING.md" target="_blank" rel="noreferrer"
+          <a href="/docs/updating"
             style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', textDecoration: 'none', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', whiteSpace: 'nowrap' }}>
             How to update →
           </a>
@@ -177,16 +177,16 @@ export default function TabAbout() {
         <div style={{ fontWeight: 600, color: 'var(--text2)', marginBottom: 8 }}>Documentation</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {[
-            { label: 'Install guide',    href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/INSTALL.md' },
-            { label: 'First steps',      href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/FIRST_STEPS.md' },
-            { label: 'Updating',         href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/UPDATING.md' },
-            { label: 'Secrets & credentials', href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/SECRETS.md' },
-            { label: 'Network requirements',  href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/NETWORK.md' },
-            { label: 'SSO / Keycloak',   href: 'https://github.com/ankurisb/Mosaic/blob/main/docs/KEYCLOAK.md' },
+            { label: 'Install guide',         href: '/docs/install' },
+            { label: 'First steps',           href: '/docs/first-steps' },
+            { label: 'Updating',              href: '/docs/updating' },
+            { label: 'Secrets & credentials', href: '/docs/secrets' },
+            { label: 'Network requirements',  href: '/docs/network' },
+            { label: 'SSO / Keycloak',        href: '/docs/keycloak' },
           ].map(link => (
-            <a key={link.label} href={link.href} target="_blank" rel="noreferrer"
+            <a key={link.label} href={link.href}
               style={{ color: 'var(--text3)', textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '2px 8px' }}>
-              {link.label} ↗
+              {link.label} →
             </a>
           ))}
         </div>
