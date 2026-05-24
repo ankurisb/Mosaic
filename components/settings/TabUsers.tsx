@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, Btn, Badge, Alert, Field, Grid, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface User {
   id: string; email: string; name: string; role: string; banned: boolean
@@ -30,15 +31,22 @@ export default function TabUsers({ user }: { user: SessionUser }) {
   useEffect(() => { load() }, [])
 
   async function act(action: string, userId: string, extra?: object) {
-    const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, userId, ...extra }) })
-    const d = await r.json(); if (!r.ok) { setError(d.error); return }; setError(''); load()
+    try {
+      const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, userId, ...extra }) })
+      const { error: err } = await safeJson(r)
+      if (err) { setError(err); return }
+      setError(''); load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Action failed') }
   }
 
   async function invite() {
     if (!form.email) return
-    const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'invite', ...form }) })
-    const d = await r.json(); if (!r.ok) { setError(d.error); return }
-    setInvResult({ ...d, email: form.email }); load()
+    try {
+      const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'invite', ...form }) })
+      const { data: d, error: err } = await safeJson<Record<string,unknown>>(r)
+      if (err) { setError(err); return }
+      setInvResult({ ...(d || {}), email: form.email }); load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Invite failed') }
   }
 
   const filtered = users.filter(u => {

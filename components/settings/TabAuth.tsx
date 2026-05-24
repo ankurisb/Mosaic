@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, SectionLabel, Card, CardRow, Btn, Badge, Alert, Field, INP } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface SsoProvider { provider: string; client_id: string; tenant_id?: string; realm?: string; server_url?: string; discovery_url?: string; enabled: number; jit_enabled?: number }
 
@@ -80,8 +81,8 @@ export default function TabAuth({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save', ...smtpForm, port: Number(smtpForm.port) }),
       })
-      const d = await r.json()
-      if (!r.ok) { setSmtpError(d.error || 'Save failed'); return }
+      const { error: smtpErr } = await safeJson(r)
+      if (smtpErr) { setSmtpError(smtpErr); return }
       setSmtpSuccess('SMTP configuration saved')
       setShowSmtpForm(false)
       const updated = await fetch('/api/smtp').then(r => r.json())
@@ -97,9 +98,9 @@ export default function TabAuth({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'test' }),
       })
-      const d = await r.json()
-      if (!r.ok) { setSmtpError(d.error || 'Test failed'); return }
-      setSmtpSuccess(d.message || 'Test email sent')
+      const { data: d, error: testErr } = await safeJson<{ message?: string }>(r)
+      if (testErr) { setSmtpError(testErr); return }
+      setSmtpSuccess(d?.message || 'Test email sent')
     } catch (e) { setSmtpError(e instanceof Error ? e.message : 'Test failed') }
     setSmtpTesting(false)
   }
@@ -119,8 +120,8 @@ export default function TabAuth({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'saveSsoConfig', provider: providerId, ...form, enabled: true, jit_enabled: form.jit_enabled }),
       })
-      const d = await r.json()
-      if (!r.ok) { setError(d.error || 'Save failed'); return }
+      const { error: ssoErr } = await safeJson(r)
+      if (ssoErr) { setError(ssoErr); return }
       setSuccess('SSO configured successfully')
       setConfiguring(null)
       setForm({ client_id: '', client_secret: '', tenant_id: '', realm: '', server_url: '', discovery_url: '', jit_enabled: false })

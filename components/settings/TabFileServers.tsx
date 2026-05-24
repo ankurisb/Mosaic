@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface FileServer {
   id: string; label: string; transport: string; environment: string
@@ -59,10 +60,10 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: editing ? 'update' : 'create', id: editing, ...form }),
       })
-      const d = await r.json()
-      if (!r.ok) { setError(d.error || 'Save failed'); return }
+      const { error: err } = await safeJson(r)
+      if (err) { setError(err); return }
       setShowForm(false); setEditing(null); setForm(EMPTY); await load()
-    } catch (e) { setError((e as Error).message) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
   }
 
@@ -74,10 +75,12 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
 
   async function test(id: string) {
     setTesting(id)
-    const r = await fetch('/api/file-servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
-    const d = await r.json()
-    setResults(p => ({ ...p, [id]: d }))
-    setTesting(null)
+    try {
+      const r = await fetch('/api/file-servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
+      const { data: d, error: err } = await safeJson<{ ok: boolean; message?: string; latencyMs?: number }>(r)
+      setResults(p => ({ ...p, [id]: err ? { ok: false, message: err } : (d as { ok: boolean; message?: string; latencyMs?: number }) }))
+    } catch { setResults(p => ({ ...p, [id]: { ok: false, message: 'Connection check failed — server unreachable' } })) }
+    finally { setTesting(null) }
   }
 
   function startEdit(s: FileServer) {

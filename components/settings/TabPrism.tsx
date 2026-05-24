@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Field, Alert } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface PrismInstance {
   id: string; label: string; base_url: string; ui_url?: string
@@ -55,9 +56,10 @@ export default function TabPrism({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base_url: form.base_url, username: form.username, password: form.password, instance_id: editId || undefined }),
       })
-      const d = await r.json()
-      setTestResult({ ok: d.ok, message: d.message || (d.ok ? 'Connected successfully' : 'Connection failed') })
-    } catch { setTestResult({ ok: false, message: 'Network error' }) }
+      const { data: d, error: err } = await safeJson<{ ok: boolean; message?: string }>(r)
+      if (err) { setTestResult({ ok: false, message: err }); return }
+      setTestResult({ ok: !!d?.ok, message: d?.message || (d?.ok ? 'Connected successfully' : 'Connection failed') })
+    } catch { setTestResult({ ok: false, message: 'Connection check failed — server unreachable' }) }
     finally { setTesting(false) }
   }
 
@@ -75,11 +77,11 @@ export default function TabPrism({ user }: { user: SessionUser }) {
       if (form.password) body.password = form.password
       if (editId) body.id = editId
       const r = await fetch('/api/prism-instances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      const d = await r.json()
-      if (!r.ok || d.error) { setError(d.error || 'Save failed'); return }
+      const { error: err } = await safeJson(r)
+      if (err) { setError(err); return }
       setSuccess(editId ? 'Instance updated' : 'Prism instance connected')
       setShowForm(false); setEditId(null); load()
-    } catch { setError('Network error') }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
   }
 
