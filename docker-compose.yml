@@ -14,6 +14,23 @@
 
 services:
 
+  # ── Watchdog ─────────────────────────────────────────────────
+  # Always-on diagnostic sidecar. Works even when Mosaic is down.
+  # Open http://localhost:3099 if Mosaic isn't loading.
+  # No depends_on — starts independently of everything else.
+  mosaic-watchdog:
+    build:
+      context: ./services/watchdog
+      dockerfile: Dockerfile
+    container_name: mosaic-watchdog
+    restart: unless-stopped
+    ports:
+      - "3099:3099"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mosaic-net
+
   # ── Mosaic ──────────────────────────────────────────────────
   mosaic:
     build:

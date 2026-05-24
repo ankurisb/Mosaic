@@ -1,0 +1,8 @@
+{
+  "name": "mosaic-watchdog",
+  "version": "1.0.0",
+  "description": "Mosaic health watchdog — always-on diagnostic sidecar",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {}
+}
