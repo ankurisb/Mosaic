@@ -3,8 +3,7 @@ import AppShell from '@/components/AppShell'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
-
-// -- Types -----------------------------------------------------
+import { safeJson } from '@/lib/fetch'
 interface Condition {
   id: string; source_type: string; source_id: string
   field: string; op: string; value: number; logic: string; query: string
@@ -170,9 +169,11 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     setAlerts(p => p.filter(r => r.id !== id)); setToast('Alert deleted')
   }
   async function loadAlertRuns(ruleId: string) {
-    const r = await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_runs', rule_id: ruleId }) })
-    const d = await r.json()
-    setAlertRunLogs(p => ({ ...p, [ruleId]: d.runs || [] }))
+    try {
+      const r = await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_runs', rule_id: ruleId }) })
+      const { data: d } = await safeJson<{ runs?: unknown[] }>(r)
+      setAlertRunLogs(p => ({ ...p, [ruleId]: (d?.runs || []) as AlertRun[] }))
+    } catch { setAlertRunLogs(p => ({ ...p, [ruleId]: [] })) }
   }
   const triggerLabel = (t: string) => TRIGGER_TYPE_OPTS.find(x => x.value === t)?.label ?? t
   const conditionSummary = (rule: AlertRule) => {
@@ -187,7 +188,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     setN8nLoading(true)
     try {
       const r = await fetch('/api/n8n')
-      const d = await r.json()
+      const { data: d } = await safeJson(r)
       setN8nStatus(d)
     } catch { setN8nStatus(null) } finally { setN8nLoading(false) }
   }
@@ -199,12 +200,14 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       const action = editingId ? 'update' : 'create'
       const body = { action, ...form, ...(editingId ? { id: editingId } : {}) }
       const r = await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      const d = await r.json()
+      const { data: d, error: err } = await safeJson<{ id?: string }>(r)
+      if (err) { setToast('Error: ' + err); return }
       setToast(editingId ? 'Group updated' : 'Group created')
       setView('list'); setEditingId(null); setForm({ ...EMPTY_GROUP })
       await load()
-      if (!editingId && d.id) { setActiveId(d.id); setView('detail') }
-    } finally { setSaving(false) }
+      if (!editingId && d?.id) { setActiveId(d.id); setView('detail') }
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Save failed')) }
+    finally { setSaving(false) }
   }
 
   async function toggleGroup(id: string) {

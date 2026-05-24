@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, SectionLabel, Card, CardRow, Btn, Badge, Field, Grid, Alert, Toggle, Divider } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 // -- Types -----------------------------------------------------
 interface Channel {
@@ -98,9 +99,12 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
   }
 
   async function testChan(id: string) {
-    const r = await fetch('/api/integrations/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
-    const d = await r.json()
-    setToast(d.ok ? 'Test notification sent ok' : `Test failed: ${d.error}`)
+    try {
+      const r = await fetch('/api/integrations/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
+      const { data: d, error: err } = await safeJson<{ ok?: boolean; error?: string }>(r)
+      if (err) { setToast('Test failed: ' + err); return }
+      setToast(d?.ok ? 'Test notification sent ✓' : `Test failed: ${d?.error || 'unknown error'}`)
+    } catch (e) { setToast('Test failed: ' + (e instanceof Error ? e.message : 'Network error')) }
   }
 
   async function deleteChan(id: string, name: string) {

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, Card, CardRow, Btn, Badge, Spinner, Alert } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface ApiKey {
   id: string
@@ -59,25 +60,31 @@ export default function TabDeveloperAPI({ user }: { user: SessionUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create', name: formName, scopes: formScopes, rate_limit: formRate }),
       })
-      const d = await r.json()
-      if (d.ok) {
-        setNewKey(d.key)
+      const { data: d, error: err } = await safeJson<{ ok?: boolean; key?: string }>(r)
+      if (err) { setToast('Error: ' + err); return }
+      if (d?.ok) {
+        setNewKey(d.key ?? '')
         setShowForm(false)
         setFormName('')
         setFormScopes(['read'])
         setFormRate(100)
         load()
       }
-    } finally { setSaving(false) }
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Create failed')) }
+    finally { setSaving(false) }
   }
 
   async function revoke(id: string) {
     if (!confirm('Revoke this API key? Any integrations using it will stop working immediately.')) return
-    await fetch('/api/developer-keys', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'revoke', id }),
-    })
-    load(); setToast('Key revoked')
+    try {
+      const r = await fetch('/api/developer-keys', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revoke', id }),
+      })
+      const { error: err } = await safeJson(r)
+      if (err) { setToast('Error: ' + err); return }
+      load(); setToast('Key revoked')
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Revoke failed')) }
   }
 
   async function toggle(id: string, active: number) {

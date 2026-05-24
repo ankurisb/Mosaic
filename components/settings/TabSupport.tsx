@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, Btn, Alert } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface SessionState {
   running: boolean
@@ -41,9 +42,10 @@ export default function TabSupport({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'start' }),
       })
-      const d = await r.json()
-      if (!d.ok) { setError(d.error || 'Failed to start session'); return }
-      setState({ running: true, url: d.url, sessionId: d.sessionId, startedAt: d.startedAt, expiresAt: d.expiresAt })
+      const { data: d, error: err } = await safeJson<{ ok?: boolean; error?: string; url?: string; sessionId?: string; startedAt?: string; expiresAt?: string }>(r)
+      if (err) { setError(err); return }
+      if (!d?.ok) { setError(d?.error || 'Failed to start session'); return }
+      setState({ running: true, url: d.url ?? null, sessionId: d.sessionId ?? null, startedAt: d.startedAt ?? null, expiresAt: d.expiresAt ?? null })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error')
     } finally { setActing(false) }

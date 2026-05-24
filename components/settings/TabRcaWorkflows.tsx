@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, SectionLabel, Card, CardRow, Btn, Badge, Field, Grid, Alert, Toggle, Divider } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface RcaWorkflow {
   id: string; name: string; description: string; trigger_keywords: string[]
@@ -65,11 +66,14 @@ export default function TabRcaWorkflows({ user }: { user: SessionUser }) {
         renderers: form.renderer_types.split(',').map(r => r.trim()).filter(Boolean),
       }
       if (editing) body.id = editing
-      await fetch('/api/rca-workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const r = await fetch('/api/rca-workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const { error: err } = await safeJson(r)
+      if (err) { setToast('Error: ' + err); return }
       setShowForm(false); setEditing(null); setForm({ ...EMPTY_FORM })
       setToast(editing ? 'Workflow updated' : 'Workflow created')
       await load()
-    } finally { setSaving(false) }
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Save failed')) }
+    finally { setSaving(false) }
   }
 
   async function toggle(id: string) {

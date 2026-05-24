@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import { SupersetLink } from './SupersetLink'
+import { safeJson } from '@/lib/fetch'
 
 interface Dashboard {
   id: string; name: string; description: string
@@ -53,17 +54,12 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mosaic_dashboard_id: mosaicId, superset_dashboard_id: supersetId }),
       })
-      const d = await r.json()
-      if (d.ok) {
-        showToast('Superset dashboard linked')
-        setLinkingId(null)
-        await load()
-      } else {
-        showToast('Failed to link: ' + (d.error || 'unknown error'))
-      }
-    } finally {
-      setLinkLoading(false)
-    }
+      const { data: d, error: err } = await safeJson<{ ok?: boolean; error?: string }>(r)
+      if (err) { showToast('Failed to link: ' + err); return }
+      if (d?.ok) { showToast('Superset dashboard linked'); setLinkingId(null); await load() }
+      else showToast('Failed to link: ' + (d?.error || 'unknown error'))
+    } catch (e) { showToast('Failed to link: ' + (e instanceof Error ? e.message : 'Network error')) }
+    finally { setLinkLoading(false) }
   }
 
   async function unlinkSuperset(mosaicId: string) {
@@ -93,9 +89,11 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create_dashboard', ...form }),
       })
-      const d = await r.json()
-      if (d.id) { router.push(`/dashboards/${d.id}`) }
-    } finally { setSaving(false) }
+      const { data: d, error: err } = await safeJson<{ id?: string }>(r)
+      if (err) { showToast('Error: ' + err); return }
+      if (d?.id) { router.push(`/dashboards/${d.id}`) }
+    } catch (e) { showToast('Error: ' + (e instanceof Error ? e.message : 'Create failed')) }
+    finally { setSaving(false) }
   }
 
   async function deleteDash(id: string, name: string) {

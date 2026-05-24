@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, Btn, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface DatasetRow {
   dataset: string
@@ -85,12 +86,14 @@ export default function TabDataRetention({ user }: { user: SessionUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataset }),
       })
-      const d = await r.json()
-      if (d.ok) {
-        setToast(`Purged ${d.total_purged.toLocaleString()} rows`)
+      const { data: d, error: err } = await safeJson<{ ok?: boolean; total_purged?: number }>(r)
+      if (err) { setToast('Error: ' + err); return }
+      if (d?.ok) {
+        setToast(`Purged ${(d.total_purged ?? 0).toLocaleString()} rows`)
         await load()
       }
-    } finally { setPurging(null) }
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Purge failed')) }
+    finally { setPurging(null) }
   }
 
   function fmtDate(iso: string | null) {

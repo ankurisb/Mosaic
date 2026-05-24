@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
@@ -194,15 +195,13 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
   async function createSandbox() {
     setSandboxing(true); setSandboxMsg('')
-    const r = await fetch('/api/test-db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_sandbox' }) })
-    const d = await r.json()
-    if (r.ok) {
-      setSandboxMsg(d.already_existed ? 'Sandbox already exists — see connection list below.' : 'ok Sandbox DB created! Ask Mosaic: "Show me OEE for each machine"')
+    try {
+      const r = await fetch('/api/test-db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_sandbox' }) })
+      const { data: d, error: err } = await safeJson<{ already_existed?: boolean; error?: string }>(r)
+      if (err) { setSandboxMsg('Error: ' + err); return }
+      setSandboxMsg(d?.already_existed ? 'Sandbox already exists — see connection list below.' : '✓ Sandbox DB created! Ask Mosaic: "Show me OEE for each machine"')
       await load()
-    } else {
-      setSandboxMsg('Error: ' + (d.error || 'Unknown error'))
-    }
-    setSandboxing(false)
+    } finally { setSandboxing(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -213,8 +212,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
     setSaving(true)
     try {
       const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editing ? 'update' : 'create', id: editing, ...form }) })
-      const d = await r.json()
-      if (!r.ok) { setError(d.error); return }
+      const { error: err } = await safeJson(r)
+      if (err) { setError(err); return }
       setShowForm(false); setEditing(null); setForm(EMPTY); setError(''); load()
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
@@ -222,9 +221,12 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
   async function test(id: string) {
     setTesting(id)
-    const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
-    const data = await r.json()
-    setResults(p => ({ ...p, [id]: data })); setTesting(null)
+    try {
+      const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', id }) })
+      const { data, error: err } = await safeJson<TestResult>(r)
+      setResults(p => ({ ...p, [id]: err ? { ok: false, message: err } : (data as TestResult) }))
+    } catch { setResults(p => ({ ...p, [id]: { ok: false, message: 'Connection check failed — server unreachable' } })) }
+    finally { setTesting(null) }
   }
 
   function del(id: string, label: string) {

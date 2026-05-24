@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, Btn, Badge, Alert, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 const KEY_SECTIONS = [
   { title: 'Anthropic',                keys: ['ANTHROPIC_API_KEY'] },
@@ -69,14 +70,16 @@ export default function TabKeys({ user }: { user: SessionUser }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set', key, value: vals[key] }),
       })
-      const d = await r.json()
-      if (d.ok) {
+      const { data: d, error: err } = await safeJson<{ ok?: boolean }>(r)
+      if (err) { setToast('Error: ' + err); return }
+      if (d?.ok) {
         setKeys(p => ({ ...p, [key]: { configured: true, preview: vals[key].slice(0,4) + '...' } }))
         setVals(p => ({ ...p, [key]: '' }))
         setEditing(null)
         setToast('Saved')
       }
-    } finally { setSaving(null) }
+    } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'Save failed')) }
+    finally { setSaving(null) }
   }
 
   async function remove(key: string) {

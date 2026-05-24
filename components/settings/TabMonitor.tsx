@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle, PageSub, Btn, StatusDot, Spinner } from './ui'
+import { safeJson } from '@/lib/fetch'
 
 interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string; url?: string }
 interface Data { services: Svc[]; summary: { healthy: number; degraded: number; down: number; total: number } }
@@ -52,12 +53,11 @@ export default function TabMonitor() {
     try {
       const params = new URLSearchParams({ lines: linesLimit, level: levelFilter, service: svcFilter, since: sinceFilter })
       const r = await fetch(`/api/logs?${params}`)
-      if (r.ok) {
-        const d = await r.json()
-        setLogs(d.entries || [])
+      const { data: d } = await safeJson<{ entries?: unknown[]; services?: string[]; note?: string }>(r)
+      if (d) {
+        setLogs(d.entries as typeof logs || [])
         setServices(d.services || [])
-        if (d.note) setLogNote(d.note)
-        else setLogNote('')
+        setLogNote(d.note || '')
       }
     } finally { setLogsLoading(false) }
   }, [levelFilter, svcFilter, sinceFilter, linesLimit])
