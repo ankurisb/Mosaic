@@ -1,10 +1,16 @@
 import { getSession } from '@/lib/auth'
+import { validateDevApiKey } from '@/lib/dev-api-auth'
 export const runtime = 'nodejs'
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Accept either a Mosaic admin session (browser) or a valid dev API key (programmatic)
   const session = await getSession()
-  if (!session || session.role !== 'admin')
-    return new Response('Unauthorized', { status: 401 })
+  const hasSession = session && session.role === 'admin'
+
+  if (!hasSession) {
+    const auth = await validateDevApiKey(req, ['read'])
+    if (!auth.ok) return new Response('Unauthorized — provide a Mosaic admin session or a valid API key', { status: 401 })
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
