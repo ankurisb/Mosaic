@@ -168,10 +168,6 @@ export default function TabAbout() {
         )
       })}
 
-      <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 8 }}>
-        Mosaic v{deploy?.currentVersion || '1.0.0'} · build {deploy?.buildDate || '...'} · ugx.ai · powered by UGX Systems
-      </div>
-
       {/* Documentation links */}
       <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12 }}>
         <div style={{ fontWeight: 600, color: 'var(--text2)', marginBottom: 8 }}>Documentation</div>
@@ -190,6 +186,10 @@ export default function TabAbout() {
             </a>
           ))}
         </div>
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--text4)', textAlign: 'center' as const, paddingTop: 16 }}>
+        Mosaic v{deploy?.currentVersion || '1.0.0'} · build {deploy?.buildDate || '...'} · ugx.ai · powered by UGX Systems
       </div>
     </div>
   )

@@ -7,12 +7,18 @@ import Link from 'next/link'
 interface DocEntry { file: string; title: string }
 
 const NAV_ITEMS = [
-  { slug: 'install',     label: 'Install guide',        icon: '↓' },
-  { slug: 'first-steps', label: 'First steps',          icon: '✓' },
-  { slug: 'updating',    label: 'Updating',             icon: '↑' },
-  { slug: 'secrets',     label: 'Secrets & credentials',icon: '🔑' },
-  { slug: 'network',     label: 'Network requirements', icon: '⊕' },
-  { slug: 'keycloak',    label: 'SSO / Keycloak',       icon: '⊞' },
+  { slug: 'install',     label: 'Install guide',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M7 1v8M4 6l3 3 3-3"/><path d="M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg> },
+  { slug: 'first-steps', label: 'First steps',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 7l3 3 7-6"/></svg> },
+  { slug: 'updating',    label: 'Updating',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M7 10V3M4 6l3-3 3 3"/><path d="M2 11h10"/></svg> },
+  { slug: 'secrets',     label: 'Secrets & credentials',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="5.5" cy="5.5" r="2.5"/><path d="M7.5 7.5l4 4M9.5 9.5l1.5-1.5"/></svg> },
+  { slug: 'network',     label: 'Network requirements',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 1.5C5 3.5 4 5.2 4 7s1 3.5 3 5.5M7 1.5C9 3.5 10 5.2 10 7s-1 3.5-3 5.5M1.5 7h11"/></svg> },
+  { slug: 'keycloak',    label: 'SSO / Keycloak',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg> },
 ]
 
 // Rewrite markdown file links to internal /docs/ routes
@@ -92,7 +98,7 @@ export default function DocsPage({
                   marginBottom: 1,
                   transition: 'background .1s, color .1s',
                 }}>
-                <span style={{ fontSize: 11, opacity: .6, width: 14, textAlign: 'center' }}>{item.icon}</span>
+                <span style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: active ? 1 : 0.5 }}>{item.icon}</span>
                 {item.label}
               </Link>
             )
