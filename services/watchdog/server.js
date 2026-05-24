@@ -314,7 +314,6 @@ function renderHTML(snap) {
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div style="display:flex;gap:16px;font-size:12px">
         <a href="/health">Health</a>
-        <a href="/health.json">JSON health</a>
         <a href="/bundle">Download support bundle</a>
         <a href="/network">Network requirements</a>
       </div>
