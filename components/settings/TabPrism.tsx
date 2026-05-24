@@ -113,8 +113,8 @@ export default function TabPrism({ user }: { user: SessionUser }) {
           </div>
 
           {/* URL — full width, shown first as it's the most important field */}
-          <Field label="Platform URL" hint="Base URL of your Prism instance">
-            <input style={INP} value={form.base_url} onChange={set('base_url')} placeholder="https://platform.example.com" />
+          <Field label="Platform URL" hint="Base URL of your Prism instance — IP address, hostname, or domain">
+            <input style={INP} value={form.base_url} onChange={set('base_url')} placeholder="http://192.168.1.50:8080" />
           </Field>
 
           {/* Username + Password */}
