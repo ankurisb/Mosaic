@@ -181,7 +181,10 @@ services:
     ports:
       - "8088:8088"
     environment:
-      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:-change-me-to-random-string}
+      # WARNING: Never change this after first boot — Superset encrypts its
+      # metadata DB with this key. Changing it makes existing data unreadable.
+      # Set once in .env.local using: openssl rand -hex 32
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:?SUPERSET_SECRET_KEY must be set in .env.local}
       - DATABASE_URL=postgresql+psycopg2://superset:${SUPERSET_DB_PASSWORD:-superset}@superset-db/superset
       - REDIS_URL=redis://superset-redis:6379/0
       - SUPERSET_WEBSERVER_PORT=8088
