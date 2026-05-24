@@ -6,3 +6,8 @@ FROM ghcr.io/intuitem/ciso-assistant-community/backend:latest
 # them over HTTP, and login silently fails.
 RUN printf '\n# HTTP-safe cookie settings for on-prem deployment\nSECURE_PROXY_SSL_HEADER = None\nSESSION_COOKIE_SECURE = False\nCSRF_COOKIE_SECURE = False\nSECURE_SSL_REDIRECT = False\n' \
     >> /code/ciso_assistant/settings.py
+
+# Replace upstream startup.sh with our patched version that also runs
+# autoloadlibraries and explicitly loads ISO 27001:2022 on first boot.
+COPY startup.sh /code/startup.sh
+RUN chmod +x /code/startup.sh
