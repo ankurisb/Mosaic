@@ -106,9 +106,15 @@ function ToolCalls({
     return toolLabel[tc.name] || tc.name
   }
 
-  // Pill summary: unique source names e.g. "Plant Operations · Sensor Telemetry"
+  // Pill summary: show up to 3 source names, "+N more" for the rest
   const resolvedNames = tools.map(resolveToolLabel)
   const uniqueResolved = [...new Set(resolvedNames)]
+  const MAX_PILL_NAMES = 3
+  const visibleNames = uniqueResolved.slice(0, MAX_PILL_NAMES)
+  const overflowCount = uniqueResolved.length - MAX_PILL_NAMES
+  const pillLabel = overflowCount > 0
+    ? visibleNames.join(' · ') + ` +${overflowCount}`
+    : visibleNames.join(' · ')
 
   // The "currently running" tool is the most recent one without a result.
   const running = streaming ? [...tools].reverse().find(t => t.result === undefined) : undefined
@@ -138,7 +144,7 @@ function ToolCalls({
       <button onClick={() => setOpen(o => !o)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', fontSize: 11, color: 'var(--text3)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s' }}>
         <span style={{ color: streaming ? 'var(--accent-bg)' : (allOk ? 'var(--green-t)' : 'var(--amber-t)'), fontSize: 9, animation: streaming ? 'blink 1s step-end infinite' : 'none' }}>●</span>
-        {uniqueResolved.join(' · ')}{streamingSuffix}
+        {pillLabel}{streamingSuffix}
         <span style={{ fontSize: 9, opacity: 0.6 }}>{open ? '▲' : '▼'}</span>
       </button>
       {running && (
