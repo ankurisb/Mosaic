@@ -61,22 +61,11 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             </button>
           </div>
         </div>
-        {/* Conversations */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
-          {!collapsed && convs.map(c => (
-            <div key={c.id} onClick={() => router.push(`/?conv=${c.id}`)}
-              style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
-            </div>
-          ))}
-        </div>
         {/* Nav */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '8px' }}>
+        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
           {navBtn('/',
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 11 7 3l5 8"/><path d="M4.5 7.5h5"/></svg>,
-            'Chat'
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg>,
+            'Chats'
           )}
           {navBtn('/dashboards',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg>,
@@ -87,13 +76,24 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             'Reports'
           )}
           {navBtn('/query-builder',
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5" strokeLinejoin="round"/></svg>,
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5"/></svg>,
             'Query Builder'
           )}
           {navBtn('/rules',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/></svg>,
             'Rules'
           )}
+        </div>
+        {/* Conversations */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
+          {!collapsed && convs.map(c => (
+            <div key={c.id} onClick={() => router.push(`/?conv=${c.id}`)}
+              style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <span style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
+            </div>
+          ))}
         </div>
         {/* User + theme */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
