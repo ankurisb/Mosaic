@@ -9,13 +9,13 @@ export async function GET(req: Request) {
     return Response.json({ error: 'Admin only' }, { status: 403 })
 
   const url     = new URL(req.url)
-  const limit   = Math.min(parseInt(url.searchParams.get('limit')  || '50'), 200)
-  const offset  = parseInt(url.searchParams.get('offset') || '0')
-  const q       = url.searchParams.get('q')?.trim()       || null
-  const userId  = url.searchParams.get('user_id')         || null
-  const since   = url.searchParams.get('since')           || null
-  const isRca   = url.searchParams.get('is_rca')          || null
-  const convId  = url.searchParams.get('conversation_id') || null
+  const limit   = Math.min(parseInt(url.searchParams.get('limit') || '25'), 100)
+  const before  = url.searchParams.get('before') || null   // cursor: created_at of last seen row
+  const q       = url.searchParams.get('q')?.trim()        || null
+  const userId  = url.searchParams.get('user_id')          || null
+  const since   = url.searchParams.get('since')            || null
+  const isRca   = url.searchParams.get('is_rca')           || null
+  const convId  = url.searchParams.get('conversation_id')  || null
 
   const db = getRawDb()
   if (!db) return Response.json({ error: 'SQLite only' }, { status: 501 })
@@ -31,9 +31,15 @@ export async function GET(req: Request) {
     conditions.push('(question LIKE ? OR answer_summary LIKE ? OR sources_queried LIKE ? OR user_email LIKE ?)')
     values.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`)
   }
+  // Cursor: only rows older than the last seen timestamp
+  if (before) {
+    conditions.push('created_at < ?')
+    values.push(before)
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
+  // Fetch limit+1 rows — if we get limit+1 back, there are more
   const rows = db.prepare(
     `SELECT id, message_id, conversation_id, user_id, user_email,
             question, answer_summary,
@@ -41,14 +47,11 @@ export async function GET(req: Request) {
             input_tokens, output_tokens, cost_usd, latency_ms, model, is_rca, created_at
      FROM transparency_log ${where}
      ORDER BY created_at DESC
-     LIMIT ? OFFSET ?`
-  ).all([...values, limit, offset]) as Record<string, unknown>[]
+     LIMIT ?`
+  ).all([...values, limit + 1]) as Record<string, unknown>[]
 
-  const total = (db.prepare(`SELECT COUNT(*) as cnt FROM transparency_log ${where}`)
-    .get([...values]) as { cnt: number }).cnt
-
-  // Parse JSON columns
-  const entries = rows.map(r => ({
+  const hasMore = rows.length > limit
+  const entries = rows.slice(0, limit).map(r => ({
     ...r,
     tools_used:      typeof r.tools_used === 'string'      ? JSON.parse(r.tools_used)      : r.tools_used,
     sources_queried: typeof r.sources_queried === 'string' ? JSON.parse(r.sources_queried) : r.sources_queried,
@@ -56,5 +59,10 @@ export async function GET(req: Request) {
     web_search_used: r.web_search_used === 1,
   }))
 
-  return Response.json({ entries, total, limit, offset, hasMore: offset + rows.length < total })
+  // Cursor for next page = created_at of the last entry returned
+  const nextCursor = hasMore && entries.length > 0
+    ? (rows[entries.length - 1] as Record<string, unknown>).created_at as string
+    : null
+
+  return Response.json({ entries, hasMore, nextCursor, limit })
 }

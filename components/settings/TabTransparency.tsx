@@ -23,7 +23,6 @@ interface TEntry {
   created_at: string
 }
 
-const PAGE = 25
 
 const TOOL_LABELS: Record<string, string> = {
   query_database:           'Database',
@@ -146,33 +145,60 @@ function EntryRow({ e }: { e: TEntry }) {
 }
 
 export default function TabTransparency() {
-  const [entries,  setEntries]  = useState<TEntry[]>([])
-  const [total,    setTotal]    = useState(0)
-  const [loading,  setLoading]  = useState(true)
-  const [page,     setPage]     = useState(0)
-  const [q,        setQ]        = useState('')
-  const [rcaOnly,  setRcaOnly]  = useState(false)
+  const [entries,    setEntries]    = useState<TEntry[]>([])
+  const [hasMore,    setHasMore]    = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [loadingMore,setLoadingMore]= useState(false)
+  const [q,          setQ]          = useState('')
+  const [rcaOnly,    setRcaOnly]    = useState(false)
+  const [count,      setCount]      = useState(0)  // running count of loaded rows
 
-  const load = useCallback(async (p = 0) => {
+  // Initial load / re-load after filter change — resets the list
+  const load = useCallback(async () => {
     setLoading(true)
+    setEntries([])
+    setNextCursor(null)
+    setHasMore(false)
+    setCount(0)
     try {
       const params = new URLSearchParams({
-        limit: String(PAGE), offset: String(p * PAGE),
-        ...(q      ? { q }       : {}),
+        limit: '25',
+        ...(q       ? { q }          : {}),
         ...(rcaOnly ? { is_rca: '1' } : {}),
       })
       const r = await fetch(`/api/transparency?${params}`)
       if (!r.ok) return
       const d = await r.json()
       setEntries(d.entries || [])
-      setTotal(d.total || 0)
+      setHasMore(d.hasMore || false)
+      setNextCursor(d.nextCursor || null)
+      setCount(d.entries?.length || 0)
     } finally { setLoading(false) }
   }, [q, rcaOnly])
 
-  useEffect(() => { load(page) }, [load, page])
-  useEffect(() => { setPage(0) }, [q, rcaOnly])
+  // Load more — appends to existing list using cursor
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const params = new URLSearchParams({
+        limit: '25',
+        before: nextCursor,
+        ...(q       ? { q }          : {}),
+        ...(rcaOnly ? { is_rca: '1' } : {}),
+      })
+      const r = await fetch(`/api/transparency?${params}`)
+      if (!r.ok) return
+      const d = await r.json()
+      setEntries(prev => [...prev, ...(d.entries || [])])
+      setHasMore(d.hasMore || false)
+      setNextCursor(d.nextCursor || null)
+      setCount(prev => prev + (d.entries?.length || 0))
+    } finally { setLoadingMore(false) }
+  }
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE))
+  useEffect(() => { load() }, [load])
 
   return (
     <div className="fade-in">
@@ -186,16 +212,16 @@ export default function TabTransparency() {
           placeholder="Search questions, sources, users…"
           value={q}
           onChange={e => setQ(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { setPage(0); load(0) } }}
+          onKeyDown={e => { if (e.key === 'Enter') load() }}
         />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={rcaOnly} onChange={e => setRcaOnly(e.target.checked)} />
           RCA only
         </label>
-        <Btn size="sm" onClick={() => { setPage(0); load(0) }}>Search</Btn>
+        <Btn size="sm" onClick={() => load()}>Search</Btn>
         {(q || rcaOnly) && <Btn size="sm" variant="ghost" onClick={() => { setQ(''); setRcaOnly(false) }}>Clear</Btn>}
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-          {loading ? '' : `${total.toLocaleString()} response${total !== 1 ? 's' : ''}`}
+          {loading ? '' : count > 0 ? `${count.toLocaleString()}${hasMore ? '+' : ''} response${count !== 1 ? 's' : ''}` : '0 responses'}
         </span>
       </div>
 
@@ -218,12 +244,17 @@ export default function TabTransparency() {
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', fontSize: 12 }}>
-          <Btn size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>← Prev</Btn>
-          <span style={{ color: 'var(--text3)' }}>Page {page + 1} of {totalPages}</span>
-          <Btn size="sm" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next →</Btn>
+      {/* Load more */}
+      {hasMore && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+          <Btn size="sm" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? <Spinner size={12} /> : 'Load more'}
+          </Btn>
+        </div>
+      )}
+      {!hasMore && entries.length > 0 && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text4)', marginTop: 12 }}>
+          All {count.toLocaleString()} responses loaded
         </div>
       )}
     </div>
