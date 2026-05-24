@@ -2,12 +2,14 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { getPrismToken, invalidatePrismToken } from '@/lib/api-auth'
+import { setupDatabase } from '@/lib/setup'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  await setupDatabase()
   const sql = getDb()
   const instances = await sql`
     SELECT id, label, base_url, ui_url, environment, username, active, created_at
