@@ -8,7 +8,10 @@
     "start": "next start",
     "logs": "tail -f logs/server.log | node_modules/.bin/pino-pretty --colorize --translateTime 'HH:MM:ss' --ignore pid,hostname --messageFormat '[{service}] {msg}'",
     "stats": "cd services/stats-sidecar && python3 main.py",
-    "build:local": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build"
+    "build:local": "pkill -f \"next dev\" 2>/dev/null; sleep 1; next build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -53,7 +56,9 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "concurrently": "^8.2.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.7"
   },
   "optionalDependencies": {
     "mssql": "^10.0.4",

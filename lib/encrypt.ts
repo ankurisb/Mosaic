@@ -24,13 +24,15 @@ export function decrypt(text: string): string {
     const parts = text.slice(5).split(':')
     if (parts.length !== 3) return ''
     const [ivHex, tagHex, dataHex] = parts
-    const key = getKey()
-    const iv = Buffer.from(ivHex, 'hex')
-    const tag = Buffer.from(tagHex, 'hex')
-    const data = Buffer.from(dataHex, 'hex')
-    const decipher = createDecipheriv('aes-256-gcm', key, iv)
-    decipher.setAuthTag(tag)
-    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+    try {
+      const key = getKey()
+      const iv = Buffer.from(ivHex, 'hex')
+      const tag = Buffer.from(tagHex, 'hex')
+      const data = Buffer.from(dataHex, 'hex')
+      const decipher = createDecipheriv('aes-256-gcm', key, iv)
+      decipher.setAuthTag(tag)
+      return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+    } catch { return '' }
   }
   // Legacy Base64 format -- keep reading old records
   if (text.startsWith('enc:')) {
