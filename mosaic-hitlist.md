@@ -1,6 +1,6 @@
 # Mosaic — Master Feature Hit List
-**Last updated:** 18 May 2026  
-**Baseline:** Session 7 complete (HEAD: d140456)  
+**Last updated:** 25 May 2026  
+**Baseline:** Session 8 complete (HEAD: c539640)  
 **Purpose:** Tick off as you go. Organised by current state → near-term → strategic.
 
 ---
@@ -10,17 +10,17 @@
 | Category | Done | Remaining | Total |
 |---|---|---|---|
 | Core platform (Part 1) | 76 | 0 | 76 |
-| Near-term / blockers (Part 2) | 4 | 14 | 18 |
-| Enterprise roadmap (Part 3, Phases A–P) | 8 | 113 | 121 |
+| Near-term / blockers (Part 2) | 10 | 8 | 18 |
+| Enterprise roadmap (Part 3, Phases A–P) | 62 | 59 | 121 |
 | ThingsBoard IoT (Part 4) | 0 | 15 | 15 |
 | Predictive Maintenance (Part 5) | 0 | 18 | 18 |
 | Reporting (Part 6) | 0 | 9 | 9 |
 | Multi-Tenant SaaS (Part 7) | 0 | 7 | 7 |
 | Air-Gapped / Local LLM (Part 8) | 0 | 6 | 6 |
-| **Total** | **88** | **182** | **270** |
+| **Total** | **148** | **122** | **270** |
 
-> **Deployment readiness:** Docker Compose validation complete. Mosaic v1.0.0 is customer-deployable on-prem.  
-> Remaining: Production Vercel deploy verification (pdf-parse, aws4 serverless behaviour).
+> **Deployment readiness:** Docker Compose validation complete. Mosaic v1.2.0 is customer-deployable on-prem.  
+> Remaining blockers: Production Vercel deploy verification (pdf-parse, aws4 serverless behaviour).
 
 ---
 
@@ -197,17 +197,17 @@
 
 ### Testing Gaps — Harness Sources Not Yet Wired
 - [x] Wire MySQL ERP Lite (127.0.0.1:3307) — connected and Airbyte-synced
-- [ ] Wire SQL Server CMMS to Mosaic (127.0.0.1:1434)
-- [ ] Wire MongoDB Event Logs (127.0.0.1:27018)
-- [ ] Wire SFTP share (127.0.0.1:2222, path: upload/initial)
-- [ ] Cross-source query: "Line B machines with open work orders AND below 70% OEE" (Postgres + SQL Server)
-- [ ] SFTP smoke test via ssh2 transport
-- [ ] Mock SAP OData full pagination test
+- [x] Wire SQL Server CMMS to Mosaic (127.0.0.1:1434) — validated session 4
+- [x] Wire MongoDB Event Logs (127.0.0.1:27018) — validated session 4
+- [x] Wire SFTP share (127.0.0.1:2222, path: upload/initial) — validated session 4, 3 bugs fixed
+- [x] Cross-source query: "Line B machines with open work orders AND below 70% OEE" (Postgres + SQL Server) — validated session 4
+- [x] SFTP smoke test via ssh2 transport — validated session 4
+- [x] Mock SAP OData full pagination test — validated session 4
 
 ### Known Issues
-- [!] SharePoint file server — UI option exists, implementation incomplete
-- [!] Airbyte source creation routes to raw Airbyte UI (breaks invisible design principle)
-- [!] Sync failure visibility absent (no error surfacing in Mosaic UI)
+- [x] SharePoint file server — implemented (Microsoft Graph API transport, commit 68deb1f)
+- [x] Airbyte source creation routes to raw Airbyte UI — fixed, full Mosaic-native wizard built
+- [x] Sync failure visibility absent — fixed, AbStatusBadge renders failed/running/succeeded inline
 - [!] Plant Ops 4.4 Test connection leftover — delete from Settings to clean monitor
 - [!] Superset Public role permissions — auto-set on startup but requires Superset to be up first (startup race edge case)
 
@@ -216,20 +216,23 @@
 ## Part 3 — Enterprise Readiness Roadmap
 
 ### Phase A — Test Infrastructure
-- [ ] Vitest setup + test runner
-- [ ] Unit tests: lib/encrypt.ts, lib/auth.ts, lib/db.ts
+- [x] Vitest setup + test runner (vitest.config.ts, npm test)
+- [x] Unit tests: lib/encrypt.ts — roundtrip, edge cases, legacy format, malformed input crash fix
+- [x] Unit tests: lib/fetch.ts — all HTTP status codes, error message format, network failure
+- [x] Unit tests: lib/rca.ts — isRcaQuery keyword detection, parseRcaOutput block parsing
+- [x] Unit tests: lib/guardrails.ts — checkInputForInjection all 9 patterns
+- [ ] Unit tests: lib/api-auth.ts — token fetcher, refresh_token branching, RFC 6749 error parsing, cache eviction
 - [ ] API route tests: /api/auth, /api/connections, /api/chat
-- [ ] **Unit tests: lib/api-auth.ts** — token fetcher (success, HTTP error, network error), refresh_token vs client_credentials branching, header_prefix application, RFC 6749 error parsing, cache eviction on invalid_grant/invalid_token
 - [ ] SQL injection guard on all raw query paths
 - [ ] Read-only enforcement tests
-- [ ] CI pipeline (GitHub Actions on every push)
+- [x] CI pipeline (GitHub Actions — .github/workflows/test.yml, runs on every push to main)
 
 ### Phase B — Observability & Migrations
-- [ ] Replace console.log with Pino structured logging
-- [ ] Request ID on all log lines (trace correlation)
-- [ ] Expand /api/health (Airbyte, Superset, encryption key status)
-- [ ] DB migration version table
-- [ ] Migration files for existing schema (retroactive baseline)
+- [x] Replace console.log with Pino structured logging (commit 1ad3e38)
+- [x] Request ID on all log lines — requestId parsed in log viewer (commit 753eb83)
+- [x] Expand /api/health (Airbyte, Superset, encryption key status) — 14 services in monitor
+- [x] DB migration version table (lib/migrate.ts, schema_migrations table)
+- [x] Migration files for existing schema (retroactive baseline)
 
 ### Phase C — Superset Hardening (embed complete, remaining items)
 - [x] Fix Superset CSRF token handling (lib/superset-sync.ts) — fixed session 4
@@ -243,34 +246,40 @@
 - [ ] Superset volume backup procedure (dashboards/datasets/charts lost on volume wipe)
 
 ### Phase D — SSO
-- [ ] Add Keycloak to Docker Compose (optional, SSO_ENABLED flag)
+- [x] Add Keycloak to Docker Compose (SSO_ENABLED flag, COMPOSE_PROFILES=sso)
 - [ ] Abstract AI provider layer (lib/ai.ts with AnthropicProvider interface)
-- [ ] next-auth with OIDC/Keycloak provider
-- [ ] Realm + client setup documentation
-- [ ] LDAP/AD federation configuration guide
-- [ ] Role mapping (Keycloak roles → Mosaic admin/user)
-- [ ] SSO_ISSUER, SSO_CLIENT_ID, SSO_CLIENT_SECRET env vars
-- [ ] Fallback email/password login preserved for non-SSO deployments
+- [x] next-auth with OIDC/Keycloak provider (commit 6fed649)
+- [x] Realm + client setup documentation (docs/KEYCLOAK.md)
+- [x] LDAP/AD federation configuration guide
+- [x] Role mapping (Keycloak roles → Mosaic admin/user)
+- [x] SSO_ISSUER, SSO_CLIENT_ID, SSO_CLIENT_SECRET env vars
+- [x] Fallback email/password login preserved for non-SSO deployments
+- [x] JIT (just-in-time) SSO user provisioning (commit 406f618)
 - [ ] End-to-end SSO login test
 
 ### Phase E — Audit Trail (ISO 27001)
-- [ ] audit_events table (id, timestamp, actor_id, actor_email, actor_ip, session_id, action, resource, outcome, detail, checksum)
-- [ ] lib/audit.ts helper — audit(action, resource, outcome, detail)
-- [ ] Instrument: LOGIN, LOGOUT, LOGIN_FAILED
-- [ ] Instrument: CONNECTION_CREATE, UPDATE, DELETE, CREDENTIAL_VIEW
-- [ ] Instrument: USER_CREATE, DELETE, ROLE_CHANGE
-- [ ] Instrument: QUERY_EXECUTE, RCA_RUN
-- [ ] Append-only trigger (Postgres) or checksum chain (SQLite)
-- [ ] Fluent Bit sidecar → OpenSearch log shipping
+- [x] audit_events table with SHA-256 hash chain (commit 37f97e8)
+- [x] lib/audit.ts helper — audit(action, resource, outcome, detail)
+- [x] Instrument: LOGIN, LOGOUT, LOGIN_FAILED
+- [x] Instrument: CONNECTION_CREATE, UPDATE, DELETE, CREDENTIAL_VIEW
+- [x] Instrument: USER_CREATE, DELETE, ROLE_CHANGE
+- [x] Instrument: QUERY_EXECUTE, RCA_RUN
+- [x] Append-only + hash chain (SHA-256 checksum per event, tamper evidence)
+- [x] ISO 27001 compliance documents — ISMS Policy + Statement of Applicability, live-generated (commit bfa1a1a)
+- [x] ISO 27001 live compliance status panel in Audit Trail tab
+- [x] Audit trail viewer with free-text search and pagination (commit 32ba647)
+- [x] Audit export (CSV/JSON) in admin Settings
+- [ ] Fluent Bit sidecar → OpenSearch log shipping (optional enterprise add-on)
 - [ ] OpenSearch + OpenSearch Dashboards in Docker Compose (optional profile)
-- [ ] Audit log export (CSV / JSON) in admin Settings
 
 ### Phase F — AI Transparency Ledger
-- [ ] ai_api_calls table (full schema with hash chain)
-- [ ] lib/ai-ledger.ts — capture every outbound/inbound API packet
-- [ ] SHA-256 hash chain (tamper evidence)
+- [x] transparency_log table (one row per assistant response, commit 24fc058)
+- [x] lib/transparency.ts — writeTransparencyLog(), resolves friendly connection labels
+- [x] Admin ledger view (AI Decision Log in Settings sidebar — filter, search, pagination)
+- [x] Cursor-based pagination for scale (commit e94b945)
+- [x] Data source names shown in chat tool pill (commit 369ea58, capped at 3 + overflow)
+- [ ] SHA-256 hash chain on transparency log (tamper evidence)
 - [ ] Per-conversation packet inspector UI (timeline view in chat)
-- [ ] Admin ledger view (filter by user, date, source — exportable)
 - [ ] Chain integrity verification button
 - [ ] Full packet export (encrypted archive, admin only)
 - [ ] Data exposure summary (connections, tables, row counts per call)
@@ -293,7 +302,7 @@
 - [ ] Test mode (simulate user's policy context)
 
 ### Phase H — Rate Limiting & Session Security
-- [ ] Per-role query budgets (not just global 50 req/hr)
+- [x] Per-role query budgets (guardrail_usage_limits table — daily/monthly token + request budgets)
 - [ ] Session timeout (auto-logout on inactivity)
 - [ ] Concurrent session limits
 - [ ] Forced re-auth for sensitive actions (credential view, user delete)
@@ -301,26 +310,30 @@
 - [ ] Time-window restrictions (cron-style active/locked schedule)
 
 ### Phase I — Granular RBAC
-- [ ] Extend role system beyond admin/user (plant manager, operator, viewer)
-- [ ] Permission checks on all API routes per role
+- [x] Extend role system beyond admin/user — RBAC enforcement on all API routes (commit 08cfc71)
+- [x] Permission checks on all API routes per role
+- [ ] Custom roles beyond admin/user (plant manager, operator, viewer)
 - [ ] Role assignment UI in Settings → Users
 - [ ] Role-based tool invocation permissions
 
 ### Phase J — Developer API
-- [ ] lib/ai.ts abstraction layer (AIProvider interface)
-- [ ] /api/v1/* versioned prefix
-- [ ] API key table + validation middleware
+- [ ] lib/ai.ts abstraction layer (AIProvider interface) — prerequisite for Phase N/P8
+- [x] /api/v1/* versioned prefix — 7 endpoints shipped (commit 2e1141f)
+- [x] API key table + validation middleware (developer_api_keys table, lib/dev-api-auth.ts)
 - [ ] Kong API Gateway in Docker Compose
-- [ ] /api/v1/chat endpoint (machine-to-machine)
-- [ ] /api/v1/rca endpoint (structured RCA trigger)
-- [ ] /api/v1/conversations endpoint (read history)
-- [ ] /api/v1/connections/:id/health endpoint
-- [ ] Outbound webhooks (POST to registered URL on alert/RCA/sync)
-- [ ] openapi.yaml spec
-- [ ] Swagger UI documentation
-- [ ] API key management UI in Settings
-- [ ] Rate limiting per API key (via Kong)
-- [ ] Usage metering per API key
+- [x] /api/v1/chat endpoint (machine-to-machine)
+- [x] /api/v1/rca endpoint (structured RCA trigger)
+- [x] /api/v1/conversations endpoint (read history)
+- [x] /api/v1/connections/:id/health endpoint
+- [x] /api/v1/query endpoint (natural language query — bonus, not on original list)
+- [x] /api/v1/users endpoint
+- [x] Outbound webhooks (POST to registered URL — lib/notify.ts webhook channel type)
+- [x] openapi.yaml spec (391 lines, public/openapi.yaml)
+- [x] Swagger UI documentation (/api/v1/docs — Swagger UI against openapi.yaml)
+- [x] API key management UI in Settings → Developer API
+- [x] Rate limiting per API key (application-level, per-hour counting with 429 + headers)
+- [x] Usage logging per API key (logDevApiUsage() on every v1 endpoint)
+- [ ] Rate limiting via Kong (enterprise-grade — deferred, current app-level sufficient for v1)
 
 ### Phase K — Usage-Based Billing & Metering
 - [ ] AI Credits abstraction (internal token → customer credit mapping)
@@ -332,11 +345,13 @@
 - [ ] Lago integration for invoice generation (Phase 2)
 
 ### Phase L — Backup & Disaster Recovery
-- [ ] pgBackRest sidecar in Docker Compose
-- [ ] Scheduled automated backups (SQLite snapshot + Postgres)
-- [ ] One-command restore procedure
-- [ ] Backup status in system monitoring tab
-- [ ] Documented restore runbook
+- [x] Backup sidecar in Docker Compose (services/backup/, mosaic-backup container)
+- [x] Scheduled automated backups — every 24h default, configurable via UI or .env
+- [x] One-command restore procedure (scripts/restore.sh — requires 'yes' confirmation)
+- [x] Backup status in System Health tab (status row with last backup time, archive info)
+- [x] Backup & restore Settings tab — schedule picker, run-now button, archive list
+- [x] docs/BACKUP.md — full reference: what's backed up, what isn't, off-site sync examples
+- [x] On-demand manual backup (scripts/backup.sh)
 
 ### Phase M — Data Encryption at Rest
 - [ ] SQLCipher for SQLite path (encrypted DB file)
@@ -344,17 +359,21 @@
 - [ ] ai_api_calls.messages_sent column encrypted separately
 
 ### Phase N — Data Retention Policies
-- [ ] Admin-configurable conversation retention (auto-delete after N days)
-- [ ] On-demand user data purge (GDPR right to erasure)
-- [ ] Retention policy UI in Settings → Security
-- [ ] Audit log retention separate from conversation retention
+- [x] Admin-configurable retention per dataset (data_retention_settings table, commit 7ca6f20)
+- [x] Nightly auto-purge per policy
+- [x] On-demand purge (Settings → Data retention → Run now per dataset or Run all)
+- [x] Retention policy UI in Settings → Data retention (connector-only deployment toggle)
+- [x] Audit log retention separate from conversation retention
 
 ### Phase O — Installer Hardening
-- [ ] Universal installer (Linux servers, cloud VMs, headless)
-- [ ] Visual pre-flight check UI
-- [ ] Real-time installation progress
-- [ ] Post-install validation dashboard
-- [ ] SSO_ENABLED flag wires Keycloak into Compose automatically
+- [x] Universal installer bash script (install.sh — Linux + macOS, headless-compatible, commit f4ae47d)
+- [x] SSO_ENABLED flag wires Keycloak into Compose automatically (install.sh auto-manages COMPOSE_PROFILES)
+- [x] CISO_SUPERUSER credentials substituted by installer (commit bccb46f)
+- [x] docs/INSTALL.md — customer-facing install guide (241 lines, no developer content)
+- [x] docs/FIRST_STEPS.md — post-install verification checklist
+- [ ] Visual pre-flight check UI (RAM, disk, Docker version, ports free)
+- [ ] Real-time installation progress (stream docker compose logs to installer)
+- [ ] Post-install validation dashboard (all services green before handover)
 - [ ] Audit profile flag wires OpenSearch + Fluent Bit automatically
 
 ### Phase P — External Security Review
@@ -498,6 +517,10 @@
 | Superset Public role permissions set via Mosaic startup API | Automated first-run, no manual Superset config steps |
 | Stats sidecar auto-starts via concurrently in npm run dev | No manual sidecar management; always available in dev |
 | npm run build kills dev server first | Prevents .next cache corruption from concurrent build + dev |
+| Developer API rate limiting at app level, not Kong (v1) | Kong deferred — application-level 429 sufficient for first customer |
+| Backup sidecar reads config file every 10s loop | UI schedule changes apply without container restart |
+| docs/ in repo, rendered as /docs/* in-app | Version-controlled with code; works air-gapped; no external docs site needed |
+| lib/fetch.ts safeJson() as shared error utility | 70 call sites standardised; raw JS errors never reach users |
 
 ---
 
