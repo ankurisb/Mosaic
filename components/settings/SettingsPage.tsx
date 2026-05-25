@@ -20,6 +20,7 @@ import TabAudit from './TabAudit'
 import TabDataRetention from './TabDataRetention'
 import TabSupport from './TabSupport'
 import TabTransparency from './TabTransparency'
+import TabBackup from './TabBackup'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -38,6 +39,7 @@ const ALL_TABS = [
   { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
   { id: 'transparency',  label: 'AI Decision Log',      adminOnly: true  },
   { id: 'data-retention',label: 'Data retention',       adminOnly: true  },
+  { id: 'backup',        label: 'Backup & restore',     adminOnly: true  },
   { id: 'support',       label: 'Remote support',       adminOnly: true  },
   { id: 'about',         label: 'About',                adminOnly: false },
 ]
@@ -64,6 +66,7 @@ function TabIcon({ id }: { id: string }) {
     case 'guardrails':   return <svg {...p}><path d="M7 1l5 2v4c0 2.5-2 4.5-5 6C4 11.5 2 9.5 2 7V3l5-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
     case 'data-retention': return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.5l2 1.5"/><path d="M2 7h1M12 7h1M7 2v1M7 12v1"/></svg>
     case 'support':      return <svg {...p}><path d="M7 1l3 2v4c0 2-1.5 3.5-3 4.5C4.5 10.5 3 9 3 7V3l3-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
+    case 'backup':       return <svg {...p}><path d="M7 1v8M4 6l3 3 3-3"/><path d="M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
     default:             return null
   }
@@ -159,6 +162,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'notifications' && <TabIntegrations user={user} />}
           {tab === 'guardrails' && <TabGuardrails user={user} />}
           {tab === 'data-retention' && <TabDataRetention user={user} />}
+          {tab === 'backup'         && <TabBackup />}
           {tab === 'support'        && <TabSupport user={user} />}
         </div>
       </div>
