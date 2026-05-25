@@ -12,11 +12,12 @@ Bring AI to your operational data — queries, root cause analysis, and dashboar
 | Document | Who it's for |
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | IT administrator installing Mosaic for the first time |
+| [docs/FIRST_STEPS.md](docs/FIRST_STEPS.md) | End user or administrator verifying Mosaic is working after install |
 | [docs/UPDATING.md](docs/UPDATING.md) | IT administrator applying updates |
+| [docs/BACKUP.md](docs/BACKUP.md) | IT administrator — what gets backed up, restore procedure |
 | [docs/SECRETS.md](docs/SECRETS.md) | IT administrator managing credentials and secrets |
 | [docs/NETWORK.md](docs/NETWORK.md) | Network/security team reviewing firewall requirements |
 | [docs/KEYCLOAK.md](docs/KEYCLOAK.md) | IT administrator setting up enterprise SSO / AD federation |
-| [docs/FIRST_STEPS.md](docs/FIRST_STEPS.md) | End user or administrator verifying Mosaic is working after install |
 
 ---
 

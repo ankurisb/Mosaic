@@ -177,6 +177,7 @@ export default function TabAbout() {
             { label: 'Install guide',         href: '/docs/install' },
             { label: 'First steps',           href: '/docs/first-steps' },
             { label: 'Updating',              href: '/docs/updating' },
+            { label: 'Backup & restore',      href: '/docs/backup' },
             { label: 'Secrets & credentials', href: '/docs/secrets' },
             { label: 'Network requirements',  href: '/docs/network' },
             { label: 'SSO / Keycloak',        href: '/docs/keycloak' },

@@ -11,6 +11,7 @@ const DOC_MAP: Record<string, { file: string; title: string }> = {
   'secrets':      { file: 'SECRETS.md',       title: 'Secrets & Credentials' },
   'network':      { file: 'NETWORK.md',       title: 'Network Requirements' },
   'keycloak':     { file: 'KEYCLOAK.md',      title: 'SSO / Keycloak Setup' },
+  'backup':       { file: 'BACKUP.md',        title: 'Backup & Restore' },
 }
 
 export async function generateStaticParams() {

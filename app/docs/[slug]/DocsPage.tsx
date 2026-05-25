@@ -19,6 +19,8 @@ const NAV_ITEMS = [
     icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 1.5C5 3.5 4 5.2 4 7s1 3.5 3 5.5M7 1.5C9 3.5 10 5.2 10 7s-1 3.5-3 5.5M1.5 7h11"/></svg> },
   { slug: 'keycloak',    label: 'SSO / Keycloak',
     icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg> },
+  { slug: 'backup',      label: 'Backup & restore',
+    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M7 1v8M4 6l3 3 3-3"/><path d="M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg> },
 ]
 
 // Rewrite markdown file links to internal /docs/ routes
@@ -30,12 +32,14 @@ function rewriteDocLinks(content: string): string {
     'SECRETS.md':      '/docs/secrets',
     'NETWORK.md':      '/docs/network',
     'KEYCLOAK.md':     '/docs/keycloak',
+    'BACKUP.md':       '/docs/backup',
     'docs/INSTALL.md':      '/docs/install',
     'docs/FIRST_STEPS.md':  '/docs/first-steps',
     'docs/UPDATING.md':     '/docs/updating',
     'docs/SECRETS.md':      '/docs/secrets',
     'docs/NETWORK.md':      '/docs/network',
     'docs/KEYCLOAK.md':     '/docs/keycloak',
+    'docs/BACKUP.md':       '/docs/backup',
   }
   return content.replace(/\]\(([^)]+\.md)\)/g, (match, href) => {
     return `](${linkMap[href] || href})`
