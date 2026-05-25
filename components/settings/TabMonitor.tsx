@@ -26,10 +26,22 @@ const LEVEL_COLOR: Record<string, string> = {
   trace: 'var(--text4)',
 }
 
+interface BackupStatus {
+  status: 'ok' | 'running' | 'error' | 'unknown'
+  last_backup_at: string | null
+  last_archive: string | null
+  archive_size?: string
+  total_archives?: number
+  duration_seconds?: number
+  error: string | null
+  schedule_hours: number | null
+}
+
 export default function TabMonitor() {
   const [data,        setData]        = useState<Data | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [last,        setLast]        = useState('')
+  const [backup,      setBackup]      = useState<BackupStatus | null>(null)
   const [logs,        setLogs]        = useState<LogEntry[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [levelFilter, setLevelFilter] = useState('all')
@@ -44,7 +56,14 @@ export default function TabMonitor() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { const r = await fetch('/api/monitor'); if (r.ok) { setData(await r.json()); setLast(new Date().toLocaleTimeString()) } }
+    try {
+      const [monRes, bakRes] = await Promise.all([
+        fetch('/api/monitor'),
+        fetch('/api/backup'),
+      ])
+      if (monRes.ok) { setData(await monRes.json()); setLast(new Date().toLocaleTimeString()) }
+      if (bakRes.ok) { setBackup(await bakRes.json()) }
+    }
     finally { setLoading(false) }
   }, [])
 
@@ -165,6 +184,33 @@ export default function TabMonitor() {
           )
         })
       )}
+
+      {/* ── Backup status ────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 8 }}>Backup</div>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 18px' }}>
+            <StatusDot status={!backup ? 'healthy' : backup.status === 'ok' ? 'healthy' : backup.status === 'running' ? 'degraded' : backup.status === 'unknown' ? 'degraded' : 'down'} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Automated backup</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                {!backup ? 'Loading...'
+                  : backup.status === 'ok' && backup.last_backup_at
+                    ? `Last backup: ${new Date(backup.last_backup_at).toLocaleString()} · ${backup.last_archive} (${backup.archive_size ?? '?'}) · ${backup.total_archives ?? 0} archive(s) stored`
+                    : backup.status === 'running' ? 'Backup in progress...'
+                    : backup.status === 'unknown' ? 'Backup sidecar not running — run docker compose up -d to start it'
+                    : backup.error ?? 'Unknown error'}
+              </div>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 500, color: !backup || backup.status === 'ok' ? 'var(--green-t)' : backup.status === 'running' ? 'var(--amber-t)' : 'var(--red-t)' }}>
+              {!backup ? '—' : backup.status === 'ok' ? 'ok' : backup.status === 'running' ? 'running' : backup.status === 'unknown' ? 'not configured' : 'error'}
+            </span>
+            <div style={{ textAlign: 'right' as const, minWidth: 80, fontSize: 11, color: 'var(--text3)' }}>
+              {backup?.schedule_hours ? `every ${backup.schedule_hours}h` : '—'}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ── Server Logs ─────────────────────────────────────────────── */}
       <div style={{ marginTop: 32, marginBottom: 8 }}>

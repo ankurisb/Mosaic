@@ -52,6 +52,32 @@ services:
     networks:
       - mosaic-net
 
+  # ── Backup sidecar ──────────────────────────────────────────
+  # Runs automated backups on a schedule (default: every 24h).
+  # Backups land in ./backups/ on the host.
+  # Status visible in Settings → System Health → Backup.
+  # Override schedule: BACKUP_SCHEDULE_HOURS=12 in .env
+  # Override retention: BACKUP_KEEP=14 in .env
+  mosaic-backup:
+    build:
+      context: ./services/backup
+      dockerfile: Dockerfile
+    container_name: mosaic-backup
+    restart: unless-stopped
+    environment:
+      - BACKUP_DIR=/backups
+      - BACKUP_SCHEDULE_HOURS=${BACKUP_SCHEDULE_HOURS:-24}
+      - BACKUP_KEEP=${BACKUP_KEEP:-30}
+    volumes:
+      - mosaic-data:/volumes/mosaic-data:ro
+      - superset-db-data:/volumes/superset-db-data:ro
+      - n8n-data:/volumes/n8n-data:ro
+      - ciso-data:/volumes/ciso-data:ro
+      - ./backups:/backups
+      - backup-status:/backup-status
+    networks:
+      - mosaic-net
+
   # ── Mosaic ──────────────────────────────────────────────────
   mosaic:
     build:
@@ -104,6 +130,7 @@ services:
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
     volumes:
       - mosaic-data:/data
+      - backup-status:/backup-status:ro
     depends_on:
       superset:
         condition: service_healthy
@@ -585,6 +612,7 @@ volumes:
   openmeter-postgres-data:
   ciso-data:
   ciso-caddy-data:
+  backup-status:
 
 # ── Network ──────────────────────────────────────────────────
 networks:
