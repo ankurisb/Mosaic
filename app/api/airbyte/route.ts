@@ -4,6 +4,7 @@
 // Config API:  POST     http://localhost:8000/api/v1/...  (fallback)
 
 import { getSession }        from '@/lib/auth'
+import { canAccessSurface }  from '@/lib/permissions'
 import { getDb }             from '@/lib/db'
 import { encrypt, decrypt }  from '@/lib/encrypt'
 export const runtime = 'nodejs'
@@ -176,6 +177,8 @@ async function getWorkspaceId(sql: ReturnType<typeof getDb>, inst: AirbyteInstan
 export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  if (!(await canAccessSurface({ id: session.id, role: session.role }, 'airbyte')))
+    return Response.json({ error: 'No access to data pipelines' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const action = searchParams.get('action') || 'list'

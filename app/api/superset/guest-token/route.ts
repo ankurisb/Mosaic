@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth'
+import { canAccessSurface } from '@/lib/permissions'
 import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
 import { NextRequest } from 'next/server'
@@ -7,6 +8,8 @@ export const runtime = 'nodejs'
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  if (!(await canAccessSurface({ id: session.id, role: session.role }, 'superset')))
+    return Response.json({ error: 'No access to analytics' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const mosaicDashboardId = searchParams.get('dashboard_id')
