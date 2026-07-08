@@ -21,6 +21,7 @@ import TabDataRetention from './TabDataRetention'
 import TabSupport from './TabSupport'
 import TabTransparency from './TabTransparency'
 import TabBackup from './TabBackup'
+import TabInterfaces from './TabInterfaces'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -31,6 +32,7 @@ const ALL_TABS = [
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
   { id: 'system-health', label: 'System health',        adminOnly: false },
   { id: 'data-sources',  label: 'Data sources',         adminOnly: false },
+  { id: 'interfaces',    label: 'Connected tools',      adminOnly: false },
   { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
   { id: 'analytics',     label: 'Analysis capabilities',adminOnly: false },
   { id: 'guardrails',    label: 'Guardrails',           adminOnly: false },
@@ -57,6 +59,7 @@ function TabIcon({ id }: { id: string }) {
     case 'usage':        return <svg {...p}><rect x="1" y="7" width="3" height="6" rx="0.5"/><rect x="5.5" y="4" width="3" height="9" rx="0.5"/><rect x="10" y="1" width="3" height="12" rx="0.5"/></svg>
     case 'system-health':      return <svg {...p}><rect x="1" y="2" width="12" height="8" rx="1.5"/><path d="M4 13h6M7 10v3"/><path d="M3 6l2 2 2-3 2 2 1.5-1.5"/></svg>
     case 'data-sources': return <svg {...p}><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
+    case 'interfaces':   return <svg {...p}><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="1"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="1"/><rect x="8" y="8" width="4.5" height="4.5" rx="1"/></svg>
     case 'query-runner': return <svg {...p}><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5" strokeLinejoin="round"/></svg>
     case 'apis':         return <svg {...p}><rect x="1" y="4" width="12" height="6" rx="1.5"/><path d="M3.5 7h2M8.5 7h2"/></svg>
     case 'files':        return <svg {...p}><path d="M2 3h4l1.5 2H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>
@@ -156,6 +159,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'usage'     && <TabUsage user={user} />}
           {tab === 'system-health' && <TabMonitor />}
           {tab === 'data-sources'  && <TabDataSources user={user} />}
+          {tab === 'interfaces'    && <TabInterfaces />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}
