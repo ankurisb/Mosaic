@@ -121,8 +121,11 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       # n8n integration
-      - N8N_URL=${N8N_URL:-http://localhost:5678}
+      - N8N_URL=${N8N_URL:-http://n8n:5678}
       - N8N_API_KEY=${N8N_API_KEY:-}
+      # n8n shared owner account for the login handshake (lib/n8n.ts)
+      - N8N_OWNER_EMAIL=${N8N_OWNER_EMAIL:-n8n-owner@mosaic.local}
+      - N8N_OWNER_PASSWORD=${N8N_OWNER_PASSWORD:-Mosaic-n8n-Owner1}
       # OpenMeter metering (internal Docker network URL)
       - OPENMETER_URL=http://openmeter:8888
       # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
@@ -335,13 +338,20 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/
+      # Served under /n8n behind the Mosaic front door (Caddy). N8N_PATH sets
+      # the subpath; editor/webhook base URLs are the external HTTPS origin.
+      - N8N_PATH=/n8n/
+      - N8N_EDITOR_BASE_URL=https://${MOSAIC_HOSTNAME:-localhost}/n8n/
+      - WEBHOOK_URL=https://${MOSAIC_HOSTNAME:-localhost}/n8n/
+      # Trust one proxy hop (Caddy) so n8n honours X-Forwarded-Proto=https
+      # and keeps its Secure auth cookie valid behind TLS termination.
+      - N8N_PROXY_HOPS=1
       # n8n internal metadata stored in its own DB
       - DB_TYPE=sqlite
+      # User-management (email/password) is n8n's auth on 2.x. The Mosaic
+      # login handshake logs in server-side; the old N8N_BASIC_AUTH_* vars
+      # are no-ops on 2.x and have been removed.
       - N8N_USER_MANAGEMENT_DISABLED=false
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-mosaic-n8n}
       # Mosaic API base URL for n8n workflows to call back
       - MOSAIC_URL=http://mosaic:3001
       - MOSAIC_API_KEY=${N8N_MOSAIC_API_KEY:-}
@@ -597,8 +607,35 @@ services:
     networks:
       - mosaic-net
 
+  # ── Mosaic front door (app-wide reverse proxy) ──────────────
+  # Single origin + single login for Mosaic and its embedded interfaces.
+  # Gates /n8n via forward_auth to Mosaic's authz endpoint. HTTPS is
+  # required (n8n's cookie is Secure). Set MOSAIC_HOSTNAME to a real FQDN
+  # for automatic public TLS; otherwise Caddy issues an internal cert.
+  # Access the whole stack via https://<MOSAIC_HOSTNAME> (default localhost).
+  mosaic-caddy:
+    image: caddy:2.11.2
+    container_name: mosaic-caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-localhost}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - mosaic
+      - n8n
+    networks:
+      - mosaic-net
+
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
+  caddy-data:
+  caddy-config:
   mosaic-data:
   airbyte-db-data:
   airbyte-workspace:

@@ -1,0 +1,58 @@
+# Mosaic app-wide reverse proxy (front door).
+#
+# Serves the Mosaic app and gates access to embedded interfaces (n8n now;
+# CISO later) so users reach everything under ONE origin with ONE login.
+#
+# HTTPS is required: n8n's session cookie is Secure, so the browser only
+# keeps it over TLS. With a real domain, set MOSAIC_HOSTNAME to the FQDN and
+# Caddy auto-provisions a public certificate; otherwise `local_certs` issues
+# an internal self-signed cert (browsers warn once, then Secure cookies work).
+#
+# Flow for n8n:
+#   1. User clicks "Open n8n" -> /api/authz/n8n-login (Mosaic handshake).
+#      Mosaic checks canAccessSurface('n8n'), logs in server-side, sets the
+#      n8n-auth cookie, and 302s to /n8n/.
+#   2. /n8n/* is additionally gated by forward_auth (defence in depth): Caddy
+#      asks Mosaic /api/authz/surface?name=n8n before proxying.
+#   3. If someone hits /n8n/* without an n8n-auth cookie (e.g. a bookmark),
+#      they're bounced to the handshake first — so n8n's own login never shows.
+#   4. n8n's logout is intercepted and bounced back through the handshake,
+#      transparently re-authenticating instead of showing n8n's login.
+{
+	# Internal CA for on-prem without a public domain. For a real domain,
+	# remove this line — the FQDN site address triggers automatic TLS.
+	local_certs
+}
+
+https://{$MOSAIC_HOSTNAME:localhost} {
+	# ── n8n logout → re-run the handshake (auto re-login) ─────────
+	@n8n_logout path /n8n/rest/logout /n8n/signout
+	redir @n8n_logout /api/authz/n8n-login 302
+
+	# ── n8n without a session cookie → run the handshake first ───
+	@n8n_no_cookie {
+		path /n8n /n8n/*
+		not header Cookie *n8n-auth=*
+	}
+	redir @n8n_no_cookie /api/authz/n8n-login 302
+
+	# ── n8n editor (gated by Mosaic RBAC via forward_auth) ───────
+	@n8n path /n8n /n8n/*
+	handle @n8n {
+		forward_auth mosaic:3001 {
+			uri /api/authz/surface?name=n8n
+			# Forward the user's Mosaic session cookie for authorization,
+			# and surface identity headers on success.
+			copy_headers X-Mosaic-User X-Mosaic-Role
+		}
+		# n8n is configured with N8N_PATH=/n8n/, so it expects the prefix —
+		# pass the path through unchanged (no strip). Websockets upgrade
+		# automatically through reverse_proxy.
+		reverse_proxy n8n:5678
+	}
+
+	# ── Everything else → Mosaic (incl. /api/authz/* handshakes) ─
+	handle {
+		reverse_proxy mosaic:3001
+	}
+}
