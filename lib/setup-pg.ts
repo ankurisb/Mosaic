@@ -25,6 +25,16 @@ export async function setupDatabasePostgres(): Promise<void> {
     created_at    TEXT DEFAULT now()::text
   )`
 
+  // Per-user access grants for external interfaces (n8n, Superset, Airbyte, CISO).
+  // Absence of a row = no access (default deny). Admins get all surfaces in code.
+  await sql`CREATE TABLE IF NOT EXISTS user_surface_permissions (
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    surface    TEXT NOT NULL,
+    allowed    INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT now()::text,
+    PRIMARY KEY (user_id, surface)
+  )`
+
   await sql`CREATE TABLE IF NOT EXISTS sso_config (
     id            TEXT PRIMARY KEY DEFAULT 'default',
     provider      TEXT NOT NULL,

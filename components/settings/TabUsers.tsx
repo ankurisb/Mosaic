@@ -3,10 +3,12 @@ import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, Btn, Badge, Alert, Field, Grid, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
+import { SURFACES, SURFACE_LABELS } from '@/lib/surfaces'
 
 interface User {
   id: string; email: string; name: string; role: string; banned: boolean
   created_at: string; invite_sent_at: string | null; last_login_at: string | null; sso_provider: string | null
+  surfaces?: string[]
 }
 
 const PAGE_SIZE = 10
@@ -15,9 +17,12 @@ export default function TabUsers({ user }: { user: SessionUser }) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
-  const [form, setForm] = useState({ email: '', name: '', role: 'user', password: '' })
+  const [form, setForm] = useState<{ email: string; name: string; role: string; password: string; surfaces: string[] }>({ email: '', name: '', role: 'user', password: '', surfaces: [] })
   const [invResult, setInvResult] = useState<{ tempPassword?: string; email?: string } | null>(null)
   const [error, setError] = useState('')
+  const [accessUser, setAccessUser] = useState<User | null>(null)
+  const [accessSel, setAccessSel] = useState<string[]>([])
+  const [accessSaving, setAccessSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'all'|'active'|'banned'>('all')
@@ -47,6 +52,27 @@ export default function TabUsers({ user }: { user: SessionUser }) {
       if (err) { setError(err); return }
       setInvResult({ ...(d || {}), email: form.email }); load()
     } catch (e) { setError(e instanceof Error ? e.message : 'Invite failed') }
+  }
+
+  function openAccess(u: User) {
+    setAccessUser(u)
+    setAccessSel(u.surfaces || [])
+    setError('')
+  }
+
+  async function saveAccess() {
+    if (!accessUser) return
+    setAccessSaving(true)
+    try {
+      const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setSurfaces', userId: accessUser.id, surfaces: accessSel }) })
+      const { error: err } = await safeJson(r)
+      if (err) { setError(err); return }
+      setError(''); setAccessUser(null); load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save access')
+    } finally {
+      setAccessSaving(false)
+    }
   }
 
   const filtered = users.filter(u => {
@@ -111,7 +137,26 @@ export default function TabUsers({ user }: { user: SessionUser }) {
               <input style={INP} type="password" placeholder="Auto-generated if blank" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
             </Field>
           </Grid>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text2)', marginBottom: 8 }}>Interface access</div>
+            {form.role === 'admin' ? (
+              <div style={{ fontSize: 12, color: 'var(--text3)' }}>Admins have access to all interfaces.</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {SURFACES.map(s => {
+                  const on = form.surfaces.includes(s)
+                  return (
+                    <button key={s} type="button"
+                      onClick={() => setForm(p => ({ ...p, surfaces: on ? p.surfaces.filter(x => x !== s) : [...p.surfaces, s] }))}
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${on ? 'var(--text)' : 'var(--border)'}`, background: on ? 'var(--text)' : 'var(--bg)', color: on ? 'var(--bg)' : 'var(--text2)', cursor: 'pointer', fontSize: 12, transition: 'all .12s' }}>
+                      <span style={{ fontSize: 11 }}>{on ? '✓' : '+'}</span>{SURFACE_LABELS[s]}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
             <Btn variant="primary" onClick={invite}>Create user</Btn>
             <Btn onClick={() => setShowInvite(false)}>Cancel</Btn>
           </div>
@@ -129,7 +174,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
               </div>
             </>
           )}
-          <Btn style={{ marginTop: 14 }} onClick={() => { setShowInvite(false); setInvResult(null); setForm({ email: '', name: '', role: 'user', password: '' }) }}>Done</Btn>
+          <Btn style={{ marginTop: 14 }} onClick={() => { setShowInvite(false); setInvResult(null); setForm({ email: '', name: '', role: 'user', password: '', surfaces: [] }) }}>Done</Btn>
         </div>
       )}
 
@@ -177,6 +222,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
                 <td style={{ padding: '12px 12px' }}>
                   {u.id !== user.id && (
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
+                      <Btn size="sm" onClick={() => openAccess(u)}>Access ({u.role === 'admin' ? 'all' : (u.surfaces?.length || 0)})</Btn>
                       <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ User' : '↑ Admin'}</Btn>
                       <Btn size="sm" onClick={() => act(u.banned ? 'unban' : 'ban', u.id)}>{u.banned ? 'Unban' : 'Suspend'}</Btn>
                       <Btn size="sm" variant="danger" onClick={() => { if(confirm(`Delete ${u.email}? This cannot be undone.`)) act('delete', u.id) }}>Delete</Btn>
@@ -197,6 +243,35 @@ export default function TabUsers({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
+
+      {accessUser && (
+        <div onClick={() => !accessSaving && setAccessUser(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, width: 420, maxWidth: '90vw' }}>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Interface access</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 18 }}>{accessUser.name} · {accessUser.email}</div>
+            {accessUser.role === 'admin' ? (
+              <Alert variant="info">Admins have access to all interfaces. Change the role to User to set specific access.</Alert>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {SURFACES.map(s => {
+                  const on = accessSel.includes(s)
+                  return (
+                    <button key={s} type="button"
+                      onClick={() => setAccessSel(prev => on ? prev.filter(x => x !== s) : [...prev, s])}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 'var(--radius-sm)', border: `1px solid ${on ? 'var(--text)' : 'var(--border)'}`, background: on ? 'var(--text)' : 'var(--bg)', color: on ? 'var(--bg)' : 'var(--text2)', cursor: 'pointer', fontSize: 13, textAlign: 'left', transition: 'all .12s' }}>
+                      <span style={{ width: 16, fontSize: 12 }}>{on ? '✓' : ''}</span>{SURFACE_LABELS[s]}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setAccessUser(null)} disabled={accessSaving}>Cancel</Btn>
+              {accessUser.role !== 'admin' && <Btn variant="primary" onClick={saveAccess} disabled={accessSaving}>{accessSaving ? 'Saving…' : 'Save access'}</Btn>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

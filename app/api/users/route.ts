@@ -3,6 +3,7 @@ import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
 import { getDb } from '@/lib/db'
+import { setUserSurfaces, isSurface, SURFACES, type Surface } from '@/lib/permissions'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
 
@@ -11,7 +12,20 @@ export async function GET() {
   if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   const sql = getDb()
   const rows = await sql`SELECT id,email,name,role,banned,created_at,invite_sent_at,last_login_at,sso_provider FROM users ORDER BY created_at ASC`
-  return Response.json({ users: rows })
+  // Attach granted surfaces per user. Admins implicitly hold all surfaces.
+  const perms = await sql`SELECT user_id, surface FROM user_surface_permissions WHERE allowed=1` as { user_id: string; surface: string }[]
+  const bySurface = new Map<string, string[]>()
+  for (const p of perms) {
+    if (!isSurface(p.surface)) continue
+    const arr = bySurface.get(p.user_id) || []
+    arr.push(p.surface)
+    bySurface.set(p.user_id, arr)
+  }
+  const users = (rows as Record<string, unknown>[]).map(u => ({
+    ...u,
+    surfaces: u.role === 'admin' ? [...SURFACES] : (bySurface.get(u.id as string) || []),
+  }))
+  return Response.json({ users })
 }
 
 export async function POST(req: Request) {
@@ -20,7 +34,7 @@ export async function POST(req: Request) {
   const session = await getSession()
   if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   const sql = getDb()
-  const { action, userId, email, name, role, password } = await req.json()
+  const { action, userId, email, name, role, password, surfaces } = await req.json()
 
   if (action === 'invite') {
     if (!email) return Response.json({ error: 'Email required' }, { status: 400 })
@@ -32,6 +46,10 @@ export async function POST(req: Request) {
       syncUserToSuperset({ email: email.toLowerCase(), name: name || email, password: tempPassword, role: 'admin' }).catch(() => {})
     }
     await sql`UPDATE users SET invite_sent_at=datetime('now') WHERE id=${rows[0].id}`
+    // Persist surface grants for the new user (non-admins; admins hold all implicitly).
+    if (Array.isArray(surfaces) && (role || 'user') !== 'admin') {
+      await setUserSurfaces(rows[0].id as string, (surfaces as unknown[]).filter(isSurface) as Surface[])
+    }
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
     import('@/lib/mailer').then(({ sendWelcomeEmail }) =>
       sendWelcomeEmail(email.toLowerCase(), name || email.split('@')[0], tempPassword, appUrl)
@@ -55,6 +73,16 @@ export async function POST(req: Request) {
     }
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_ROLE_CHANGE, `user:${userId}`, 'success', { from: prevRole, to: role, target_email: (prevRows[0] as { email: string } | undefined)?.email })
     return Response.json({ ok: true })
+  }
+
+  if (action === 'setSurfaces') {
+    if (!userId) return Response.json({ error: 'userId required' }, { status: 400 })
+    const clean = (Array.isArray(surfaces) ? (surfaces as unknown[]).filter(isSurface) : []) as Surface[]
+    const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
+    if (!uRows.length) return Response.json({ error: 'User not found' }, { status: 404 })
+    await setUserSurfaces(userId, clean)
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_UPDATE, `user:${userId}`, 'success', { surfaces: clean, target_email: (uRows[0] as { email: string }).email })
+    return Response.json({ ok: true, surfaces: clean })
   }
 
   if (action === 'ban') {
