@@ -7,7 +7,7 @@ import { SURFACES, type Surface } from '@/lib/surfaces'
 // describes how to present and open each interface the user is allowed.
 const META: Record<Surface, { label: string; desc: string; href: string; external?: boolean }> = {
   n8n:      { label: 'Workflow Automation', desc: 'Build and run automation workflows (n8n).', href: '/api/authz/n8n-login' },
-  superset: { label: 'Analytics',           desc: 'Explore dashboards and reports (Superset).', href: '/dashboards' },
+  superset: { label: 'Analytics',           desc: 'Explore and build dashboards (Superset).', href: '/api/authz/superset-login' },
   airbyte:  { label: 'Data Pipelines',      desc: 'Manage data source syncs (Airbyte).', href: '/settings#data-sources' },
   ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).', href: process.env.NEXT_PUBLIC_CISO_URL || 'http://localhost:8443', external: true },
 }

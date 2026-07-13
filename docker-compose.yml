@@ -258,6 +258,9 @@ services:
       - DATABASE_URL=postgresql+psycopg2://superset:${SUPERSET_DB_PASSWORD:-superset}@superset-db/superset
       - REDIS_URL=redis://superset-redis:6379/0
       - SUPERSET_WEBSERVER_PORT=8088
+      # Served under /superset behind the Mosaic front door (Caddy). Set to '/'
+      # to run Superset standalone at root.
+      - SUPERSET_APP_ROOT=${SUPERSET_APP_ROOT:-/superset}
       # First-run admin (matches Mosaic admin)
       - ADMIN_USERNAME=admin
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mosaic.local}

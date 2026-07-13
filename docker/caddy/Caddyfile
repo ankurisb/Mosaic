@@ -51,6 +51,29 @@ https://{$MOSAIC_HOSTNAME:localhost} {
 		reverse_proxy n8n:5678
 	}
 
+	# ── Superset logout → re-run the handshake (auto re-login) ───
+	@ss_logout path /superset/logout /superset/logout/
+	redir @ss_logout /api/authz/superset-login 302
+
+	# ── Superset without a session cookie → handshake first ──────
+	@ss_no_cookie {
+		path /superset /superset/*
+		not header Cookie *session=*
+	}
+	redir @ss_no_cookie /api/authz/superset-login 302
+
+	# ── Superset native UI (gated by Mosaic RBAC) ────────────────
+	# Superset runs with APPLICATION_ROOT=/superset (SUPERSET_APP_ROOT env),
+	# so it expects the prefix — pass it through unchanged (no strip).
+	@superset path /superset /superset/*
+	handle @superset {
+		forward_auth mosaic:3001 {
+			uri /api/authz/surface?name=superset
+			copy_headers X-Mosaic-User X-Mosaic-Role
+		}
+		reverse_proxy superset:8088
+	}
+
 	# ── Everything else → Mosaic (incl. /api/authz/* handshakes) ─
 	handle {
 		reverse_proxy mosaic:3001
