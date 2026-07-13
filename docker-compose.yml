@@ -98,8 +98,9 @@ services:
       - ADMIN_NAME=${ADMIN_NAME:-Admin}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - CRON_SECRET=${CRON_SECRET:-}
-      # SQLite path inside container
-      - DATABASE_URL=sqlite:///data/mosaic.db
+      # SQLite path inside container. MOSAIC_DB_FILE names the file within the
+      # mounted /data directory (see volumes below) — NOT a host path.
+      - DATABASE_URL=sqlite:///data/${MOSAIC_DB_FILE:-mosaic.db}
       # Superset (internal Docker network URL)
       - SUPERSET_URL=http://superset:8088
       - SUPERSET_ADMIN_USER=admin
@@ -126,13 +127,22 @@ services:
       # n8n shared owner account for the login handshake (lib/n8n.ts)
       - N8N_OWNER_EMAIL=${N8N_OWNER_EMAIL:-n8n-owner@mosaic.local}
       - N8N_OWNER_PASSWORD=${N8N_OWNER_PASSWORD:-Mosaic-n8n-Owner1}
+      # Public origins the handshakes redirect to (each tool serves at the root
+      # of its own port — see docker/caddy/Caddyfile).
+      - N8N_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
+      - SUPERSET_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8445/
       # OpenMeter metering (internal Docker network URL)
       - OPENMETER_URL=http://openmeter:8888
       # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
       - SSO_ENABLED=${SSO_ENABLED:-false}
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
     volumes:
-      - mosaic-data:/data
+      # MOSAIC_DATA_DIR lets an existing SQLite DB be mounted from the host
+      # (e.g. an in-place upgrade). Defaults to the named volume for fresh installs.
+      - ${MOSAIC_DATA_DIR:-mosaic-data}:/data
+      # /app is root-owned but the app runs as uid 1001, so Pino cannot mkdir
+      # /app/logs. Mount a writable volume there.
+      - mosaic-logs:/app/logs
       - backup-status:/backup-status:ro
     depends_on:
       superset:
@@ -260,7 +270,7 @@ services:
       - SUPERSET_WEBSERVER_PORT=8088
       # Served under /superset behind the Mosaic front door (Caddy). Set to '/'
       # to run Superset standalone at root.
-      - SUPERSET_APP_ROOT=${SUPERSET_APP_ROOT:-/superset}
+      - SUPERSET_APP_ROOT=${SUPERSET_APP_ROOT:-/}
       # First-run admin (matches Mosaic admin)
       - ADMIN_USERNAME=admin
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mosaic.local}
@@ -341,11 +351,10 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      # Served under /n8n behind the Mosaic front door (Caddy). N8N_PATH sets
-      # the subpath; editor/webhook base URLs are the external HTTPS origin.
-      - N8N_PATH=/n8n/
-      - N8N_EDITOR_BASE_URL=https://${MOSAIC_HOSTNAME:-localhost}/n8n/
-      - WEBHOOK_URL=https://${MOSAIC_HOSTNAME:-localhost}/n8n/
+      # n8n serves at the ROOT of its own origin (https://<host>:8444) —
+      # see docker/caddy/Caddyfile. No subpath: N8N_PATH is deliberately unset.
+      - N8N_EDITOR_BASE_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
+      - WEBHOOK_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
       # Trust one proxy hop (Caddy) so n8n honours X-Forwarded-Proto=https
       # and keeps its Secure auth cookie valid behind TLS termination.
       - N8N_PROXY_HOPS=1
@@ -623,6 +632,10 @@ services:
     ports:
       - "443:443"
       - "80:80"
+      # Per-origin tool ports: each tool serves at the root of its own origin
+      # (subpath hosting collides with their root-relative asset/API paths).
+      - "8444:8444"
+      - "8445:8445"
     environment:
       - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-localhost}
     volumes:
@@ -640,6 +653,7 @@ volumes:
   caddy-data:
   caddy-config:
   mosaic-data:
+  mosaic-logs:
   airbyte-db-data:
   airbyte-workspace:
   superset-db-data:

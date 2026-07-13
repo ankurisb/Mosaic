@@ -37,11 +37,15 @@ export async function GET() {
     return Response.json({ error: 'n8n is unavailable' }, { status: 502 })
   }
 
-  // Relay n8n's Set-Cookie verbatim (already Path=/, HttpOnly, Secure,
-  // SameSite=Lax) and redirect into the editor. Same-origin (subpath via
-  // Caddy) means the browser will send this cookie to /n8n/*.
+  // Relay n8n's Set-Cookie verbatim (Path=/, HttpOnly, Secure, SameSite=Lax)
+  // and redirect to n8n's own origin, where it serves at root.
+  //
+  // The cookie is set on n8n's origin (not Mosaic's): we redirect the browser
+  // there and n8n's own Set-Cookie applies on arrival via the proxy. The
+  // handshake below hands the cookie over on the redirect response, which the
+  // browser scopes to the host it was issued for.
   const headers = new Headers()
   headers.append('Set-Cookie', n8nCookie)
-  headers.set('Location', '/n8n/')
+  headers.set('Location', process.env.N8N_PUBLIC_URL || 'https://localhost:8444/')
   return new Response(null, { status: 302, headers })
 }

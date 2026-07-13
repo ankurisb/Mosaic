@@ -1,81 +1,82 @@
-# Mosaic app-wide reverse proxy (front door).
+# Mosaic front door (reverse proxy).
 #
-# Serves the Mosaic app and gates access to embedded interfaces (n8n now;
-# CISO later) so users reach everything under ONE origin with ONE login.
+# PER-ORIGIN design. Each embedded tool is served at the ROOT of its own port,
+# where it is designed to run — NOT under a subpath.
 #
-# HTTPS is required: n8n's session cookie is Secure, so the browser only
-# keeps it over TLS. With a real domain, set MOSAIC_HOSTNAME to the FQDN and
-# Caddy auto-provisions a public certificate; otherwise `local_certs` issues
-# an internal self-signed cert (browsers warn once, then Secure cookies work).
+# Why: n8n and Superset both request assets and API calls at origin-root paths
+# (/static/*, /rest/*, /api/v1/*) which collide with Mosaic's own routes when
+# mounted at a subpath. Superset in particular cannot be mounted at a prefix at
+# all (Flask's APPLICATION_ROOT only scopes cookies/URL generation; it does not
+# mount the WSGI app), and its /api/v1/* overlaps Mosaic's /api/*. Subpath
+# hosting required a bespoke Caddy rule per asset path and still broke. Serving
+# each tool at its own origin root eliminates the entire class of problem.
 #
-# Flow for n8n:
-#   1. User clicks "Open n8n" -> /api/authz/n8n-login (Mosaic handshake).
-#      Mosaic checks canAccessSurface('n8n'), logs in server-side, sets the
-#      n8n-auth cookie, and 302s to /n8n/.
-#   2. /n8n/* is additionally gated by forward_auth (defence in depth): Caddy
-#      asks Mosaic /api/authz/surface?name=n8n before proxying.
-#   3. If someone hits /n8n/* without an n8n-auth cookie (e.g. a bookmark),
-#      they're bounced to the handshake first — so n8n's own login never shows.
-#   4. n8n's logout is intercepted and bounced back through the handshake,
-#      transparently re-authenticating instead of showing n8n's login.
+# What is preserved (the actual goals):
+#   - NO tool login page: Mosaic's handshake endpoints log in server-side and
+#     set the tool's session cookie, then redirect to the tool's origin.
+#   - RBAC enforced: every request is gated by forward_auth against Mosaic's
+#     /api/authz/surface, and the handshake itself checks canAccessSurface().
+#   - ONE login: users only ever authenticate to Mosaic.
+#
+# What changes: the tools are on sibling origins (different ports) rather than
+# one origin. Cookies are host-scoped per tool, which is exactly how each tool
+# expects to run.
+#
+# Ports:  443 Mosaic   8444 n8n   8445 Superset
+# (CISO keeps its own existing :8443 stack and its own login for now.)
+
 {
-	# Internal CA for on-prem without a public domain. For a real domain,
-	# remove this line — the FQDN site address triggers automatic TLS.
+	# Internal CA for on-prem use without a public domain. With a real domain,
+	# remove this and use FQDN site addresses for automatic public TLS.
 	local_certs
 }
 
+# ── Mosaic (the app + handshake endpoints) ──────────────────────
 https://{$MOSAIC_HOSTNAME:localhost} {
-	# ── n8n logout → re-run the handshake (auto re-login) ─────────
-	@n8n_logout path /n8n/rest/logout /n8n/signout
-	redir @n8n_logout /api/authz/n8n-login 302
+	reverse_proxy mosaic:3001
+}
 
-	# ── n8n without a session cookie → run the handshake first ───
-	@n8n_no_cookie {
-		path /n8n /n8n/*
+# ── n8n (served at its own origin root) ─────────────────────────
+https://{$MOSAIC_HOSTNAME:localhost}:8444 {
+	# Auto re-login: bounce n8n's logout back through the Mosaic handshake
+	# instead of showing n8n's login page.
+	@logout path /rest/logout /signout
+	redir @logout https://{$MOSAIC_HOSTNAME:localhost}/api/authz/n8n-login 302
+
+	# No n8n session yet (e.g. a bookmark or expired cookie) → run the
+	# handshake first. NAVIGATIONS ONLY: asset/XHR requests must never be
+	# redirected, or they receive HTML and fail strict MIME checks.
+	@needs_login {
 		not header Cookie *n8n-auth=*
+		header Sec-Fetch-Mode navigate
 	}
-	redir @n8n_no_cookie /api/authz/n8n-login 302
+	redir @needs_login https://{$MOSAIC_HOSTNAME:localhost}/api/authz/n8n-login 302
 
-	# ── n8n editor (gated by Mosaic RBAC via forward_auth) ───────
-	@n8n path /n8n /n8n/*
-	handle @n8n {
-		forward_auth mosaic:3001 {
-			uri /api/authz/surface?name=n8n
-			# Forward the user's Mosaic session cookie for authorization,
-			# and surface identity headers on success.
-			copy_headers X-Mosaic-User X-Mosaic-Role
-		}
-		# n8n is configured with N8N_PATH=/n8n/, so it expects the prefix —
-		# pass the path through unchanged (no strip). Websockets upgrade
-		# automatically through reverse_proxy.
-		reverse_proxy n8n:5678
+	# RBAC gate on every request (defence in depth alongside the handshake).
+	forward_auth mosaic:3001 {
+		uri /api/authz/surface?name=n8n
+		copy_headers X-Mosaic-User X-Mosaic-Role
 	}
 
-	# ── Superset logout → re-run the handshake (auto re-login) ───
-	@ss_logout path /superset/logout /superset/logout/
-	redir @ss_logout /api/authz/superset-login 302
+	# Websockets (editor canvas) upgrade automatically through reverse_proxy.
+	reverse_proxy n8n:5678
+}
 
-	# ── Superset without a session cookie → handshake first ──────
-	@ss_no_cookie {
-		path /superset /superset/*
+# ── Superset (served at its own origin root) ────────────────────
+https://{$MOSAIC_HOSTNAME:localhost}:8445 {
+	@logout path /logout /logout/
+	redir @logout https://{$MOSAIC_HOSTNAME:localhost}/api/authz/superset-login 302
+
+	@needs_login {
 		not header Cookie *session=*
+		header Sec-Fetch-Mode navigate
 	}
-	redir @ss_no_cookie /api/authz/superset-login 302
+	redir @needs_login https://{$MOSAIC_HOSTNAME:localhost}/api/authz/superset-login 302
 
-	# ── Superset native UI (gated by Mosaic RBAC) ────────────────
-	# Superset runs with APPLICATION_ROOT=/superset (SUPERSET_APP_ROOT env),
-	# so it expects the prefix — pass it through unchanged (no strip).
-	@superset path /superset /superset/*
-	handle @superset {
-		forward_auth mosaic:3001 {
-			uri /api/authz/surface?name=superset
-			copy_headers X-Mosaic-User X-Mosaic-Role
-		}
-		reverse_proxy superset:8088
+	forward_auth mosaic:3001 {
+		uri /api/authz/surface?name=superset
+		copy_headers X-Mosaic-User X-Mosaic-Role
 	}
 
-	# ── Everything else → Mosaic (incl. /api/authz/* handshakes) ─
-	handle {
-		reverse_proxy mosaic:3001
-	}
+	reverse_proxy superset:8088
 }

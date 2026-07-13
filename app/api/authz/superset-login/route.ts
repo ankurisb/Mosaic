@@ -36,6 +36,6 @@ export async function GET() {
 
   const headers = new Headers()
   headers.append('Set-Cookie', cookie)
-  headers.set('Location', '/superset/')
+  headers.set('Location', process.env.SUPERSET_PUBLIC_URL || 'https://localhost:8445/')
   return new Response(null, { status: 302, headers })
 }
