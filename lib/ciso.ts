@@ -22,10 +22,27 @@
 // cannot be logged into. See docker-compose.yml (ciso-backend EMAIL_* vars).
 
 import { log } from './logger'
+import { getDb } from './db'
 
-const CISO_URL = (process.env.CISO_API_URL || 'http://ciso-backend:8000').replace(/\/$/, '')
-const CISO_ADMIN_EMAIL = process.env.CISO_SUPERUSER_EMAIL || 'admin@mosaic.local'
-const CISO_ADMIN_PASSWORD = process.env.CISO_SUPERUSER_PASSWORD || ''
+const CISO_ENV_URL = (process.env.CISO_API_URL || 'http://ciso-backend:8000').replace(/\/$/, '')
+const CISO_ENV_EMAIL = process.env.CISO_SUPERUSER_EMAIL || 'admin@mosaic.local'
+const CISO_ENV_PASSWORD = process.env.CISO_SUPERUSER_PASSWORD || ''
+
+// Settings resolve from encrypted kv_settings first (Settings -> Keys in the
+// UI), falling back to env. This lets a customer point Mosaic at their OWN
+// CISO instance without redeploying — see the "bring your own" mode.
+async function setting(key: string, fallback: string): Promise<string> {
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = ${key}`
+    if (rows.length) {
+      const { decrypt } = await import('./encrypt')
+      const v = decrypt(rows[0].value_enc as string)
+      if (v) return v
+    }
+  } catch { /* fall through to env */ }
+  return fallback
+}
 
 // Role (user-group) names in CISO. Resolved to IDs at call time rather than
 // hardcoded, since IDs are generated per deployment.
@@ -36,10 +53,13 @@ type CisoUser = { id: string; email: string; is_active: boolean }
 
 /** Authenticate as the CISO superuser; returns an API token. */
 async function cisoToken(): Promise<string> {
-  const res = await fetch(`${CISO_URL}/api/iam/login/`, {
+  const url = await cisoUrl()
+  const email = await setting('CISO_SUPERUSER_EMAIL', CISO_ENV_EMAIL)
+  const password = await setting('CISO_SUPERUSER_PASSWORD', CISO_ENV_PASSWORD)
+  const res = await fetch(`${url}/api/iam/login/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: CISO_ADMIN_EMAIL, password: CISO_ADMIN_PASSWORD }),
+    body: JSON.stringify({ username: email, password }),
     signal: AbortSignal.timeout(8000),
   })
   if (!res.ok) throw new Error(`CISO auth failed (${res.status})`)
@@ -48,8 +68,14 @@ async function cisoToken(): Promise<string> {
   return data.token
 }
 
+/** Resolve the CISO API base URL (kv_settings override, else env). */
+export async function cisoUrl(): Promise<string> {
+  return (await setting('CISO_API_URL', CISO_ENV_URL)).replace(/\/$/, '')
+}
+
 async function cisoFetch(token: string, path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${CISO_URL}${path}`, {
+  const base = await cisoUrl()
+  return fetch(`${base}${path}`, {
     ...init,
     headers: {
       Authorization: `Token ${token}`,

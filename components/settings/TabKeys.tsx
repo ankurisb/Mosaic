@@ -14,6 +14,7 @@ const KEY_SECTIONS = [
   { title: 'Airbyte Connectors',       keys: ['AIRBYTE_USER', 'AIRBYTE_PASSWORD'] },
   { title: 'Notifications — Twilio',   keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'] },
   { title: 'n8n Automation',           keys: ['N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY'] },
+  { title: 'CISO Assistant',           keys: ['CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD'] },
 ]
 
 const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean }> = {
@@ -34,6 +35,9 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   N8N_URL:                 { label: 'n8n URL',                  hint: 'Base URL of your n8n instance · default: http://localhost:5678',                    placeholder: 'http://localhost:5678' },
   N8N_API_KEY:             { label: 'n8n API key',              hint: 'Generated in n8n Settings → API · used by Mosaic to import workflows',              placeholder: 'n8n_...', secret: true },
   N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'Paste into n8n as Header Auth credential · n8n uses this to call Mosaic',           placeholder: 'Generate below' },
+  CISO_API_URL:            { label: 'CISO Assistant URL',       hint: 'Base URL of your CISO backend · point at your own instance to use it',              placeholder: 'http://ciso-backend:8000' },
+  CISO_SUPERUSER_EMAIL:    { label: 'CISO admin email',         hint: 'Mosaic authenticates as this to provision users when access is granted',            placeholder: 'admin@yourcompany.com' },
+  CISO_SUPERUSER_PASSWORD: { label: 'CISO admin password',      hint: 'Stored encrypted · required for user provisioning',                                 placeholder: 'Stored encrypted', secret: true },
 }
 
 const SECTION_LINKS: Record<string, { envKey: string; defaultUrl: string }> = {

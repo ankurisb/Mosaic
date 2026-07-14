@@ -10,9 +10,24 @@
 // All Mosaic users share this single Superset identity; access is gated by
 // Mosaic's canAccessSurface('superset'), not by Superset itself.
 
-const SUPERSET_URL = (process.env.SUPERSET_URL || 'http://localhost:8088').replace(/\/$/, '')
-const SUPERSET_USER = process.env.SUPERSET_ADMIN_USER || 'admin'
-const SUPERSET_PASS = process.env.SUPERSET_ADMIN_PASSWORD || ''
+import { getDb } from './db'
+
+// Settings resolve from the encrypted kv_settings table first (set in the UI,
+// Settings -> Keys), falling back to env. This is what allows a customer to
+// point Mosaic at their OWN Superset ("bring your own") without redeploying —
+// and, licensing-wise, without us shipping them a copy.
+async function setting(key: string, fallback: string): Promise<string> {
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = ${key}`
+    if (rows.length) {
+      const { decrypt } = await import('./encrypt')
+      const v = decrypt(rows[0].value_enc as string)
+      if (v) return v
+    }
+  } catch { /* fall through to env */ }
+  return fallback
+}
 
 /** Extract the `session=...` cookie (name + value only) from Set-Cookie headers. */
 function pickSession(res: Response): string | null {
@@ -26,6 +41,10 @@ function pickSession(res: Response): string | null {
  * authenticated session, to relay to the browser. Throws if login fails.
  */
 export async function ensureSupersetSession(): Promise<string> {
+  const SUPERSET_URL = (await setting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')).replace(/\/$/, '')
+  const SUPERSET_USER = await setting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
+  const SUPERSET_PASS = await setting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
+
   // 1. GET the login page: yields a session cookie + a CSRF token bound to it.
   const loginPage = await fetch(`${SUPERSET_URL}/login/`, { signal: AbortSignal.timeout(8000) })
   if (!loginPage.ok) throw new Error('Superset unreachable')
