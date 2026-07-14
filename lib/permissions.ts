@@ -67,4 +67,15 @@ export async function setUserSurfaces(
       VALUES (${userId}, ${s}, 1)
     `
   }
+
+  // CISO gets a real per-user account (unlike n8n/Superset, which share one
+  // tool identity) so compliance actions are attributed to the individual.
+  // Provision on grant, deactivate on revoke. Fire-and-forget: CISO being
+  // unavailable must not fail the Mosaic permission change, which is the
+  // source of truth — and the proxy gate still blocks revoked users.
+  const rows = (await sql`SELECT email, role FROM users WHERE id=${userId}`) as { email: string; role: string }[]
+  if (rows.length) {
+    const { syncCisoAccess } = await import('./ciso')
+    void syncCisoAccess(rows[0].email, rows[0].role, valid.includes('ciso'))
+  }
 }

@@ -38,19 +38,27 @@ https://{$MOSAIC_HOSTNAME:localhost} {
 
 # ── n8n (served at its own origin root) ─────────────────────────
 https://{$MOSAIC_HOSTNAME:localhost}:8444 {
-	# Auto re-login: bounce n8n's logout back through the Mosaic handshake
-	# instead of showing n8n's login page.
-	@logout path /rest/logout /signout
-	redir @logout https://{$MOSAIC_HOSTNAME:localhost}/api/authz/n8n-login 302
+	# NOTE: n8n signs out via an XHR to /rest/logout. Do NOT intercept it —
+	# redirecting an API call makes the n8n client report "cannot connect to
+	# n8n" (it expects JSON, not a 302 to an HTML page). Let it reach n8n and
+	# complete normally; n8n clears its cookie and then navigates to its login
+	# page. That navigation is cookie-less, so @needs_login below catches it
+	# and transparently re-runs the handshake — auto re-login, no error.
 
-	# No n8n session yet (e.g. a bookmark or expired cookie) → run the
-	# handshake first. NAVIGATIONS ONLY: asset/XHR requests must never be
-	# redirected, or they receive HTML and fail strict MIME checks.
+	# No n8n session (logout, expiry, bookmark) → run the Mosaic handshake.
+	# NAVIGATIONS ONLY: asset/XHR requests must never be redirected, or they
+	# receive HTML and fail strict MIME checks.
 	@needs_login {
 		not header Cookie *n8n-auth=*
 		header Sec-Fetch-Mode navigate
 	}
 	redir @needs_login https://{$MOSAIC_HOSTNAME:localhost}/api/authz/n8n-login 302
+
+	# Also catch n8n's own login pages: if the client routes there directly
+	# while holding a stale cookie, bounce through the handshake instead of
+	# showing n8n's login form.
+	@n8n_login_page path /signin /setup
+	redir @n8n_login_page https://{$MOSAIC_HOSTNAME:localhost}/api/authz/n8n-login 302
 
 	# RBAC gate on every request (defence in depth alongside the handshake).
 	forward_auth mosaic:3001 {

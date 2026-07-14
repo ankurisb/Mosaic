@@ -131,6 +131,11 @@ services:
       # of its own port — see docker/caddy/Caddyfile).
       - N8N_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
       - SUPERSET_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8445/
+      # CISO user provisioning (lib/ciso.ts). Unlike n8n/Superset, CISO gets a
+      # real account per user so compliance actions are attributed individually.
+      - CISO_API_URL=${CISO_API_URL:-http://ciso-backend:8000}
+      - CISO_SUPERUSER_EMAIL=${CISO_SUPERUSER_EMAIL:-admin@mosaic.local}
+      - CISO_SUPERUSER_PASSWORD=${CISO_SUPERUSER_PASSWORD:-}
       # OpenMeter metering (internal Docker network URL)
       - OPENMETER_URL=http://openmeter:8888
       # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
@@ -573,6 +578,16 @@ services:
       - CISO_ASSISTANT_URL=http://localhost:8443
       - DJANGO_DEBUG=True
       - AUTH_TOKEN_TTL=7200
+      # SMTP — REQUIRED for user provisioning to be usable. Mosaic creates the
+      # CISO account when the 'ciso' surface is granted; CISO then emails the
+      # user an invite to set their password. Without SMTP the account exists
+      # but the user has no way to log in.
+      - EMAIL_HOST=${SMTP_HOST:-}
+      - EMAIL_PORT=${SMTP_PORT:-587}
+      - EMAIL_HOST_USER=${SMTP_USER:-}
+      - EMAIL_HOST_PASSWORD=${SMTP_PASS:-}
+      - EMAIL_USE_TLS=${SMTP_TLS:-True}
+      - DEFAULT_FROM_EMAIL=${SMTP_FROM:-noreply@mosaic.local}
       # Django createsuperuser --noinput uses DJANGO_SUPERUSER_* vars
       - DJANGO_SUPERUSER_EMAIL=${CISO_SUPERUSER_EMAIL:-admin@mosaic.local}
       - DJANGO_SUPERUSER_PASSWORD=${CISO_SUPERUSER_PASSWORD:-changeme}
