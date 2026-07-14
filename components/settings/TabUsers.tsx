@@ -23,9 +23,23 @@ export default function TabUsers({ user }: { user: SessionUser }) {
   const [accessUser, setAccessUser] = useState<User | null>(null)
   const [accessSel, setAccessSel] = useState<string[]>([])
   const [accessSaving, setAccessSaving] = useState(false)
+  const [resetResult, setResetResult] = useState<{ email: string; tempPassword: string } | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'all'|'active'|'banned'>('all')
+
+  async function resetPassword(u: User) {
+    if (!confirm(`Reset password for ${u.email}? They will need the new temporary password to sign in.`)) return
+    setError('')
+    try {
+      const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resetPassword', userId: u.id }) })
+      const { data: d, error: err } = await safeJson(r)
+      if (err) { setError(err); return }
+      setResetResult({ email: u.email, tempPassword: (d as { tempPassword: string }).tempPassword })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Password reset failed')
+    }
+  }
 
   async function load() {
     setLoading(true)
@@ -223,6 +237,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
                   {u.id !== user.id && (
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
                       <Btn size="sm" onClick={() => openAccess(u)}>Access ({u.role === 'admin' ? 'all' : (u.surfaces?.length || 0)})</Btn>
+                      <Btn size="sm" onClick={() => resetPassword(u)}>Reset PW</Btn>
                       <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ User' : '↑ Admin'}</Btn>
                       <Btn size="sm" onClick={() => act(u.banned ? 'unban' : 'ban', u.id)}>{u.banned ? 'Unban' : 'Suspend'}</Btn>
                       <Btn size="sm" variant="danger" onClick={() => { if(confirm(`Delete ${u.email}? This cannot be undone.`)) act('delete', u.id) }}>Delete</Btn>
@@ -268,6 +283,22 @@ export default function TabUsers({ user }: { user: SessionUser }) {
             <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
               <Btn onClick={() => setAccessUser(null)} disabled={accessSaving}>Cancel</Btn>
               {accessUser.role !== 'admin' && <Btn variant="primary" onClick={saveAccess} disabled={accessSaving}>{accessSaving ? 'Saving…' : 'Save access'}</Btn>}
+            </div>
+          </div>
+        </div>
+      )}
+      {resetResult && (
+        <div onClick={() => setResetResult(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, width: 440, maxWidth: '90vw' }}>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Password reset</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>{resetResult.email}</div>
+            <Alert variant="warning">This temporary password is shown once. Copy it now and share it securely — the user should change it after signing in.</Alert>
+            <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'ui-monospace, monospace', fontSize: 14, color: 'var(--text)', wordBreak: 'break-all' }}>
+              {resetResult.tempPassword}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 18, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => navigator.clipboard?.writeText(resetResult.tempPassword)}>Copy</Btn>
+              <Btn variant="primary" onClick={() => setResetResult(null)}>Done</Btn>
             </div>
           </div>
         </div>

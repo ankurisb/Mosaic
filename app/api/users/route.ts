@@ -75,6 +75,25 @@ export async function POST(req: Request) {
     return Response.json({ ok: true })
   }
 
+  if (action === 'resetPassword') {
+    // Admin-initiated reset for ANOTHER user. Distinct from 'changePassword',
+    // which is self-service and requires the current password. Without this an
+    // admin has no way to recover a user who has forgotten their password.
+    if (!userId) return Response.json({ error: 'userId required' }, { status: 400 })
+    const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
+    if (!uRows.length) return Response.json({ error: 'User not found' }, { status: 404 })
+    const targetEmail = (uRows[0] as { email: string }).email
+
+    // Cryptographically secure temp password (unlike invite's Math.random()).
+    const { randomBytes } = await import('crypto')
+    const tempPassword = password || randomBytes(9).toString('base64url') + 'A1!'
+    const hash = await bcrypt.hash(tempPassword, 12)
+    await sql`UPDATE users SET password_hash=${hash} WHERE id=${userId}`
+
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${userId}`, 'success', { admin_reset: true, target_email: targetEmail })
+    return Response.json({ ok: true, tempPassword, email: targetEmail })
+  }
+
   if (action === 'setSurfaces') {
     if (!userId) return Response.json({ error: 'userId required' }, { status: 400 })
     const clean = (Array.isArray(surfaces) ? (surfaces as unknown[]).filter(isSurface) : []) as Surface[]

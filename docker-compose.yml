@@ -342,6 +342,26 @@ services:
       retries: 5
       start_period: 60s
 
+  # ── Mailhog (development mail catcher) ──────────────────────
+  # Captures outbound email instead of delivering it — web UI on :8025.
+  # CISO's user-invite emails (and Mosaic notifications) can be verified here
+  # without sending real mail. Point SMTP_HOST=mailhog in .env to use it.
+  #
+  # Dev-only: started with `docker compose --profile dev up -d`. Production
+  # deployments set SMTP_* to a real mail server instead. NOTE: CISO's user
+  # provisioning DEPENDS on working SMTP — without it, accounts are created
+  # but the user never receives the invite to set a password.
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    restart: unless-stopped
+    profiles: ["dev"]
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # web UI
+    networks:
+      - mosaic-net
+
   # ── n8n ─────────────────────────────────────────────────────
   # Self-hosted workflow automation. Invisible to end users.
   # Admin UI accessible at http://localhost:5678 (admin only)
