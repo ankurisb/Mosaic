@@ -898,8 +898,13 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     setTryIt({
       serviceId: svc.id,
       connectionId: conn?.id ?? null,
+      // When a connection is selected, the server-side proxy already prepends
+      // that connection's base_path, so the Path field must start empty (extra
+      // path is appended AFTER base_path). Pre-filling it with base_path caused
+      // the path to be doubled (…/search/jql/rest/api/3/search/jql -> 404).
+      // Only when there's no connection (service-level Try) do we seed a path.
       method: 'GET',
-      path: conn?.base_path ?? '/',
+      path: conn ? '' : '/',
       queryParams: [{ key: '', value: '' }],
       bodyText: '',
       customHeaders: [{ key: '', value: '' }],
