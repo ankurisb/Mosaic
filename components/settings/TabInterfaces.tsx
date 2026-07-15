@@ -1,20 +1,32 @@
-'use client'
 import { useState, useEffect } from 'react'
-import { PageTitle, PageSub, Btn, Alert, Spinner } from './ui'
+import { PageTitle, PageSub, Alert, Spinner } from './ui'
 import { SURFACES, type Surface } from '@/lib/surfaces'
 
 // Launch metadata per surface. Access is decided server-side; this only
 // describes how to present and open each interface the user is allowed.
+// `external` opens in a new tab; otherwise we navigate in-place (the no-login
+// handshake endpoints redirect the current window).
 const META: Record<Surface, { label: string; desc: string; href: string; external?: boolean }> = {
-  n8n:      { label: 'Workflow Automation', desc: 'Build and run automation workflows (n8n).', href: '/api/authz/n8n-login' },
-  superset: { label: 'Analytics',           desc: 'Explore and build dashboards (Superset).', href: '/api/authz/superset-login' },
-  airbyte:  { label: 'Data Pipelines',      desc: 'Manage data source syncs (Airbyte).', href: '/settings#data-sources' },
-  ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).', href: process.env.NEXT_PUBLIC_CISO_URL || 'http://localhost:8443', external: true },
+  n8n:      { label: 'Workflow Automation', desc: 'Build and run automation workflows (n8n).',        href: '/api/authz/n8n-login' },
+  superset: { label: 'Analytics',           desc: 'Explore and build dashboards (Superset).',         href: '/api/authz/superset-login' },
+  airbyte:  { label: 'Data Pipelines',      desc: 'Manage data source syncs (Airbyte).',              href: '/settings#data-sources' },
+  ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).',  href: process.env.NEXT_PUBLIC_CISO_URL || 'http://localhost:8443', external: true },
+}
+
+// Map a health status to a dot colour + human label.
+type Health = 'ok' | 'degraded' | 'error' | 'unconfigured' | 'unknown'
+const DOT: Record<Health, { color: string; title: string }> = {
+  ok:           { color: '#16a34a', title: 'Reachable' },
+  degraded:     { color: '#d97706', title: 'Degraded' },
+  error:        { color: '#dc2626', title: 'Unreachable' },
+  unconfigured: { color: 'var(--border2)', title: 'Not configured' },
+  unknown:      { color: 'var(--border2)', title: 'Status unknown' },
 }
 
 export default function TabInterfaces() {
   const [surfaces, setSurfaces] = useState<string[] | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [health, setHealth] = useState<Record<string, Health>>({})
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -24,11 +36,23 @@ export default function TabInterfaces() {
       .catch(e => { setError(e.message); setSurfaces([]) })
   }, [])
 
-  // Break-glass link to the raw Airbyte portal. Admin-only. This is a fallback
-  // for when the in-Mosaic wrapper can't do something — deliberately NOT a
-  // customer-facing surface (exposing Airbyte's own UI carries ELv2
-  // considerations), which is why it is gated to admins. Follows the same
-  // runtime-env-with-default pattern as NEXT_PUBLIC_CISO_URL above.
+  // Health is best-effort — the dot silently stays "unknown" if this fails, so
+  // a health hiccup never blocks launching a tool.
+  useEffect(() => {
+    fetch('/api/health')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => {
+        const svc = d.services || {}
+        const next: Record<string, Health> = {}
+        for (const s of SURFACES) next[s] = (svc[s]?.status as Health) || 'unknown'
+        setHealth(next)
+      })
+      .catch(() => {/* leave as unknown */})
+  }, [])
+
+  // Break-glass link to the raw Airbyte portal. Admin-only. Fallback for when
+  // the in-Mosaic wrapper can't do something; deliberately NOT customer-facing
+  // (exposing Airbyte's own UI carries ELv2 considerations).
   const airbytePortalUrl = process.env.NEXT_PUBLIC_AIRBYTE_PORTAL_URL || 'http://localhost:8000'
 
   function open(href: string, external?: boolean) {
@@ -36,7 +60,7 @@ export default function TabInterfaces() {
     else window.location.href = href
   }
 
-  const accessible = (surfaces || []).filter((s): s is Surface => (SURFACES as readonly string[]).includes(s))
+  const accessible = SURFACES.filter(s => (surfaces || []).includes(s))
 
   return (
     <div className="fade-in">
@@ -50,29 +74,65 @@ export default function TabInterfaces() {
       ) : accessible.length === 0 ? (
         <Alert variant="info">You don&apos;t currently have access to any connected tools. An admin can grant access under Users.</Alert>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginTop: 8 }}>
-          {SURFACES.filter(s => accessible.includes(s)).map(s => {
+        <div style={{
+          marginTop: 12,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          boxShadow: 'var(--shadow)',
+          overflow: 'hidden',
+        }}>
+          {accessible.map((s, i) => {
             const m = META[s]
+            const st = health[s] || 'unknown'
+            const dot = DOT[st]
+            const showPortal = s === 'airbyte' && isAdmin
             return (
-              <div key={s} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{m.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4, lineHeight: 1.5 }}>{m.desc}</div>
+              <div
+                key={s}
+                onClick={() => open(m.href, m.external)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '14px 18px',
+                  borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'background .12s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {/* status dot */}
+                <span
+                  title={dot.title}
+                  style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, flexShrink: 0, boxShadow: st === 'ok' ? `0 0 0 3px color-mix(in srgb, ${dot.color} 18%, transparent)` : 'none' }}
+                />
+
+                {/* label + description */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{m.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.desc}</div>
                 </div>
-                <div style={{ marginTop: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <Btn variant="primary" onClick={() => open(m.href, m.external)}>Open{m.external ? ' ↗' : ''}</Btn>
-                  {s === 'airbyte' && isAdmin && airbytePortalUrl && (
-                    <a
-                      href={airbytePortalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: 'var(--text3)', textDecoration: 'none' }}
-                      title="Open the raw Airbyte portal (admin fallback)"
-                    >
-                      Airbyte portal ↗
-                    </a>
-                  )}
-                </div>
+
+                {/* admin-only Airbyte portal link — stops row navigation */}
+                {showPortal && (
+                  <a
+                    href={airbytePortalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    title="Open the raw Airbyte portal (admin fallback)"
+                    style={{ fontSize: 12, color: 'var(--text3)', textDecoration: 'none', whiteSpace: 'nowrap', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)' }}
+                  >
+                    Portal ↗
+                  </a>
+                )}
+
+                {/* open affordance */}
+                <span style={{ fontSize: 13, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                  Open{m.external ? ' ↗' : ' →'}
+                </span>
               </div>
             )
           })}
