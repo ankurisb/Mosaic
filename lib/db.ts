@@ -62,7 +62,29 @@ export function getDb(): SqlQuery {
     const Database = require('better-sqlite3')
     const db = new Database(path === ':memory:' ? ':memory:' : path)
     db.pragma('journal_mode = WAL')
+    // Durability + restart-safety hardening. WAL alone survives clean crashes,
+    // but an abrupt SIGKILL mid-checkpoint (e.g. Docker Desktop bouncing during
+    // a resource change) can still corrupt. synchronous=NORMAL is the correct,
+    // durable pairing with WAL; busy_timeout makes writers wait on a lock rather
+    // than fail; wal_autocheckpoint keeps the WAL bounded so restarts have less
+    // uncommitted state to reconcile.
+    db.pragma('synchronous = NORMAL')
+    db.pragma('busy_timeout = 5000')
+    db.pragma('wal_autocheckpoint = 1000')
     db.pragma('foreign_keys = ON')
+
+    // Graceful shutdown: on SIGTERM/SIGINT, checkpoint the WAL into the main DB
+    // and close cleanly, so a container stop/restart never cuts a write or a
+    // checkpoint mid-flight. This is the key fix for restart-induced corruption.
+    const shutdown = () => {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)')
+        db.close()
+      } catch { /* already closing */ }
+      process.exit(0)
+    }
+    process.once('SIGTERM', shutdown)
+    process.once('SIGINT', shutdown)
     _rawDb = db
 
     // Wrap in a tagged-template function matching Neon's interface

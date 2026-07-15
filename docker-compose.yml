@@ -85,6 +85,10 @@ services:
       dockerfile: Dockerfile
     container_name: mosaic
     restart: unless-stopped
+    # Give the app time to run its SIGTERM handler (WAL checkpoint + clean
+    # DB close) before Docker SIGKILLs it. Prevents restart-time SQLite
+    # corruption from a write/checkpoint being cut mid-flight.
+    stop_grace_period: 30s
     ports:
       - "3001:3001"
     environment:
