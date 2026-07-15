@@ -120,9 +120,13 @@ export async function POST(req: Request) {
         }
       }))).join('\n')
     : ''
-  // Group apiConns by service, cap total at 50
-  const apiConnsCapped = apiConns.slice(0, 50)
-  const apiOverflow = apiConns.length > 50 ? apiConns.length - 50 : 0
+  // Group apiConns by service. Cap total to keep the prompt bounded, but set it
+  // high enough that real deployments (dozens of ERP/CMMS endpoints plus added
+  // services like Jira) don't get silently truncated — a connection past the
+  // cap is invisible to the AI, which then wrongly reports it as "not configured".
+  const API_LIST_CAP = 100
+  const apiConnsCapped = apiConns.slice(0, API_LIST_CAP)
+  const apiOverflow = apiConns.length > API_LIST_CAP ? apiConns.length - API_LIST_CAP : 0
   const apiByService = apiConnsCapped.reduce((acc: Record<string, typeof apiConnsCapped>, conn: Record<string,unknown>) => {
     const svc = String(conn.service_label || 'Unknown')
     if (!acc[svc]) acc[svc] = []
