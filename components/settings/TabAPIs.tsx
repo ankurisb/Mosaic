@@ -584,6 +584,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
   // Postman import state
   const fileRef = useRef<HTMLInputElement>(null)
+  const tryPanelRef = useRef<HTMLDivElement>(null)
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
   const [openApiUrl, setOpenApiUrl] = useState('')
   const [openApiLoading, setOpenApiLoading] = useState(false)
@@ -904,6 +905,13 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       customHeaders: [{ key: '', value: '' }],
     })
     setTryResult(null)
+    // The Try panel renders near the top of the tab, well above the connection
+    // list where the Try button lives — so without this, clicking Try on a
+    // connection lower down opens the panel out of view and looks like nothing
+    // happened. Scroll it into view on the next frame (after the panel mounts).
+    requestAnimationFrame(() => {
+      tryPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   const dropZoneStyle: React.CSSProperties = {
@@ -1382,7 +1390,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           ? SECURITY_MESSAGES.find(([k]) => tryErrMsg.includes(k))?.[1]
           : undefined
         return (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 20, marginBottom: 20 }}>
+          <div ref={tryPanelRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 20, marginBottom: 20 }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <span style={{ fontSize: 16 }}></span>
