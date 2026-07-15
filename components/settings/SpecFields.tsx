@@ -133,26 +133,37 @@ export function ObjectFields({ schema, value, onChange }: {
 function OneOf({ name, variants, value, onChange, title, description }: {
   name: string; variants: Schema[]; value: unknown; onChange: (v: unknown) => void; title?: string; description?: string
 }) {
+  // The discriminator value can be expressed as `const` OR as a single-value
+  // `enum` (Postgres and many connectors use enum: ["disable"]). Treat both.
+  const discVal = (s?: Schema): unknown =>
+    s?.const !== undefined ? s.const
+      : (Array.isArray(s?.enum) && s!.enum!.length === 1 ? s!.enum![0] : undefined)
+
   const discriminator = (() => {
     const props0 = variants[0]?.properties || {}
-    return Object.keys(props0).find(k => variants.every(v => v.properties?.[k]?.const !== undefined)) || Object.keys(props0)[0]
+    return Object.keys(props0).find(k => variants.every(v => discVal(v.properties?.[k]) !== undefined)) || Object.keys(props0)[0]
   })()
 
   const cur = (value as Record<string, unknown>) || {}
-  let selectedIdx = variants.findIndex(v => discriminator != null && v.properties?.[discriminator]?.const === cur[discriminator])
+  let selectedIdx = variants.findIndex(v => discriminator != null && discVal(v.properties?.[discriminator]) === cur[discriminator])
   if (selectedIdx < 0) selectedIdx = 0
 
   const [idx, setIdx] = useState(selectedIdx)
   const variant = variants[idx]
 
   const labelFor = (v: Schema, i: number) =>
-    v.title || String((discriminator != null && v.properties?.[discriminator]?.const) ?? `Option ${i + 1}`)
+    v.title || String((discriminator != null && discVal(v.properties?.[discriminator])) ?? `Option ${i + 1}`)
 
   function selectVariant(i: number) {
     setIdx(i)
-    const seed: Record<string, unknown> = {}
-    const disc = discriminator != null ? variants[i].properties?.[discriminator] : undefined
-    if (disc?.const !== undefined && discriminator != null) seed[discriminator] = disc.const
+    // Seed the discriminator with its fixed value so the submitted config is
+    // the NESTED object the schema requires (e.g. { mode: "disable" }), not a
+    // bare string. Also seed any defaults in the chosen variant.
+    const seed = seedConfig(variants[i])
+    if (discriminator != null) {
+      const dv = discVal(variants[i].properties?.[discriminator])
+      if (dv !== undefined) seed[discriminator] = dv
+    }
     onChange(seed)
   }
 
@@ -198,16 +209,24 @@ function ArrayField({ name, schema, value, onChange }: {
 
 /** Seed a config object from a schema's defaults + const discriminators. */
 export function seedConfig(schema: Schema): Record<string, unknown> {
+  const dVal = (s?: Schema): unknown =>
+    s?.const !== undefined ? s.const
+      : (Array.isArray(s?.enum) && s!.enum!.length === 1 ? s!.enum![0] : undefined)
   const out: Record<string, unknown> = {}
   const props = schema.properties || {}
   for (const [k, s] of Object.entries(props)) {
-    if (s.const !== undefined) out[k] = s.const
-    else if (s.default !== undefined) out[k] = s.default
-    else if (s.oneOf?.length) {
+    // oneOf must be checked BEFORE default: fields like ssl_mode carry a
+    // string default ("require") at the parent level, but the value must be
+    // the nested variant object, not that string.
+    if (s.oneOf?.length) {
       const v0 = s.oneOf[0]
-      const disc = Object.keys(v0.properties || {}).find(dk => v0.properties?.[dk]?.const !== undefined)
-      if (disc) out[k] = { [disc]: v0.properties![disc].const }
+      const seeded = seedConfig(v0)
+      const disc = Object.keys(v0.properties || {}).find(dk => dVal(v0.properties?.[dk]) !== undefined)
+      if (disc) seeded[disc] = dVal(v0.properties![disc])
+      out[k] = seeded
     }
+    else if (s.const !== undefined) out[k] = s.const
+    else if (s.default !== undefined) out[k] = s.default
   }
   return out
 }

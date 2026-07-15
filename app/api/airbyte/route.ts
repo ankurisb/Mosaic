@@ -251,11 +251,14 @@ export async function GET(req: Request) {
   if (action === 'source_spec' && searchParams.get('definitionId')) {
     try {
       const defId = searchParams.get('definitionId')
+      // Airbyte's /source_definition_specifications/get REQUIRES workspaceId —
+      // without it the API returns 500 and the config form comes back empty.
+      const wsId = await getWorkspaceId(sql, inst)
       const data = await ab(inst,
         `/source_definitions/${defId}/specification`,
         '/source_definition_specifications/get',
         'GET',
-        { sourceDefinitionId: defId }
+        { sourceDefinitionId: defId, workspaceId: wsId }
       ) as any
       return Response.json({ spec: data.connectionSpecification || data.spec || data })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
