@@ -22,21 +22,29 @@ import TabSupport from './TabSupport'
 import TabTransparency from './TabTransparency'
 import TabBackup from './TabBackup'
 import TabInterfaces from './TabInterfaces'
+import TabAccount from './TabAccount'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
+  // Regular users only see settings relevant to them: their own account
+  // (Password), their own consumption (Usage analytics — the API scopes
+  // non-admins to their own user_id), the tools they can launch (Connected
+  // tools), RCA workflows, and About. Everything else is an admin concern.
+  // NOTE: backends already enforce admin server-side (403) — this filter is
+  // UX, so users aren't shown controls that would just reject them.
   { id: 'setup',         label: 'Setup',                adminOnly: true  },
-  { id: 'keys',          label: 'API keys',             adminOnly: false },
-  { id: 'auth',          label: 'Authentication',       adminOnly: false },
-  { id: 'users',         label: 'Users',                adminOnly: false },
+  { id: 'account',       label: 'Password',             adminOnly: false },
+  { id: 'keys',          label: 'API keys',             adminOnly: true  },
+  { id: 'auth',          label: 'Authentication',       adminOnly: true  },
+  { id: 'users',         label: 'Users',                adminOnly: true  },
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
-  { id: 'system-health', label: 'System health',        adminOnly: false },
-  { id: 'data-sources',  label: 'Data sources',         adminOnly: false },
+  { id: 'system-health', label: 'System health',        adminOnly: true  },
+  { id: 'data-sources',  label: 'Data sources',         adminOnly: true  },
   { id: 'interfaces',    label: 'Connected tools',      adminOnly: false },
   { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
-  { id: 'analytics',     label: 'Analysis capabilities',adminOnly: false },
-  { id: 'guardrails',    label: 'Guardrails',           adminOnly: false },
-  { id: 'notifications', label: 'Notifications',        adminOnly: false },
+  { id: 'analytics',     label: 'Analysis capabilities',adminOnly: true  },
+  { id: 'guardrails',    label: 'Guardrails',           adminOnly: true  },
+  { id: 'notifications', label: 'Notifications',        adminOnly: true  },
   { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
   { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
   { id: 'transparency',  label: 'AI Decision Log',      adminOnly: true  },
@@ -160,6 +168,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'system-health' && <TabMonitor />}
           {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'interfaces'    && <TabInterfaces />}
+          {tab === 'account'       && <TabAccount user={user} />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}

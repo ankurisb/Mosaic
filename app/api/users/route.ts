@@ -32,9 +32,29 @@ export async function POST(req: Request) {
   const requestId = req.headers.get('x-request-id') || newRequestId()
   const reqLog = log.child({ requestId, service: 'users' })
   const session = await getSession()
-  if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
+  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 })
   const sql = getDb()
-  const { action, userId, email, name, role, password, surfaces } = await req.json()
+  const { action, userId, email, name, role, password, surfaces, currentPassword, newPassword } = await req.json()
+
+  // Self-service password change: any authenticated user may change THEIR OWN
+  // password. Handled before the admin gate below (it is the one action a
+  // non-admin is allowed here). Verifies the current password first.
+  if (action === 'changePassword') {
+    if (!currentPassword || !newPassword) return Response.json({ error: 'currentPassword and newPassword required' }, { status: 400 })
+    const uRows = await sql`SELECT password_hash FROM users WHERE id=${session.id}`
+    const valid = uRows.length && await bcrypt.compare(currentPassword, (uRows[0] as { password_hash: string }).password_hash)
+    if (!valid) {
+      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'failure', { reason: 'wrong_current_password' })
+      return Response.json({ error: 'Current password incorrect' }, { status: 401 })
+    }
+    const newHash = await bcrypt.hash(newPassword, 12)
+    await sql`UPDATE users SET password_hash=${newHash} WHERE id=${session.id}`
+    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'success', null)
+    return Response.json({ ok: true })
+  }
+
+  // Everything past this point is admin-only.
+  if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
 
   if (action === 'invite') {
     if (!email) return Response.json({ error: 'Email required' }, { status: 400 })
@@ -124,22 +144,6 @@ export async function POST(req: Request) {
     const uRows = await sql`SELECT email FROM users WHERE id=${userId}`
     await sql`DELETE FROM users WHERE id=${userId}`
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.USER_DELETE, `user:${userId}`, 'success', { target_email: (uRows[0] as { email: string } | undefined)?.email })
-    return Response.json({ ok: true })
-  }
-
-  if (action === 'changePassword') {
-    // Self-service password change
-    const { currentPassword, newPassword } = await req.json().catch(() => ({}))
-    if (!currentPassword || !newPassword) return Response.json({ error: 'currentPassword and newPassword required' }, { status: 400 })
-    const uRows = await sql`SELECT password_hash FROM users WHERE id=${session.id}`
-    const valid = uRows.length && await bcrypt.compare(currentPassword, (uRows[0] as { password_hash: string }).password_hash)
-    if (!valid) {
-      audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'failure', { reason: 'wrong_current_password' })
-      return Response.json({ error: 'Current password incorrect' }, { status: 401 })
-    }
-    const newHash = await bcrypt.hash(newPassword, 12)
-    await sql`UPDATE users SET password_hash=${newHash} WHERE id=${session.id}`
-    audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.PASSWORD_CHANGE, `user:${session.email}`, 'success', null)
     return Response.json({ ok: true })
   }
 
