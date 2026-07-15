@@ -11,5 +11,7 @@ export async function GET() {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 })
   const surfaces = await getUserSurfaces({ id: session.id, role: session.role })
-  return Response.json({ surfaces })
+  // isAdmin lets the UI show the admin-only "open the raw Airbyte portal"
+  // break-glass link. Kept server-authoritative rather than trusting the client.
+  return Response.json({ surfaces, isAdmin: session.role === 'admin' })
 }

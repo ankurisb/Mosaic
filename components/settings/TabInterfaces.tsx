@@ -14,14 +14,22 @@ const META: Record<Surface, { label: string; desc: string; href: string; externa
 
 export default function TabInterfaces() {
   const [surfaces, setSurfaces] = useState<string[] | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     fetch('/api/authz/surfaces')
       .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load access')))
-      .then(d => setSurfaces(Array.isArray(d.surfaces) ? d.surfaces : []))
+      .then(d => { setSurfaces(Array.isArray(d.surfaces) ? d.surfaces : []); setIsAdmin(!!d.isAdmin) })
       .catch(e => { setError(e.message); setSurfaces([]) })
   }, [])
+
+  // Break-glass link to the raw Airbyte portal. Admin-only. This is a fallback
+  // for when the in-Mosaic wrapper can't do something — deliberately NOT a
+  // customer-facing surface (exposing Airbyte's own UI carries ELv2
+  // considerations), which is why it is gated to admins. Follows the same
+  // runtime-env-with-default pattern as NEXT_PUBLIC_CISO_URL above.
+  const airbytePortalUrl = process.env.NEXT_PUBLIC_AIRBYTE_PORTAL_URL || 'http://localhost:8000'
 
   function open(href: string, external?: boolean) {
     if (external) window.open(href, '_blank', 'noopener')
@@ -51,8 +59,19 @@ export default function TabInterfaces() {
                   <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{m.label}</div>
                   <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4, lineHeight: 1.5 }}>{m.desc}</div>
                 </div>
-                <div style={{ marginTop: 'auto' }}>
+                <div style={{ marginTop: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
                   <Btn variant="primary" onClick={() => open(m.href, m.external)}>Open{m.external ? ' ↗' : ''}</Btn>
+                  {s === 'airbyte' && isAdmin && airbytePortalUrl && (
+                    <a
+                      href={airbytePortalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: 'var(--text3)', textDecoration: 'none' }}
+                      title="Open the raw Airbyte portal (admin fallback)"
+                    >
+                      Airbyte portal ↗
+                    </a>
+                  )}
                 </div>
               </div>
             )
