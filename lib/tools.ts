@@ -559,7 +559,12 @@ export async function getMcpTools(connectionId: string, endpoint: string): Promi
 
 export async function testMcpEndpoint(endpoint: string, token?: string): Promise<{ ok: boolean; tools?: string[]; error?: string }> {
   try {
-    const tools = await listMcpConnectionTools(endpoint, token)
+    // Do the handshake directly (not via listMcpConnectionTools, which swallows
+    // errors into []) so a 401/404/405/timeout surfaces as a real failure rather
+    // than a misleading "ok, no tools".
+    const session = await mcpConnect(endpoint, token, 12000)
+    const body = await mcpRpc(session, 'tools/list', {}, false, 12000)
+    const tools = ((body?.result as { tools?: Array<{ name: string }> })?.tools) || []
     return { ok: true, tools: tools.map(t => t.name) }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
