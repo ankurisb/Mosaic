@@ -196,6 +196,26 @@ For time ranges use Unix ms timestamps (startTs/endTs). If not given, default to
       required: ['operation']
     },
   },
+  {
+    name: 'query_mcp',
+    description: `Call a tool on a connected MCP (Model Context Protocol) server. Use this for bespoke/custom data sources registered under Settings → Data sources → MCP servers.
+
+The system prompt lists each MCP server (by connection_id) and the tools it exposes. To use one:
+1. Pick the connection_id of the server whose data you need.
+2. Pick the tool_name from that server's listed tools.
+3. Pass the tool's arguments as an object.
+
+Only use tool names that are listed for that connection. If unsure what a server offers, the available tools are shown in the MCP servers section of the system prompt.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        connection_id: { type: 'string', description: 'The MCP connection id (from the MCP servers list in the system prompt).' },
+        tool_name: { type: 'string', description: 'The name of the tool to call on that MCP server.' },
+        arguments: { type: 'object', description: 'Arguments object for the tool, matching that tool\'s input schema. Use {} if the tool takes no arguments.' },
+      },
+      required: ['connection_id', 'tool_name']
+    },
+  },
 ]
 
 export async function runTool(
@@ -281,6 +301,15 @@ export async function runTool(
     }
 
     case 'query_airbyte': return queryAirbyte(String(input.action), input.instance_id as string | undefined, input.connection_id as string | undefined)
+    case 'query_mcp': {
+      const srcId = String(input.connection_id || '')
+      // Data-access rules apply to MCP sources too (governance parity with other types).
+      try {
+        const accessCheck = await applyDataAccessRules(JSON.stringify(input.arguments || {}), srcId, 'api', role, auditCtx)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+      } catch { }
+      return queryMcpConnection(srcId, String(input.tool_name), (input.arguments as Record<string, unknown>) || {})
+    }
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
     case 'render_chart': return renderChart(input)
     default: throw new Error(`Unknown tool: ${name}`)
@@ -411,6 +440,79 @@ async function queryViaMcp(endpoint: string, token: string | undefined, sql: str
   if (Array.isArray(result)) return { rows: result, rowCount: result.length, fields: result[0] ? Object.keys(result[0]) : [], via: 'mcp' }
   if (result.rows) return { ...result, via: 'mcp' }
   return { result, via: 'mcp' }
+}
+
+
+// -- Generic MCP connection executor -----------------------------------------
+// Calls an arbitrary tool on a registered MCP connection (from the
+// mcp_connections table). Unlike queryViaMcp above (which is SQL-over-MCP for
+// database dialects), this is transport for ANY MCP server: the AI supplies a
+// tool name and arguments, we call tools/call, and normalise the result.
+async function queryMcpConnection(connectionId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  const sql = getDb()
+  const rows = await sql`SELECT label, endpoint_url, token_enc, enabled FROM mcp_connections WHERE id=${connectionId}`
+  if (!rows.length) throw new Error('MCP connection not found')
+  const conn = rows[0] as { label: string; endpoint_url: string; token_enc: string | null; enabled: number | boolean }
+  if (!conn.enabled) throw new Error(`MCP connection "${conn.label}" is disabled`)
+
+  const token = conn.token_enc ? decrypt(conn.token_enc) : undefined
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(conn.endpoint_url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: { name: toolName, arguments: args || {} }, id: 1 }),
+    signal: AbortSignal.timeout(30000),
+  })
+  if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
+  const body = await res.json()
+  if (body.error) throw new Error(`MCP error: ${body.error.message || JSON.stringify(body.error)}`)
+
+  const result = body.result
+  if (!result) throw new Error('MCP server returned no result')
+
+  // Normalise: MCP standard returns result.content = [{type, text}]. Parse JSON
+  // text blocks into structured data where possible; otherwise return as text.
+  if (result.content && Array.isArray(result.content)) {
+    const textBlock = (result.content as Array<{ type: string; text?: string }>).find(c => c.type === 'text')
+    if (textBlock?.text) {
+      try { return { result: JSON.parse(textBlock.text), via: 'mcp', connection: conn.label } }
+      catch { return { result: textBlock.text, via: 'mcp', connection: conn.label } }
+    }
+    return { result: result.content, via: 'mcp', connection: conn.label }
+  }
+  return { result, via: 'mcp', connection: conn.label }
+}
+
+// List the tools an MCP connection exposes (for surfacing to the AI).
+async function listMcpConnectionTools(connectionId: string, endpoint: string, token?: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(endpoint, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', params: {}, id: 1 }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return []
+    const body = await res.json()
+    return (body.result?.tools || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
+      name: t.name, description: t.description, input_schema: t.inputSchema,
+    }))
+  } catch { return [] }
+}
+
+// Public wrapper: fetch an MCP connection's tools by id (resolves token from DB).
+// Used by chat/route.ts to inject each server's tool list into the system prompt.
+export async function getMcpTools(connectionId: string, endpoint: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT token_enc FROM mcp_connections WHERE id=${connectionId}`
+    const enc = rows.length ? (rows[0] as { token_enc: string | null }).token_enc : null
+    const token = enc ? decrypt(enc) : undefined
+    return listMcpConnectionTools(connectionId, endpoint, token)
+  } catch { return [] }
 }
 
 // Truncate individual cell values that are excessively long (e.g. CLOB columns,

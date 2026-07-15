@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
-import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt } from '@/lib/tools'
+import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
@@ -86,11 +86,12 @@ export async function POST(req: Request) {
 
   // Inject available connections into system prompt
   const sql = getDb()
-  const [dbConns, apiConns, fileServers, prismInstances] = await Promise.all([
+  const [dbConns, apiConns, fileServers, prismInstances, mcpConns] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
     sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = 1 ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT id, label, endpoint_url, description FROM mcp_connections WHERE enabled = 1 ORDER BY created_at ASC`.catch(() => []),
   ])
   const dialectHint = (dialect: unknown) => {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
@@ -154,7 +155,21 @@ export async function POST(req: Request) {
         `  Use devices/assets/customers operations first to discover entity IDs if unknown.`
       ).join('\n')
     : ''
-  const hasSources = dbConns.length > 0 || apiConns.length > 0 || (prismInstances as unknown[]).length > 0
+  // MCP connections: list each server and the tools it exposes, so the AI can
+  // call query_mcp with the right connection_id + tool_name. Tool discovery is
+  // best-effort (a down server just shows no tools rather than breaking chat).
+  const mcpList = (mcpConns as Record<string,unknown>[]).length
+    ? '\n\n## MCP servers (query_mcp tool — use connection_id + tool_name)\n' +
+      (await Promise.all((mcpConns as Record<string,unknown>[]).map(async (m: Record<string,unknown>) => {
+        const tools = await getMcpTools(String(m.id), String(m.endpoint_url))
+        const descNote = m.description ? ` — ${m.description}` : ''
+        const toolLines = tools.length
+          ? tools.map(t => `    • ${t.name}${t.description ? `: ${String(t.description).slice(0, 120)}` : ''}`).join('\n')
+          : '    (no tools discovered — server may be unreachable)'
+        return `- connection_id:"${m.id}" | "${m.label}"${descNote}\n${toolLines}`
+      }))).join('\n')
+    : ''
+  const hasSources = dbConns.length > 0 || apiConns.length > 0 || (prismInstances as unknown[]).length > 0 || (mcpConns as unknown[]).length > 0
   const baseSystem = system || (hasSources
     ? `You are Mosaic, an intelligent assistant built for industrial and operational teams. You are knowledgeable, direct, and genuinely helpful — like a trusted analyst who knows the business deeply.
 
@@ -287,7 +302,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + rcaAddition + analyticsBlock + aiRulesBlock
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
