@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
+import { ObjectFields, seedConfig, type Schema } from './SpecFields'
 import { safeJson } from '@/lib/fetch'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
@@ -680,7 +681,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   const [selectedDef, setSelectedDef] = React.useState<any>(null)
   const [sourceSpec, setSourceSpec]   = React.useState<any>(null)
   const [specLoading, setSpecLoading] = React.useState(false)
-  const [sourceConfig, setSourceConfig] = React.useState<Record<string,string>>({})
+  const [sourceConfig, setSourceConfig] = React.useState<Record<string,unknown>>({})
   const [sourceName, setSourceName]   = React.useState('')
   const [wizardSaving, setWizardSaving] = React.useState(false)
   const [defSearch, setDefSearch]     = React.useState('')
@@ -800,9 +801,9 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
     try {
       const r = await fetch(`/api/airbyte?action=source_spec&id=${wizardInst}&definitionId=${def.sourceDefinitionId || def.id}`)
       const d = await r.json(); setSourceSpec(d.spec)
-      const defaults: Record<string,string> = {}
-      Object.entries(d.spec?.properties || {}).forEach(([k, v]: [string, any]) => { if (v.default !== undefined) defaults[k] = String(v.default) })
-      setSourceConfig(defaults)
+      // seedConfig walks the schema for defaults, const values, and oneOf
+      // discriminators — producing the nested shape Airbyte expects.
+      setSourceConfig(d.spec ? seedConfig(d.spec as Schema) : {})
     } catch { showToast('Failed to load connector spec', false) }
     finally { setSpecLoading(false) }
   }
@@ -810,17 +811,25 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   async function createSource() {
     setWizardSaving(true)
     try {
-      const spec = sourceSpec?.properties || {}
-      const typedConfig: Record<string, unknown> = {}
-      Object.entries(sourceConfig).forEach(([k, v]) => {
-        const t = spec[k]?.type
-        if (t === 'integer') typedConfig[k] = parseInt(v) || 0
-        else if (t === 'boolean') typedConfig[k] = v === 'true'
-        else typedConfig[k] = v
-      })
+      // sourceConfig is already correctly typed and nested by the SpecFields
+      // renderer (numbers/booleans/objects/arrays as the schema requires), so
+      // it is passed straight through — no flat re-typing pass.
+      const cleanEmpty = (o: unknown): unknown => {
+        if (Array.isArray(o)) return o.map(cleanEmpty)
+        if (o && typeof o === 'object') {
+          const r: Record<string, unknown> = {}
+          for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+            if (v === '' || v === undefined) continue
+            r[k] = cleanEmpty(v)
+          }
+          return r
+        }
+        return o
+      }
+      const config = cleanEmpty(sourceConfig) as Record<string, unknown>
       const instData = instances.find(i => i.id === wizardInst)
       if (!instData?.workspace_id) throw new Error('Workspace not discovered. Click "Discover WS" first.')
-      const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'create_source', instanceId: wizardInst, workspaceId: instData.workspace_id, name: sourceName || selectedDef?.name, definitionId: selectedDef?.sourceDefinitionId || selectedDef?.id, config: typedConfig }) })
+      const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'create_source', instanceId: wizardInst, workspaceId: instData.workspace_id, name: sourceName || selectedDef?.name, definitionId: selectedDef?.sourceDefinitionId || selectedDef?.id, config }) })
       const d = await r.json(); if (d.error) throw new Error(d.error)
       showToast(`Source "${sourceName}" created`); setShowWizard(false)
       setSources(p => ({ ...p, [wizardInst]: null })); loadPipelines(wizardInst, true)
@@ -1089,30 +1098,11 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
                       <input value={sourceName} onChange={e => setSourceName(e.target.value)} placeholder={`My ${selectedDef?.name}`}
                         style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
                     </div>
-                    {Object.entries(sourceSpec.properties || {}).map(([key, prop]: [string, any]) => {
-                      if (prop.type === 'object' || prop.type === 'array') return null
-                      const isRequired = (sourceSpec.required || []).includes(key)
-                      const isSecret = prop.airbyte_secret || /password|token|secret|key/i.test(key)
-                      return (
-                        <div key={key} style={{ marginBottom: 14 }}>
-                          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-                            {prop.title || key}{isRequired && <span style={{ color: '#dc2626' }}> *</span>}
-                          </label>
-                          {prop.enum ? (
-                            <select value={sourceConfig[key] || prop.default || ''} onChange={e => setSourceConfig(p => ({ ...p, [key]: e.target.value }))}
-                              style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}>
-                              {prop.enum.map((v: string) => <option key={v} value={v}>{v}</option>)}
-                            </select>
-                          ) : (
-                            <input type={isSecret ? 'password' : prop.type === 'integer' ? 'number' : 'text'}
-                              value={sourceConfig[key] || ''} onChange={e => setSourceConfig(p => ({ ...p, [key]: e.target.value }))}
-                              placeholder={prop.examples?.[0] ? String(prop.examples[0]) : (prop.description || '').slice(0, 60)}
-                              style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-                          )}
-                          {prop.description && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 3 }}>{prop.description.slice(0, 100)}</div>}
-                        </div>
-                      )
-                    })}
+                    <ObjectFields
+                      schema={sourceSpec as Schema}
+                      value={sourceConfig as Record<string, unknown>}
+                      onChange={(v) => setSourceConfig(v)}
+                    />
                   </>
                 )}
               </div>
