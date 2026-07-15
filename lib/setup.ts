@@ -243,6 +243,22 @@ export async function setupDatabase() {
   await sql`ALTER TABLE file_servers ADD COLUMN tenant_id TEXT`.catch(() => {})
   await sql`ALTER TABLE file_servers ADD COLUMN client_id TEXT`.catch(() => {})
 
+  // -- MCP connections -------------------------------------------
+  // First-class Model Context Protocol data sources. Each points at an MCP
+  // server (JSON-RPC over HTTP/SSE) that can expose arbitrary tools — used for
+  // bespoke/custom integrations that don't fit the native DB/API/file types.
+  await sql`CREATE TABLE IF NOT EXISTS mcp_connections (
+    id            TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    label         TEXT NOT NULL,
+    endpoint_url  TEXT NOT NULL,
+    transport     TEXT NOT NULL DEFAULT 'http',
+    token_enc     TEXT,
+    description   TEXT,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now'))
+  )`
+
   // -- Analytics dashboards --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS dashboards (
     id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

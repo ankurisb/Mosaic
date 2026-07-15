@@ -311,6 +311,19 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS tenant_id TEXT`.catch(() => {})
   await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS client_id TEXT`.catch(() => {})
 
+  // -- MCP connections (Postgres) --------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS mcp_connections (
+    id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    label         TEXT NOT NULL,
+    endpoint_url  TEXT NOT NULL,
+    transport     TEXT NOT NULL DEFAULT 'http',
+    token_enc     TEXT,
+    description   TEXT,
+    enabled       BOOLEAN NOT NULL DEFAULT true,
+    created_at    TEXT DEFAULT (NOW()::text),
+    updated_at    TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+
   // last_scheduled_run column (safe to run on existing tables)
   await sql`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS last_scheduled_run TEXT`.catch(() => {})
 
