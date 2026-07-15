@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { setupDatabase } from '@/lib/setup'
+import { testMcpEndpoint } from '@/lib/tools'
 export const runtime = 'nodejs'
 
 // MCP connections: first-class Model Context Protocol data sources.
@@ -19,27 +20,6 @@ export async function GET() {
            (token_enc IS NOT NULL) AS has_token, created_at, updated_at
     FROM mcp_connections ORDER BY created_at ASC`
   return Response.json({ mcp_connections: rows })
-}
-
-// Ping an MCP server with tools/list to confirm it is reachable and speaks MCP.
-async function listMcpTools(endpoint: string, token?: string): Promise<{ ok: boolean; tools?: string[]; error?: string }> {
-  try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', params: {}, id: 1 }),
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
-    const body = await res.json()
-    if (body.error) return { ok: false, error: body.error.message || 'MCP error' }
-    const tools = (body.result?.tools || []).map((t: { name?: string }) => t.name).filter(Boolean)
-    return { ok: true, tools }
-  } catch (e) {
-    return { ok: false, error: (e as Error).message }
-  }
 }
 
 // -- POST -- create / update / delete / test --------------------
@@ -63,7 +43,7 @@ export async function POST(req: Request) {
       token = enc ? decrypt(enc) : undefined
     }
     if (!endpoint) return Response.json({ error: 'endpoint_url required' }, { status: 400 })
-    const result = await listMcpTools(endpoint, token)
+    const result = await testMcpEndpoint(endpoint, token)
     return Response.json(result)
   }
 

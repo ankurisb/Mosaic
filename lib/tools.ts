@@ -448,6 +448,71 @@ async function queryViaMcp(endpoint: string, token: string | undefined, sql: str
 // mcp_connections table). Unlike queryViaMcp above (which is SQL-over-MCP for
 // database dialects), this is transport for ANY MCP server: the AI supplies a
 // tool name and arguments, we call tools/call, and normalise the result.
+// -- Production MCP client (Streamable HTTP transport) ------------------------
+// Real remote MCP servers require the full lifecycle, not a bare tools/list:
+//   1. initialize  -> server returns capabilities + an Mcp-Session-Id header
+//   2. notifications/initialized (ack; no response body)
+//   3. tools/list / tools/call  -- every call carries the Mcp-Session-Id
+// Servers may reply with application/json OR text/event-stream (SSE), so we
+// send both in Accept and parse either. This is what makes MCP connections
+// work against spec-compliant servers (hf.co/mcp, Cloudflare, etc.), not just
+// trivial single-POST mocks.
+
+const MCP_PROTOCOL_VERSION = '2025-06-18'
+
+// Parse an MCP HTTP response body that may be JSON or an SSE stream. For SSE we
+// take the last `data:` line's JSON (the JSON-RPC response for our id).
+function parseMcpBody(contentType: string, text: string): Record<string, unknown> | null {
+  if (contentType.includes('text/event-stream')) {
+    const dataLines = text.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).filter(Boolean)
+    for (let i = dataLines.length - 1; i >= 0; i--) {
+      try { const j = JSON.parse(dataLines[i]); if (j && (j.result !== undefined || j.error !== undefined)) return j } catch { /* keep scanning */ }
+    }
+    return null
+  }
+  try { return JSON.parse(text) } catch { return null }
+}
+
+interface McpSession { endpoint: string; token?: string; sessionId?: string }
+
+async function mcpRpc(session: McpSession, method: string, params: Record<string, unknown>, isNotification = false, timeoutMs = 30000): Promise<Record<string, unknown> | null> {
+  const msg: Record<string, unknown> = { jsonrpc: '2.0', method, params }
+  if (!isNotification) msg.id = 1
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+    'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+  }
+  if (session.token) headers['Authorization'] = `Bearer ${session.token}`
+  if (session.sessionId) headers['Mcp-Session-Id'] = session.sessionId
+
+  const res = await fetch(session.endpoint, {
+    method: 'POST', headers, body: JSON.stringify(msg), signal: AbortSignal.timeout(timeoutMs),
+  })
+  const sid = res.headers.get('mcp-session-id')
+  if (sid) session.sessionId = sid
+
+  if (isNotification) return null
+  if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
+  const text = await res.text()
+  const body = parseMcpBody(res.headers.get('content-type') || '', text)
+  if (!body) throw new Error('MCP server returned an unparseable response')
+  if (body.error) throw new Error(`MCP error: ${(body.error as { message?: string }).message || JSON.stringify(body.error)}`)
+  return body
+}
+
+async function mcpConnect(endpoint: string, token?: string, timeoutMs = 15000): Promise<McpSession> {
+  const session: McpSession = { endpoint, token }
+  await mcpRpc(session, 'initialize', {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: 'mosaic', version: '1.0' },
+  }, false, timeoutMs)
+  try { await mcpRpc(session, 'notifications/initialized', {}, true, timeoutMs) } catch { /* non-fatal */ }
+  return session
+}
+
+// -- Generic MCP connection executor -----------------------------------------
 async function queryMcpConnection(connectionId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
   const sql = getDb()
   const rows = await sql`SELECT label, endpoint_url, token_enc, enabled FROM mcp_connections WHERE id=${connectionId}`
@@ -456,63 +521,49 @@ async function queryMcpConnection(connectionId: string, toolName: string, args: 
   if (!conn.enabled) throw new Error(`MCP connection "${conn.label}" is disabled`)
 
   const token = conn.token_enc ? decrypt(conn.token_enc) : undefined
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const res = await fetch(conn.endpoint_url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: { name: toolName, arguments: args || {} }, id: 1 }),
-    signal: AbortSignal.timeout(30000),
-  })
-  if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
-  const body = await res.json()
-  if (body.error) throw new Error(`MCP error: ${body.error.message || JSON.stringify(body.error)}`)
-
-  const result = body.result
+  const session = await mcpConnect(conn.endpoint_url, token)
+  const body = await mcpRpc(session, 'tools/call', { name: toolName, arguments: args || {} })
+  const result = (body?.result ?? null) as Record<string, unknown> | null
   if (!result) throw new Error('MCP server returned no result')
 
-  // Normalise: MCP standard returns result.content = [{type, text}]. Parse JSON
-  // text blocks into structured data where possible; otherwise return as text.
-  if (result.content && Array.isArray(result.content)) {
-    const textBlock = (result.content as Array<{ type: string; text?: string }>).find(c => c.type === 'text')
+  const content = result.content as Array<{ type: string; text?: string }> | undefined
+  if (content && Array.isArray(content)) {
+    const textBlock = content.find(c => c.type === 'text')
     if (textBlock?.text) {
       try { return { result: JSON.parse(textBlock.text), via: 'mcp', connection: conn.label } }
       catch { return { result: textBlock.text, via: 'mcp', connection: conn.label } }
     }
-    return { result: result.content, via: 'mcp', connection: conn.label }
+    return { result: content, via: 'mcp', connection: conn.label }
   }
   return { result, via: 'mcp', connection: conn.label }
 }
 
-// List the tools an MCP connection exposes (for surfacing to the AI).
-async function listMcpConnectionTools(connectionId: string, endpoint: string, token?: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
+async function listMcpConnectionTools(endpoint: string, token?: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    const res = await fetch(endpoint, {
-      method: 'POST', headers,
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', params: {}, id: 1 }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return []
-    const body = await res.json()
-    return (body.result?.tools || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
-      name: t.name, description: t.description, input_schema: t.inputSchema,
-    }))
+    const session = await mcpConnect(endpoint, token, 10000)
+    const body = await mcpRpc(session, 'tools/list', {}, false, 10000)
+    const tools = ((body?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> })?.tools) || []
+    return tools.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema }))
   } catch { return [] }
 }
 
-// Public wrapper: fetch an MCP connection's tools by id (resolves token from DB).
-// Used by chat/route.ts to inject each server's tool list into the system prompt.
 export async function getMcpTools(connectionId: string, endpoint: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
   try {
     const sql = getDb()
     const rows = await sql`SELECT token_enc FROM mcp_connections WHERE id=${connectionId}`
     const enc = rows.length ? (rows[0] as { token_enc: string | null }).token_enc : null
     const token = enc ? decrypt(enc) : undefined
-    return listMcpConnectionTools(connectionId, endpoint, token)
+    return listMcpConnectionTools(endpoint, token)
   } catch { return [] }
+}
+
+export async function testMcpEndpoint(endpoint: string, token?: string): Promise<{ ok: boolean; tools?: string[]; error?: string }> {
+  try {
+    const tools = await listMcpConnectionTools(endpoint, token)
+    return { ok: true, tools: tools.map(t => t.name) }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
 }
 
 // Truncate individual cell values that are excessively long (e.g. CLOB columns,
