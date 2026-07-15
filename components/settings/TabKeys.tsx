@@ -40,11 +40,10 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   CISO_SUPERUSER_PASSWORD: { label: 'CISO admin password',      hint: 'Stored encrypted · required for user provisioning',                                 placeholder: 'Stored encrypted', secret: true },
 }
 
-const SECTION_LINKS: Record<string, { envKey: string; defaultUrl: string }> = {
-  'Superset Analytics': { envKey: 'SUPERSET_URL',  defaultUrl: 'http://localhost:8088' },
-  'Airbyte Connectors': { envKey: 'AIRBYTE_URL',   defaultUrl: 'http://localhost:8080' },
-  'n8n Automation':     { envKey: 'N8N_URL',        defaultUrl: 'http://localhost:5678' },
-}
+// Tool launch links live in the "Connected tools" tab (TabInterfaces), which
+// routes through the no-login handshake and is gated by surface access. This
+// tab is for configuration only — no direct launch links (they bypassed the
+// handshake and behaved inconsistently depending on existing tool cookies).
 
 export default function TabKeys({ user }: { user: SessionUser }) {
   const [keys,    setKeys]    = useState<Record<string, { configured: boolean; preview: string }>>({})
@@ -119,16 +118,6 @@ export default function TabKeys({ user }: { user: SessionUser }) {
             <div key={section.title} style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                 {section.title}
-                {SECTION_LINKS[section.title] && (() => {
-                  const link = SECTION_LINKS[section.title]
-                  const urlKey = keys[link.envKey]
-                  const href = urlKey?.configured ? undefined : link.defaultUrl
-                  return (
-                    <a href={href ?? link.defaultUrl} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 10, color: 'var(--text4)', textDecoration: 'none', fontWeight: 500, opacity: .8, textTransform: 'none', letterSpacing: 0 }}
-                      title={`Open ${section.title}`}>↗</a>
-                  )
-                })()}
               </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
                 {section.keys.map((key, i) => {
