@@ -58,6 +58,7 @@ function TabIcon({ id }: { id: string }) {
   const p = { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' as const }
   switch (id) {
     case 'setup':        return <svg {...p}><path d="M2 4h10M2 7h6M2 10h8"/><circle cx="11" cy="10" r="2" fill="none"/><path d="M12.5 11.5l1.5 1.5"/></svg>
+    case 'account':      return <svg {...p}><rect x="2.5" y="6" width="9" height="6.5" rx="1.5"/><path d="M4.5 6V4.2a2.5 2.5 0 015 0V6"/><circle cx="7" cy="9" r="1"/><path d="M7 9.8v1.4"/></svg>
     case 'developer-api':return <svg {...p}><path d="M4 5l-3 2 3 2M10 5l3 2-3 2M7 3l-1 8"/></svg>
     case 'audit':        return <svg {...p}><path d="M2 4h10M2 7h7M2 10h5"/><path d="M11 8l1.5 1.5L15 7"/></svg>
     case 'transparency': return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/><path d="M4.5 10.5l-2 2"/></svg>
