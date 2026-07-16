@@ -6,7 +6,7 @@ export const runtime = 'nodejs'
 async function getSmtpConfig() {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT * FROM smtp_config WHERE id='default' AND enabled=1`
+    const rows = await sql`SELECT * FROM smtp_config WHERE id='default' AND enabled = true`
     return rows[0] || null
   } catch { return null }
 }

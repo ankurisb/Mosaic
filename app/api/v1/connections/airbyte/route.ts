@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const sql = getDb()
 
   // Get the active Airbyte instance
-  const instances = await sql`SELECT * FROM airbyte_instances WHERE active = 1 LIMIT 1`
+  const instances = await sql`SELECT * FROM airbyte_instances WHERE active = true LIMIT 1`
   const inst = instances[0] as Record<string, unknown> | undefined
 
   if (!inst) {

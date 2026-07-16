@@ -24,7 +24,7 @@ export async function GET() {
     sql`SELECT COUNT(*) as cnt FROM db_connections`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM api_connections`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM users WHERE role = 'user'`.catch(() => [{ cnt: 0 }]),
-    sql`SELECT COUNT(*) as cnt FROM integration_channels WHERE active = 1`.catch(() => [{ cnt: 0 }]),
+    sql`SELECT COUNT(*) as cnt FROM integration_channels WHERE active = true`.catch(() => [{ cnt: 0 }]),
   ])
 
   const dbCount    = Number((dbConns[0]  as { cnt: number })?.cnt || 0)

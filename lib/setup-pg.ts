@@ -525,7 +525,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_dashboards_owner ON dashboards(owner_id, updated_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_panels_dashboard ON dashboard_panels(dashboard_id, sort_order)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_rule_groups_active ON rule_groups(active, updated_at DESC)`.catch(() => {})
-  await sql`CREATE INDEX IF NOT EXISTS idx_rules_next_run  ON integration_rules(next_run_at) WHERE active = 1`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_rules_next_run  ON integration_rules(next_run_at) WHERE active = true`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_runs_rule       ON integration_runs(rule_id, triggered_at DESC)`.catch(() => {})
 
   // Seed RCA workflow defaults

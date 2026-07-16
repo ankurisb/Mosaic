@@ -78,7 +78,7 @@ export async function GET(
   // ── Risk Assessment ────────────────────────────────────────────────────
   } else if (doc === 'risk-assessment') {
     const [uR, cR, aR, fR] = await Promise.all([
-      sql`SELECT COUNT(*) as cnt FROM users WHERE banned = 0`.catch(() => [{ cnt: '0' }]),
+      sql`SELECT COUNT(*) as cnt FROM users WHERE banned = false`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM db_connections`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM api_services`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action = 'LOGIN_FAILED' AND timestamp > ${intervalAgo(30, 'days')}`.catch(() => [{ cnt: '0' }]),
@@ -153,7 +153,7 @@ export async function GET(
   // ── Training Records ───────────────────────────────────────────────────
   } else if (doc === 'training-records') {
     const userRows = await sql`
-      SELECT email, name, role, created_at FROM users WHERE banned = 0 ORDER BY created_at ASC
+      SELECT email, name, role, created_at FROM users WHERE banned = false ORDER BY created_at ASC
     `.catch(() => [])
 
     const userTableRows = (userRows as Array<Record<string,string>>).map(u => [
@@ -260,7 +260,7 @@ Supporting policies and procedures:<br>
   } else if (doc === 'statement-of-applicability') {
     // Pull live controls status from what Mosaic has implemented
     const [uR, cR] = await Promise.all([
-      sql`SELECT COUNT(*) as cnt FROM users WHERE banned = 0`.catch(() => [{ cnt: '0' }]),
+      sql`SELECT COUNT(*) as cnt FROM users WHERE banned = false`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM db_connections`.catch(() => [{ cnt: '0' }]),
     ])
     const userCount = (uR[0] as { cnt: string })?.cnt || '0'

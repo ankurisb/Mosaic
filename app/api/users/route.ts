@@ -13,7 +13,7 @@ export async function GET() {
   const sql = getDb()
   const rows = await sql`SELECT id,email,name,role,banned,created_at,invite_sent_at,last_login_at,sso_provider FROM users ORDER BY created_at ASC`
   // Attach granted surfaces per user. Admins implicitly hold all surfaces.
-  const perms = await sql`SELECT user_id, surface FROM user_surface_permissions WHERE allowed=1` as { user_id: string; surface: string }[]
+  const perms = await sql`SELECT user_id, surface FROM user_surface_permissions WHERE allowed = true` as { user_id: string; surface: string }[]
   const bySurface = new Map<string, string[]>()
   for (const p of perms) {
     if (!isSurface(p.surface)) continue

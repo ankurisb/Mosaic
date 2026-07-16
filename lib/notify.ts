@@ -188,7 +188,7 @@ export async function sendReportEmail(opts: {
   const sql   = (await import('./db')).getDb()
 
   // Load SMTP config from DB
-  const [cfg] = await sql`SELECT * FROM smtp_config WHERE id = 'default' AND enabled = 1`
+  const [cfg] = await sql`SELECT * FROM smtp_config WHERE id = 'default' AND enabled = true`
   if (!cfg) {
     // Fall back to env vars
     const host = process.env.SMTP_HOST

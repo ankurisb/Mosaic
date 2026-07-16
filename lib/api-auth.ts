@@ -168,7 +168,7 @@ export async function getPrismToken(
   if (!cached) {
     try {
       const sql = getDb()
-      const rows = await sql`SELECT token_enc, refresh_token_enc, token_expiry FROM prism_instances WHERE id=${instanceId} AND active=1`
+      const rows = await sql`SELECT token_enc, refresh_token_enc, token_expiry FROM prism_instances WHERE id=${instanceId} AND active = true`
       if (rows.length && rows[0].token_enc && rows[0].token_expiry) {
         const storedExpiry = Number(rows[0].token_expiry)
         const storedToken = decrypt(rows[0].token_enc as string)

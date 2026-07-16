@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   // If testing an existing instance, load stored credentials
   if (instance_id && (!testBase || !testUser || !testPass)) {
     const sql = getDb()
-    const rows = await sql`SELECT * FROM prism_instances WHERE id = ${instance_id} AND active = 1`
+    const rows = await sql`SELECT * FROM prism_instances WHERE id = ${instance_id} AND active = true`
     if (!rows.length) return Response.json({ ok: false, message: 'Instance not found' })
     const inst = rows[0] as Record<string, unknown>
     testBase = testBase || (inst.base_url as string).replace(/\/$/, '')

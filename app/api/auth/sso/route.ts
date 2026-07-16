@@ -44,7 +44,7 @@ export async function GET(req: Request) {
     if (!provider) return Response.json({ error: 'provider required' }, { status: 400 })
 
     const sql = getDb()
-    const rows = await sql`SELECT * FROM sso_config WHERE id=${provider} AND enabled=1`
+    const rows = await sql`SELECT * FROM sso_config WHERE id=${provider} AND enabled = true`
     if (!rows.length) return Response.json({ error: 'SSO not configured or disabled' }, { status: 400 })
     const cfg = rows[0] as Record<string, unknown>
 

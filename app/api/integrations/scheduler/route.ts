@@ -594,7 +594,7 @@ export async function POST(req: Request) {
 
   const reportTemplates = await sql`
     SELECT * FROM report_templates
-    WHERE active = 1
+    WHERE active = true
     AND   schedule IS NOT NULL
     AND   schedule != ''`
 

@@ -90,8 +90,8 @@ export async function POST(req: Request) {
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
     sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
-    sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = 1 ORDER BY created_at ASC`.catch(() => []),
-    sql`SELECT id, label, endpoint_url, description FROM mcp_connections WHERE enabled = 1 ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = true ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT id, label, endpoint_url, description FROM mcp_connections WHERE enabled = true ORDER BY created_at ASC`.catch(() => []),
   ])
   const dialectHint = (dialect: unknown) => {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'

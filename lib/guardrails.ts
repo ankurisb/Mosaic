@@ -95,7 +95,7 @@ export function invalidateGuardrailCache() { _settingsCache = null }
 export async function getAiRulesInjection(): Promise<string> {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT rules_text FROM guardrail_ai_rules WHERE enabled = 1 ORDER BY created_at ASC`
+    const rows = await sql`SELECT rules_text FROM guardrail_ai_rules WHERE enabled = true ORDER BY created_at ASC`
     const rules = rows.map((r: Record<string, unknown>) => String(r.rules_text || '').trim()).filter(Boolean)
     if (!rules.length) return ''
     return '\n\n## Operational Rules (follow strictly)\n' + rules.map(r => `- ${r}`).join('\n')
@@ -116,7 +116,7 @@ export async function applyDataAccessRules(
     const sql = getDb()
     const rows = await sql`
       SELECT * FROM guardrail_data_access
-      WHERE enabled = 1
+      WHERE enabled = true
       AND role = ${role}
       AND (source_id IS NULL OR source_id = ${sourceId})
       AND source_type = ${sourceType}
@@ -217,7 +217,7 @@ export async function checkActionAllowed(
     const sql = getDb()
     const rows = await sql`
       SELECT * FROM guardrail_actions
-      WHERE enabled = 1
+      WHERE enabled = true
       AND role = ${role}
       AND (source_id IS NULL OR source_id = ${sourceId ?? ''})
     `
@@ -274,7 +274,7 @@ export async function checkUsageLimits(ctx: GuardrailContext): Promise<UsageLimi
     // Get limits for this user or role
     const limitRows = await sql`
       SELECT * FROM guardrail_usage_limits
-      WHERE enabled = 1
+      WHERE enabled = true
       AND (user_id = ${ctx.userId} OR role = ${ctx.userRole})
       ORDER BY user_id DESC NULLS LAST
       LIMIT 1
@@ -330,7 +330,7 @@ export async function checkUsageLimits(ctx: GuardrailContext): Promise<UsageLimi
 export async function checkContentAllowed(userMessage: string): Promise<GuardrailResult> {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT * FROM guardrail_content WHERE enabled = 1`
+    const rows = await sql`SELECT * FROM guardrail_content WHERE enabled = true`
     if (!rows.length) return { allowed: true }
 
     const lower = userMessage.toLowerCase()
@@ -478,7 +478,7 @@ export async function stripBlockedColumnsFromResult(
     const sql = getDb()
     const rows = await sql`
       SELECT blocked_columns FROM guardrail_data_access
-      WHERE enabled = 1 AND role = ${role}
+      WHERE enabled = true AND role = ${role}
       AND (source_id IS NULL OR source_id = ${sourceId})
       AND source_type = ${sourceType}
     `

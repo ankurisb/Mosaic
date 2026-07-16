@@ -14,7 +14,7 @@ export async function GET() {
   const instances = await sql`
     SELECT id, label, base_url, ui_url, environment, username, active, created_at
     FROM prism_instances
-    WHERE active = 1
+    WHERE active = true
     ORDER BY created_at ASC`
   return Response.json({ instances })
 }
@@ -70,7 +70,7 @@ export async function DELETE(req: Request) {
   const { id } = await req.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
   const sql = getDb()
-  await sql`UPDATE prism_instances SET active=0 WHERE id=${id}`
+  await sql`UPDATE prism_instances SET active = false WHERE id=${id}`
   invalidatePrismToken(id)
   return Response.json({ ok: true })
 }

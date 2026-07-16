@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   // Load workflow template if specified
   let workflowPrompt = ''
   if (workflow_id) {
-    const wf = await sql`SELECT * FROM rca_workflows WHERE id = ${workflow_id} AND active = 1 LIMIT 1`
+    const wf = await sql`SELECT * FROM rca_workflows WHERE id = ${workflow_id} AND active = true LIMIT 1`
     if (wf.length) {
       const w = wf[0] as Record<string, unknown>
       const steps = (w.data_steps as Array<{ n: number; source_label: string; query_hint: string; required: boolean }>) || []

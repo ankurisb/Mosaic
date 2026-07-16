@@ -237,7 +237,7 @@ export async function GET() {
   // Check Keycloak (SSO) — only shown when SSO_ENABLED=true or a keycloak config exists in sso_config
   const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080'
   const ssoEnabled = process.env.SSO_ENABLED === 'true'
-  const keycloakRows = await sql`SELECT server_url FROM sso_config WHERE provider='keycloak' AND enabled=1 LIMIT 1`.catch(() => [])
+  const keycloakRows = await sql`SELECT server_url FROM sso_config WHERE provider='keycloak' AND enabled = true LIMIT 1`.catch(() => [])
   const configuredUrl = (keycloakRows[0] as { server_url?: string } | undefined)?.server_url
   const effectiveKcUrl = configuredUrl || (ssoEnabled ? keycloakUrl : null)
 

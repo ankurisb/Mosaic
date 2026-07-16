@@ -67,7 +67,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
   try {
     const sql = getDb()
-    const cfgRows = await sql`SELECT * FROM sso_config WHERE id=${provider} AND enabled=1`
+    const cfgRows = await sql`SELECT * FROM sso_config WHERE id=${provider} AND enabled = true`
     if (!cfgRows.length) return Response.redirect(`${APP_URL}/login?error=sso_not_configured`)
     const cfg = cfgRows[0] as Record<string, unknown>
     // Decrypt client_secret — stored in client_secret_enc (migrated) or legacy client_secret

@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
   if (!enable) {
     if (conn.fts_airbyte_conn_id) {
       try {
-        const [inst] = await sql`SELECT * FROM airbyte_instances WHERE active = 1 ORDER BY created_at ASC LIMIT 1`
+        const [inst] = await sql`SELECT * FROM airbyte_instances WHERE active = true ORDER BY created_at ASC LIMIT 1`
         if (inst) {
           await ab(inst, `/connections/${conn.fts_airbyte_conn_id}`, '/connections/delete', 'DELETE', { connectionId: conn.fts_airbyte_conn_id })
         }
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
   // ── ENABLE ─────────────────────────────────────────────────
 
   // 1. Airbyte instance
-  const [inst] = await sql`SELECT * FROM airbyte_instances WHERE active = 1 ORDER BY created_at ASC LIMIT 1`
+  const [inst] = await sql`SELECT * FROM airbyte_instances WHERE active = true ORDER BY created_at ASC LIMIT 1`
   if (!inst) return Response.json({ error: 'No Airbyte instance configured. Add one in Settings → Airbyte.' }, { status: 400 })
 
   // 2. Internal ES connection

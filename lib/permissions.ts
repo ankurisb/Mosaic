@@ -25,7 +25,7 @@ export async function getUserSurfaces(user: SessionLike): Promise<Surface[]> {
   const sql = getDb()
   const rows = (await sql`
     SELECT surface FROM user_surface_permissions
-    WHERE user_id=${user.id} AND allowed=1
+    WHERE user_id=${user.id} AND allowed = true
   `) as { surface: string }[]
   return rows.map(r => r.surface).filter(isSurface)
 }
@@ -40,7 +40,7 @@ export async function canAccessSurface(
   const sql = getDb()
   const rows = await sql`
     SELECT 1 FROM user_surface_permissions
-    WHERE user_id=${user.id} AND surface=${surface} AND allowed=1
+    WHERE user_id=${user.id} AND surface=${surface} AND allowed = true
     LIMIT 1
   `
   return rows.length > 0

@@ -1769,7 +1769,7 @@ async function queryAirbyte(action: string, instanceId?: string, connectionId?: 
   // Get instance
   let instances: Record<string, unknown>[]
   try {
-    instances = await sql`SELECT id, label, url, username, password_enc, workspace_id FROM airbyte_instances WHERE active = 1 ORDER BY created_at ASC`
+    instances = await sql`SELECT id, label, url, username, password_enc, workspace_id FROM airbyte_instances WHERE active = true ORDER BY created_at ASC`
   } catch {
     return { error: 'No Airbyte instances configured. Go to Settings > Airbyte to connect one.' }
   }
@@ -2509,10 +2509,10 @@ async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
   // Resolve instance — use explicit id or fall back to single active instance
   let instance: Record<string, unknown> | null = null
   if (input.instance_id) {
-    const rows = await db`SELECT * FROM prism_instances WHERE id = ${String(input.instance_id)} AND active = 1`
+    const rows = await db`SELECT * FROM prism_instances WHERE id = ${String(input.instance_id)} AND active = true`
     instance = rows[0] ?? null
   } else {
-    const rows = await db`SELECT * FROM prism_instances WHERE active = 1 ORDER BY created_at ASC LIMIT 1`
+    const rows = await db`SELECT * FROM prism_instances WHERE active = true ORDER BY created_at ASC LIMIT 1`
     instance = rows[0] ?? null
   }
   if (!instance) return { error: 'No active Prism instance found. Add one in Settings → Data sources → Prism.' }

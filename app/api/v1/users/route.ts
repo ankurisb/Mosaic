@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const users = await sql`
     SELECT id, email, name, role, created_at, last_login_at
     FROM users
-    WHERE banned = 0
+    WHERE banned = false
     ORDER BY created_at ASC`
 
   await logDevApiUsage(auth.keyId, '/api/v1/users', 'GET', 200, Date.now() - start)

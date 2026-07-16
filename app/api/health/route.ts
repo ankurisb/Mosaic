@@ -98,7 +98,7 @@ export async function GET() {
       (async (): Promise<ServiceStatus> => {
         try {
           const sql = getDb()
-          const rows = await sql`SELECT url FROM airbyte_instances WHERE active = 1 LIMIT 1`.catch(() => [])
+          const rows = await sql`SELECT url FROM airbyte_instances WHERE active = true LIMIT 1`.catch(() => [])
           const url = (rows[0] as { url?: string })?.url
           if (!url) return { status: 'unconfigured', detail: 'Add an Airbyte instance in Settings → Data sources' }
           return probe(url, '/api/v1/health')
