@@ -22,7 +22,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     sso_sub       TEXT,
     invite_sent_at TEXT,
     last_login_at  TEXT,
-    created_at    TEXT DEFAULT now()::text
+    created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   // Per-user access grants for external interfaces (n8n, Superset, Airbyte, CISO).
@@ -31,7 +31,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     surface    TEXT NOT NULL,
     allowed    BOOLEAN NOT NULL DEFAULT false,
-    updated_at TEXT DEFAULT now()::text,
+    updated_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     PRIMARY KEY (user_id, surface)
   )`
 
@@ -42,7 +42,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     client_secret TEXT NOT NULL,
     tenant_id     TEXT,
     enabled       BOOLEAN DEFAULT true,
-    created_at    TEXT DEFAULT now()::text
+    created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS smtp_config (
@@ -54,15 +54,15 @@ export async function setupDatabasePostgres(): Promise<void> {
     from_address TEXT NOT NULL,
     from_name    TEXT NOT NULL DEFAULT 'Mosaic',
     enabled      BOOLEAN DEFAULT true,
-    created_at   TEXT DEFAULT now()::text
+    created_at   TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title      TEXT NOT NULL DEFAULT 'New conversation',
-    created_at TEXT DEFAULT now()::text,
-    updated_at TEXT DEFAULT now()::text
+    created_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS messages (
@@ -72,7 +72,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     content         TEXT NOT NULL DEFAULT '',
     tool_calls      TEXT,
     rca_block       TEXT,
-    created_at      TEXT DEFAULT now()::text
+    created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS db_connections (
@@ -100,7 +100,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     fts_airbyte_conn_id TEXT,
     description         TEXT,
     managed             INTEGER DEFAULT 0,
-    created_at          TEXT DEFAULT now()::text
+    created_at          TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS api_services (
@@ -120,7 +120,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     auth_status         TEXT DEFAULT 'unknown',
     last_auth_error     TEXT,
     last_auth_check     BIGINT,
-    created_at          TEXT DEFAULT now()::text
+    created_at          TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS api_connections (
@@ -135,7 +135,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     pagination_data_path    TEXT,
     auth_override           INTEGER DEFAULT 0,
     auth_config             TEXT,
-    created_at              TEXT DEFAULT now()::text
+    created_at              TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS usage_events (
@@ -148,7 +148,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     output_tokens INTEGER DEFAULT 0,
     cost_usd      NUMERIC(10,6) DEFAULT 0,
     latency_ms    INT,
-    created_at    TEXT DEFAULT now()::text,
+    created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     conversation_id  TEXT,
     tool_calls_count INTEGER DEFAULT 0,
     tool_types       TEXT,
@@ -179,7 +179,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     max_rows              INTEGER NOT NULL DEFAULT 500,
     filename_date_pattern TEXT,
     ts_strategy           TEXT NOT NULL DEFAULT 'auto',
-    created_at            TEXT DEFAULT now()::text
+    created_at            TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS dashboards (
@@ -190,8 +190,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     is_public   BOOLEAN NOT NULL DEFAULT false,
     refresh_sec INTEGER NOT NULL DEFAULT 300,
     superset_embed_uuid TEXT,
-    created_at  TEXT DEFAULT now()::text,
-    updated_at  TEXT DEFAULT now()::text
+    created_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS dashboard_panels (
@@ -210,7 +210,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     w            INTEGER NOT NULL DEFAULT 2,
     h            INTEGER NOT NULL DEFAULT 1,
     sort_order   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT DEFAULT now()::text
+    created_at   TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS notification_groups (
@@ -219,7 +219,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     description TEXT NOT NULL DEFAULT '',
     members     TEXT NOT NULL DEFAULT '[]',
     created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at  TEXT DEFAULT now()::text
+    created_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS rule_groups (
@@ -239,8 +239,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     email_channel_id TEXT,
     sms_channel_id   TEXT,
     created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at       TEXT DEFAULT now()::text,
-    updated_at       TEXT DEFAULT now()::text
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS integration_channels (
@@ -250,7 +250,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     config     TEXT NOT NULL DEFAULT '{}',
     active     BOOLEAN NOT NULL DEFAULT true,
     created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at TEXT DEFAULT now()::text
+    created_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS integration_rules (
@@ -267,13 +267,13 @@ export async function setupDatabasePostgres(): Promise<void> {
     last_run_at      TEXT,
     next_run_at      TEXT,
     created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at       TEXT DEFAULT now()::text
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS integration_runs (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     rule_id         TEXT NOT NULL,
-    triggered_at    TEXT DEFAULT now()::text,
+    triggered_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     status          TEXT NOT NULL,
     value_snapshot  TEXT,
     message_sent    TEXT,
@@ -294,8 +294,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     output_config TEXT NOT NULL DEFAULT '{}',
     sort_order    INTEGER NOT NULL DEFAULT 0,
     created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at    TEXT DEFAULT now()::text,
-    updated_at    TEXT DEFAULT now()::text
+    created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS rca_sessions (
@@ -306,7 +306,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     renderers_used  TEXT NOT NULL DEFAULT '[]',
     rca_block       TEXT NOT NULL DEFAULT '{}',
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at      TEXT DEFAULT now()::text
+    created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE INDEX IF NOT EXISTS idx_rca_sessions_conv ON rca_sessions(conversation_id, created_at DESC)`.catch(() => {})
@@ -324,8 +324,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     token_enc     TEXT,
     description   TEXT,
     enabled       BOOLEAN NOT NULL DEFAULT true,
-    created_at    TEXT DEFAULT (NOW()::text),
-    updated_at    TEXT DEFAULT (NOW()::text)
+    created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   // -- Prism instances (Postgres) --------------------------------
@@ -341,8 +341,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     refresh_token_enc TEXT,
     token_expiry      BIGINT,
     active            BOOLEAN NOT NULL DEFAULT true,
-    created_at        TEXT DEFAULT (NOW()::text),
-    updated_at        TEXT DEFAULT (NOW()::text)
+    created_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   // -- Data retention settings (Postgres) ------------------------
@@ -352,7 +352,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     retention_days   INTEGER NOT NULL DEFAULT 90,
     last_purge_at    TEXT,
     last_purge_count INTEGER NOT NULL DEFAULT 0,
-    updated_at       TEXT DEFAULT (NOW()::text)
+    updated_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
 
@@ -366,8 +366,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     recipients  TEXT NOT NULL DEFAULT '[]',
     active      BOOLEAN DEFAULT true,
     created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at  TEXT DEFAULT now()::text,
-    updated_at  TEXT DEFAULT now()::text
+    created_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS report_instances (
@@ -383,8 +383,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     pdf_size        INTEGER,
     page_count      INTEGER,
     error           TEXT,
-    generated_at    TEXT DEFAULT now()::text,
-    created_at      TEXT DEFAULT now()::text
+    generated_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS report_deliveries (
@@ -394,14 +394,14 @@ export async function setupDatabasePostgres(): Promise<void> {
     status     TEXT NOT NULL DEFAULT 'pending',
     sent_at    TEXT,
     error      TEXT,
-    created_at TEXT DEFAULT now()::text
+    created_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,
     updated_by TEXT,
-    updated_at TEXT DEFAULT now()::text
+    updated_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS airbyte_instances (
@@ -415,13 +415,13 @@ export async function setupDatabasePostgres(): Promise<void> {
     workspace_id      TEXT,
     active            BOOLEAN NOT NULL DEFAULT true,
     last_synced       TEXT,
-    created_at        TEXT DEFAULT now()::text
+    created_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS connection_schemas (
     connection_id TEXT PRIMARY KEY,
     schema_json   TEXT NOT NULL,
-    fetched_at    TEXT DEFAULT now()::text
+    fetched_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
 
@@ -431,8 +431,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     name        TEXT NOT NULL DEFAULT 'Default Policy',
     enabled     BOOLEAN NOT NULL DEFAULT true,
     rules_text  TEXT NOT NULL DEFAULT '',
-    created_at  TEXT DEFAULT now()::text,
-    updated_at  TEXT DEFAULT now()::text
+    created_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS guardrail_data_access (
@@ -444,7 +444,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     blocked_columns  TEXT DEFAULT '[]',
     row_filter       TEXT DEFAULT '',
     enabled          BOOLEAN NOT NULL DEFAULT true,
-    created_at       TEXT DEFAULT now()::text
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS guardrail_actions (
@@ -455,7 +455,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     blocked_tools    TEXT DEFAULT '[]',
     allowed_methods  TEXT DEFAULT '["GET","POST","PUT","PATCH","DELETE"]',
     enabled          BOOLEAN NOT NULL DEFAULT true,
-    created_at       TEXT DEFAULT now()::text
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS guardrail_usage_limits (
@@ -467,7 +467,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     daily_request_limit   INTEGER,
     soft_warn_pct         INTEGER NOT NULL DEFAULT 90,
     enabled               BOOLEAN NOT NULL DEFAULT true,
-    created_at            TEXT DEFAULT now()::text
+    created_at            TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS guardrail_content (
@@ -477,7 +477,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     mode             TEXT NOT NULL DEFAULT 'blocklist',
     patterns         TEXT DEFAULT '[]',
     block_message    TEXT NOT NULL DEFAULT 'This topic is outside the scope of Mosaic.',
-    created_at       TEXT DEFAULT now()::text
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS egress_events (
@@ -485,7 +485,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     conversation_id      TEXT,
     user_id              TEXT,
     user_email           TEXT,
-    timestamp            TEXT DEFAULT now()::text,
+    timestamp            TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     sources_accessed     TEXT DEFAULT '[]',
     web_search_used      BOOLEAN NOT NULL DEFAULT false,
     prompt_tokens        INTEGER DEFAULT 0,
@@ -503,7 +503,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     tool_input      TEXT NOT NULL,
     description     TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'pending',
-    created_at      TEXT DEFAULT now()::text,
+    created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     resolved_at     TEXT
   )`.catch(() => {})
 
@@ -523,7 +523,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   // -- Audit log (append-only, hash-chained) ---------------------
   await sql`CREATE TABLE IF NOT EXISTS audit_events (
     id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    timestamp    TEXT NOT NULL DEFAULT (NOW()::text),
+    timestamp    TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     actor_id     TEXT,
     actor_email  TEXT,
     actor_ip     TEXT,
@@ -547,7 +547,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
     updated_by TEXT,
-    updated_at TEXT DEFAULT (NOW()::text)
+    updated_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   // -- Transparency log ------------------------------------------
@@ -570,7 +570,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     latency_ms       INTEGER NOT NULL DEFAULT 0,
     model            TEXT NOT NULL DEFAULT '',
     is_rca           BOOLEAN NOT NULL DEFAULT false,
-    created_at       TEXT DEFAULT (NOW()::text)
+    created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_transparency_conv    ON transparency_log(conversation_id, created_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_transparency_user    ON transparency_log(user_id, created_at DESC)`.catch(() => {})
@@ -588,7 +588,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     last_used_at TEXT,
     expires_at   TEXT,
     active       BOOLEAN NOT NULL DEFAULT true,
-    created_at   TEXT DEFAULT (NOW()::text)
+    created_at   TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_dev_api_keys_active ON developer_api_keys(active, created_at DESC)`.catch(() => {})
 
@@ -599,7 +599,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     method       TEXT NOT NULL,
     status_code  INTEGER,
     latency_ms   INTEGER,
-    created_at   TEXT DEFAULT (NOW()::text)
+    created_at   TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_dev_api_usage_key  ON developer_api_usage(key_id, created_at DESC)`.catch(() => {})
 
@@ -617,7 +617,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     duration_ms   INTEGER,
     status        TEXT NOT NULL DEFAULT 'success',
     error         TEXT,
-    executed_at   TEXT NOT NULL DEFAULT (NOW()::text)
+    executed_at   TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_query_history_user     ON query_history(user_id)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_query_history_executed ON query_history(executed_at DESC)`.catch(() => {})
@@ -627,7 +627,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS schema_migrations (
     version    TEXT PRIMARY KEY,
     filename   TEXT NOT NULL,
-    applied_at TEXT DEFAULT (NOW()::text)
+    applied_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
   // Indexes
