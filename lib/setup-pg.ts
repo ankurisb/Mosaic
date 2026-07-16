@@ -324,8 +324,33 @@ export async function setupDatabasePostgres(): Promise<void> {
     updated_at    TEXT DEFAULT (NOW()::text)
   )`.catch(() => {})
 
-  // last_scheduled_run column (safe to run on existing tables)
-  await sql`ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS last_scheduled_run TEXT`.catch(() => {})
+  // -- Prism instances (Postgres) --------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS prism_instances (
+    id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    label             TEXT NOT NULL,
+    base_url          TEXT NOT NULL,
+    ui_url            TEXT,
+    environment       TEXT NOT NULL DEFAULT 'production',
+    username          TEXT NOT NULL,
+    password_enc      TEXT NOT NULL,
+    token_enc         TEXT,
+    refresh_token_enc TEXT,
+    token_expiry      BIGINT,
+    active            BOOLEAN NOT NULL DEFAULT true,
+    created_at        TEXT DEFAULT (NOW()::text),
+    updated_at        TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+
+  // -- Data retention settings (Postgres) ------------------------
+  await sql`CREATE TABLE IF NOT EXISTS data_retention_settings (
+    dataset          TEXT PRIMARY KEY,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    retention_days   INTEGER NOT NULL DEFAULT 90,
+    last_purge_at    TEXT,
+    last_purge_count INTEGER NOT NULL DEFAULT 0,
+    updated_at       TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+
 
   await sql`CREATE TABLE IF NOT EXISTS report_templates (
     id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
