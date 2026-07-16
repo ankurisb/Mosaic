@@ -119,7 +119,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     retry_count         INTEGER DEFAULT 3,
     auth_status         TEXT DEFAULT 'unknown',
     last_auth_error     TEXT,
-    last_auth_check     INTEGER,
+    last_auth_check     BIGINT,
     created_at          TEXT DEFAULT now()::text
   )`
 
@@ -515,6 +515,116 @@ export async function setupDatabasePostgres(): Promise<void> {
     ('injection_defense', 'true'),
     ('global_read_only', 'false')
   ON CONFLICT(key) DO NOTHING`.catch(() => {})
+
+  // -- Audit log (append-only, hash-chained) ---------------------
+  await sql`CREATE TABLE IF NOT EXISTS audit_events (
+    id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    timestamp    TEXT NOT NULL DEFAULT (NOW()::text),
+    actor_id     TEXT,
+    actor_email  TEXT,
+    actor_ip     TEXT,
+    actor_role   TEXT,
+    session_id   TEXT,
+    action       TEXT NOT NULL,
+    resource     TEXT NOT NULL,
+    resource_id  TEXT,
+    outcome      TEXT NOT NULL DEFAULT 'success',
+    detail       TEXT,
+    prev_hash    TEXT NOT NULL DEFAULT '0',
+    checksum     TEXT NOT NULL
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_actor     ON audit_events(actor_id, timestamp DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_action    ON audit_events(action, timestamp DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_resource  ON audit_events(resource_id, timestamp DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(timestamp DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_outcome   ON audit_events(outcome, timestamp DESC)`.catch(() => {})
+
+  await sql`CREATE TABLE IF NOT EXISTS audit_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+
+  // -- Transparency log ------------------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS transparency_log (
+    id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    message_id       TEXT,
+    conversation_id  TEXT,
+    user_id          TEXT,
+    user_email       TEXT,
+    question         TEXT NOT NULL DEFAULT '',
+    answer_summary   TEXT NOT NULL DEFAULT '',
+    tool_calls_count INTEGER NOT NULL DEFAULT 0,
+    tools_used       TEXT DEFAULT '[]',
+    sources_queried  TEXT DEFAULT '[]',
+    rows_read        INTEGER DEFAULT 0,
+    web_search_used  BOOLEAN NOT NULL DEFAULT false,
+    input_tokens     INTEGER NOT NULL DEFAULT 0,
+    output_tokens    INTEGER NOT NULL DEFAULT 0,
+    cost_usd         DOUBLE PRECISION NOT NULL DEFAULT 0,
+    latency_ms       INTEGER NOT NULL DEFAULT 0,
+    model            TEXT NOT NULL DEFAULT '',
+    is_rca           BOOLEAN NOT NULL DEFAULT false,
+    created_at       TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_transparency_conv    ON transparency_log(conversation_id, created_at DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_transparency_user    ON transparency_log(user_id, created_at DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_transparency_created ON transparency_log(created_at DESC)`.catch(() => {})
+
+  // -- Developer API keys + usage --------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS developer_api_keys (
+    id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name         TEXT NOT NULL,
+    key_hash     TEXT NOT NULL UNIQUE,
+    key_preview  TEXT NOT NULL,
+    scopes       TEXT NOT NULL DEFAULT '["read"]',
+    rate_limit   INTEGER NOT NULL DEFAULT 100,
+    created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    last_used_at TEXT,
+    expires_at   TEXT,
+    active       BOOLEAN NOT NULL DEFAULT true,
+    created_at   TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_dev_api_keys_active ON developer_api_keys(active, created_at DESC)`.catch(() => {})
+
+  await sql`CREATE TABLE IF NOT EXISTS developer_api_usage (
+    id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    key_id       TEXT NOT NULL REFERENCES developer_api_keys(id) ON DELETE CASCADE,
+    endpoint     TEXT NOT NULL,
+    method       TEXT NOT NULL,
+    status_code  INTEGER,
+    latency_ms   INTEGER,
+    created_at   TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_dev_api_usage_key  ON developer_api_usage(key_id, created_at DESC)`.catch(() => {})
+
+  // -- Query history ---------------------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS query_history (
+    id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id       TEXT REFERENCES users(id),
+    user_email    TEXT,
+    connection_id TEXT NOT NULL,
+    connection_label TEXT NOT NULL,
+    connection_type  TEXT NOT NULL,
+    dialect       TEXT,
+    query         TEXT,
+    row_count     INTEGER,
+    duration_ms   INTEGER,
+    status        TEXT NOT NULL DEFAULT 'success',
+    error         TEXT,
+    executed_at   TEXT NOT NULL DEFAULT (NOW()::text)
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_query_history_user     ON query_history(user_id)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_query_history_executed ON query_history(executed_at DESC)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_query_history_conn     ON query_history(connection_id)`.catch(() => {})
+
+  // -- Schema migrations tracker ---------------------------------
+  await sql`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    TEXT PRIMARY KEY,
+    filename   TEXT NOT NULL,
+    applied_at TEXT DEFAULT (NOW()::text)
+  )`.catch(() => {})
 
   // Indexes
   await sql`CREATE INDEX IF NOT EXISTS idx_messages_conv   ON messages(conversation_id, created_at)`.catch(() => {})
