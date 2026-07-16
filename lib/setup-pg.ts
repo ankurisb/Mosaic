@@ -17,7 +17,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     name          TEXT NOT NULL DEFAULT '',
     password_hash TEXT,
     role          TEXT NOT NULL DEFAULT 'user',
-    banned        INTEGER DEFAULT 0,
+    banned        BOOLEAN DEFAULT false,
     sso_provider  TEXT,
     sso_sub       TEXT,
     invite_sent_at TEXT,
@@ -30,7 +30,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS user_surface_permissions (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     surface    TEXT NOT NULL,
-    allowed    INTEGER NOT NULL DEFAULT 0,
+    allowed    BOOLEAN NOT NULL DEFAULT false,
     updated_at TEXT DEFAULT now()::text,
     PRIMARY KEY (user_id, surface)
   )`
@@ -41,7 +41,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     client_id     TEXT NOT NULL,
     client_secret TEXT NOT NULL,
     tenant_id     TEXT,
-    enabled       INTEGER DEFAULT 1,
+    enabled       BOOLEAN DEFAULT true,
     created_at    TEXT DEFAULT now()::text
   )`
 
@@ -53,7 +53,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     password_enc TEXT,
     from_address TEXT NOT NULL,
     from_name    TEXT NOT NULL DEFAULT 'Mosaic',
-    enabled      INTEGER DEFAULT 1,
+    enabled      BOOLEAN DEFAULT true,
     created_at   TEXT DEFAULT now()::text
   )`
 
@@ -93,7 +93,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     pool_max            INTEGER DEFAULT 5,
     connect_timeout_ms  INTEGER DEFAULT 5000,
     query_timeout_ms    INTEGER DEFAULT 30000,
-    read_only           INTEGER DEFAULT 0,
+    read_only           BOOLEAN DEFAULT false,
     mcp_endpoint        TEXT,
     mcp_token           TEXT,
     full_text_search    INTEGER DEFAULT 0,
@@ -222,7 +222,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name             TEXT NOT NULL,
     description      TEXT NOT NULL DEFAULT '',
-    active           INTEGER NOT NULL DEFAULT 1,
+    active           BOOLEAN NOT NULL DEFAULT true,
     logic            TEXT NOT NULL DEFAULT 'OR',
     trigger          TEXT NOT NULL DEFAULT '{}',
     conditions       TEXT NOT NULL DEFAULT '[]',
@@ -244,7 +244,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     name       TEXT NOT NULL,
     type       TEXT NOT NULL,
     config     TEXT NOT NULL DEFAULT '{}',
-    active     INTEGER NOT NULL DEFAULT 1,
+    active     BOOLEAN NOT NULL DEFAULT true,
     created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT DEFAULT now()::text
   )`
@@ -252,7 +252,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS integration_rules (
     id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name             TEXT NOT NULL,
-    active           INTEGER NOT NULL DEFAULT 1,
+    active           BOOLEAN NOT NULL DEFAULT true,
     trigger_type     TEXT NOT NULL,
     source_type      TEXT NOT NULL,
     source_id        TEXT,
@@ -282,7 +282,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     name          TEXT NOT NULL,
     description   TEXT NOT NULL DEFAULT '',
     problem_type  TEXT NOT NULL DEFAULT 'quality_defect',
-    active        INTEGER NOT NULL DEFAULT 1,
+    active        BOOLEAN NOT NULL DEFAULT true,
     color         TEXT NOT NULL DEFAULT '#2563eb',
     keywords      TEXT NOT NULL DEFAULT '[]',
     data_steps    TEXT NOT NULL DEFAULT '[]',
@@ -360,7 +360,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     sections    TEXT NOT NULL DEFAULT '[]',
     schedule    TEXT,
     recipients  TEXT NOT NULL DEFAULT '[]',
-    active      INTEGER DEFAULT 1,
+    active      BOOLEAN DEFAULT true,
     created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at  TEXT DEFAULT now()::text,
     updated_at  TEXT DEFAULT now()::text
@@ -409,7 +409,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     client_id         TEXT,
     client_secret_enc TEXT,
     workspace_id      TEXT,
-    active            INTEGER NOT NULL DEFAULT 1,
+    active            BOOLEAN NOT NULL DEFAULT true,
     last_synced       TEXT,
     created_at        TEXT DEFAULT now()::text
   )`
@@ -425,7 +425,7 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE TABLE IF NOT EXISTS guardrail_ai_rules (
     id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name        TEXT NOT NULL DEFAULT 'Default Policy',
-    enabled     INTEGER NOT NULL DEFAULT 1,
+    enabled     BOOLEAN NOT NULL DEFAULT true,
     rules_text  TEXT NOT NULL DEFAULT '',
     created_at  TEXT DEFAULT now()::text,
     updated_at  TEXT DEFAULT now()::text
@@ -439,7 +439,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     allowed_tables   TEXT DEFAULT '[]',
     blocked_columns  TEXT DEFAULT '[]',
     row_filter       TEXT DEFAULT '',
-    enabled          INTEGER NOT NULL DEFAULT 1,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
     created_at       TEXT DEFAULT now()::text
   )`.catch(() => {})
 
@@ -447,10 +447,10 @@ export async function setupDatabasePostgres(): Promise<void> {
     id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     role             TEXT NOT NULL DEFAULT 'user',
     source_id        TEXT,
-    read_only        INTEGER NOT NULL DEFAULT 0,
+    read_only        BOOLEAN NOT NULL DEFAULT false,
     blocked_tools    TEXT DEFAULT '[]',
     allowed_methods  TEXT DEFAULT '["GET","POST","PUT","PATCH","DELETE"]',
-    enabled          INTEGER NOT NULL DEFAULT 1,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
     created_at       TEXT DEFAULT now()::text
   )`.catch(() => {})
 
@@ -462,14 +462,14 @@ export async function setupDatabasePostgres(): Promise<void> {
     monthly_token_limit   INTEGER,
     daily_request_limit   INTEGER,
     soft_warn_pct         INTEGER NOT NULL DEFAULT 90,
-    enabled               INTEGER NOT NULL DEFAULT 1,
+    enabled               BOOLEAN NOT NULL DEFAULT true,
     created_at            TEXT DEFAULT now()::text
   )`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS guardrail_content (
     id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name             TEXT NOT NULL DEFAULT 'Content Policy',
-    enabled          INTEGER NOT NULL DEFAULT 1,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
     mode             TEXT NOT NULL DEFAULT 'blocklist',
     patterns         TEXT DEFAULT '[]',
     block_message    TEXT NOT NULL DEFAULT 'This topic is outside the scope of Mosaic.',
@@ -483,7 +483,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     user_email           TEXT,
     timestamp            TEXT DEFAULT now()::text,
     sources_accessed     TEXT DEFAULT '[]',
-    web_search_used      INTEGER NOT NULL DEFAULT 0,
+    web_search_used      BOOLEAN NOT NULL DEFAULT false,
     prompt_tokens        INTEGER DEFAULT 0,
     completion_tokens    INTEGER DEFAULT 0,
     model                TEXT,
