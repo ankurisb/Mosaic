@@ -183,6 +183,12 @@ export function getDb(): SqlQuery {
     const { Pool } = require('pg')
     const pool = new Pool({ connectionString: url, max: 10 })
 
+    // Expose a direct pool-query fn for the queryRaw() dynamic escape hatch.
+    _pgQuery = async (text: string, params: unknown[]) => {
+      const r = await pool.query(text, params)
+      return (r.rows ?? []) as Record<string, unknown>[]
+    }
+
     _client = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<SqlRow[]> => {
       // Convert to $1 placeholders. RawSql fragments are inlined and do NOT
       // consume a placeholder slot, so we track the param index separately.
@@ -216,4 +222,47 @@ export function getDb(): SqlQuery {
 // -- Reset client (useful for tests / hot-reload) --------------
 export function resetDbClient() {
   _client = null
+}
+
+// -- Dynamic query escape hatch -------------------------------
+// For queries that can't be expressed as a fixed tagged template — e.g. a
+// WHERE clause built from a variable number of optional filters. Takes a SQL
+// string using `?` positional placeholders and a params array, and runs it on
+// whichever driver is active (converting `?` -> `$N` for Postgres/Neon).
+// This replaces the old getRawDb().prepare() pattern, which only worked on
+// SQLite. The SQL string itself must be code-controlled; only the params array
+// may carry user input (it is always parameterised, never interpolated).
+export async function queryRaw(sqlText: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
+  const client = getDb()
+  if (_driver === 'sqlite') {
+    const db = _rawDb!
+    // Booleans -> 1/0 to match the tagged-template client's behaviour.
+    const p = params.map(v => (typeof v === 'boolean' ? (v ? 1 : 0) : v))
+    const stmt = db.prepare(sqlText)
+    if (/^\s*(select|pragma|with)/i.test(sqlText) || /\breturning\b/i.test(sqlText)) {
+      return stmt.all(...p) as Record<string, unknown>[]
+    }
+    stmt.run(...p)
+    return []
+  }
+  // Postgres / Neon: convert ? -> $1, $2, ... (ignoring ? inside string literals
+  // is out of scope — our dynamic SQL never contains literal ? in strings).
+  let n = 0
+  const converted = sqlText.replace(/\?/g, () => `$${++n}`)
+  if (_driver === 'postgres') {
+    // reuse the pool via the tagged client is awkward; call getDb-created client
+    // through a direct pool query by re-parsing. Simplest: use the tagged client
+    // by constructing a template. Instead we keep a dedicated path:
+    return await pgQuery(converted, params)
+  }
+  // Neon
+  const neonClient = client as unknown as (q: string, p: unknown[]) => Promise<Record<string, unknown>[]>
+  return await neonClient(converted, params)
+}
+
+// Holds the pg pool query fn when on Postgres, set during getDb() init.
+let _pgQuery: ((text: string, params: unknown[]) => Promise<Record<string, unknown>[]>) | null = null
+async function pgQuery(text: string, params: unknown[]): Promise<Record<string, unknown>[]> {
+  if (!_pgQuery) throw new Error('Postgres pool not initialised')
+  return _pgQuery(text, params)
 }

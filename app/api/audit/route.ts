@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb, getRawDb } from '@/lib/db'
+import { getDb, queryRaw } from '@/lib/db'
 import { audit, AUDIT, verifyAuditChain, getAuditSettings } from '@/lib/audit'
 export const runtime = 'nodejs'
 
@@ -30,7 +30,6 @@ export async function GET(req: Request) {
   }
 
   const sql = getDb()
-  const rawDb = getRawDb()
 
   // Build WHERE clause dynamically — avoids a combinatorial if/else explosion
   const conditions: string[] = []
@@ -50,20 +49,16 @@ export async function GET(req: Request) {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const selectBase = `SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events`
 
-  let rows: Record<string, unknown>[]
-  let total: number
-
-  if (rawDb) {
-    rows = rawDb.prepare(`${selectBase} ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
-                .all([...values, limit, offset]) as Record<string, unknown>[]
-    total = (rawDb.prepare(`SELECT COUNT(*) as cnt FROM audit_events ${where}`)
-                  .get([...values]) as { cnt: number }).cnt
-  } else {
-    // Neon/postgres path — basic unfiltered fallback
-    rows = await sql`SELECT id, timestamp, actor_email, actor_ip, actor_role, action, resource, resource_id, outcome, detail FROM audit_events ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}` as Record<string, unknown>[]
-    const totalRows = await sql`SELECT COUNT(*) as cnt FROM audit_events`
-    total = Number((totalRows[0] as { cnt: string })?.cnt || 0)
-  }
+  // Dialect-agnostic filtered query + count (queryRaw converts ? -> $N on PG).
+  const rows = await queryRaw(
+    `${selectBase} ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+    [...values, limit, offset]
+  ) as Record<string, unknown>[]
+  const countRows = await queryRaw(
+    `SELECT COUNT(*) as cnt FROM audit_events ${where}`,
+    [...values]
+  ) as { cnt: number | string }[]
+  const total = Number(countRows[0]?.cnt || 0)
 
   // Verify chain integrity if requested
   let chainStatus: { valid: boolean; totalRows: number; brokenAt?: unknown } | null = null
