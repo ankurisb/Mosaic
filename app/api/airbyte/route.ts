@@ -5,7 +5,7 @@
 
 import { getSession }        from '@/lib/auth'
 import { canAccessSurface }  from '@/lib/permissions'
-import { getDb, nowExpr } from '@/lib/db'
+import { getDb, nowExpr, isPostgres } from '@/lib/db'
 import { encrypt, decrypt }  from '@/lib/encrypt'
 export const runtime = 'nodejs'
 
@@ -135,6 +135,10 @@ async function ab(
 // ── Table setup ───────────────────────────────────────────────
 async function ensureTable() {
   const sql = getDb()
+  // On Postgres the schema is owned by setup-pg.ts (airbyte_instances is
+  // created there with gen_random_uuid ids + BOOLEAN active). This SQLite-
+  // specific DDL (hex(randomblob), INTEGER active) would error there, so skip.
+  if (isPostgres()) return
   await sql`CREATE TABLE IF NOT EXISTS airbyte_instances (
     id                TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
     label             TEXT NOT NULL DEFAULT 'Local Airbyte',

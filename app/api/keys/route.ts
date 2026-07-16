@@ -1,11 +1,13 @@
 import { getSession }       from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
-import { getDb, nowExpr } from '@/lib/db'
+import { getDb, nowExpr, isPostgres } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 export const runtime = 'nodejs'
 
 async function ensureTable() {
   const sql = getDb()
+  // Postgres schema is owned by setup-pg.ts; skip the SQLite-specific DDL there.
+  if (isPostgres()) return
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,
