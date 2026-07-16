@@ -148,7 +148,11 @@ export async function setupDatabasePostgres(): Promise<void> {
     output_tokens INTEGER DEFAULT 0,
     cost_usd      NUMERIC(10,6) DEFAULT 0,
     latency_ms    INT,
-    created_at    TEXT DEFAULT now()::text
+    created_at    TEXT DEFAULT now()::text,
+    conversation_id  TEXT,
+    tool_calls_count INTEGER DEFAULT 0,
+    tool_types       TEXT,
+    source_types     TEXT
   )`
 
   await sql`CREATE TABLE IF NOT EXISTS file_servers (
@@ -183,7 +187,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     name        TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     owner_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    is_public   INTEGER NOT NULL DEFAULT 0,
+    is_public   BOOLEAN NOT NULL DEFAULT false,
     refresh_sec INTEGER NOT NULL DEFAULT 300,
     superset_embed_uuid TEXT,
     created_at  TEXT DEFAULT now()::text,
