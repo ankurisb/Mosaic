@@ -40,6 +40,32 @@ EOF
   # Remove trigger file so we don't re-trigger immediately
   rm -f "${TRIGGER_FILE}"
 
+  # ── Database dump (dialect-aware) ───────────────────────────────────────────
+  # Postgres deployments: logical dump via pg_dump (consistent snapshot even
+  # while the DB is live). SQLite deployments: the DB file lives in the
+  # mosaic-data volume and is captured by dump_volume below, as before.
+  dump_database() {
+    local url="${DATABASE_URL:-}"
+    case "${url}" in
+      postgres://*|postgresql://*)
+        # pg_dump reads DATABASE_URL directly. Custom format (-Fc) is compressed
+        # and restorable with pg_restore; portable across PG minor versions.
+        if pg_dump "${url}" -Fc -f "${WORK_DIR}/mosaic-postgres.dump" 2>"${WORK_DIR}/.pgerr"; then
+          log "  ✓ postgres (pg_dump)"
+        else
+          log "  ✗ postgres pg_dump failed: $(tr '\n' ' ' < "${WORK_DIR}/.pgerr" | head -c 200)"
+          rm -f "${WORK_DIR}/.pgerr"
+          return 1
+        fi
+        rm -f "${WORK_DIR}/.pgerr"
+        ;;
+      *)
+        # SQLite (or unset): the DB file is in mosaic-data, captured below.
+        log "  – database is SQLite/file-based (captured via mosaic-data volume)"
+        ;;
+    esac
+  }
+
   # Dump each mounted volume
   dump_volume() {
     local name="$1"
@@ -55,6 +81,10 @@ EOF
   dump_volume "superset-db-data"
   dump_volume "n8n-data"
   dump_volume "ciso-data"
+
+  # Logical DB dump (pg_dump on Postgres; no-op on SQLite where the file is in
+  # the mosaic-data volume already captured above).
+  dump_database || { log "  ✗ database dump failed — aborting this backup"; rm -rf "${WORK_DIR}"; return 1; }
 
   # Manifest
   cat > "${WORK_DIR}/MANIFEST.txt" << EOF

@@ -68,6 +68,10 @@ services:
       - BACKUP_DIR=/backups
       - BACKUP_SCHEDULE_HOURS=${BACKUP_SCHEDULE_HOURS:-24}
       - BACKUP_KEEP=${BACKUP_KEEP:-30}
+      # Dialect-aware backups: on Postgres the sidecar runs pg_dump against this
+      # URL; on SQLite (default) it's ignored and the DB file is captured via the
+      # mosaic-data volume. Same value Mosaic itself uses.
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/${MOSAIC_DB_FILE:-mosaic.db}}
     volumes:
       - mosaic-data:/volumes/mosaic-data:ro
       - superset-db-data:/volumes/superset-db-data:ro
