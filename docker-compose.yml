@@ -106,9 +106,12 @@ services:
       - ADMIN_NAME=${ADMIN_NAME:-Admin}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - CRON_SECRET=${CRON_SECRET:-}
-      # SQLite path inside container. MOSAIC_DB_FILE names the file within the
-      # mounted /data directory (see volumes below) — NOT a host path.
-      - DATABASE_URL=sqlite:///data/${MOSAIC_DB_FILE:-mosaic.db}
+      # Database. Defaults to the self-contained SQLite file inside the mounted
+      # /data volume (on-prem / local installs). For a Postgres deployment (e.g.
+      # AWS RDS), set DATABASE_URL in .env to override — the app auto-detects the
+      # scheme and runs the Postgres schema/setup path. MOSAIC_DB_FILE only names
+      # the SQLite file within /data; it's ignored when DATABASE_URL is Postgres.
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/${MOSAIC_DB_FILE:-mosaic.db}}
       # Superset (internal Docker network URL)
       - SUPERSET_URL=http://superset:8088
       - SUPERSET_ADMIN_USER=admin
