@@ -3,6 +3,7 @@
 // and the scheduler (scheduled run). Keeps both paths in sync.
 
 import { getDb }            from './db'
+import { nowExpr } from '@/lib/db'
 import { renderHtmlToPdf, htmlShell } from './pdf-renderer'
 import Anthropic            from '@anthropic-ai/sdk'
 import { writeFile, mkdir } from 'fs/promises'
@@ -181,7 +182,7 @@ export async function runReport(
   // Create instance as 'running'
   const [instance] = await sql`
     INSERT INTO report_instances (name, type, trigger, template_id, triggered_by, status, generated_at)
-    VALUES (${name}, ${type}, ${trigger}, ${templateId}, ${triggeredBy}, 'running', datetime('now'))
+    VALUES (${name}, ${type}, ${trigger}, ${templateId}, ${triggeredBy}, 'running', ${nowExpr()})
     RETURNING *`
   const instanceId = String((instance as Record<string, unknown>).id)
 

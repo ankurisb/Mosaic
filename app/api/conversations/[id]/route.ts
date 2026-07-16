@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 export const runtime = 'nodejs'
 
 // GET /api/conversations/[id] -- load messages for a conversation
@@ -26,7 +26,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { title } = await req.json()
   const sql = getDb()
   const rows = await sql`
-    UPDATE conversations SET title = ${title.slice(0, 100)}, updated_at = datetime('now')
+    UPDATE conversations SET title = ${title.slice(0, 100)}, updated_at = ${nowExpr()}
     WHERE id = ${id} AND user_id = ${session.id}
     RETURNING id, title, updated_at`
   if (!rows.length) return Response.json({ error: 'Not found' }, { status: 404 })

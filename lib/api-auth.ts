@@ -18,7 +18,7 @@
 
 import { decrypt, encrypt } from '@/lib/encrypt'
 import { log } from './logger'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 
 // -- Types -------------------------------------------------------
 
@@ -285,7 +285,7 @@ function persistPrismTokens(instanceId: string, token: string, refreshToken: str
     void sql`
       UPDATE prism_instances
       SET token_enc=${token_enc}, refresh_token_enc=${refresh_token_enc},
-          token_expiry=${expiresAt}, updated_at=datetime('now')
+          token_expiry=${expiresAt}, updated_at=${nowExpr()}
       WHERE id=${instanceId}
     `.catch(() => {}) // swallow — table may not exist in test environments
   } catch { /* non-blocking */ }

@@ -3,7 +3,7 @@ import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     } else {
       // Verify ownership + update timestamp
       const rows = await dbSql`
-        UPDATE conversations SET updated_at = datetime('now')
+        UPDATE conversations SET updated_at = ${nowExpr()}
         WHERE id = ${conversation_id} AND user_id = ${session.id}
         RETURNING id`
       if (!rows.length) {
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
   const dialectHint = (dialect: unknown) => {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
     if (dialect === 'clickhouse') return '(use standard SQL SELECT -- columnar OLAP, great for aggregations)'
-    if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > datetime('now')-7d GROUP BY tag)`
+    if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > ${nowExpr()}-7d GROUP BY tag)`
     if (dialect === 'elasticsearch') return '(use Elasticsearch Query DSL JSON: {"query":{"match_all":{}}} or {"query":{"bool":{"must":[{"match":{"field":"value"}},{"range":{"timestamp":{"gte":"now-7d"}}}]}},"aggs":{"by_field":{"terms":{"field":"keyword_field.keyword"}}}} — for schema discovery use: GET /_cat/indices?format=json or GET /{index}/_mapping)'
     return '(use SELECT queries)'
   }
@@ -543,7 +543,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
               VALUES (${convId}, 'assistant', ${cleanText}, ${finalToolCalls.length ? JSON.stringify(finalToolCalls) : null}, ${rcaBlock ? JSON.stringify(rcaBlock) : null})
               RETURNING id`
             persistedMessageId = (msgRows[0] as { id: string } | undefined)?.id ?? null
-            await persistSql`UPDATE conversations SET updated_at = datetime('now') WHERE id = ${convId}`
+            await persistSql`UPDATE conversations SET updated_at = ${nowExpr()} WHERE id = ${convId}`
           }
         } catch { /* don't block on persistence failure */ }
 

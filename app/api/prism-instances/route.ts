@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { getPrismToken, invalidatePrismToken } from '@/lib/api-auth'
 import { setupDatabase } from '@/lib/setup'
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
             ui_url=${cleanUiUrl}, environment=${environment || 'production'},
             username=${username.trim()}, password_enc=${password_enc},
             token_enc=NULL, refresh_token_enc=NULL,
-            token_expiry=NULL, updated_at=datetime('now')
+            token_expiry=NULL, updated_at=${nowExpr()}
         WHERE id=${id}`
       invalidatePrismToken(id)
     } else {
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         UPDATE prism_instances
         SET label=${label.trim()}, base_url=${base_url.trim().replace(/\/$/, '')},
             ui_url=${cleanUiUrl}, environment=${environment || 'production'},
-            username=${username.trim()}, updated_at=datetime('now')
+            username=${username.trim()}, updated_at=${nowExpr()}
         WHERE id=${id}`
     }
     return Response.json({ ok: true, id })

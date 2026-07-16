@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         sections    = ${JSON.stringify(sections || [])},
         schedule    = ${schedule || null},
         recipients  = ${JSON.stringify(recipients || [])},
-        updated_at  = datetime('now')
+        updated_at  = ${nowExpr()}
       WHERE id = ${id}`
     const [row] = await sql`SELECT * FROM report_templates WHERE id = ${id}`
     return Response.json({ ok: true, template: row })
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     const { name, type, trigger, conversation_id, template_id, status, pdf_path, pdf_size, error } = body
     const [row] = await sql`
       INSERT INTO report_instances (name, type, trigger, conversation_id, template_id, triggered_by, status, pdf_path, pdf_size, error, generated_at)
-      VALUES (${name}, ${type||'rca'}, ${trigger||'manual'}, ${conversation_id||null}, ${template_id||null}, ${session.id}, ${status||'completed'}, ${pdf_path||null}, ${pdf_size||null}, ${error||null}, datetime('now'))
+      VALUES (${name}, ${type||'rca'}, ${trigger||'manual'}, ${conversation_id||null}, ${template_id||null}, ${session.id}, ${status||'completed'}, ${pdf_path||null}, ${pdf_size||null}, ${error||null}, ${nowExpr()})
       RETURNING *`
     return Response.json({ ok: true, instance: row })
   }

@@ -1,6 +1,6 @@
 import { getSession }       from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
-import { getDb }            from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 export const runtime = 'nodejs'
 
@@ -91,9 +91,9 @@ export async function POST(req: Request) {
     if (!value?.trim()) return Response.json({ error: 'Value required' }, { status: 400 })
     const enc = encrypt(value.trim())
     await sql`INSERT INTO kv_settings (key, value_enc, updated_by, updated_at)
-      VALUES (${key}, ${enc}, ${session.id}, datetime('now'))
+      VALUES (${key}, ${enc}, ${session.id}, ${nowExpr()})
       ON CONFLICT(key) DO UPDATE SET value_enc=excluded.value_enc,
-        updated_by=excluded.updated_by, updated_at=datetime('now')`
+        updated_by=excluded.updated_by, updated_at=${nowExpr()}`
     process.env[key] = value.trim()
     return Response.json({ ok: true })
   }

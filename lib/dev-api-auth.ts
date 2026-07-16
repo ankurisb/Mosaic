@@ -8,6 +8,7 @@
 //   // auth.keyId, auth.scopes available
 
 import { createHash, randomBytes } from 'crypto'
+import { nowExpr } from '@/lib/db'
 import { getDb } from './db'
 import { log } from './logger'
 
@@ -109,7 +110,7 @@ export async function validateDevApiKey(
   } catch { /* non-blocking — don't fail request if rate limit check fails */ }
 
   // Update last_used_at (fire and forget)
-  sql`UPDATE developer_api_keys SET last_used_at = datetime('now') WHERE id = ${keyId}`.catch(() => {})
+  sql`UPDATE developer_api_keys SET last_used_at = ${nowExpr()} WHERE id = ${keyId}`.catch(() => {})
 
   return { ok: true, keyId, scopes, rateLimit }
 }

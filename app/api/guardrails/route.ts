@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr, intervalAgo } from '@/lib/db'
 import { invalidateGuardrailCache } from '@/lib/guardrails'
 import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
         COALESCE(SUM(prompt_tokens + completion_tokens), 0) as total_tokens,
         SUM(web_search_used) as web_search_count
       FROM egress_events
-      WHERE timestamp >= datetime('now', '-30 days')
+      WHERE timestamp >= ${intervalAgo(30, 'days')}
     `
     return Response.json({ events: rows, summary: summary[0] })
   }
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   if (action === 'save_ai_rules') {
     const { id, name, enabled, rules_text } = body
     if (id) {
-      await sql`UPDATE guardrail_ai_rules SET name=${name}, enabled=${enabled?1:0}, rules_text=${rules_text}, updated_at=datetime('now') WHERE id=${id}`
+      await sql`UPDATE guardrail_ai_rules SET name=${name}, enabled=${enabled?1:0}, rules_text=${rules_text}, updated_at=${nowExpr()} WHERE id=${id}`
       audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_ai_rule:${id}`, 'success', { name, enabled })
     } else {
       const rows = await sql`INSERT INTO guardrail_ai_rules (name, enabled, rules_text) VALUES (${name||'Policy'}, ${enabled?1:0}, ${rules_text}) RETURNING id`
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
   // ── Pending action resolution (HITL) ──────────────────────────────────────
   if (action === 'resolve_pending') {
     const { pending_id, approved } = body
-    await sql`UPDATE guardrail_pending_actions SET status=${approved?'approved':'rejected'}, resolved_at=datetime('now') WHERE id=${pending_id}`
+    await sql`UPDATE guardrail_pending_actions SET status=${approved?'approved':'rejected'}, resolved_at=${nowExpr()} WHERE id=${pending_id}`
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.GUARDRAIL_UPDATE, `guardrail_pending:${pending_id}`, approved ? 'success' : 'failure', { approved })
     return Response.json({ ok: true })
   }

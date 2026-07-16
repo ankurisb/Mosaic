@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { NextRequest } from 'next/server'
 import { renderHtmlToPdf, htmlShell } from '@/lib/pdf-renderer'
 export const runtime = 'nodejs'
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
     const convTitle = String((conv as Record<string,unknown>).title || 'RCA Report')
     await sql`
       INSERT INTO report_instances (name, type, trigger, conversation_id, triggered_by, status, pdf_size, generated_at)
-      VALUES (${convTitle}, 'rca', 'manual', ${conversation_id}, ${session.id}, 'completed', ${pdfBuffer.length}, datetime('now'))
+      VALUES (${convTitle}, 'rca', 'manual', ${conversation_id}, ${session.id}, 'completed', ${pdfBuffer.length}, ${nowExpr()})
     `
   } catch { /* non-blocking */ }
 

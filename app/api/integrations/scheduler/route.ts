@@ -3,7 +3,7 @@
 // Checks all active rules whose next_run_at has passed,
 // executes them, sends notifications, updates run timestamps.
 
-import { getDb }           from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { runTool }         from '@/lib/tools'
 import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
@@ -578,7 +578,7 @@ export async function POST(req: Request) {
         UPDATE rule_groups
         SET last_fired_at    = ${now.toISOString()},
             fire_count_today = fire_count_today + 1,
-            updated_at       = datetime('now')
+            updated_at       = ${nowExpr()}
         WHERE id = ${groupId}`
       .catch(() => {})
 

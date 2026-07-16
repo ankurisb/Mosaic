@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { log } from '@/lib/logger'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 export const runtime = 'nodejs'
 
 // -- GET -- list dashboards visible to the user -----------------
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
              description = ${description ?? ''},
              is_public   = ${is_public ?? false},
              refresh_sec = ${refresh_sec ?? 300},
-             updated_at  = datetime('now')
+             updated_at  = ${nowExpr()}
       WHERE  id = ${id} AND owner_id = ${session.id}`
     return Response.json({ ok: true })
   }
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
          ${col ?? 0}, ${row ?? 0}, ${w ?? 2}, ${h ?? 1},
          ${sort_order ?? 0})
       RETURNING id`
-    await sql`UPDATE dashboards SET updated_at = datetime('now') WHERE id = ${dashboard_id}`
+    await sql`UPDATE dashboards SET updated_at = ${nowExpr()} WHERE id = ${dashboard_id}`
     return Response.json({ id: rows[0].id })
   }
 

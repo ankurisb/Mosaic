@@ -1,4 +1,4 @@
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
@@ -32,8 +32,8 @@ export async function POST(req: Request) {
     // Mark setup complete so the wizard is never shown again
     await sql`
       INSERT INTO kv_settings (key, value_enc, updated_by, updated_at)
-      VALUES ('SETUP_COMPLETE', 'true', 'setup-wizard', datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET value_enc = 'true', updated_at = datetime('now')
+      VALUES ('SETUP_COMPLETE', 'true', 'setup-wizard', ${nowExpr()})
+      ON CONFLICT(key) DO UPDATE SET value_enc = 'true', updated_at = ${nowExpr()}
     `
 
     return Response.json({ ok: true })

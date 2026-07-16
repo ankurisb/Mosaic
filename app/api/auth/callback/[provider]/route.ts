@@ -1,7 +1,7 @@
 // app/api/auth/callback/[provider]/route.ts
 // Handles OAuth2/OIDC callback for Microsoft, Google, Keycloak, and generic OIDC.
 // Flow: exchange auth code → verify id_token via JWKS → look up pre-provisioned user → issue JWT cookie.
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { decrypt } from '@/lib/encrypt'
 import { audit, AUDIT } from '@/lib/audit'
@@ -183,7 +183,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     }
 
     // Update sso_provider/sso_sub and last_login_at
-    await sql`UPDATE users SET sso_provider=${provider}, sso_sub=${sub}, last_login_at=datetime('now') WHERE id=${user.id}`
+    await sql`UPDATE users SET sso_provider=${provider}, sso_sub=${sub}, last_login_at=${nowExpr()} WHERE id=${user.id}`
 
     // Issue Mosaic JWT cookie — use derived role
     const token = await createToken({

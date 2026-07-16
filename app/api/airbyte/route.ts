@@ -5,7 +5,7 @@
 
 import { getSession }        from '@/lib/auth'
 import { canAccessSurface }  from '@/lib/permissions'
-import { getDb }             from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { encrypt, decrypt }  from '@/lib/encrypt'
 export const runtime = 'nodejs'
 
@@ -575,7 +575,7 @@ export async function POST(req: Request) {
     try {
       const data = await ab(inst, '/jobs', '/connections/sync', 'POST',
         { type: 'sync', connectionId: body.connectionId }) as any
-      await sql`UPDATE airbyte_instances SET last_synced=datetime('now') WHERE id=${body.instanceId}`
+      await sql`UPDATE airbyte_instances SET last_synced=${nowExpr()} WHERE id=${body.instanceId}`
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }

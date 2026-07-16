@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb }      from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -51,14 +51,14 @@ export async function POST(req: Request) {
         message_template = ${message_template ?? ''},
         email_channel_id = ${email_channel_id ?? null},
         sms_channel_id   = ${sms_channel_id ?? null},
-        updated_at       = datetime('now')
+        updated_at       = ${nowExpr()}
       WHERE id = ${id}`
     return Response.json({ ok: true })
   }
 
   if (action === 'toggle') {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
-    await sql`UPDATE rule_groups SET active = NOT active, updated_at = datetime('now') WHERE id = ${body.id}`
+    await sql`UPDATE rule_groups SET active = NOT active, updated_at = ${nowExpr()} WHERE id = ${body.id}`
     return Response.json({ ok: true })
   }
 
@@ -73,9 +73,9 @@ export async function POST(req: Request) {
     const { id } = body
     await sql`
       UPDATE rule_groups
-      SET last_fired_at = datetime('now'),
+      SET last_fired_at = ${nowExpr()},
           fire_count_today = fire_count_today + 1,
-          updated_at = datetime('now')
+          updated_at = ${nowExpr()}
       WHERE id = ${id}`
     return Response.json({ ok: true })
   }

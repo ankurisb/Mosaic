@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { setUserSurfaces, isSurface, SURFACES, type Surface } from '@/lib/permissions'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     if ((role || 'user') === 'admin') {
       syncUserToSuperset({ email: email.toLowerCase(), name: name || email, password: tempPassword, role: 'admin' }).catch(() => {})
     }
-    await sql`UPDATE users SET invite_sent_at=datetime('now') WHERE id=${rows[0].id}`
+    await sql`UPDATE users SET invite_sent_at=${nowExpr()} WHERE id=${rows[0].id}`
     // Persist surface grants for the new user (non-admins; admins hold all implicitly).
     if (Array.isArray(surfaces) && (role || 'user') !== 'admin') {
       await setUserSurfaces(rows[0].id as string, (surfaces as unknown[]).filter(isSurface) as Surface[])

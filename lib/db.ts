@@ -17,6 +17,44 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 type SqlRow   = Record<string, unknown>
 type SqlQuery = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<SqlRow[]>
 
+// -- Raw SQL fragments ----------------------------------------
+// Tagged-template interpolations normally become bound parameters ($1, ?).
+// Sometimes we need to inline a raw SQL expression instead (e.g. NOW() vs
+// datetime('now')). Wrap such a value in raw() and both client paths will
+// splice it into the SQL string rather than parameterising it.
+// SECURITY: only ever pass CONSTANT, code-controlled strings to raw() — never
+// user input. It bypasses parameterisation by design.
+class RawSql {
+  constructor(public readonly sql: string) {}
+}
+export function raw(sql: string): RawSql {
+  return new RawSql(sql)
+}
+
+/** The current dialect's "now" expression, as a raw SQL fragment, producing a
+ *  canonical ISO-8601 UTC string (YYYY-MM-DDTHH:MM:SS.sssZ) to match the
+ *  toISOString() format used elsewhere. Postgres emits T-format via to_char;
+ *  SQLite keeps its native space-format for backward-compat with existing local
+ *  data (SQLite installs never mix with Postgres, so they stay internally
+ *  consistent; the SQLite->Postgres data migration normalises to T-format).
+ *  Use in INSERT/UPDATE value positions: sql`... SET updated_at=${nowExpr()} ...` */
+export function nowExpr(): RawSql {
+  return raw(isPostgres()
+    ? `to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+    : "datetime('now')")
+}
+
+/** A raw SQL fragment for "N units ago", in the same canonical format as
+ *  nowExpr() for the current dialect, so range comparisons stay consistent.
+ *  unit/amount are code-controlled only (never user input). */
+export function intervalAgo(amount: number, unit: 'days' | 'hours' | 'minutes' | 'months'): RawSql {
+  const n = Math.abs(Math.trunc(amount))
+  // Timestamps stored as TEXT. Postgres emits T-format ISO text to match
+  // nowExpr()/toISOString(); SQLite compares as strings in its native format.
+  if (isPostgres()) return raw(`to_char((NOW() - INTERVAL '${n} ${unit}') AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`)
+  return raw(`datetime('now','-${n} ${unit}')`)
+}
+
 // Columns that store free-form user text that may coincidentally look like
 // JSON (e.g. pasted objects in chat). Skip auto-parse to preserve string type.
 const SKIP_AUTO_PARSE = new Set([
@@ -96,8 +134,12 @@ export function getDb(): SqlQuery {
         sql += s
         if (i < values.length) {
           const v = values[i]
-          params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
-          sql += '?'
+          if (v instanceof RawSql) {
+            sql += v.sql            // raw fragment — inline, don't parameterise
+          } else {
+            params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
+            sql += '?'
+          }
         }
       })
       try {
@@ -142,13 +184,23 @@ export function getDb(): SqlQuery {
     const pool = new Pool({ connectionString: url, max: 10 })
 
     _client = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<SqlRow[]> => {
-      // Convert $1 placeholders -- pg uses $1 natively
+      // Convert to $1 placeholders. RawSql fragments are inlined and do NOT
+      // consume a placeholder slot, so we track the param index separately.
       let sql = ''
+      const params: unknown[] = []
       strings.forEach((s, i) => {
         sql += s
-        if (i < values.length) sql += `$${i + 1}`
+        if (i < values.length) {
+          const v = values[i]
+          if (v instanceof RawSql) {
+            sql += v.sql            // raw fragment — inline
+          } else {
+            params.push(v)
+            sql += `$${params.length}`
+          }
+        }
       })
-      const result = await pool.query(sql, values as unknown[])
+      const result = await pool.query(sql, params)
       return (result.rows ?? []) as SqlRow[]
     }
     return _client

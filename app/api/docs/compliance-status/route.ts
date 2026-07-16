@@ -2,7 +2,7 @@
 // Returns live ISO 27001 compliance status checks as JSON.
 // Used by the Audit trail tab to render the inline live compliance panel.
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, intervalAgo } from '@/lib/db'
 export const runtime = 'nodejs'
 
 export interface ComplianceCheck {
@@ -42,8 +42,8 @@ export async function GET() {
     sql`SELECT COUNT(*) as cnt FROM guardrail_usage_limits WHERE enabled=1`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM guardrail_content WHERE enabled=1`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM egress_events`.catch(() => [{ cnt: 0 }]),
-    sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action='LOGIN_FAILED' AND timestamp > datetime('now','-30 days')`.catch(() => [{ cnt: 0 }]),
-    sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action='CHAIN_VERIFY' AND outcome='success' AND timestamp > datetime('now','-2 days')`.catch(() => [{ cnt: 0 }]),
+    sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action='LOGIN_FAILED' AND timestamp > ${intervalAgo(30, 'days')}`.catch(() => [{ cnt: 0 }]),
+    sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action='CHAIN_VERIFY' AND outcome='success' AND timestamp > ${intervalAgo(2, 'days')}`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM kv_settings WHERE value_enc LIKE 'enc2:%'`.catch(() => [{ cnt: 0 }]),
   ])
 

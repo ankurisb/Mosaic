@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { audit, AUDIT } from '@/lib/audit'
 export const runtime = 'nodejs'
 
@@ -129,7 +129,7 @@ export async function POST(req: Request) {
         renderers     = ${JSON.stringify(renderers ?? [])},
         output_config = ${JSON.stringify(output_config ?? {})},
         sort_order    = ${sort_order ?? 0},
-        updated_at    = datetime('now')
+        updated_at    = ${nowExpr()}
       WHERE id = ${id}`
 
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_UPDATE, `rca_workflow:${id}`, 'success', { name: name.trim() })
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
     if (!body.id) return Response.json({ error: 'ID required' }, { status: 400 })
     await sql`
       UPDATE rca_workflows
-      SET    active = NOT active, updated_at = datetime('now')
+      SET    active = NOT active, updated_at = ${nowExpr()}
       WHERE  id = ${body.id}`
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RCA_WORKFLOW_TOGGLE, `rca_workflow:${body.id}`, 'success', {})
     return Response.json({ ok: true })

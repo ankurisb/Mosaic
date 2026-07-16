@@ -7,7 +7,7 @@
 // GET /api/docs/training-records    — Staff Awareness Training Records (A.6.3)
 
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, intervalAgo } from '@/lib/db'
 export const runtime = 'nodejs'
 
 export async function GET(
@@ -81,7 +81,7 @@ export async function GET(
       sql`SELECT COUNT(*) as cnt FROM users WHERE banned = 0`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM db_connections`.catch(() => [{ cnt: '0' }]),
       sql`SELECT COUNT(*) as cnt FROM api_services`.catch(() => [{ cnt: '0' }]),
-      sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action = 'LOGIN_FAILED' AND timestamp > datetime('now', '-30 days')`.catch(() => [{ cnt: '0' }]),
+      sql`SELECT COUNT(*) as cnt FROM audit_events WHERE action = 'LOGIN_FAILED' AND timestamp > ${intervalAgo(30, 'days')}`.catch(() => [{ cnt: '0' }]),
     ])
     const userCount   = (uR[0] as { cnt: string })?.cnt || '0'
     const connCount   = (cR[0] as { cnt: string })?.cnt || '0'

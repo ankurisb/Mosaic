@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose'
+import { nowExpr } from '@/lib/db'
 import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
 import { getDb } from './db'
@@ -46,7 +47,7 @@ export async function getSession(): Promise<SessionUser | null> {
     const rows = await sql`SELECT id, email, name, role, banned FROM users WHERE id=${user.id} LIMIT 1`
     if (!rows.length || rows[0].banned) return null
     // Update last login timestamp (fire and forget)
-    sql`UPDATE users SET last_login_at=datetime('now') WHERE id=${user.id}`.catch(() => {})
+    sql`UPDATE users SET last_login_at=${nowExpr()} WHERE id=${user.id}`.catch(() => {})
     // Return fresh data from DB (role may have changed since token was issued)
     return { id: rows[0].id as string, email: rows[0].email as string, name: rows[0].name as string, role: rows[0].role as "admin" | "user" }
   } catch { return null }
