@@ -7,6 +7,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import PanelChart from './PanelChart'
 import PanelBuilder from './PanelBuilder'
 import { SupersetEmbed } from './SupersetEmbed'
+import { useSuperset } from './useSuperset'
 
 interface Panel {
   id: string; title: string; subtitle: string
@@ -89,6 +90,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [toast, setToast] = useState('')
   const [guestToken, setGuestToken] = useState<string|null>(null)
   const [guestTokenLoading, setGuestTokenLoading] = useState(false)
+  // Browser-facing Superset origin (Caddy, :8445) — never the internal Docker
+  // hostname, which the browser can't resolve. Served by /api/superset/status.
+  const { status: supersetStatus } = useSuperset()
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
@@ -284,11 +288,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {guestTokenLoading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading dashboard...</div>
-          ) : guestToken ? (
+          ) : guestToken && supersetStatus?.url ? (
             <SupersetEmbed
               embedUuid={dashboard.superset_embed_uuid!}
               guestToken={guestToken}
-              supersetUrl="http://localhost:8088"
+              supersetUrl={supersetStatus.url}
             />
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Failed to load dashboard</div>

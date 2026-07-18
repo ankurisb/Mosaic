@@ -7,10 +7,17 @@ export async function GET(_req: NextRequest) {
     return Response.json({ error: 'Not signed in' }, { status: 401 })
   }
 
+  // Two different URLs, deliberately:
+  //  - SUPERSET_URL        internal Docker network address (http://superset:8088).
+  //                        Server-side only — used for the health check below.
+  //  - SUPERSET_PUBLIC_URL browser-facing origin behind Caddy (…:8445). This is
+  //                        what we hand back to the client for links and embeds;
+  //                        a browser cannot resolve the internal Docker hostname.
   const supersetUrl = process.env.SUPERSET_URL
   if (!supersetUrl) {
     return Response.json({ configured: false })
   }
+  const publicUrl = process.env.SUPERSET_PUBLIC_URL || 'https://localhost:8445/'
 
   let reachable = false
   try {
@@ -28,7 +35,7 @@ export async function GET(_req: NextRequest) {
 
   return Response.json({
     configured: true,
-    url: supersetUrl,
+    url: publicUrl,
     reachable,
     role: session.role,
   })
