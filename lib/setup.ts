@@ -695,7 +695,12 @@ export async function setupDatabase() {
   // Built-in scheduler for self-hosted deployments (replaces Vercel Cron)
   if (typeof process !== 'undefined' && !process.env.VERCEL && !(global as Record<string,unknown>).__mosaicSchedulerStarted) {
     (global as Record<string, unknown>).__mosaicSchedulerStarted = true
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
+    // The scheduler triggers itself, so it must NOT go out over the public URL:
+    // routing a self-call through public DNS + TLS + Caddy means any cert, DNS
+    // or proxy hiccup silently stops every scheduled job (the fetch below
+    // swallows errors). Loopback keeps it independent of all of that.
+    // INTERNAL_APP_URL is an escape hatch if the app is ever fronted differently.
+    const internalUrl = process.env.INTERNAL_APP_URL || `http://127.0.0.1:${process.env.PORT || 3001}`
     setInterval(() => {
       // Resolve the secret per tick rather than once at boot: it is auto-
       // generated on first use, so it may not exist yet when this starts, and
@@ -706,7 +711,13 @@ export async function setupDatabase() {
         const { ensureCronSecret } = await import('./keys')
         const cronSecret = await ensureCronSecret()
         if (cronSecret) headers['Authorization'] = `Bearer ${cronSecret}`
-        fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
+        fetch(`${internalUrl}/api/integrations/scheduler`, { method: 'POST', headers })
+          .then(r => {
+            // Don't let a silently-failing self-call stop every scheduled job
+            // with no trace — this used to swallow everything.
+            if (!r.ok) log.warn({ service: 'scheduler-tick', status: r.status, url: internalUrl }, 'Scheduler self-call returned non-OK')
+          })
+          .catch(e => log.warn({ service: 'scheduler-tick', err: e, url: internalUrl }, 'Scheduler self-call failed'))
       })()
     }, 60_000)
 
