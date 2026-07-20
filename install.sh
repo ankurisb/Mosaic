@@ -94,6 +94,64 @@ org_name=${org_name:-UGX Systems Pvt Ltd}
 echo "ORG_NAME=$org_name" >> .env
 echo -e "${GREEN}  ✓ Saved${NC}"
 
+# ── Deployment: how will people reach Mosaic? ─────────────────
+# These are the settings a manual `docker compose up` silently gets wrong:
+# without them Mosaic assumes localhost, so invite emails ship localhost links
+# and SSO callbacks fail. Ask up front so the safe path is the default.
+echo ""
+echo -e "${BOLD}How will people reach Mosaic?${NC}"
+echo "  1) This machine only            — http://localhost:3001"
+echo "  2) On-prem server on your LAN   — internal hostname or IP, over HTTPS"
+echo "  3) Public domain                — e.g. mosaic.yourcompany.com"
+read -p "  Choice [1]: " deploy_choice
+deploy_choice=${deploy_choice:-1}
+
+app_url="http://localhost:3001"
+case "$deploy_choice" in
+  2)
+    echo ""
+    echo -e "  Enter the address ${BOLD}users type into their browser${NC} — not the"
+    echo -e "  server's own hostname, and not an internal Docker name."
+    read -p "  Hostname or IP [mosaic.local]: " app_host
+    app_host=${app_host:-mosaic.local}
+    app_url="https://${app_host}"
+    ;;
+  3)
+    read -p "  Public domain (e.g. mosaic.yourcompany.com): " app_host
+    while [[ -z "$app_host" ]]; do read -p "  Public domain: " app_host; done
+    app_url="https://${app_host}"
+    ;;
+esac
+
+if [[ "$deploy_choice" == "2" || "$deploy_choice" == "3" ]]; then
+  # MOSAIC_HOSTNAME drives the Caddy site addresses and the browser-facing
+  # SUPERSET_PUBLIC_URL / N8N_PUBLIC_URL, so it must match NEXT_PUBLIC_APP_URL.
+  # Replace in place — .env.example already ships MOSAIC_HOSTNAME=localhost, and
+  # appending would leave two definitions of the same key.
+  sed -i.bak "s|^MOSAIC_HOSTNAME=localhost|MOSAIC_HOSTNAME=$app_host|" .env
+  sed -i.bak "s|NEXT_PUBLIC_APP_URL=http://localhost:3001|NEXT_PUBLIC_APP_URL=$app_url|" .env
+  rm -f .env.bak
+  echo -e "${GREEN}  ✓ App URL set to $app_url${NC}"
+  if [[ "$deploy_choice" == "2" ]]; then
+    echo -e "${YELLOW}  Note: an internal hostname can't get a Let's Encrypt certificate,${NC}"
+    echo -e "${YELLOW}  so Caddy will serve its own internal CA and browsers will warn until${NC}"
+    echo -e "${YELLOW}  you distribute that root certificate. See NETWORK.md.${NC}"
+  fi
+fi
+
+# ── Database ──────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}Database${NC}"
+echo "  Default: SQLite inside the container — fine for a single server."
+echo "  For managed Postgres (AWS RDS, Azure, or your own), paste its URL."
+read -p "  DATABASE_URL (Enter to keep SQLite): " db_url
+if [[ -n "$db_url" ]]; then
+  echo "DATABASE_URL=$db_url" >> .env
+  echo -e "${GREEN}  ✓ Postgres configured — Mosaic will build its schema on first boot${NC}"
+else
+  echo -e "  Keeping SQLite"
+fi
+
 # ── Optional: SSO / Keycloak ──────────────────────────────────
 echo ""
 echo -e "${BOLD}Single Sign-On (Keycloak)${NC}"
@@ -145,7 +203,7 @@ echo ""
 echo -e "${BLUE}To start Mosaic:${NC}"
 echo -e "  ${BOLD}docker compose up -d${NC}"
 echo ""
-echo -e "${BLUE}Then open:${NC} http://localhost:3001"
+echo -e "${BLUE}Then open:${NC} $app_url"
 echo ""
 echo -e "${YELLOW}Your secrets are stored in .env — back it up somewhere safe.${NC}"
 echo -e "See ${BOLD}SECRETS.md${NC} for what each secret does and how to rotate them."
