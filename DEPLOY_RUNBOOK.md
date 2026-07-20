@@ -296,6 +296,117 @@ If the cert fails: check DNS resolves to the VM, and 80/443 are open in the SG.
 
 ---
 
+## 11. On-premises deployment (customer sites)
+
+Sections 1–10 cover the public cloud instance. This section covers the **actual
+product deployment model**: a server inside the customer's network, with
+outbound internet access, behind their firewall.
+
+### 11.1 What's different
+
+| | Public (mosaic.ugx.ai) | On-prem customer site |
+|---|---|---|
+| Reached at | Public FQDN | Internal hostname or IP |
+| TLS | Let's Encrypt, automatic | Internal CA / corporate CA / DNS-01 |
+| Database | AWS RDS | Containerised Postgres, or their own |
+| Data sources | Cloud test data | Real plant systems on the LAN |
+| Who runs it | You | Their IT, with you guiding |
+
+### 11.2 Prerequisites
+
+- Linux host (Ubuntu 22.04/24.04), Docker Engine + Compose plugin
+- 16 GB RAM, 50 GB disk (the full stack is ~12 GB of images)
+- **Outbound HTTPS (443) to `api.anthropic.com`** — non-negotiable, this is
+  where inference happens. If they run an egress proxy, it must allow that host,
+  and `HTTPS_PROXY` / `NO_PROXY` need setting for the containers.
+- Inbound from the user LAN on 443 (plus 8444/8445 if n8n and Superset are used)
+- A DNS A record for the server. **Use a hostname, not a bare IP** — a DHCP
+  change silently breaks every emailed link and SSO callback.
+
+### 11.3 Install
+
+```bash
+git clone https://github.com/ankurisb/Mosaic.git
+cd Mosaic
+bash install.sh          # choose option 2: "On-prem server on your LAN"
+docker compose up -d
+```
+
+`install.sh` now asks how users will reach Mosaic and writes both
+`NEXT_PUBLIC_APP_URL` and `MOSAIC_HOSTNAME` from one answer. Those two must
+agree: the first builds email and SSO-callback links, the second drives the
+Caddy site addresses and the browser-facing Superset/n8n URLs.
+
+Enter the address **users type into their browser** — not the server's own
+hostname, not an internal Docker name.
+
+### 11.4 TLS — the part that actually needs a decision
+
+An internal hostname **cannot** get a Let's Encrypt certificate: HTTP-01
+validation requires public reachability. Three options, best first:
+
+1. **DNS-01 on a real domain.** If they own a domain with a supported DNS
+   provider, Caddy can prove ownership via a DNS record and issue a genuine
+   public certificate for an internally-resolvable name. No browser warnings,
+   no cert distribution. Needs a Caddy DNS plugin build and API credentials.
+2. **Corporate internal CA.** Most enterprises already have one and already
+   trust it on every workstation. Have IT issue a cert for the hostname and
+   mount it into Caddy. Zero warnings, no new trust to roll out.
+3. **Caddy's internal CA (default).** Works immediately, but every browser
+   warns until the root certificate is distributed via Group Policy / MDM:
+   ```bash
+   docker exec mosaic-caddy cat /data/caddy/pki/authorities/local/root.crt > mosaic-root.crt
+   ```
+   Hand that to IT for deployment to workstations.
+
+> **Known gap:** `docker/caddy/Caddyfile` sets `local_certs` unconditionally in
+> its global block, which forces option 3 even when a public certificate is
+> possible. For options 1 and 2 — and for the public deployment in §1–10 —
+> that line must currently be removed by hand.
+
+### 11.5 If IT fronts Mosaic with their own reverse proxy
+
+Common in plants (F5, nginx, corporate gateway). If users never reach your Caddy
+directly, then `NEXT_PUBLIC_APP_URL` and `MOSAIC_HOSTNAME` must be **the proxy's**
+address, not the server's — otherwise Superset and n8n links point somewhere
+nobody can reach. Include a non-standard port if there is one
+(`https://mosaic.acme.internal:8443`); SSO redirect URIs are matched exactly.
+
+The proxy must forward `Host`, `X-Forwarded-Proto` and `X-Forwarded-For`, and
+must not buffer Server-Sent Events — chat streams over SSE and will appear to
+hang if it does.
+
+### 11.6 Connecting plant data sources
+
+Mosaic reaches data sources **outbound from the server**, so its host needs
+network access to each system (historian, MES, SCADA gateway, SQL Server, file
+shares). Ask their network team to open only what's needed, from the Mosaic host
+only. Use read-only database credentials — Mosaic never needs write access to
+operational systems.
+
+### 11.7 Verification
+
+- [ ] `https://<hostname>/login` loads (cert warning expected on option 3)
+- [ ] Log in as the admin from **another machine on the LAN**, not the server
+- [ ] `/api/health` → database `ok`
+- [ ] Send a test chat message — proves outbound reachability to Anthropic
+- [ ] Add one data source and run a query from Query Builder
+- [ ] Invite a user and confirm the email link uses the internal hostname,
+      not `localhost`
+- [ ] Confirm a backup archive appears in `./backups/`
+
+### 11.8 What to tell the customer up front
+
+- Invite and report emails contain **internal** URLs. Opened off-network (phone,
+  home), those links won't resolve. This is correct, but it surprises people.
+- Operational data stays on their network. Schema and query **results** are sent
+  to Anthropic for inference — be precise about this rather than claiming
+  nothing leaves the building.
+- Rotating `SUPERSET_SECRET_KEY` after first boot makes every Superset data
+  source connection unreadable. Set once, never change.
+
+---
+
 ## Appendix — gotchas learned during migration prep
 
 - **`DATABASE_URL` unset = silent SQLite.** Always confirm
