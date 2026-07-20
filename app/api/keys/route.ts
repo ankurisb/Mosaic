@@ -28,7 +28,11 @@ const KNOWN_KEYS = [
   // GitHub update checker
   'GITHUB_TOKEN', 'GITHUB_REPO',
   // App config
-  'NEXT_PUBLIC_APP_URL', 'CRON_SECRET',
+  // NOTE: NEXT_PUBLIC_APP_URL is intentionally excluded. NEXT_PUBLIC_ vars are
+  // inlined by Next.js at BUILD time, and every consumer reads process.env
+  // directly (never getKey), so a value stored here would be silently ignored.
+  // It is env-only — see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
+  'CRON_SECRET',
   // Database
   'DATABASE_URL',
   // Superset
