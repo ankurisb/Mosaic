@@ -696,11 +696,18 @@ export async function setupDatabase() {
   if (typeof process !== 'undefined' && !process.env.VERCEL && !(global as Record<string,unknown>).__mosaicSchedulerStarted) {
     (global as Record<string, unknown>).__mosaicSchedulerStarted = true
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
-    const cronSecret = process.env.CRON_SECRET
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (cronSecret) headers['Authorization'] = `Bearer ${cronSecret}`
     setInterval(() => {
-      fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
+      // Resolve the secret per tick rather than once at boot: it is auto-
+      // generated on first use, so it may not exist yet when this starts, and
+      // resolving here lets the scheduler self-heal. getKey caches in env, so
+      // this is a cheap lookup after the first call.
+      void (async () => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const { ensureCronSecret } = await import('./keys')
+        const cronSecret = await ensureCronSecret()
+        if (cronSecret) headers['Authorization'] = `Bearer ${cronSecret}`
+        fetch(`${appUrl}/api/integrations/scheduler`, { method: 'POST', headers }).catch(() => {})
+      })()
     }, 60_000)
 
     // Daily audit tasks: chain verify + retention purge

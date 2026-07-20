@@ -1,22 +1,29 @@
 // -- /api/integrations/scheduler ------------------------------
-// Called every minute by Vercel Cron (see vercel.json).
+// Called every minute by the built-in scheduler in lib/setup.ts (self-hosted),
+// or by any external scheduler presenting the bearer secret.
 // Checks all active rules whose next_run_at has passed,
 // executes them, sends notifications, updates run timestamps.
 
 import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { runTool }         from '@/lib/tools'
+import { ensureCronSecret } from '@/lib/keys'
 import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
 import { runReport }       from '@/lib/report-runner'
 export const runtime = 'nodejs'
 
-// Vercel Cron passes a secret header to prevent unauthorised triggers
-const CRON_SECRET = process.env.CRON_SECRET
-
 export async function POST(req: Request) {
-  // Verify the request is from Vercel Cron or an authorised caller
+  // Fail CLOSED. Previously the guard was `if (CRON_SECRET && ...)`, so an
+  // unset secret skipped verification entirely — and this route has no session
+  // check, meaning any unauthenticated caller could fire every due rule.
+  // ensureCronSecret() generates and persists one on first use, so there is no
+  // configuration state in which this endpoint is unprotected.
   const authHeader = req.headers.get('authorization')
-  if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+  const cronSecret = await ensureCronSecret()
+  if (!cronSecret) {
+    return Response.json({ error: 'Scheduler secret unavailable' }, { status: 503 })
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

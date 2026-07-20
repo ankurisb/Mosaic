@@ -21,7 +21,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · 1,000 searches/month',                   placeholder: 'tvly-...', secret: true },
   NEXT_PUBLIC_APP_URL:     { label: 'App URL',                  hint: 'Public URL of this Mosaic instance · used in emails and SSO callbacks',              placeholder: 'https://mosaic.yourcompany.com' },
-  CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · set a random string',                              placeholder: 'Random secret string', secret: true },
+  CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · auto-generated on first run — only set this to use your own value',        placeholder: 'Auto-generated', secret: true },
   DATABASE_URL:            { label: 'Database URL',             hint: 'Leave blank for SQLite · set postgresql://... for Neon or Postgres cloud',           placeholder: 'postgresql://user:pass@host/db?sslmode=require', secret: true },
   GITHUB_TOKEN:            { label: 'GitHub token',             hint: 'Fine-grained PAT with Contents read-only · used to check for Mosaic updates',       placeholder: 'github_pat_...', secret: true },
   GITHUB_REPO:             { label: 'GitHub repo',              hint: 'Repository to check for updates · format: owner/repo',                               placeholder: 'ankurisb/Mosaic' },

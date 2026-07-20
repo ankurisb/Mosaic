@@ -144,8 +144,19 @@ ADMIN_EMAIL=you@ugx.ai
 ADMIN_PASSWORD=<strong password>
 ADMIN_NAME=Ankur
 
+# --- App URL: REQUIRED in production ---
+# Used to build links that point back at Mosaic: SSO/OAuth callback URLs and
+# invite/welcome emails. If unset it falls back to http://localhost:3001, so
+# invite emails would contain localhost links and SSO callbacks would break.
+NEXT_PUBLIC_APP_URL=https://mosaic.ugx.ai
+
+# --- Optional ---
+# CRON_SECRET is auto-generated on first run and stored encrypted, so you do
+# NOT need to set it. Only set it if you want a known value (e.g. to trigger
+# /api/integrations/scheduler from an external scheduler).
+CRON_SECRET=
+
 # --- Others (set real values before relying on those features) ---
-CRON_SECRET=<random>
 TAVILY_API_KEY=<optional, for web search>
 SUPERSET_SECRET_KEY=<random>
 SUPERSET_ADMIN_PASSWORD=<strong>
