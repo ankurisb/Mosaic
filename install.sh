@@ -136,6 +136,20 @@ if [[ "$deploy_choice" == "2" || "$deploy_choice" == "3" ]]; then
     echo -e "${YELLOW}  Note: an internal hostname can't get a Let's Encrypt certificate,${NC}"
     echo -e "${YELLOW}  so Caddy will serve its own internal CA and browsers will warn until${NC}"
     echo -e "${YELLOW}  you distribute that root certificate. See NETWORK.md.${NC}"
+  else
+    # Public domain: enable ACME so Caddy issues a real certificate. Needs a
+    # contact email; without this Caddy falls back to its internal CA and every
+    # visitor sees a browser warning.
+    echo ""
+    echo -e "  A public domain can get a free Let's Encrypt certificate."
+    echo -e "  Requires this domain to resolve here, with inbound 80 and 443 open."
+    read -p "  Contact email for Let's Encrypt (Enter to skip): " le_email
+    if [[ -n "$le_email" ]]; then
+      echo "CADDY_TLS=$le_email" >> .env
+      echo -e "${GREEN}  ✓ Automatic HTTPS enabled${NC}"
+    else
+      echo -e "${YELLOW}  Skipped — Caddy will use its internal CA and browsers will warn.${NC}"
+    fi
   fi
 fi
 

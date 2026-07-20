@@ -26,18 +26,29 @@
 # (CISO keeps its own existing :8443 stack and its own login for now.)
 
 {
-	# Internal CA for on-prem use without a public domain. With a real domain,
-	# remove this and use FQDN site addresses for automatic public TLS.
-	local_certs
+	# TLS issuance is per-site via `tls {$CADDY_TLS:internal}` below, NOT a
+	# global `local_certs`. Global local_certs forced Caddy's internal CA even
+	# when a public certificate was possible, so a real domain still produced
+	# browser warnings until someone hand-edited this file.
+	#
+	#   CADDY_TLS unset          → `tls internal`  (on-prem / localhost; browsers
+	#                              warn until Caddy's root CA is distributed)
+	#   CADDY_TLS=you@domain.com → Caddy runs ACME with that email and obtains a
+	#                              real Let's Encrypt certificate
+	#
+	# All three site blocks share one hostname, so they share one certificate;
+	# the ACME challenge is served on 80/443 regardless of the 8444/8445 blocks.
 }
 
 # ── Mosaic (the app + handshake endpoints) ──────────────────────
 https://{$MOSAIC_HOSTNAME:localhost} {
+	tls {$CADDY_TLS:internal}
 	reverse_proxy mosaic:3001
 }
 
 # ── n8n (served at its own origin root) ─────────────────────────
 https://{$MOSAIC_HOSTNAME:localhost}:8444 {
+	tls {$CADDY_TLS:internal}
 	# NOTE: n8n signs out via an XHR to /rest/logout. Do NOT intercept it —
 	# redirecting an API call makes the n8n client report "cannot connect to
 	# n8n" (it expects JSON, not a 302 to an HTML page). Let it reach n8n and
@@ -72,6 +83,7 @@ https://{$MOSAIC_HOSTNAME:localhost}:8444 {
 
 # ── Superset (served at its own origin root) ────────────────────
 https://{$MOSAIC_HOSTNAME:localhost}:8445 {
+	tls {$CADDY_TLS:internal}
 	@logout path /logout /logout/
 	redir @logout https://{$MOSAIC_HOSTNAME:localhost}/api/authz/superset-login 302
 

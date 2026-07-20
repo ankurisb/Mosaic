@@ -175,10 +175,19 @@ openssl rand -hex 24     # CRON_SECRET / SUPERSET_SECRET_KEY
 > unset it falls back to SQLite — so a blank `DATABASE_URL` = accidental SQLite.
 > Double-check it's set to the RDS URL.
 
-### 4a. Point the domain in the Caddyfile
-Edit `docker/caddy/Caddyfile` — replace the site address at the top with
-`mosaic.ugx.ai` so Caddy requests a real Let's Encrypt cert for it. (The file is
-structured per-origin; the front-door block is the Mosaic one on 443.)
+### 4a. TLS for the public domain
+`install.sh` option 3 sets `CADDY_TLS=<your email>` in `.env`, which makes Caddy
+request a real Let's Encrypt certificate for `MOSAIC_HOSTNAME`. If you're
+configuring `.env` by hand, set both:
+
+```bash
+MOSAIC_HOSTNAME=mosaic.ugx.ai
+CADDY_TLS=ops@ugx.ai      # unset/internal = Caddy's own CA (browser warnings)
+```
+
+Caddy derives its site addresses from `MOSAIC_HOSTNAME`, so no Caddyfile edit is
+needed. The domain must resolve to this box with inbound 80 and 443 open before
+the certificate can be issued.
 
 ---
 
@@ -359,10 +368,11 @@ validation requires public reachability. Three options, best first:
    ```
    Hand that to IT for deployment to workstations.
 
-> **Known gap:** `docker/caddy/Caddyfile` sets `local_certs` unconditionally in
-> its global block, which forces option 3 even when a public certificate is
-> possible. For options 1 and 2 — and for the public deployment in §1–10 —
-> that line must currently be removed by hand.
+> **How TLS mode is selected:** `CADDY_TLS` in `.env`. Leave it unset (or
+> `internal`) and Caddy uses its own CA — the right default for internal
+> hostnames. Set it to a contact email and Caddy runs ACME and obtains a real
+> Let's Encrypt certificate. `install.sh` sets this automatically when you pick
+> option 3 (public domain). No hand-editing of the Caddyfile required.
 
 ### 11.5 If IT fronts Mosaic with their own reverse proxy
 

@@ -723,6 +723,11 @@ services:
       - "8445:8445"
     environment:
       - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-localhost}
+      # Unset -> Caddy's internal CA (on-prem / localhost). Set to an email
+      # address -> Caddy runs ACME and obtains a real Let's Encrypt certificate
+      # for MOSAIC_HOSTNAME. Requires a publicly resolvable name and inbound
+      # 80/443, so leave it unset for internal-only hostnames.
+      - CADDY_TLS=${CADDY_TLS:-internal}
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
