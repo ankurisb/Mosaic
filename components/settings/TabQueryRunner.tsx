@@ -87,6 +87,49 @@ export default function TabQueryRunner() {
   const [tableOptions, setTableOptions] = useState<{ value: string; label: string; sql: string }[]>([])
   const [selectedTable, setSelectedTable] = useState('')
 
+  // Plain-English query building. aiStatus is null until known, so the input
+  // isn't disabled on first paint and then enabled a moment later.
+  const [nlQuestion, setNlQuestion] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [genNote, setGenNote] = useState<string | null>(null)
+  const [aiStatus, setAiStatus] = useState<{ available: boolean; disabled: boolean } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/ai/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setAiStatus({ available: !!d.available, disabled: !!d.disabled }) })
+      .catch(() => {})
+  }, [])
+
+  // Puts the result in the editor rather than executing it: the user reviews,
+  // edits if needed, then runs through the normal path.
+  const generateQuery = useCallback(async () => {
+    if (!selectedId || !nlQuestion.trim()) return
+    setGenerating(true); setGenNote(null); setError(null)
+    try {
+      const res = await fetch('/api/query-runner/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: selectedId, question: nlQuestion.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        // Every failure mode from this endpoint carries a human-readable
+        // message, including the deliberate no-AI case.
+        setGenNote(data?.error ?? 'Couldn’t build a query from that question.')
+        if (data?.code === 'no_llm') setAiStatus({ available: false, disabled: !!data.disabled })
+        return
+      }
+      setQuery(data.query)
+      setResult(null)
+      setGenNote('Query built — review it below, then Run.')
+    } catch {
+      setGenNote('Couldn’t build a query just now. You can still write one yourself.')
+    } finally {
+      setGenerating(false)
+    }
+  }, [selectedId, nlQuestion])
+
   // ── Load sources ──────────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([
@@ -190,7 +233,7 @@ export default function TabQueryRunner() {
           <label style={LBL}>Data source</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ flex: 1 }}>
-              <CustomDropdown value={selectedId} onChange={v => { setSelectedId(v); setQuery(''); setResult(null); setError(null); setSelectedTable('') }} searchable placeholder="Select a data source…"
+              <CustomDropdown value={selectedId} onChange={v => { setSelectedId(v); setQuery(''); setResult(null); setError(null); setSelectedTable(''); setNlQuestion(''); setGenNote(null) }} searchable placeholder="Select a data source…"
                 options={connections.map(c => ({ value: c.id, label: c.label, group: c.group, meta: c.dialect !== 'api' && c.dialect !== 'file' ? DIALECT_LABELS[c.dialect] ?? c.dialect : undefined }))} />
             </div>
             {selectedConn && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, color: ENV_DOT[selectedConn.environment] ?? 'var(--text3)', whiteSpace: 'nowrap', flexShrink: 0 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: ENV_DOT[selectedConn.environment] ?? 'var(--text4)', display: 'inline-block' }} />{selectedConn.environment}</span>}
@@ -263,6 +306,42 @@ export default function TabQueryRunner() {
           )}
         </div>
       </div>
+      {/* ── Ask in plain English ──
+          Writes into the editor below rather than running straight away: the
+          user sees the query, can edit it, and execution still goes through the
+          normal Run path. Hidden for API/file sources, which aren't queried. */}
+      {!isApi && !isFile && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <input
+              style={{ flex: 1, height: 38, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 13, padding: '0 12px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+              placeholder={aiStatus && !aiStatus.available ? 'Ask a question in plain English…' : 'Ask in plain English — e.g. "top 10 downtime reasons last week"'}
+              value={nlQuestion}
+              disabled={!selectedId || generating || (aiStatus ? !aiStatus.available : false)}
+              onChange={e => { setNlQuestion(e.target.value); setGenNote(null) }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateQuery() } }}
+            />
+            <button
+              onClick={generateQuery}
+              disabled={!selectedId || generating || !nlQuestion.trim() || (aiStatus ? !aiStatus.available : false)}
+              style={{ height: 38, padding: '0 16px', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7, cursor: (!selectedId || generating || !nlQuestion.trim() || (aiStatus ? !aiStatus.available : false)) ? 'default' : 'pointer', opacity: (!selectedId || generating || !nlQuestion.trim() || (aiStatus ? !aiStatus.available : false)) ? .5 : 1 }}>
+              {generating ? <><Spinner />Building…</> : 'Build query'}
+            </button>
+          </div>
+          {/* Availability notice — stated once, calmly, not as an error. */}
+          {aiStatus && !aiStatus.available && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+              {aiStatus.disabled
+                ? 'This deployment runs without an AI model, so questions can’t be turned into queries. Everything else here works as normal.'
+                : 'Mosaic isn’t connected to an AI model yet, so it can’t turn questions into queries. An admin can connect one in Settings → API Keys. You can still write and run queries below.'}
+            </div>
+          )}
+          {genNote && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>{genNote}</div>
+          )}
+        </div>
+      )}
+
       {/* ── Query editor ── */}
       {!isApi && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 14 }}>
