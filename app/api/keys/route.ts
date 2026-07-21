@@ -33,6 +33,11 @@ const KNOWN_KEYS = [
   // directly (never getKey), so a value stored here would be silently ignored.
   // It is env-only — see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   'CRON_SECRET',
+  // 'false' means this deployment intentionally runs without AI (air-gapped /
+  // no-internet sites). Absent = AI enabled. Settable here so it can also be
+  // pre-set in .env; the toggle lives in Settings -> Setup, not in the API Keys
+  // UI, so it is deliberately absent from KEY_SECTIONS in TabKeys.tsx.
+  'AI_ENABLED',
   // Database
   'DATABASE_URL',
   // Superset

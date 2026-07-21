@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 interface SetupStatus {
   allCriticalDone: boolean
   allDone: boolean
+  aiDisabled?: boolean
   anthropicKey:  { done: boolean }
   dataSource:    { done: boolean; count: number }
   users:         { done: boolean; count: number }
@@ -40,7 +41,7 @@ export default function SetupBanner({ isAdmin }: { isAdmin: boolean }) {
 
   // Build the pending items label
   const pending: string[] = []
-  if (!status.anthropicKey.done) pending.push('Anthropic API key')
+  if (!status.anthropicKey.done && !status.aiDisabled) pending.push('Anthropic API key')
   if (!status.dataSource.done)   pending.push('data source')
 
   return (

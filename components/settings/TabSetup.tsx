@@ -5,6 +5,7 @@ import { PageTitle, PageSub, Spinner } from './ui'
 
 interface SetupStatus {
   anthropicKey:    { done: boolean }
+  aiDisabled:      boolean
   dataSource:      { done: boolean; count: number }
   users:           { done: boolean; count: number }
   notifications:   { done: boolean }
@@ -50,6 +51,7 @@ const ITEMS = [
 export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNavigate: (tab: string) => void }) {
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [aiToggleBusy, setAiToggleBusy] = useState(false)
 
   useEffect(() => {
     fetch('/api/setup-status')
@@ -58,6 +60,27 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  // AI_ENABLED='false' declares an intentional no-AI deployment; deleting the
+  // key restores the default (AI expected). Re-fetch rather than patching local
+  // state so allCriticalDone/allDone stay authoritative from the server.
+  async function setAiDisabled(disabled: boolean) {
+    setAiToggleBusy(true)
+    try {
+      await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          disabled
+            ? { action: 'set', key: 'AI_ENABLED', value: 'false' }
+            : { action: 'delete', key: 'AI_ENABLED' }
+        ),
+      })
+      const r = await fetch('/api/setup-status')
+      if (r.ok) setStatus(await r.json())
+    } catch { /* leave previous state on failure */ }
+    finally { setAiToggleBusy(false) }
+  }
 
   function navigate(href: string) {
     onNavigate(href.replace('#', ''))
@@ -109,11 +132,35 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
                 key={item.key}
                 item={item}
                 done={status?.[item.key]?.done ?? false}
+                notRequired={item.key === 'anthropicKey' && (status?.aiDisabled ?? false)}
                 last={idx === arr.length - 1}
                 onNavigate={navigate}
               />
             ))}
           </div>
+
+          {/* Air-gapped / no-internet deployments run without AI on purpose.
+              Declaring it here stops the setup checklist treating a deliberate
+              choice as an unfinished task. */}
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, margin: '10px 2px 22px',
+            fontSize: 12, color: 'var(--text3)', cursor: aiToggleBusy ? 'wait' : 'pointer',
+          }}>
+            <input
+              type="checkbox"
+              checked={status?.aiDisabled ?? false}
+              disabled={aiToggleBusy}
+              onChange={e => setAiDisabled(e.target.checked)}
+              style={{ marginTop: 2, cursor: 'inherit' }}
+            />
+            <span>
+              This deployment runs without AI
+              <span style={{ display: 'block', color: 'var(--text4)', marginTop: 2 }}>
+                For air-gapped or no-internet sites. Mosaic still works for data sources,
+                queries and dashboards — AI features stay unavailable until a key is added.
+              </span>
+            </span>
+          </label>
 
           {/* Recommended section */}
           <div style={{ marginBottom: 8, fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Recommended</div>
@@ -135,12 +182,13 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
 }
 
 function SetupRow({
-  item, done, last, onNavigate
+  item, done, last, onNavigate, notRequired = false
 }: {
   item: typeof ITEMS[number]
   done: boolean
   last: boolean
   onNavigate: (href: string) => void
+  notRequired?: boolean
 }) {
   return (
     <div style={{
@@ -156,18 +204,24 @@ function SetupRow({
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 5,
           background: done ? 'var(--green-t)' : 'var(--border2)',
           border: done ? 'none' : '1.5px solid var(--text4)',
+          opacity: notRequired && !done ? .5 : 1,
         }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: done ? 'var(--text3)' : 'var(--text)', marginBottom: 3, textDecoration: done ? 'none' : 'none' }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: done || notRequired ? 'var(--text3)' : 'var(--text)', marginBottom: 3, textDecoration: done ? 'none' : 'none' }}>
             {item.label}
             {done && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--green-t)', fontWeight: 500 }}>Done</span>}
+            {!done && notRequired && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text4)', fontWeight: 500 }}>Not required</span>}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>{item.description}</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+            {!done && notRequired
+              ? 'This deployment is configured to run without AI. Add a key any time to enable AI features.'
+              : item.description}
+          </div>
         </div>
       </div>
 
       {/* Action */}
-      {!done && (
+      {!done && !notRequired && (
         <button
           onClick={() => onNavigate(item.href)}
           style={{
