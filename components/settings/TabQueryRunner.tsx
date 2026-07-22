@@ -437,7 +437,7 @@ export default function TabQueryRunner() {
             return (
               <>
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead><tr><th style={TH_NUM}>#</th>{result.columns.map(col => <th key={col} style={TH}>{col}</th>)}</tr></thead>
                     <tbody>
                       {pagedRows.map((row, i) => {
