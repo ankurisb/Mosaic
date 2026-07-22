@@ -7,10 +7,12 @@ interface UsageData {
   totals: {
     input_tokens: string; output_tokens: string; cost_usd: string; calls: string
     avg_latency_ms: string; tool_calls_total: string
+    cache_read_tokens?: string; cache_write_tokens?: string
   }
   byUser: {
     user_email: string; input_tokens: string; output_tokens: string
     cost_usd: string; calls: string; avg_latency_ms: string
+    cache_read_tokens?: string; cache_write_tokens?: string
   }[]
   daily: {
     date: string; input_tokens: string; output_tokens: string
@@ -34,14 +36,22 @@ export default function TabUsage({ user }: { user: SessionUser }) {
   const [data, setData] = useState<UsageData | null>(null)
   const [period, setPeriod] = useState('7d')
   const [loading, setLoading] = useState(true)
+  const [userPage, setUserPage] = useState(1)
+  const USERS_PER_PAGE = 10
 
   async function load(p: string) {
     setLoading(true)
+    setUserPage(1)
     const r = await fetch(`/api/usage?period=${p}`)
     if (r.ok) setData(await r.json())
     setLoading(false)
   }
   useEffect(() => { load(period) }, [period])
+
+  function exportCsv() {
+    // Hits the same endpoint with format=csv; the browser downloads the file.
+    window.open(`/api/usage?period=${period}&format=csv`, '_blank')
+  }
 
   const fmt = (n: string | number) => Number(n).toLocaleString()
   const fmtCost = (n: string | number) => `$${Number(n).toFixed(4)}`
@@ -76,13 +86,19 @@ export default function TabUsage({ user }: { user: SessionUser }) {
       ) : data ? (
         <>
           {/* ── Row 1: 6 stat cards ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 8 }}>
             {card('Total tokens', fmt(Number(data.totals.input_tokens) + Number(data.totals.output_tokens)), 'var(--blue-t)')}
             {card('Estimated cost', fmtCost(data.totals.cost_usd), 'var(--green-t)')}
             {card('API calls', fmt(data.totals.calls), 'var(--purple-t)')}
             {card('Input tokens', fmt(data.totals.input_tokens), 'var(--text)')}
             {card('Avg latency', fmtMs(data.totals.avg_latency_ms), 'var(--amber-t)')}
             {card('Tool calls', fmt(data.totals.tool_calls_total), 'var(--red-t, #f97316)')}
+          </div>
+          {/* Cost is derived from a built-in per-model price table, including
+              prompt-cache read/write rates. It's an estimate — actual billing is
+              the provider invoice, and the table can lag price changes. */}
+          <div style={{ fontSize: 11, color: 'var(--text4)', marginBottom: 20 }}>
+            Cost is estimated from current model prices (incl. prompt-cache rates) and may differ slightly from your provider invoice.
           </div>
 
           {/* ── Row 2: Token chart + Latency chart side by side ── */}
@@ -187,32 +203,50 @@ export default function TabUsage({ user }: { user: SessionUser }) {
           )}
 
           {/* ── Row 4: Per-user table (admin only) ── */}
-          {user.role === 'admin' && data.byUser.length > 0 && (
+          {user.role === 'admin' && data.byUser.length > 0 && (() => {
+            const totalUserPages = Math.ceil(data.byUser.length / USERS_PER_PAGE)
+            const pageRows = data.byUser.slice((userPage - 1) * USERS_PER_PAGE, userPage * USERS_PER_PAGE)
+            return (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Usage by user</div>
+              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 500, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Usage by user <span style={{ color: 'var(--text3)', fontWeight: 400 }}>({data.byUser.length})</span></span>
+                <button onClick={exportCsv} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Export CSV</button>
+              </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['User', 'Calls', 'Input tokens', 'Output tokens', 'Avg latency', 'Cost'].map(h => (
+                    {['User', 'Calls', 'Input tokens', 'Output tokens', 'Cache tokens', 'Avg latency', 'Cost'].map(h => (
                       <th key={h} style={{ padding: '9px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.byUser.map((u, i) => (
+                  {pageRows.map((u, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--text)' }}>{u.user_email}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text2)' }}>{fmt(u.calls)}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text2)' }}>{fmt(u.input_tokens)}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text2)' }}>{fmt(u.output_tokens)}</td>
+                      <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text3)' }} title="cache read + write">{fmt(Number(u.cache_read_tokens || 0) + Number(u.cache_write_tokens || 0))}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--amber-t)' }}>{fmtMs(u.avg_latency_ms)}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--green-t)', fontWeight: 500 }}>{fmtCost(u.cost_usd)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {totalUserPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>{data.byUser.length} users</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button onClick={() => setUserPage(p => Math.max(1, p - 1))} disabled={userPage === 1} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: userPage === 1 ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>←</button>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>Page {userPage} of {totalUserPages}</span>
+                    <button onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))} disabled={userPage === totalUserPages} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: userPage === totalUserPages ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>→</button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+            )
+          })()}
 
           {!data.daily.length && !data.byUser.length && (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text3)', fontSize: 14 }}>

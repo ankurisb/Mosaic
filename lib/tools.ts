@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { log } from './logger'
 import { getDb } from './db'
 import { getKey } from './keys'
+import { emitToolCall, type MeteringEventData } from './metering'
 import {
   applyDataAccessRules,
   checkActionAllowed,
@@ -239,6 +240,21 @@ export async function runTool(
       return { error: actionCheck.reason, blocked: true }
     }
   } catch { /* non-blocking */ }
+
+  // Per-tool metering: emit one tool_call event per invocation, so billing can
+  // meter individual tool use (per database query, API call, etc.) — not just
+  // the aggregate chat_completion. Fire-and-forget; no-op unless OPENMETER_URL
+  // is set. Keyed on user_id (the billable subject).
+  if (guardrailCtx?.userId) {
+    const srcMap: Record<string, MeteringEventData['source_type']> = {
+      query_database: 'database', call_api: 'api', read_file_server: 'file_server',
+      query_prism: 'prism', web_search: 'web_search', run_statistical_analysis: 'stats',
+    }
+    emitToolCall(guardrailCtx.userId, name, srcMap[name], {
+      conversation_id: guardrailCtx.conversationId,
+      source_id: String(input.connection_id || input.server_id || input.service_id || '') || undefined,
+    })
+  }
 
   switch (name) {
     case 'web_search': return webSearch(String(input.query))

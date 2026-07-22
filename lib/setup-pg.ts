@@ -146,6 +146,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     model         TEXT,
     input_tokens  INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
+    cache_read_tokens  INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0,
     cost_usd      NUMERIC(10,6) DEFAULT 0,
     latency_ms    INT,
     created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
@@ -314,6 +316,9 @@ export async function setupDatabasePostgres(): Promise<void> {
 
   await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS tenant_id TEXT`.catch(() => {})
   await sql`ALTER TABLE file_servers ADD COLUMN IF NOT EXISTS client_id TEXT`.catch(() => {})
+  // Cache-token billing dimensions on existing usage_events tables.
+  await sql`ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS cache_read_tokens  INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER DEFAULT 0`.catch(() => {})
 
   // -- MCP connections (Postgres) --------------------------------
   await sql`CREATE TABLE IF NOT EXISTS mcp_connections (

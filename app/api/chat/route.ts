@@ -402,7 +402,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       const send = (o: object) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'))
       try {
         let history: Anthropic.MessageParam[] = trimmedMessages.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        let totalInput = 0, totalOutput = 0
+        let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0
         // Send real DB conversation ID to client so it can sync local state
         if (convId) send({ type: 'conv_id', id: convId })
         // Track full assistant response for persistence
@@ -460,7 +460,19 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
               stopReason = evt.delta.stop_reason || ''
               if (evt.usage) totalOutput += evt.usage.output_tokens
             } else if (evt.type === 'message_start') {
-              if (evt.message?.usage) totalInput += evt.message.usage.input_tokens
+              if (evt.message?.usage) {
+                const u = evt.message.usage as {
+                  input_tokens: number
+                  cache_read_input_tokens?: number | null
+                  cache_creation_input_tokens?: number | null
+                }
+                // input_tokens from the API already EXCLUDES cached tokens, so
+                // these three are non-overlapping and priced separately. Anthropic
+                // bills cache reads at ~0.1x input and cache writes at ~1.25x.
+                totalInput += u.input_tokens
+                totalCacheRead += u.cache_read_input_tokens || 0
+                totalCacheWrite += u.cache_creation_input_tokens || 0
+              }
             }
           }
           // Now we know if this was an intermediate turn (has tool calls) or the final turn
@@ -567,7 +579,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
 
         // Log usage — enriched with billing dimensions
         try {
-          const cost = totalInput * pricing.input + totalOutput * pricing.output
+          // Cache reads bill at ~0.1x the input rate, cache writes at ~1.25x.
+          // Multipliers applied against this model's input price.
+          const cacheReadCost  = totalCacheRead  * pricing.input * 0.1
+          const cacheWriteCost = totalCacheWrite * pricing.input * 1.25
+          const cost = totalInput * pricing.input + totalOutput * pricing.output + cacheReadCost + cacheWriteCost
           const latencyMs = Date.now() - requestStart
           const usageSql = getDb()
 
@@ -588,10 +604,12 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
 
           await usageSql`
             INSERT INTO usage_events
-              (user_id, user_email, type, model, input_tokens, output_tokens, cost_usd,
+              (user_id, user_email, type, model, input_tokens, output_tokens,
+               cache_read_tokens, cache_write_tokens, cost_usd,
                latency_ms, conversation_id, tool_calls_count, tool_types, source_types)
             VALUES
-              (${session.id}, ${session.email}, 'chat', ${model}, ${totalInput}, ${totalOutput}, ${cost},
+              (${session.id}, ${session.email}, 'chat', ${model}, ${totalInput}, ${totalOutput},
+               ${totalCacheRead}, ${totalCacheWrite}, ${cost},
                ${latencyMs}, ${convId || null}, ${toolCallsUsed},
                ${toolTypes.length ? JSON.stringify(toolTypes) : null},
                ${sourceTypes.length ? JSON.stringify(sourceTypes) : null})`
@@ -601,6 +619,8 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             model,
             input_tokens: totalInput,
             output_tokens: totalOutput,
+            cache_read_tokens: totalCacheRead,
+            cache_write_tokens: totalCacheWrite,
             cost_usd: cost,
             latency_ms: latencyMs,
             conversation_id: convId || undefined,

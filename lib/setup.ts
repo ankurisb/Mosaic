@@ -195,6 +195,8 @@ export async function setupDatabase() {
     model           TEXT,
     input_tokens    INTEGER DEFAULT 0,
     output_tokens   INTEGER DEFAULT 0,
+    cache_read_tokens  INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0,
     cost_usd        NUMERIC(10,6) DEFAULT 0,
     latency_ms      INT,
     conversation_id TEXT,
@@ -210,6 +212,8 @@ export async function setupDatabase() {
   await sql`ALTER TABLE usage_events ADD COLUMN tool_types       TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
   await sql`ALTER TABLE usage_events ADD COLUMN source_types     TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
   await sql`ALTER TABLE usage_events ADD COLUMN latency_ms       INT`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN cache_read_tokens  INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
+  await sql`ALTER TABLE usage_events ADD COLUMN cache_write_tokens INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column')) throw e })
 
   // -- File server connections -----------------------------------
   await sql`CREATE TABLE IF NOT EXISTS file_servers (
