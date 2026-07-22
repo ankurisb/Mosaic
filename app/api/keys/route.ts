@@ -42,10 +42,13 @@ const KNOWN_KEYS = [
   // connection string, read from process.env at startup to open the connection
   // that kv_settings itself lives in. A value stored here could never be read
   // before that connection exists, so it was a silent no-op. Env-only.
-  // Superset
-  'SUPERSET_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD',
-  // Airbyte
-  'AIRBYTE_USER', 'AIRBYTE_PASSWORD',
+  //
+  // SUPERSET_* and AIRBYTE_* are likewise excluded. They are internal service
+  // accounts, set once in .env and shared by compose across both containers
+  // (SUPERSET_ADMIN_PASSWORD bootstraps the Superset admin AND is Mosaic's auth;
+  // AIRBYTE_* is basic auth on both the proxy and Mosaic's caller). All are read
+  // from process.env, never getKey, so storing them here did nothing. End users
+  // reach Superset through the SSO gate, not these credentials. Env-only.
 ]
 
 export async function GET() {

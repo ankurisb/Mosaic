@@ -20,8 +20,16 @@ const KEY_SECTIONS = [
   // it defines already exists, so the field was always a silent no-op. It is
   // env-only bootstrap config; see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   { title: 'GitHub — Update Checker',  keys: ['GITHUB_TOKEN', 'GITHUB_REPO'] },
-  { title: 'Superset Analytics',       keys: ['SUPERSET_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD'] },
-  { title: 'Airbyte Connectors',       keys: ['AIRBYTE_USER', 'AIRBYTE_PASSWORD'] },
+  // Superset Analytics and Airbyte Connectors are intentionally NOT here. Their
+  // credentials are internal service accounts, set once in .env and shared by
+  // compose across both containers (e.g. SUPERSET_ADMIN_PASSWORD bootstraps the
+  // Superset admin AND is what Mosaic authenticates with; AIRBYTE_* is basic
+  // auth on both the proxy and Mosaic's caller). Editing them here can't reach
+  // the other container, and all of them are read from process.env, never via
+  // getKey — so the fields were silent no-ops. End users reach Superset through
+  // the SSO gate, not these credentials. SUPERSET_URL is likewise an internal
+  // Docker address fixed by the compose topology (its one getKey consumer falls
+  // back to process.env). All env-only; see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   { title: 'Notifications — Twilio',   keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'] },
   { title: 'n8n Automation',           keys: ['N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY'] },
   { title: 'CISO Assistant',           keys: ['CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD'] },
@@ -33,11 +41,6 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · auto-generated on first run — only set this to use your own value',        placeholder: 'Auto-generated', secret: true },
   GITHUB_TOKEN:            { label: 'GitHub token',             hint: 'Fine-grained PAT with Contents read-only · used to check for Mosaic updates',       placeholder: 'github_pat_...', secret: true },
   GITHUB_REPO:             { label: 'GitHub repo',              hint: 'Repository to check for updates · format: owner/repo',                               placeholder: 'ankurisb/Mosaic' },
-  SUPERSET_URL:            { label: 'Superset URL',             hint: 'Base URL of your Superset instance · default http://localhost:8088',                 placeholder: 'http://localhost:8088' },
-  SUPERSET_ADMIN_USER:     { label: 'Superset admin user',      hint: 'Superset admin username · default: admin',                                           placeholder: 'admin' },
-  SUPERSET_ADMIN_PASSWORD: { label: 'Superset admin password',  hint: 'Superset admin password · stored encrypted',                                        placeholder: 'Stored encrypted', secret: true },
-  AIRBYTE_USER:            { label: 'Airbyte username',         hint: 'Airbyte API username · default: airbyte',                                            placeholder: 'airbyte' },
-  AIRBYTE_PASSWORD:        { label: 'Airbyte password',         hint: 'Airbyte API password · stored encrypted',                                            placeholder: 'Stored encrypted', secret: true },
   TWILIO_ACCOUNT_SID:      { label: 'Twilio Account SID',       hint: 'Required for SMS and WhatsApp · found in Twilio Console',                            placeholder: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' },
   TWILIO_AUTH_TOKEN:       { label: 'Twilio Auth Token',        hint: 'Paired with Account SID · stored encrypted',                                        placeholder: 'Stored encrypted', secret: true },
   N8N_URL:                 { label: 'n8n URL',                  hint: 'Base URL of your n8n instance · default: http://localhost:5678',                    placeholder: 'http://localhost:5678' },
