@@ -213,9 +213,16 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
     setSaving(true)
     try {
       const r = await fetch('/api/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editing ? 'update' : 'create', id: editing, ...form }) })
-      const { error: err } = await safeJson(r)
+      const { data, error: err } = await safeJson<{ id?: string }>(r)
       if (err) { setError(err); return }
-      setShowForm(false); setEditing(null); setForm(EMPTY); setError(''); load()
+      // The connection saved. Immediately verify it actually connects, so a
+      // wrong host / SSL mode / credential surfaces here at setup time rather
+      // than later as an empty Query Builder dropdown. The row's own Test
+      // button drives the same check; this just runs it automatically once.
+      const savedId = editing || data?.id
+      setShowForm(false); setEditing(null); setForm(EMPTY); setError('')
+      await load()
+      if (savedId) test(savedId)
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
   }
