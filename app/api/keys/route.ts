@@ -19,8 +19,9 @@ async function ensureTable() {
 const KNOWN_KEYS = [
   // AI
   'ANTHROPIC_API_KEY',
-  // AI & Search
-  'TAVILY_API_KEY',
+  // AI & Search — SEARCH_PROVIDER selects the backend (tavily|perplexity),
+  // each provider's key read via getKey so it's runtime-settable here.
+  'SEARCH_PROVIDER', 'TAVILY_API_KEY', 'PERPLEXITY_API_KEY',
   // Notifications
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
   // n8n

@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { log } from './logger'
 import { getDb } from './db'
+import { getKey } from './keys'
 import {
   applyDataAccessRules,
   checkActionAllowed,
@@ -317,20 +318,69 @@ export async function runTool(
 }
 
 // -- Web search ------------------------------------------------
-async function webSearch(query: string) {
-  if (process.env.TAVILY_API_KEY) {
-    const res = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, query, max_results: 5 }),
-    })
-    if (!res.ok) throw new Error(`Tavily error ${res.status}`)
-    const data = await res.json()
-    return (data.results || []).map((r: { title: string; url: string; content: string }) => ({
-      title: r.title, url: r.url, snippet: String(r.content || '').slice(0, 400),
-    }))
+// Provider-aware. SEARCH_PROVIDER selects the backend; each provider's key is
+// read via getKey so it can be set at runtime in Settings -> API Keys (not just
+// .env). Both providers are normalised to the same {title, url, snippet} shape
+// the tool caller expects, even though their raw responses differ: Tavily
+// returns ranked result snippets; Perplexity (Sonar) returns a synthesised
+// answer plus source citations.
+type SearchHit = { title: string; url: string; snippet: string }
+
+async function tavilySearch(query: string, apiKey: string): Promise<SearchHit[]> {
+  const res = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey, query, max_results: 5 }),
+  })
+  if (!res.ok) throw new Error(`Tavily error ${res.status}`)
+  const data = await res.json()
+  return (data.results || []).map((r: { title: string; url: string; content: string }) => ({
+    title: r.title, url: r.url, snippet: String(r.content || '').slice(0, 400),
+  }))
+}
+
+async function perplexitySearch(query: string, apiKey: string): Promise<SearchHit[]> {
+  // Sonar is an OpenAI-compatible chat endpoint with built-in web grounding;
+  // the answer comes back as message content and the sources as citations.
+  const res = await fetch('https://api.perplexity.ai/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'sonar',
+      messages: [
+        { role: 'system', content: 'Answer concisely using current web information.' },
+        { role: 'user', content: query },
+      ],
+    }),
+  })
+  if (!res.ok) throw new Error(`Perplexity error ${res.status}`)
+  const data = await res.json()
+  const answer = String(data.choices?.[0]?.message?.content || '').trim()
+  // search_results (title+url) is richer than the bare citations array; fall
+  // back to citations if only those are present.
+  const results: SearchHit[] = Array.isArray(data.search_results)
+    ? data.search_results.slice(0, 5).map((r: { title?: string; url: string }) => ({
+        title: r.title || r.url, url: r.url, snippet: '',
+      }))
+    : (data.citations || []).slice(0, 5).map((url: string) => ({ title: url, url, snippet: '' }))
+  // Lead with the synthesised answer as the first "hit" so the model gets the
+  // grounded summary, then the sources for attribution.
+  return [{ title: 'Answer', url: '', snippet: answer.slice(0, 800) }, ...results]
+}
+
+async function webSearch(query: string): Promise<SearchHit[]> {
+  const provider = ((await getKey('SEARCH_PROVIDER')) || 'tavily').toLowerCase()
+
+  if (provider === 'perplexity') {
+    const key = await getKey('PERPLEXITY_API_KEY')
+    if (key) return perplexitySearch(query, key)
+    return [{ title: 'Search not configured', url: '', snippet: 'Perplexity is selected as the search provider but no PERPLEXITY_API_KEY is set. Add one in Settings → API Keys, or switch the provider to Tavily.' }]
   }
-  return [{ title: 'Search not configured', url: '', snippet: 'Add TAVILY_API_KEY to environment variables.' }]
+
+  // Default: Tavily
+  const key = await getKey('TAVILY_API_KEY')
+  if (key) return tavilySearch(query, key)
+  return [{ title: 'Search not configured', url: '', snippet: 'No web search key is set. Add a Tavily or Perplexity key in Settings → API Keys.' }]
 }
 
 // -- DB helpers ------------------------------------------------

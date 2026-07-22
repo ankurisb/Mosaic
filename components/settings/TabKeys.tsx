@@ -6,7 +6,7 @@ import { safeJson } from '@/lib/fetch'
 
 const KEY_SECTIONS = [
   { title: 'Anthropic',                keys: ['ANTHROPIC_API_KEY'] },
-  { title: 'AI & Search',              keys: ['TAVILY_API_KEY'] },
+  { title: 'AI & Search',              keys: ['SEARCH_PROVIDER', 'TAVILY_API_KEY', 'PERPLEXITY_API_KEY'] },
   // NEXT_PUBLIC_APP_URL is deliberately NOT listed here. The NEXT_PUBLIC_
   // prefix means Next.js inlines it at BUILD time, so it can never be truly
   // runtime-configurable, and every consumer reads process.env directly. A
@@ -37,7 +37,9 @@ const KEY_SECTIONS = [
 
 const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean }> = {
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
-  TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · 1,000 searches/month',                   placeholder: 'tvly-...', secret: true },
+  SEARCH_PROVIDER:         { label: 'Web search provider',      hint: 'Which service powers web search · "tavily" (default) or "perplexity"',              placeholder: 'tavily' },
+  TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · used when provider is Tavily',           placeholder: 'tvly-...', secret: true },
+  PERPLEXITY_API_KEY:      { label: 'Perplexity API key',       hint: 'Web search via Sonar · get it from perplexity.ai/settings/api · used when provider is Perplexity', placeholder: 'pplx-...', secret: true },
   CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · auto-generated on first run — only set this to use your own value',        placeholder: 'Auto-generated', secret: true },
   GITHUB_TOKEN:            { label: 'GitHub token',             hint: 'Fine-grained PAT with Contents read-only · used to check for Mosaic updates',       placeholder: 'github_pat_...', secret: true },
   GITHUB_REPO:             { label: 'GitHub repo',              hint: 'Repository to check for updates · format: owner/repo',                               placeholder: 'ankurisb/Mosaic' },

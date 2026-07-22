@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
+import { getKey } from '@/lib/keys'
 import { Pool } from 'pg'
 import { decrypt } from '@/lib/encrypt'
 export const runtime = 'nodejs'
@@ -53,17 +54,23 @@ export async function GET() {
     results.push({ id: 'anthropic', label: 'AI Engine', category: 'api', status: 'unknown', latencyMs: null, message: 'API key not configured' })
   }
 
-  // Check Tavily
-  if (process.env.TAVILY_API_KEY) {
+  // Check the configured web-search provider (Tavily or Perplexity), reading
+  // keys via getKey so a runtime-set key in Settings is honoured.
+  const searchProvider = ((await getKey('SEARCH_PROVIDER')) || 'tavily').toLowerCase()
+  const isPplx = searchProvider === 'perplexity'
+  const searchKey = await getKey(isPplx ? 'PERPLEXITY_API_KEY' : 'TAVILY_API_KEY')
+  const searchLabel = isPplx ? 'Perplexity Search' : 'Tavily Search'
+  const searchHost = isPplx ? 'https://api.perplexity.ai' : 'https://api.tavily.com'
+  if (searchKey) {
     try {
       const start = Date.now()
-      const res = await fetch('https://api.tavily.com', { signal: AbortSignal.timeout(5000) })
-      results.push({ id: 'tavily', label: 'Tavily Search', category: 'api', status: res.status < 500 ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
+      const res = await fetch(searchHost, { signal: AbortSignal.timeout(5000) })
+      results.push({ id: 'search', label: searchLabel, category: 'api', status: res.status < 500 ? 'healthy' : 'degraded', latencyMs: Date.now() - start })
     } catch {
-      results.push({ id: 'tavily', label: 'Tavily Search', category: 'api', status: 'down', latencyMs: null })
+      results.push({ id: 'search', label: searchLabel, category: 'api', status: 'down', latencyMs: null })
     }
   } else {
-    results.push({ id: 'tavily', label: 'Tavily Search', category: 'api', status: 'unknown', latencyMs: null, message: 'API key not configured' })
+    results.push({ id: 'search', label: searchLabel, category: 'api', status: 'unknown', latencyMs: null, message: 'API key not configured' })
   }
 
   // Fix #10: dialect-aware DB health check
