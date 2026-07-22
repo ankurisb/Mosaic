@@ -13,7 +13,12 @@ const KEY_SECTIONS = [
   // field here would save to kv_settings and be silently ignored. Set it in
   // .env instead (see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md).
   { title: 'App Configuration',        keys: ['CRON_SECRET'] },
-  { title: 'Database',                 keys: ['DATABASE_URL'] },
+  // DATABASE_URL is intentionally NOT here. It is Mosaic's own database
+  // connection string — read from process.env at startup to open the very
+  // connection this settings page is served from. A value stored in kv_settings
+  // (which lives inside that database) could only be read after the connection
+  // it defines already exists, so the field was always a silent no-op. It is
+  // env-only bootstrap config; see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   { title: 'GitHub — Update Checker',  keys: ['GITHUB_TOKEN', 'GITHUB_REPO'] },
   { title: 'Superset Analytics',       keys: ['SUPERSET_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD'] },
   { title: 'Airbyte Connectors',       keys: ['AIRBYTE_USER', 'AIRBYTE_PASSWORD'] },
@@ -26,7 +31,6 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · 1,000 searches/month',                   placeholder: 'tvly-...', secret: true },
   CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · auto-generated on first run — only set this to use your own value',        placeholder: 'Auto-generated', secret: true },
-  DATABASE_URL:            { label: 'Database URL',             hint: 'Leave blank for SQLite · set postgresql://... for Neon or Postgres cloud',           placeholder: 'postgresql://user:pass@host/db?sslmode=require', secret: true },
   GITHUB_TOKEN:            { label: 'GitHub token',             hint: 'Fine-grained PAT with Contents read-only · used to check for Mosaic updates',       placeholder: 'github_pat_...', secret: true },
   GITHUB_REPO:             { label: 'GitHub repo',              hint: 'Repository to check for updates · format: owner/repo',                               placeholder: 'ankurisb/Mosaic' },
   SUPERSET_URL:            { label: 'Superset URL',             hint: 'Base URL of your Superset instance · default http://localhost:8088',                 placeholder: 'http://localhost:8088' },

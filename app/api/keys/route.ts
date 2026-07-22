@@ -38,8 +38,10 @@ const KNOWN_KEYS = [
   // pre-set in .env; the toggle lives in Settings -> Setup, not in the API Keys
   // UI, so it is deliberately absent from KEY_SECTIONS in TabKeys.tsx.
   'AI_ENABLED',
-  // Database
-  'DATABASE_URL',
+  // DATABASE_URL is intentionally excluded — it is Mosaic's own database
+  // connection string, read from process.env at startup to open the connection
+  // that kv_settings itself lives in. A value stored here could never be read
+  // before that connection exists, so it was a silent no-op. Env-only.
   // Superset
   'SUPERSET_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD',
   // Airbyte
