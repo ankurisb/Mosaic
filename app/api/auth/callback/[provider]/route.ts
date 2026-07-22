@@ -6,6 +6,7 @@ import { log } from '@/lib/logger'
 import { decrypt } from '@/lib/encrypt'
 import { audit, AUDIT } from '@/lib/audit'
 import { createToken, COOKIE_NAME } from '@/lib/auth'
+import { SSO_STATE_COOKIE } from '@/app/api/auth/sso/route'
 import { cookies } from 'next/headers'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 export const runtime = 'nodejs'
@@ -64,6 +65,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
   if (error) return Response.redirect(`${APP_URL}/login?error=${encodeURIComponent(error)}`)
   if (!code) return Response.redirect(`${APP_URL}/login?error=missing_code`)
+
+  // Validate the OAuth state against the nonce we set in a cookie at /sso. A
+  // mismatch or absence means this callback wasn't reached via a redirect we
+  // initiated — i.e. a login-CSRF attempt — so we refuse before touching the
+  // provider. The state also carries the provider, which must match the route.
+  const stateParam = searchParams.get('state')
+  const cookieHeader = req.headers.get('cookie') || ''
+  const stateCookie = cookieHeader.split(';').map(c => c.trim())
+    .find(c => c.startsWith(`${SSO_STATE_COOKIE}=`))?.split('=')[1]
+  let stateOk = false
+  try {
+    if (stateParam && stateCookie) {
+      const decoded = JSON.parse(Buffer.from(stateParam, 'base64url').toString()) as { provider?: string; nonce?: string }
+      stateOk = decoded.nonce === stateCookie && decoded.provider === provider
+    }
+  } catch { stateOk = false }
+  if (!stateOk) {
+    log.warn({ service: 'sso-callback', provider }, 'SSO state validation failed')
+    return Response.redirect(`${APP_URL}/login?error=invalid_state`)
+  }
 
   try {
     const sql = getDb()

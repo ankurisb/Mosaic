@@ -1,6 +1,7 @@
 import { signInUser, getSession, COOKIE_NAME } from '@/lib/auth'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT, getActorIp } from '@/lib/audit'
+import { rateLimit, clearRateLimit } from '@/lib/rate-limit'
 import { cookies } from 'next/headers'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
@@ -25,6 +26,22 @@ export async function POST(req: Request) {
     if (action === 'signin') {
       const { email, password } = body
       if (!email || !password) return Response.json({ error: 'Email and password required' }, { status: 400 })
+
+      // Rate limit before hitting the credential check, keyed by IP: 10 attempts
+      // per 15 minutes. This bounds online brute-force / credential-stuffing on
+      // the login endpoint (which is otherwise unauthenticated and unlimited).
+      const ip = getActorIp(req) || 'unknown'
+      const rlKey = `login:${ip}`
+      const rl = rateLimit(rlKey, 10, 15 * 60 * 1000)
+      if (!rl.allowed) {
+        audit(req, { email }, AUDIT.LOGIN_FAILED, `user:${email}`, 'failure', { reason: 'rate_limited', ip })
+        reqLog.warn({ ip, email }, 'Login rate limited')
+        return Response.json(
+          { error: 'Too many attempts. Please wait a few minutes and try again.' },
+          { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+        )
+      }
+
       const result = await signInUser(email, password)
       if (!result) {
         // Audit failed login — fire and forget
@@ -32,6 +49,9 @@ export async function POST(req: Request) {
         reqLog.warn({ email }, 'Login failed')
         return Response.json({ error: 'Incorrect email or password' }, { status: 401 })
       }
+      // Success: clear the counter so a legitimate user who mistyped a couple of
+      // times isn't penalised on their next visit from the same IP.
+      clearRateLimit(rlKey)
       const store = await cookies()
       store.set(COOKIE_NAME, result.token, OPTS)
       audit(req, { id: result.user.id, email: result.user.email, role: result.user.role }, AUDIT.LOGIN, `user:${result.user.email}`, 'success', { method: 'password' })

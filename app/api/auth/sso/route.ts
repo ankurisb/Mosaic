@@ -4,7 +4,13 @@
 // always current without hard-coding per-version URLs.
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { randomBytes } from 'crypto'
 export const runtime = 'nodejs'
+
+// Name of the short-lived cookie holding the OAuth state nonce. The callback
+// compares the state returned by the IdP against this; a mismatch or absence
+// means the request didn't originate from our own /sso redirect (login CSRF).
+export const SSO_STATE_COOKIE = 'sso_state'
 
 const STATIC_PROVIDERS: Record<string, { authUrl: (cfg: Record<string,unknown>) => string; scope: string }> = {
   microsoft: {
@@ -50,7 +56,11 @@ export async function GET(req: Request) {
 
     const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
     const redirectUri = `${APP_URL}/api/auth/callback/${provider}`
-    const state = Buffer.from(JSON.stringify({ provider, ts: Date.now() })).toString('base64url')
+    // Random nonce carried in the OAuth state and mirrored in a short-lived
+    // httpOnly cookie. The callback requires the two to match, which proves the
+    // callback was reached via a redirect we initiated (login-CSRF defence).
+    const nonce = randomBytes(24).toString('base64url')
+    const state = Buffer.from(JSON.stringify({ provider, nonce, ts: Date.now() })).toString('base64url')
 
     let authUrl: string
     let scope: string
@@ -76,7 +86,23 @@ export async function GET(req: Request) {
       response_mode: 'query',
     })
 
-    return Response.redirect(authUrl + '?' + params.toString())
+    // Set the state nonce in a short-lived, httpOnly cookie and redirect. We
+    // build the Response manually because Response.redirect() can't carry a
+    // Set-Cookie. 10 minutes is ample for a login round-trip.
+    const secure = process.env.NODE_ENV === 'production'
+    const cookie = [
+      `${SSO_STATE_COOKIE}=${nonce}`,
+      'HttpOnly',
+      'Path=/api/auth',
+      'SameSite=Lax',
+      'Max-Age=600',
+      secure ? 'Secure' : '',
+    ].filter(Boolean).join('; ')
+
+    return new Response(null, {
+      status: 302,
+      headers: { Location: authUrl + '?' + params.toString(), 'Set-Cookie': cookie },
+    })
   } catch (e) {
     log.error({ service: 'sso-init', err: e }, 'SSO init error')
     return Response.json({ error: String(e) }, { status: 500 })
