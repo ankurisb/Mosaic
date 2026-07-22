@@ -67,12 +67,19 @@ export async function GET() {
   }
   const rows = allRows
 
-  const result: Record<string, { configured: boolean; preview: string }> = {}
+  const result: Record<string, { configured: boolean; preview: string; value?: string }> = {}
+
+  // Non-secret keys whose plain value the UI legitimately needs (e.g. to know
+  // which provider is selected so it can show the right fields). These are not
+  // credentials, so returning the value rather than a masked preview is safe.
+  const PLAIN_KEYS = new Set(['SEARCH_PROVIDER', 'GITHUB_REPO', 'N8N_URL', 'CISO_API_URL'])
+
   // Seed from env vars first (lowest priority — kv_settings overrides below)
   KNOWN_KEYS.forEach(k => {
     if (process.env[k]) {
       const v = process.env[k] as string
-      result[k] = { configured: true, preview: v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***' }
+      result[k] = { configured: true, preview: v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***',
+        ...(PLAIN_KEYS.has(k) ? { value: v } : {}) }
     } else {
       result[k] = { configured: false, preview: '' }
     }
@@ -82,7 +89,8 @@ export async function GET() {
     try {
       const plain = decrypt(row.value_enc)
       result[row.key] = { configured: true,
-        preview: plain.length > 8 ? plain.slice(0, 4) + '...' + plain.slice(-4) : '***' }
+        preview: plain.length > 8 ? plain.slice(0, 4) + '...' + plain.slice(-4) : '***',
+        ...(PLAIN_KEYS.has(row.key) ? { value: plain } : {}) }
     } catch {
       result[row.key] = { configured: false, preview: '' }
     }

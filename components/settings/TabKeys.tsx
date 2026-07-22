@@ -59,7 +59,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
 // handshake and behaved inconsistently depending on existing tool cookies).
 
 export default function TabKeys({ user }: { user: SessionUser }) {
-  const [keys,    setKeys]    = useState<Record<string, { configured: boolean; preview: string }>>({})
+  const [keys,    setKeys]    = useState<Record<string, { configured: boolean; preview: string; value?: string }>>({})
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<string | null>(null)
   const [vals,    setVals]    = useState<Record<string, string>>({})
@@ -89,7 +89,12 @@ export default function TabKeys({ user }: { user: SessionUser }) {
       const { data: d, error: err } = await safeJson<{ ok?: boolean }>(r)
       if (err) { setToast('Error: ' + err); return }
       if (d?.ok) {
-        setKeys(p => ({ ...p, [key]: { configured: true, preview: vals[key].slice(0,4) + '...' } }))
+        // Also carry the plain value locally so provider-dependent rendering
+        // (e.g. which search-provider key field to show) updates immediately,
+        // without waiting for a refetch. The server only returns value for
+        // non-secret keys, so mirror that: keep it only for the dropdown.
+        const savedVal = vals[key]
+        setKeys(p => ({ ...p, [key]: { configured: true, preview: savedVal.slice(0,4) + '...', ...(KEY_META[key]?.options ? { value: savedVal } : {}) } }))
         setVals(p => ({ ...p, [key]: '' }))
         setEditing(null)
         setToast('Saved')
@@ -133,13 +138,21 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                 {section.title}
               </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-                {section.keys.map((key, i) => {
+                {(() => {
+                  // Show only the key field for the currently-selected search
+                  // provider, so the section reads as "pick a provider, then set
+                  // its key" rather than presenting both providers' key fields
+                  // at once.
+                  const provider = (keys['SEARCH_PROVIDER']?.value || 'tavily').toLowerCase()
+                  const hiddenKey = provider === 'perplexity' ? 'TAVILY_API_KEY' : 'PERPLEXITY_API_KEY'
+                  return section.keys.filter(k => k !== hiddenKey)
+                })().map((key, i, visibleKeys) => {
                   const meta = KEY_META[key]
                   if (!meta) return null
                   const status = keys[key]
                   const isEditing = editing === key
                   return (
-                    <div key={key} style={{ padding: '14px 18px', borderBottom: i < section.keys.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div key={key} style={{ padding: '14px 18px', borderBottom: i < visibleKeys.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
