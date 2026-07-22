@@ -78,12 +78,19 @@ export default function TabQueryRunner() {
   const savedPanelRef = useRef<HTMLDivElement>(null)
 
   const [schemaLoading, setSchemaLoading] = useState(false)
+  const [schemaError, setSchemaError] = useState<string | null>(null)
   const [copiedCell, setCopiedCell] = useState<string | null>(null)
   const [exported, setExported] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const selectedConn = connections.find(c => c.id === selectedId)
   const isApi = selectedConn?.type === 'api'
   const isFile = selectedConn?.type === 'fileserver'
+  // Call each source's containers by their real name — a Mongo user is looking
+  // for a collection, not a "table", and an Influx user for a measurement.
+  const entityWord = selectedConn?.dialect === 'mongodb' ? 'Collection'
+    : selectedConn?.dialect === 'elasticsearch' ? 'Index'
+    : selectedConn?.dialect === 'influxdb' ? 'Measurement'
+    : 'Table'
   const [tableOptions, setTableOptions] = useState<{ value: string; label: string; sql: string }[]>([])
   const [selectedTable, setSelectedTable] = useState('')
 
@@ -150,18 +157,40 @@ export default function TabQueryRunner() {
 
   // ── Schema / table dropdown ───────────────────────────────────────────
   useEffect(() => {
-    setTableOptions([]); setSelectedTable('')
+    setTableOptions([]); setSelectedTable(''); setSchemaError(null)
     if (!selectedId || !selectedConn) return
     if (selectedConn.type === 'db') {
       setSchemaLoading(true)
       fetch('/api/connections/schema-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connection_id: selectedId }) })
-        .then(r => r.json()).then(d => {
-          setTableOptions((d.schema?.tables ?? []).map((t: any) => {
-            const name = t.schema && t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name
-            const sql = selectedConn.dialect === 'mssql' ? `SELECT TOP 100 * FROM ${name}` : selectedConn.dialect === 'mongodb' ? `{ "collection": "${t.name}", "filter": {}, "limit": 100 }` : `SELECT * FROM ${name} LIMIT 100`
+        .then(async r => ({ ok: r.ok, d: await r.json() })).then(({ ok, d }) => {
+          if (!ok || d.error) {
+            // Previously swallowed, which left an empty dropdown and no clue
+            // why — the most common cause is simply an unreachable database.
+            setSchemaError(String(d?.error ?? 'Could not read this data source’s schema.'))
+            return
+          }
+          const s = d.schema ?? {}
+          const dialect = selectedConn.dialect
+          // Non-SQL sources don't have "tables": Mongo and Elasticsearch report
+          // collections/indices, InfluxDB reports measurements. Reading only
+          // `tables` left those dropdowns permanently empty.
+          const entries: { name: string }[] =
+            (s.tables ?? []).map((t: any) => ({ name: t.schema && t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name }))
+              .concat((s.collections ?? []).map((c: any) => ({ name: c.name })))
+              .concat((s.measurements ?? []).map((m: any) => ({ name: m.name })))
+
+          setTableOptions(entries.map(({ name }) => {
+            const sql =
+              dialect === 'mssql'         ? `SELECT TOP 100 * FROM ${name}`
+              : dialect === 'mongodb'       ? `{ "collection": "${name}", "filter": {}, "limit": 100 }`
+              : dialect === 'elasticsearch' ? `{ "index": "${name}", "query": { "match_all": {} } }`
+              : dialect === 'influxdb'      ? `SELECT * FROM "${name}" LIMIT 100`
+              : `SELECT * FROM ${name} LIMIT 100`
             return { value: name, label: name, sql }
           }))
-        }).catch(() => {}).finally(() => setSchemaLoading(false))
+          if (entries.length === 0) setSchemaError('This data source reported no tables or collections.')
+        }).catch(() => setSchemaError('Could not reach this data source to read its schema.'))
+        .finally(() => setSchemaLoading(false))
     }
     if (selectedConn.type === 'api') setTableOptions([{ value: '__auto__', label: selectedConn.hint || '/', sql: '' }])
     if (selectedConn.type === 'fileserver') {
@@ -242,10 +271,10 @@ export default function TabQueryRunner() {
 
         {/* Table */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1.5, minWidth: 160 }}>
-          <label style={LBL}>{isApi ? 'Endpoint' : isFile ? 'File' : schemaLoading ? 'Table — loading…' : 'Table'}</label>
+          <label style={LBL}>{isApi ? 'Endpoint' : isFile ? 'File' : schemaLoading ? `${entityWord} — loading…` : entityWord}</label>
           {isApi
             ? <div style={{ height: 38, display: 'flex', alignItems: 'center', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '0 12px', fontSize: 13, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedConn?.hint ?? '/'}</div>
-            : <CustomDropdown value={selectedTable} onChange={onTableSelect} placeholder={schemaLoading ? 'Loading…' : '— select table —'} disabled={schemaLoading || tableOptions.length === 0} options={tableOptions.map(o => ({ value: o.value, label: o.label }))} />}
+            : <CustomDropdown value={selectedTable} onChange={onTableSelect} placeholder={schemaLoading ? 'Loading…' : schemaError ? 'Unavailable' : `— select ${entityWord.toLowerCase()} —`} disabled={schemaLoading || tableOptions.length === 0} options={tableOptions.map(o => ({ value: o.value, label: o.label }))} />}
         </div>
 
         {/* Rows */}
@@ -306,6 +335,17 @@ export default function TabQueryRunner() {
           )}
         </div>
       </div>
+      {/* Schema failure — say why the picker is empty instead of leaving the
+          user staring at a disabled dropdown. */}
+      {schemaError && !isApi && !isFile && (
+        <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+          Couldn’t list {entityWord.toLowerCase()}s for <strong style={{ color: 'var(--text2)', fontWeight: 500 }}>{selectedConn?.label}</strong>: {schemaError}
+          <span style={{ display: 'block', color: 'var(--text4)', marginTop: 2 }}>
+            Check the connection is reachable and its credentials are valid in Settings → Data Sources. You can still type a query by hand.
+          </span>
+        </div>
+      )}
+
       {/* ── Ask in plain English ──
           Writes into the editor below rather than running straight away: the
           user sees the query, can edit it, and execution still goes through the
