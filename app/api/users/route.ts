@@ -4,6 +4,7 @@ import { audit, AUDIT } from '@/lib/audit'
 import { syncUserToSuperset } from '@/lib/superset-user-sync'
 import { getDb, nowExpr } from '@/lib/db'
 import { setUserSurfaces, isSurface, SURFACES, type Surface } from '@/lib/permissions'
+import { validatePassword } from '@/lib/password-policy'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
 
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
   // non-admin is allowed here). Verifies the current password first.
   if (action === 'changePassword') {
     if (!currentPassword || !newPassword) return Response.json({ error: 'currentPassword and newPassword required' }, { status: 400 })
+    const pol = validatePassword(newPassword, { name: session.name, email: session.email })
+    if (!pol.ok) return Response.json({ error: pol.error }, { status: 400 })
     const uRows = await sql`SELECT password_hash FROM users WHERE id=${session.id}`
     const valid = uRows.length && await bcrypt.compare(currentPassword, (uRows[0] as { password_hash: string }).password_hash)
     if (!valid) {
@@ -58,6 +61,12 @@ export async function POST(req: Request) {
 
   if (action === 'invite') {
     if (!email) return Response.json({ error: 'Email required' }, { status: 400 })
+    // Only enforce the policy on an admin-supplied password; the auto-generated
+    // fallback is random and strong by construction.
+    if (password) {
+      const pol = validatePassword(password, { name, email })
+      if (!pol.ok) return Response.json({ error: pol.error }, { status: 400 })
+    }
     const tempPassword = password || Math.random().toString(36).slice(-10) + 'A1!'
     const hash = await bcrypt.hash(tempPassword, 12)
     const rows = await sql`INSERT INTO users(email,name,password_hash,role) VALUES(${email.toLowerCase()},${name||email.split('@')[0]},${hash},${role||'user'}) ON CONFLICT(email) DO NOTHING RETURNING id,email,name,role`

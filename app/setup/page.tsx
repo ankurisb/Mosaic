@@ -16,7 +16,9 @@ export default function SetupPage() {
     e.preventDefault()
     setError('')
     if (password !== confirm) { setError('Passwords do not match'); return }
-    if (password.length < 8)  { setError('Password must be at least 8 characters'); return }
+    if (password.length < 10 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('Password must be at least 10 characters and include a letter and a number'); return
+    }
     setLoading(true)
     try {
       const res = await fetch('/api/setup', {
@@ -66,7 +68,7 @@ export default function SetupPage() {
               <input type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} required style={inp} />
             </div>
             <div style={row}>
-              <label style={lbl}>Password <span style={{ color: 'var(--text4)', fontWeight: 400 }}>(min. 8 characters)</span></label>
+              <label style={lbl}>Password <span style={{ color: 'var(--text4)', fontWeight: 400 }}>(min. 10 characters, with a letter and a number)</span></label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} required style={inp} />
             </div>
             <div style={{ marginBottom: 20 }}>

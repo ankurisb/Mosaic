@@ -19,7 +19,7 @@ export default function TabAccount({ user }: { user: SessionUser }) {
 
   async function submit() {
     setMsg(null)
-    if (next.length < 8) { setMsg({ ok: false, text: 'New password must be at least 8 characters.' }); return }
+    if (next.length < 10 || !/[a-zA-Z]/.test(next) || !/[0-9]/.test(next)) { setMsg({ ok: false, text: 'New password must be at least 10 characters and include a letter and a number.' }); return }
     if (next !== confirm) { setMsg({ ok: false, text: 'New password and confirmation do not match.' }); return }
     if (next === current) { setMsg({ ok: false, text: 'New password must differ from the current one.' }); return }
     setBusy(true)
@@ -59,7 +59,7 @@ export default function TabAccount({ user }: { user: SessionUser }) {
         <div style={{ marginBottom: 16 }}>
           <label style={lbl}>New password</label>
           <input type="password" autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)} style={inp} />
-          <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 4 }}>At least 8 characters.</div>
+          <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 4 }}>At least 10 characters, including a letter and a number.</div>
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={lbl}>Confirm new password</label>

@@ -1,5 +1,6 @@
 import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { validatePassword } from '@/lib/password-policy'
 import bcrypt from 'bcryptjs'
 export const runtime = 'nodejs'
 
@@ -12,8 +13,8 @@ export async function POST(req: Request) {
     if (!name?.trim() || !email?.trim() || !password?.trim())
       return Response.json({ error: 'Name, email and password are required' }, { status: 400 })
 
-    if (password.length < 8)
-      return Response.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+    const pol = validatePassword(password.trim(), { name, email })
+    if (!pol.ok) return Response.json({ error: pol.error }, { status: 400 })
 
     const sql = getDb()
 

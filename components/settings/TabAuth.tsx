@@ -235,6 +235,7 @@ export default function TabAuth({ user }: { user: SessionUser }) {
                     <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, lineHeight: 1.5 }}>
                       When enabled, any user in your identity provider can sign in and a Mosaic account is created automatically (role: User).
                       When disabled, users must be added manually in the Users tab before they can sign in via SSO.
+                      Either way, email and password sign-in stays available.
                     </div>
                   </div>
                 </div>
@@ -247,10 +248,6 @@ export default function TabAuth({ user }: { user: SessionUser }) {
           </Card>
         )
       })}
-
-      <Alert variant="info" style={{ marginTop: 16 }}>
-        SSO is additive — users can still sign in with email and password. With auto-provision off, users must be added in the Users tab first. With auto-provision on, any identity provider user can sign in and an account is created automatically.
-      </Alert>
 
       <div style={{ marginTop: 32 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 12 }}>Email / SMTP</div>
