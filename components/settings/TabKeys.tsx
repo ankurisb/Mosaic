@@ -35,9 +35,9 @@ const KEY_SECTIONS = [
   { title: 'CISO Assistant',           keys: ['CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD'] },
 ]
 
-const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean }> = {
+const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean; options?: string[] }> = {
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
-  SEARCH_PROVIDER:         { label: 'Web search provider',      hint: 'Which service powers web search · "tavily" (default) or "perplexity"',              placeholder: 'tavily' },
+  SEARCH_PROVIDER:         { label: 'Web search provider',      hint: 'Which service powers web search',                                                    placeholder: 'tavily', options: ['tavily', 'perplexity'] },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · used when provider is Tavily',           placeholder: 'tvly-...', secret: true },
   PERPLEXITY_API_KEY:      { label: 'Perplexity API key',       hint: 'Web search via Sonar · get it from perplexity.ai/settings/api · used when provider is Perplexity', placeholder: 'pplx-...', secret: true },
   CRON_SECRET:             { label: 'Cron secret',              hint: 'Protects the scheduler endpoint · auto-generated on first run — only set this to use your own value',        placeholder: 'Auto-generated', secret: true },
@@ -154,15 +154,29 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                           )}
                           {isEditing && (
                             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                              <input
-                                type={meta.secret ? 'password' : 'text'}
-                                style={{ ...INP, flex: 1, fontFamily: meta.secret ? 'var(--font-mono)' : 'inherit', fontSize: 12 }}
-                                placeholder={meta.placeholder}
-                                value={vals[key] || ''}
-                                onChange={e => setVals(p => ({ ...p, [key]: e.target.value }))}
-                                onKeyDown={e => { if (e.key === 'Enter') save(key); if (e.key === 'Escape') setEditing(null) }}
-                                autoFocus
-                              />
+                              {meta.options ? (
+                                <select
+                                  style={{ ...INP, flex: 1, fontSize: 12, cursor: 'pointer' }}
+                                  value={vals[key] || meta.placeholder}
+                                  onChange={e => setVals(p => ({ ...p, [key]: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Escape') setEditing(null) }}
+                                  autoFocus
+                                >
+                                  {meta.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type={meta.secret ? 'password' : 'text'}
+                                  style={{ ...INP, flex: 1, fontFamily: meta.secret ? 'var(--font-mono)' : 'inherit', fontSize: 12 }}
+                                  placeholder={meta.placeholder}
+                                  value={vals[key] || ''}
+                                  onChange={e => setVals(p => ({ ...p, [key]: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') save(key); if (e.key === 'Escape') setEditing(null) }}
+                                  autoFocus
+                                />
+                              )}
                               <Btn variant="primary" onClick={() => save(key)} disabled={saving === key}>
                                 {saving === key ? <Spinner size={12} /> : 'Save'}
                               </Btn>
@@ -172,7 +186,7 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                         </div>
                         {!isEditing && (
                           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                            <Btn size="sm" onClick={() => { setEditing(key); setVals(p => ({ ...p, [key]: '' })) }}>
+                            <Btn size="sm" onClick={() => { setEditing(key); setVals(p => ({ ...p, [key]: meta.options ? meta.options[0] : '' })) }}>
                               {status?.configured ? 'Update' : 'Set'}
                             </Btn>
                             {status?.configured && (
