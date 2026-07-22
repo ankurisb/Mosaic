@@ -157,7 +157,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
-        <div style={{ maxWidth: tab === 'analytics' ? 1100 : 820, margin: '0 auto', padding: '40px 40px' }}>
+        <div style={{ maxWidth: tab === 'analytics' ? 1100 : (tab === 'users' ? 1000 : 820), margin: '0 auto', padding: '40px 40px' }}>
           {tab === 'setup'        && <TabSetup user={user} onNavigate={navigateTab} />}
           {tab === 'developer-api'&& <TabDeveloperAPI user={user} />}
           {tab === 'audit'        && <TabAudit user={user} />}
