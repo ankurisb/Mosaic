@@ -45,13 +45,14 @@ export const SEL: React.CSSProperties = { ...INP, cursor: 'pointer', appearance:
 // -- Buttons ---------------------------------------------------
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
-export function Btn({ children, onClick, variant = 'secondary', disabled, style, size = 'md' }: {
+export function Btn({ children, onClick, variant = 'secondary', disabled, style, size = 'md', title }: {
   children: React.ReactNode
   onClick?: () => void
   variant?: BtnVariant
   disabled?: boolean
   style?: React.CSSProperties
   size?: 'sm' | 'md'
+  title?: string
 }) {
   const base: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -72,7 +73,7 @@ export function Btn({ children, onClick, variant = 'secondary', disabled, style,
     ghost:     { background: 'transparent', color: 'var(--text2)' },
     danger:    { background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(220,38,38,.2)' },
   }
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>{children}</button>
+  return <button onClick={onClick} disabled={disabled} title={title} style={{ ...base, ...variants[variant] }}>{children}</button>
 }
 
 // -- Badge / pill ----------------------------------------------

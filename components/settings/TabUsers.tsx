@@ -13,6 +13,23 @@ interface User {
 
 const PAGE_SIZE = 10
 
+// Row-action icons. 14×14, stroke 1.4 with round caps — matches the settings
+// nav icon style. Kept icon-only (with a title tooltip on each button) so five
+// actions fit one compact row instead of stretching or stacking.
+const ico = { width: 15, height: 15, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+const IconAccess   = () => <svg {...ico}><path d="M7 8.5A2.5 2.5 0 107 3.5a2.5 2.5 0 000 5z"/><path d="M2.5 12c.6-2 2.3-3 4.5-3s3.9 1 4.5 3"/></svg>
+const IconResetPw  = () => <svg {...ico}><path d="M11.5 6.5a4.5 4.5 0 10-1.2 3.5"/><path d="M11.5 3v3.5H8"/></svg>
+const IconPromote  = () => <svg {...ico}><path d="M7 11V3M4 6l3-3 3 3"/></svg>
+const IconDemote   = () => <svg {...ico}><path d="M7 3v8M4 8l3 3 3-3"/></svg>
+const IconSuspend  = () => <svg {...ico}><rect x="3" y="2.5" width="2.5" height="9" rx="0.6"/><rect x="8.5" y="2.5" width="2.5" height="9" rx="0.6"/></svg>
+const IconUnban    = () => <svg {...ico}><path d="M3 7.5l2.5 2.5L11 4"/></svg>
+const IconDelete   = () => <svg {...ico}><path d="M3 4h8M5.5 4V2.8h3V4M4 4l.5 7.5h5L10 4"/></svg>
+
+// Square icon-button sizing: overrides Btn's pill padding so each action is a
+// compact 30px square rather than a wide pill.
+const ICON_BTN: React.CSSProperties = { padding: 0, width: 30, height: 30, flexShrink: 0 }
+
+
 export default function TabUsers({ user }: { user: SessionUser }) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -235,12 +252,12 @@ export default function TabUsers({ user }: { user: SessionUser }) {
                 <td style={{ padding: '12px 12px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmtDateTime(u.last_login_at) || '—'}</td>
                 <td style={{ padding: '12px 12px' }}>
                   {u.id !== user.id && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 240, justifyContent: 'flex-end', marginLeft: 'auto' }}>
-                      <Btn size="sm" onClick={() => openAccess(u)}>Access ({u.role === 'admin' ? 'all' : (u.surfaces?.length || 0)})</Btn>
-                      <Btn size="sm" onClick={() => resetPassword(u)}>Reset PW</Btn>
-                      <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ User' : '↑ Admin'}</Btn>
-                      <Btn size="sm" onClick={() => act(u.banned ? 'unban' : 'ban', u.id)}>{u.banned ? 'Unban' : 'Suspend'}</Btn>
-                      <Btn size="sm" variant="danger" onClick={() => { if(confirm(`Delete ${u.email}? This cannot be undone.`)) act('delete', u.id) }}>Delete</Btn>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+                      <Btn size="sm" title={`Access — ${u.role === 'admin' ? 'all surfaces' : `${u.surfaces?.length || 0} granted`}`} onClick={() => openAccess(u)} style={ICON_BTN}><IconAccess /></Btn>
+                      <Btn size="sm" title="Reset password" onClick={() => resetPassword(u)} style={ICON_BTN}><IconResetPw /></Btn>
+                      <Btn size="sm" title={u.role === 'admin' ? 'Demote to user' : 'Promote to admin'} onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })} style={ICON_BTN}>{u.role === 'admin' ? <IconDemote /> : <IconPromote />}</Btn>
+                      <Btn size="sm" title={u.banned ? 'Unban user' : 'Suspend user'} onClick={() => act(u.banned ? 'unban' : 'ban', u.id)} style={ICON_BTN}>{u.banned ? <IconUnban /> : <IconSuspend />}</Btn>
+                      <Btn size="sm" variant="danger" title="Delete user" onClick={() => { if(confirm(`Delete ${u.email}? This cannot be undone.`)) act('delete', u.id) }} style={ICON_BTN}><IconDelete /></Btn>
                     </div>
                   )}
                 </td>
