@@ -203,7 +203,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
 
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {['User', 'Role', 'Status', 'Auth', 'Last login', 'Actions'].map(h => (
@@ -215,7 +215,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
             {loading ? (
               <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center' }}><Spinner size={18} /></td></tr>
             ) : paged.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', fontSize: 13, color: 'var(--text3)' }}>No users found</td></tr>
+              <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', fontSize: 13, color: 'var(--text3)' }}>No users found</td></tr>
             ) : paged.map(u => (
               <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td style={{ padding: '12px 16px' }}>
@@ -235,7 +235,7 @@ export default function TabUsers({ user }: { user: SessionUser }) {
                 <td style={{ padding: '12px 12px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmtDateTime(u.last_login_at) || '—'}</td>
                 <td style={{ padding: '12px 12px' }}>
                   {u.id !== user.id && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 240, justifyContent: 'flex-end', marginLeft: 'auto' }}>
                       <Btn size="sm" onClick={() => openAccess(u)}>Access ({u.role === 'admin' ? 'all' : (u.surfaces?.length || 0)})</Btn>
                       <Btn size="sm" onClick={() => resetPassword(u)}>Reset PW</Btn>
                       <Btn size="sm" onClick={() => act('setRole', u.id, { role: u.role === 'admin' ? 'user' : 'admin' })}>{u.role === 'admin' ? '↓ User' : '↑ Admin'}</Btn>
