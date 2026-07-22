@@ -117,8 +117,24 @@ export async function provisionCisoUser(email: string, mosaicRole: string): Prom
       method: 'POST',
       body: JSON.stringify({ email }),
     })
-    if (!res.ok) throw new Error(`CISO user creation failed (${res.status})`)
-    user = (await res.json()) as CisoUser
+    let body: unknown = null
+    try { body = await res.json() } catch { /* non-JSON error body */ }
+
+    if (res.ok && (body as CisoUser)?.id) {
+      // Clean success: CISO returned the created user object.
+      user = body as CisoUser
+    } else if ((body as { warning?: string[] })?.warning) {
+      // CISO returns 400 with ONLY a `warning` (no user object) when the account
+      // was created but the invite email couldn't be sent — e.g. no SMTP, which
+      // is common on-prem. The account DOES exist, so we re-fetch it by email
+      // rather than fail. The role assignment below then still runs.
+      log.warn({ email, warning: (body as { warning?: string[] }).warning },
+        'CISO user created but invite email not sent (check SMTP)')
+      user = await findUser(token, email)
+      if (!user) throw new Error('CISO user creation reported success but user not found')
+    } else {
+      throw new Error(`CISO user creation failed (${res.status})`)
+    }
   }
 
   // Reactivate (if previously revoked) and apply the role mapping.
