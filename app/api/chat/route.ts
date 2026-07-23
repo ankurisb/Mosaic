@@ -298,7 +298,13 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let disabledAnalyses: string[] = []
   try {
     const disabledRows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'DISABLED_ANALYSES'`
-    if (disabledRows.length) disabledAnalyses = JSON.parse(disabledRows[0].value_enc as string)
+    if (disabledRows.length) {
+      // The SQLite driver auto-parses JSON columns, so value_enc may already be
+      // an array; handle both that and the raw-string case.
+      const raw = disabledRows[0].value_enc as unknown
+      disabledAnalyses = Array.isArray(raw) ? raw as string[]
+        : (typeof raw === 'string' ? JSON.parse(raw) : [])
+    }
   } catch { }
   const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses)
 

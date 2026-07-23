@@ -123,6 +123,9 @@ export const TOOLS: Anthropic.Tool[] = [
 Use AFTER fetching data when the question requires mathematical computation beyond simple aggregation.
 Available: control_chart, process_capability, trend, anomaly_detection, changepoint_detection, pareto, correlation, regression, weibull, mtbf, oee_decomposition, hypothesis_test.
 Pass the rows array directly from the previous query result as the data parameter.
+DATA SHAPE — most analyses take a flat array (numbers, or row objects). TWO EXCEPTIONS:
+- hypothesis_test: data must be an ARRAY OF ARRAYS, one inner array of numbers per group, e.g. data=[[10,11,9],[14,15,13]] with params={group_labels:["Line A","Line B"]}. Do NOT pass a flat list of row objects — group the values yourself first.
+- correlation/regression: pass row objects with the two fields, or params naming the x/y columns.
 IMPORTANT: After running statistical analysis, present results as narrative or table — do NOT call render_chart unless the user explicitly asks for a chart. Exceptions: pareto benefits from a bar chart; control_chart benefits from a line chart showing UCL/LCL. All other types should be text/table only.`,
     input_schema: {
       type: 'object',
@@ -133,7 +136,7 @@ IMPORTANT: After running statistical analysis, present results as narrative or t
         },
         data: {
           type: 'array',
-          description: 'Array of data points from a previous query_database call. Can be numbers or objects.',
+          description: 'Data from a previous query_database call. Flat array of numbers or row objects for most analyses. For hypothesis_test ONLY: an array of arrays (one number array per group).',
         },
         params: {
           type: 'object',
@@ -1038,6 +1041,31 @@ async function runStatisticalAnalysis(
   data: unknown[],
   params?: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
+  // Enforce the admin disable-list at EXECUTION, not just in the prompt. The
+  // prompt filter (formatAnalyticsForPrompt) hides disabled analyses from the
+  // model, but that's advisory — a prompt-injected or mistaken call could still
+  // invoke one. This makes the gate authoritative, matching how MCP connections
+  // check `enabled`. Stored plaintext JSON in kv_settings.DISABLED_ANALYSES.
+  try {
+    const db = getDb()
+    const rows = await db`SELECT value_enc FROM kv_settings WHERE key = 'DISABLED_ANALYSES'`
+    if (rows.length) {
+      // The SQLite driver auto-parses JSON columns, so value_enc may already be
+      // an array; handle both that and the raw-string case.
+      const raw = (rows[0] as { value_enc: unknown }).value_enc
+      const disabled: string[] = Array.isArray(raw)
+        ? raw as string[]
+        : (typeof raw === 'string' ? (JSON.parse(raw) as string[]) : [])
+      if (Array.isArray(disabled) && disabled.includes(analysisType)) {
+        throw new Error(`Analysis "${analysisType}" is disabled by the administrator.`)
+      }
+    }
+  } catch (e) {
+    // Re-throw our own disabled error; swallow only lookup/parse failures so a
+    // missing or malformed setting never blocks a legitimate analysis.
+    if (e instanceof Error && e.message.includes('disabled by the administrator')) throw e
+  }
+
   const statsUrl = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
   const res = await fetch(`${statsUrl}/analyse`, {
     method: 'POST',

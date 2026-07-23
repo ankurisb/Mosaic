@@ -158,6 +158,10 @@ export function formatAnalyticsForPrompt(disabled: string[] = []): string {
     for (const a of analyses) {
       lines.push(`- **${a.name}**: ${a.description}`)
       lines.push(`  Use when: "${a.when_to_use}"`)
+      // Surface the expected input shape so the model passes data correctly —
+      // notably hypothesis_test needs grouped arrays, unlike the flat array the
+      // other analyses take.
+      if (a.required_inputs?.length) lines.push(`  Inputs: ${a.required_inputs.join('; ')}`)
     }
     lines.push('')
   }
