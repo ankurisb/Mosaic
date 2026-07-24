@@ -40,7 +40,18 @@ function stopTunnel(reason = 'manual') {
 
 function startTunnel() {
   return new Promise((resolve, reject) => {
-    if (state.running) { resolve({ url: state.url, sessionId: state.sessionId }); return }
+    if (state.running) {
+      // Already running — hand back the existing session, flagged so the caller
+      // knows this was NOT a new session and shouldn't audit a second "start".
+      resolve({
+        url: state.url,
+        sessionId: state.sessionId,
+        startedAt: state.startedAt,
+        expiresAt: state.expiresAt,
+        alreadyRunning: true,
+      })
+      return
+    }
 
     console.log(`[tunnel] starting → ${TARGET_URL}`)
     const proc = spawn('cloudflared', [
@@ -109,8 +120,8 @@ const server = http.createServer(async (req, res) => {
 
   } else if (req.method === 'POST' && req.url === '/start') {
     try {
-      const { url, sessionId, startedAt, expiresAt } = await startTunnel()
-      res.end(JSON.stringify({ ok: true, url, sessionId, startedAt, expiresAt }))
+      const result = await startTunnel()
+      res.end(JSON.stringify({ ok: true, ...result }))
     } catch (e) {
       res.writeHead(500)
       res.end(JSON.stringify({ ok: false, error: e.message }))
