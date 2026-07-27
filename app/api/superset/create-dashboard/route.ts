@@ -1,0 +1,69 @@
+// app/api/superset/create-dashboard/route.ts
+// Commit step of the LLM-dashboard flow (the second human-in-the-loop gate has
+// already passed on the client). Takes a Mosaic connection + VALIDATED SQL + a
+// confirmed chart spec, and builds the dataset -> chart -> dashboard in Superset.
+//
+// This endpoint does NOT generate SQL or run the LLM — the client uses the
+// existing /api/query-runner/generate (NL -> SQL) and /api/query-runner
+// (execute + confirm rows) for the first gate, then confirms the chart mapping,
+// then calls this. So everything here is already user-approved.
+import { getSession } from '@/lib/auth'
+import { createDashboard, resolveDatabaseId, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
+
+export const runtime = 'nodejs'
+
+const VALID_VIZ = new Set<VizType>(['bar', 'line', 'table', 'donut', 'kpi', 'gauge'])
+// Defence in depth: this must only ever build read-only virtual datasets.
+const READ_ONLY_SQL = /^\s*(SELECT|WITH)\b/i
+
+export async function POST(req: Request) {
+  const session = await getSession()
+  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
+
+  const body = await req.json().catch(() => ({}))
+  const { connectionLabel, sql, dashboardTitle, chartName, chart } = body as {
+    connectionLabel?: string
+    sql?: string
+    dashboardTitle?: string
+    chartName?: string
+    chart?: ChartSpec
+  }
+
+  if (!connectionLabel || !sql || !dashboardTitle || !chart?.vizType) {
+    return Response.json({ error: 'connectionLabel, sql, dashboardTitle and chart.vizType are required' }, { status: 400 })
+  }
+  if (!VALID_VIZ.has(chart.vizType)) {
+    return Response.json({ error: `Unsupported chart type "${chart.vizType}"` }, { status: 400 })
+  }
+  if (!READ_ONLY_SQL.test(sql)) {
+    return Response.json({ error: 'Dashboard SQL must be a read-only SELECT/WITH query' }, { status: 400 })
+  }
+
+  // Resolve the Superset database for this connection. If it isn't registered,
+  // tell the caller to sync first rather than failing obscurely — this is the
+  // dependency on superset-sync being run for the connection.
+  const dbId = await resolveDatabaseId(connectionLabel)
+  if (!dbId) {
+    return Response.json({
+      error: `"${connectionLabel}" isn't registered in Superset yet. Sync it first (Settings -> re-sync), then retry.`,
+      code: 'not_synced',
+    }, { status: 409 })
+  }
+
+  // Unique-ish names to avoid collisions across repeated builds.
+  const stamp = Date.now().toString(36)
+  const result = await createDashboard({
+    supersetDatabaseId: dbId,
+    sql,
+    datasetName: `mosaic_${stamp}`,
+    chartName: chartName || dashboardTitle,
+    dashboardTitle,
+    chart,
+  })
+
+  if (!result.ok) {
+    return Response.json({ error: `Failed at ${result.step}: ${result.reason}`, ...result }, { status: 502 })
+  }
+  return Response.json(result)
+}
