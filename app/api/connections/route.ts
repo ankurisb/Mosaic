@@ -47,6 +47,8 @@ export async function POST(req: Request) {
         connection_string: connection_string || undefined,
         ssl_mode: ssl_mode || undefined,
         schema_name: schema_name || undefined,
+      }).then(r => {
+        if (!r.ok) log.warn({ service: 'connections', connId: (rows[0] as { id: string }).id }, `[connections] Superset sync did not complete: ${r.reason}`)
       }).catch(() => {})
       refreshSchemaInBackground((rows[0] as { id: string }).id)
       const newId = (rows[0] as { id: string }).id

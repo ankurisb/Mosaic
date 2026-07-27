@@ -6,6 +6,8 @@
  * Failures are silent — claude-app works fine even if Superset sync fails.
  */
 
+import { log } from '@/lib/logger'
+
 const SUPERSET_URL = process.env.SUPERSET_URL || 'http://localhost:8088'
 const SUPERSET_USER = process.env.SUPERSET_ADMIN_USER || 'admin'
 const SUPERSET_PASS = process.env.SUPERSET_ADMIN_PASSWORD || ''
@@ -113,27 +115,40 @@ function buildSqlalchemyUri(conn: ConnectionParams): string | null {
 
 // ── Main sync function ────────────────────────────────────────────────────────
 
-export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
-  // Skip unsupported dialects silently
-  if (!SUPERSET_SUPPORTED_DIALECTS.includes(conn.dialect)) return
+export interface SyncResult {
+  ok: boolean
+  status: 'registered' | 'updated' | 'skipped' | 'failed'
+  reason?: string
+  supersetId?: number
+}
+
+export async function syncToSuperset(conn: ConnectionParams): Promise<SyncResult> {
+  // Skip unsupported dialects (API/file/NoSQL sources can't be dashboarded in
+  // Superset — it only speaks SQLAlchemy). Not a failure, just out of scope.
+  if (!SUPERSET_SUPPORTED_DIALECTS.includes(conn.dialect)) {
+    return { ok: true, status: 'skipped', reason: `dialect "${conn.dialect}" is not SQL — Superset dashboards need a SQL database` }
+  }
 
   const uri = buildSqlalchemyUri(conn)
   if (!uri) {
-    log.warn({ service: 'superset-sync' }, `[superset-sync] Could not build URI for connection ${conn.id}`)
-    return
+    const reason = `could not build a SQLAlchemy URI (missing host/database, or no credentials for ${conn.label})`
+    log.warn({ service: 'superset-sync', connId: conn.id }, `[superset-sync] ${reason}`)
+    return { ok: false, status: 'failed', reason }
   }
 
   try {
     const accessToken = await getSupersetToken()
     if (!accessToken) {
-      log.warn({ service: 'superset-sync' }, '[superset-sync] Could not authenticate with Superset')
-      return
+      const reason = 'could not authenticate with Superset (check SUPERSET_URL / admin credentials)'
+      log.warn({ service: 'superset-sync', connId: conn.id }, `[superset-sync] ${reason}`)
+      return { ok: false, status: 'failed', reason }
     }
 
     const csrf = await getCsrfToken(accessToken)
     if (!csrf) {
-      log.warn({ service: 'superset-sync' }, '[superset-sync] Could not get CSRF token from Superset')
-      return
+      const reason = 'could not obtain a CSRF token from Superset'
+      log.warn({ service: 'superset-sync', connId: conn.id }, `[superset-sync] ${reason}`)
+      return { ok: false, status: 'failed', reason }
     }
     const { csrfToken, sessionCookie } = csrf
 
@@ -165,13 +180,46 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<void> {
 
     if (res.ok) {
       const data = await res.json()
-      log.info({ service: 'superset-sync' }, `[superset-sync] Registered "${conn.label}" in Superset (id: ${data.id})`)
-    } else {
-      const err = await res.text()
-      log.warn({ service: 'superset-sync' }, `[superset-sync] Failed to register in Superset: ${res.status} ${err.slice(0, 200)}`)
+      log.info({ service: 'superset-sync', connId: conn.id }, `[superset-sync] Registered "${conn.label}" in Superset (id: ${data.id})`)
+      return { ok: true, status: 'registered', supersetId: data.id }
     }
+
+    const err = await res.text()
+
+    // Superset rejects a duplicate database_name with 422. That means it's
+    // already registered — treat as success (idempotent), find its id.
+    if (res.status === 422 && /already exists/i.test(err)) {
+      const existingId = await findSupersetDatabaseId(accessToken, conn.label)
+      log.info({ service: 'superset-sync', connId: conn.id }, `[superset-sync] "${conn.label}" already in Superset (id: ${existingId ?? '?'})`)
+      return { ok: true, status: 'updated', supersetId: existingId ?? undefined }
+    }
+
+    // Surface the real reason — most often Superset's live connection test
+    // failing (wrong credentials, unreachable host). This is the failure that
+    // used to be swallowed silently.
+    const reason = `Superset rejected the database (${res.status}): ${err.slice(0, 200)}`
+    log.warn({ service: 'superset-sync', connId: conn.id }, `[superset-sync] ${reason}`)
+    return { ok: false, status: 'failed', reason }
   } catch (err) {
-    // Never throw — Superset sync failure must not break claude-app
-    log.warn({ service: 'superset-sync', data: err }, '[superset-sync] Sync error (non-fatal):')
+    // Never throw — Superset sync failure must not break claude-app.
+    const reason = err instanceof Error ? err.message : String(err)
+    log.warn({ service: 'superset-sync', connId: conn.id, data: err }, '[superset-sync] Sync error (non-fatal)')
+    return { ok: false, status: 'failed', reason }
+  }
+}
+
+/** Look up an existing Superset database id by name (for the already-exists case). */
+async function findSupersetDatabaseId(accessToken: string, name: string): Promise<number | null> {
+  try {
+    const q = encodeURIComponent(`(filters:!((col:database_name,opr:eq,value:'${name.replace(/'/g, "\\'")}')))`)
+    const res = await fetch(`${SUPERSET_URL}/api/v1/database/?q=${q}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.result?.[0]?.id ?? null
+  } catch {
+    return null
   }
 }
