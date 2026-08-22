@@ -522,6 +522,66 @@
 | docs/ in repo, rendered as /docs/* in-app | Version-controlled with code; works air-gapped; no external docs site needed |
 | lib/fetch.ts safeJson() as shared error utility | 70 call sites standardised; raw JS errors never reach users |
 
+## Part Z — Strategy Session (22 Aug 2026): Decisions & Actions
+
+Consolidated view of a working session covering dashboards, deployment, licensing,
+bundle strategy, security, and multi-model inference. Grouped as **Decisions**
+(settled), **Actions** (to build, not yet started), and **Open questions**.
+
+### Shipped this session
+- `fix(stats)` — disabled-analyses gate enforced at execution + hypothesis_test shape guidance; found/fixed missing `/api/stats/settings` route and the JSON-auto-parse read bug (3 readers).
+- `fix(support)` — remote-support audit accuracy (no duplicate START, reconciled END on abnormal death, friendly 503).
+- `fix(superset)` — database sync made observable (root cause: `log` never imported -> every log call threw, swallowed by `.catch`); added `/api/superset/sync` backfill/status endpoint.
+- `feat(superset)` — programmatic dashboard creation engine (`lib/superset-dashboard.ts`) + `/api/superset/create-dashboard`. Proven E2E: dataset->chart->dashboard, numbers match source exactly.
+- Chart-render fix — categorical dimensions need `dist_bar`, NOT `echarts_timeseries_bar` (which requires a temporal x-axis). Metric-definition on dataset for aggregate viz types. Caught by **visual** validation, not API test.
+- `docs/SERVICE_CREDENTIALS.md` — how each bundled service authenticates + current dev values.
+
+### DECISIONS (settled)
+| Decision | Rationale |
+|---|---|
+| **Dashboards -> Superset, deprecate native engine** | Native engine (14 files, 7 dashboards) is buggy and duplicates Superset. LLM generates SQL+config -> creates in Superset via API. Proven feasible E2E this session. Don't rip out native until Superset parity proven. |
+| **Superset create-flow uses per-viz templates, not free-form LLM params** | Config is version-sensitive; LLM fills field names only. Categorical vs temporal viz-type selection must be type-aware. |
+| **Two human-in-the-loop gates** | Gate 1: confirm SQL + returned rows. Gate 2: confirm chart mapping. Skippable-with-defaults for power users. Freeze confirmed SQL for scheduled refresh (never re-run LLM). |
+| **Superset SQL-only boundary is acceptable** | Every enterprise BI tool draws this line. Answer = land-then-dashboard via Airbyte. Exploratory (chat/RCA) surface spans ALL sources; persistent-dashboard surface spans all via Airbyte landing. |
+| **Deployment: one Node core (`install.js`), 3 surfaces** | Electron DMG/EXE for Mac+Windows demos/PoC; `--headless` for Linux prod. Preflight -> step 1. Profile selection (demo lean ~4-5 containers vs prod full). |
+| **Installer mature but payload STALE (April, 7 services vs current 20+)** | Refresh payload before anything else. Move preflight to step 1. Fix broken checks (disk >=2GB too low, macOS RAM no-op, Docker mem threshold). |
+| **Licensing: per-instance + per-seat, Ed25519 offline, fail-open** | Instance ID = UUID in kv_settings. Seats = COUNT(users WHERE banned=false), named. Buy licence server (Keygen self-host), build only Mosaic-side verify. Gate downloads + private registry = real protection, not runtime checks. SSO JIT bypasses seat check — both paths need gating. |
+| **SSO: Scenario B ONLY (customer registers Mosaic on their IdP)** | Drop bundled-Keycloak-as-primary (Option A). Keycloak = dev/demo only. Real deployments connect to customer Azure AD/Okta/etc. |
+| **POC reset: volume nuke (`down -v && up`), not selective script** | Zero leak risk (no judgment about what to keep). Re-seeds managed infra (ES search index, 4 RCA templates) automatically. Must seed admin creds from `.env.demo` (nuke wipes admin account). |
+| **Bare Mosaic = empty of customer data, KEEPS managed seeds** | Test harness (`test-data/docker-compose.yml`) stays a SEPARATE on-demand thing, not baked into baseline. |
+| **CISO_API_URL field = optional override, not required** | Auto-defaults to bundled `http://ciso-backend:8000`. Relabel hint text. |
+| **Don't bundle Data Formulator** | MIT-licensed (CAN bundle legally) but it's a churning 0.x research beta that duplicates the moat AND Superset. BORROW its "concept-binding" UX for the chart-mapping gates; evaluate **Flint** (its chart layer) as a possible inline-chart component. |
+| **Superset's real value = its semantic/dataset layer, not just charts** | Data Formulator consumes Superset datasets as a source — proves layer-1 (governed datasets + metrics) is independently valuable. Consider making Mosaic's create-flow produce **durable, named, metric-defined datasets** (manufacturing OEE/MTBF definitions = defensibly ours) rather than throwaway per-chart ones. |
+| **Bundle = lean core + optional profiles** | Core: Mosaic + stats + Superset. Optional (profile-gated): Airbyte (ingestion), n8n (automation), CISO (GRC if customer lacks one), Keycloak (SSO, dev only), OpenMeter (when billing live). Serves both demo laptop and enterprise. |
+| **Multi-provider inference: build it, but tier by capability** | Add GPT + Meta + customer-hosted (Azure OpenAI / self-hosted) for procurement/sovereignty/leverage. BUT tool-use fidelity (RCA's 25-step chains) diverges by provider — tier models ("validated for full RCA" vs "lighter queries only"), re-validate prompts/guardrails per provider. Extends Phase J `lib/ai.ts`. |
+| **Mosaic NOT yet production-ready for unsupervised enterprise deploy** | Demo-ready yes; supervised design-partner pilot nearly. Blockers: fresh-install unverified, hostname/redirect bug, dev-grade security defaults, stale installer, no external security review. |
+
+### ACTIONS (to build — not started)
+| Action | Notes / dependency |
+|---|---|
+| **Bundle audit** | Enumerate every service: resource cost, core/optional/duplicative, dependencies. Wire compose profiles to make Airbyte/n8n/CISO/OpenMeter cleanly optional. Decide OpenMeter (4 heavy containers, pre-revenue) + CISO (whole 2nd product, login still broken) fate. |
+| **Render smoke-test in create-flow** | After chart create, call `/chart/data` with the chart's OWN stored params, confirm 200 + rows before declaring success. Converts "created but doesn't render" (today's bug) into a build-time catch. Highest-value single addition. |
+| **Chart-spec suggestion helper** | LLM proposes `{vizType, dimension, value}` from confirmed query columns for Gate 2. Must be type-aware (categorical->dist_bar, temporal->echarts). Last backend piece of the dashboard flow. |
+| **Dashboard flow UI** | Stitch generate->confirm-rows->confirm-chart->create. Reuse existing `SupersetEmbed.tsx`. (Browser access denied this session — needs visual work.) |
+| **Airbyte SQL destination -> Mosaic connection bridge** | Auto-register an Airbyte SQL destination (Postgres/ClickHouse ONLY — NOT Mongo) as a Mosaic connection -> normal Superset-sync. Credentials handling needed. |
+| **`demo-reset.sh`** | `down -v && up` + seed admin/API key from `.env.demo`. Verify full nuke-and-reseed produces correct bare instance (may surface `rca_sessions` missing-table on truly fresh boot). |
+| **Bundled-services credential panel (admin UI)** | Admin rotates Superset/CISO/Airbyte creds from Mosaic UI, no CLI/env. Writes to kv_settings (source of truth) + calls service admin API + verifies reachability after. Airbyte caveat: env-var cred -> needs restart. Audit as `CREDENTIAL_ROTATED`. Solves the drift footgun by construction. |
+| **SSO intake form** (`docs/SSO_INTAKE_FORM.md`) | Bidirectional: Section 1 = what customer needs from us (redirect URI etc.); Section 2 = what we need from them (issuer, client id/secret, tenant id, claim mapping, JIT/role rules). Verify exact callback path + claim names against `app/api/auth/callback` code. Drafted, not yet written to repo. |
+| **SSO setup automation** | Scenario-B only: auto-configure Mosaic's side + structured hand-off. Gated on knowing deployment hostname (ties to setup wizard). |
+| **Fix `MOSAIC_HOSTNAME` / redirect** | Empty by default -> login/invite/SSO break on real URLs. Belongs in setup wizard "how will people reach Mosaic?" step. Known live bug. |
+| **Security review (Claude-driven, internal)** | Structured pass (OWASP + auth + secrets + injection + LLM tool-abuse) building on `claude_mosaic-security-review.md`. Force-multiplier BEFORE external review — NOT a substitute (independence + credibility require external). Suggested: high-risk surface first. |
+| **Hardening** | Fail-loud on default creds; audit `0.0.0.0` port bindings (internal-only via Caddy); MFA; session revocation; break-glass local admin; SQL-injection + read-only adversarial tests; dependency/CVE scan; secret-in-logs sweep. |
+| **Multi-provider `lib/ai.ts` (Phase J)** | First step: audit where Claude-specific tool-calling assumptions live -> scopes "true multi-provider tool-use" job vs easy "multi-provider chat" job. Per-model capability manifest. |
+| **`rca_sessions` missing table** | Referenced in chat route, possibly never created in `setup.ts`. Check on a fresh boot — flagged as first thing to verify. |
+| **Stats sidecar Docker healthcheck** | Shows "unhealthy" but serves 200 — misconfigured healthcheck (cosmetic, misleads monitoring). |
+| **3 failing Superset connections** | Plant Ops 4.4 Test / ERP Lite / CMMS fail live connection test on backfill (creds/reachability). Now visible thanks to sync fix. |
+
+### OPEN QUESTIONS (need Ankur's input)
+- Demo-partner POC (supervised, you stand it up) vs shipped installer (unsupervised)? Determines how much hardening/fresh-install work is prerequisite vs parallel.
+- Prospects asking for **dashboards** specifically, or excited about **ask-questions-get-answers**? If latter -> keep dashboarding lean, Superset firmly supporting-role.
+- Each POC starts from **bare** or from a **standard demo baseline** (snapshot restore)? Shapes reset design.
+- Any real customer/demo data depends on native dashboards (7 exist) or CISO before deprecation/optional-gating?
+
 ---
 
 *Tick items as you ship them. Keep the Decisions Log updated when new architectural choices are made.*
