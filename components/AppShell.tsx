@@ -79,6 +79,10 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5"/></svg>,
             'Query Builder'
           )}
+          {user.role === 'admin' && navBtn('/connectors',
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>,
+            'Connectors'
+          )}
           {navBtn('/rules',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/></svg>,
             'Rules'
