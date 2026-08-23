@@ -594,6 +594,15 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               Airbyte syncs these into your destination DB, then Mosaic queries via the connection above.
               You don't need the Airbyte browser open — just Docker running.
             </div>
+            {user.role === 'admin' && (
+              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--text3)' }}>No connector for your source?</span>
+                <a href="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text)', textDecoration: 'none', fontWeight: 500 }}>
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>
+                  Build one with AI
+                </a>
+              </div>
+            )}
           </div>
           {user.role === 'admin' && airbyteCount === 0 && (
             <button onClick={() => setShowAirbyteForm(true)}

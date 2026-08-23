@@ -46,16 +46,15 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
   async function test() {
     if (!manifest) return
     setBusy('Testing against the live source…'); setTestError(null); setRecords(null)
-    // Ensure a project exists to hold the draft
-    let pid = projectId
-    if (!pid) {
-      const c = await callConnectors({ action: 'create', name: `mosaic-${Date.now().toString(36)}`, manifest })
-      if (!c.data.ok) { setBusy(null); setTestError(c.data.error || 'Could not create draft'); return }
-      pid = c.data.projectId; setProjectId(pid)
-    }
+    // Always create a fresh draft project for the CURRENT manifest — after a
+    // refinement the manifest has changed, so a reused project would hold a stale
+    // draft. Cheap, and keeps each test honest to what's on screen.
+    const c = await callConnectors({ action: 'create', name: `mosaic-${Date.now().toString(36)}`, manifest })
+    if (!c.data.ok) { setBusy(null); setTestError(c.data.error || 'Could not create draft'); return }
+    const pid = c.data.projectId; setProjectId(pid)
     const { data } = await callConnectors({ action: 'test', manifest, streamName, projectId: pid, config: {} })
     setBusy(null)
-    if (!data.ok) { setTestError(data.error || 'Test failed'); setStep('tested'); return }
+    if (!data.ok) { setTestError(data.error || 'Test failed'); setRecords([]); setStep('tested'); return }
     setRecords(data.records || []); setStep('tested')
     if (!data.records?.length) setTestError('The source returned zero records — the record path or a filter is likely off.')
   }
@@ -72,8 +71,11 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
     })
     setBusy(null)
     if (!data.ok) { setTestError(data.error || 'Refine failed'); return }
+    // New manifest -> discard the old draft/results and return to a testable
+    // state. The loop is: test -> refine -> test -> refine, as many times as
+    // needed; publish only appears once records come back.
     setManifest(data.manifest); setStreamName(data.streamName || streamName)
-    setRecords(null); setNote(''); setStep('review')
+    setRecords(null); setProjectId(null); setNote(''); setTestError(null); setStep('review')
   }
 
   async function publish() {
@@ -176,10 +178,22 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
                     </>
                   ) : (
                     <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>
-                      {testError || 'No records returned.'}
-                      <div style={{ marginTop: 12 }}>
-                        <button onClick={() => { setRefineOpen(true); setStep('review') }} style={btn('primary')} type="button">Refine the connector</button>
-                      </div>
+                      {testError || 'No records returned.'} Refine the connector and test again — you can repeat this as many times as needed.
+                    </div>
+                  )}
+
+                  {/* Refine loop — available whether the test succeeded imperfectly or
+                      returned nothing. Refining produces a new draft and returns to
+                      the test step, so test -> refine -> test can repeat freely. */}
+                  {(refineOpen || !hasRecords) && (
+                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                      <label style={lbl}>What should change? <span style={{ color: 'var(--text4)' }}>(optional — Mosaic also uses the test result)</span></label>
+                      <textarea value={note} onChange={e => setNote(e.target.value)}
+                        placeholder="e.g. Records are nested under a results array. Or: add a bearer token from config. Leave blank to let Mosaic infer from the test result."
+                        style={textarea(64)} />
+                      <button onClick={refine} disabled={!!busy} style={{ ...btn('primary', !!busy), marginTop: 8 }} type="button">
+                        Refine &amp; return to test
+                      </button>
                     </div>
                   )}
                 </Section>
