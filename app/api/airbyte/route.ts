@@ -607,5 +607,70 @@ export async function POST(req: Request) {
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }
 
+  // ── Build a full pipeline from an existing source to a destination.
+  // Orchestrates the steps that already exist as individual actions:
+  //   discover the source schema -> build a sync catalog (all streams, full
+  //   refresh|overwrite) -> create the connection -> trigger the first sync.
+  // Reuses the same ab() client + endpoints; adds no new Airbyte machinery.
+  // The async sync itself is watched by the existing pipeline UI (which already
+  // polls job status), so this returns as soon as the sync is triggered.
+  if (action === 'build_pipeline') {
+    let inst: AirbyteInstance
+    try { inst = await getInstance(sql, body.instanceId) }
+    catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
+    const { sourceId, destinationId, name } = body
+    if (!sourceId || !destinationId) return Response.json({ error: 'sourceId and destinationId required' }, { status: 400 })
+    try {
+      // 1. Discover the source's streams
+      const disc = await ab(inst,
+        `/streams?sourceId=${sourceId}`,
+        '/sources/discover_schema',
+        'GET',
+        { sourceId }
+      ) as any
+      const catalog = disc.catalog || disc.data?.catalog || disc.data || {}
+      const streams = catalog.streams || []
+      if (!streams.length) return Response.json({ error: 'No streams discovered on the source' }, { status: 422 })
+
+      // 2. Build a sync catalog: select every stream, full_refresh|overwrite so
+      //    the landed tables are complete and self-contained.
+      const syncCatalog = {
+        streams: streams.map((s: any) => ({
+          stream: s.stream || s,
+          config: {
+            selected: true,
+            syncMode: 'full_refresh',
+            destinationSyncMode: 'overwrite',
+            ...(s.config || {}),
+          },
+        })),
+      }
+
+      // 3. Create the connection (manual schedule — operator syncs on demand)
+      const conn = await ab(inst, '/connections', '/connections/create', 'POST', {
+        sourceId,
+        destinationId,
+        name: name || 'Mosaic pipeline',
+        status: 'active',
+        schedule: { scheduleType: 'manual' },
+        syncCatalog,
+      }) as any
+      const connectionId = conn.connectionId || conn.id
+      if (!connectionId) return Response.json({ error: 'Connection was not created' }, { status: 502 })
+
+      // 4. Trigger the first sync
+      const job = await ab(inst, '/jobs', '/connections/sync', 'POST',
+        { type: 'sync', connectionId }) as any
+      await sql`UPDATE airbyte_instances SET last_synced=${nowExpr()} WHERE id=${body.instanceId}`
+
+      return Response.json({
+        ok: true,
+        connectionId,
+        jobId: job.jobId || job.id || job.job?.id || null,
+        streamCount: streams.length,
+      })
+    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+  }
+
   return Response.json({ error: 'Unknown action' }, { status: 400 })
 }
