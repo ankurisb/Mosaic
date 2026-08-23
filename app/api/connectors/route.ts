@@ -10,6 +10,7 @@
 // test/publish gates. The connector runs in Airbyte's sandbox, never in Mosaic.
 import { getSession } from '@/lib/auth'
 import { createProject, readStream, publish } from '@/lib/airbyte-connector-builder'
+import { generateManifest, refineManifest } from '@/lib/ai/connector-prompt'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +23,24 @@ export async function POST(req: Request) {
   const { action } = body as { action?: string }
 
   try {
+    if (action === 'generate') {
+      // AI: plain-English description (+ optional sample/docs) -> draft manifest.
+      const { description, sample } = body
+      if (!description) return Response.json({ error: 'description required' }, { status: 400 })
+      const r = await generateManifest(description, sample)
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true, manifest: r.manifest, streamName: r.streamName })
+    }
+
+    if (action === 'refine') {
+      // AI: previous manifest + REAL test outcome -> corrected manifest.
+      const { previousManifest, testRecords, testError, testLogs, userNote } = body
+      if (!previousManifest) return Response.json({ error: 'previousManifest required' }, { status: 400 })
+      const r = await refineManifest({ previousManifest, testRecords, testError, testLogs, userNote })
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true, manifest: r.manifest, streamName: r.streamName })
+    }
+
     if (action === 'test') {
       // Iterate loop: run the draft manifest against the real source, return records.
       const { manifest, streamName, config, projectId, instanceId } = body
