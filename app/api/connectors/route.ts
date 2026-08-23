@@ -9,7 +9,7 @@
 // the LLM; this route is the Airbyte-side orchestration + the human-in-the-loop
 // test/publish gates. The connector runs in Airbyte's sandbox, never in Mosaic.
 import { getSession } from '@/lib/auth'
-import { createProject, readStream, publish, listProjects, deleteProject, deleteSourceDefinition } from '@/lib/airbyte-connector-builder'
+import { createProject, readStream, publish, listProjects, deleteProject, deleteSourceDefinition, listCustomConnectors } from '@/lib/airbyte-connector-builder'
 import { generateManifest, refineManifest } from '@/lib/ai/connector-prompt'
 
 export const runtime = 'nodejs'
@@ -64,6 +64,12 @@ export async function POST(req: Request) {
       const r = await publish({ projectId, name, manifest, instanceId })
       if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
       return Response.json({ ok: true, sourceDefinitionId: r.sourceDefinitionId })
+    }
+
+    if (action === 'list_connectors') {
+      const r = await listCustomConnectors(body.instanceId)
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true, connectors: r.connectors })
     }
 
     if (action === 'list_projects') {

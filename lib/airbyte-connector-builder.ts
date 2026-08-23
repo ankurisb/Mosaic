@@ -213,6 +213,43 @@ export async function deleteSourceDefinition(sourceDefinitionId: string, instanc
   return { ok: true }
 }
 
+export interface CustomConnector {
+  id: string          // sourceDefinitionId (published) or builderProjectId (draft)
+  name: string
+  status: 'published' | 'draft'
+}
+
+/**
+ * Unified list of the workspace's custom connectors: published ones (Airbyte
+ * source definitions flagged custom:true) and in-progress drafts (builder
+ * projects). Airbyte is the source of truth — no local table needed to render
+ * this. A published connector may still have a lingering draft project with the
+ * same name; we de-duplicate so it appears once, as published.
+ */
+export async function listCustomConnectors(instanceId?: string): Promise<{ ok: boolean; connectors?: CustomConnector[]; reason?: string }> {
+  const inst = await loadInstance(instanceId)
+  const ws = await workspaceId(inst)
+
+  // Published: custom source definitions
+  const defsRes = await config(inst, '/source_definitions/list_for_workspace', { workspaceId: ws })
+  if (!defsRes.ok) return { ok: false, reason: reasonFrom(defsRes) }
+  const defs = (defsRes.json.sourceDefinitions as { sourceDefinitionId: string; name: string; custom?: boolean }[]) || []
+  const published: CustomConnector[] = defs
+    .filter(d => d.custom === true)
+    .map(d => ({ id: d.sourceDefinitionId, name: d.name, status: 'published' as const }))
+
+  // Drafts: builder projects. Some builder projects correspond to already-
+  // published connectors; hide those whose name matches a published one.
+  const projRes = await config(inst, '/connector_builder_projects/list', { workspaceId: ws })
+  const projects = projRes.ok ? ((projRes.json.projects as { builderProjectId: string; name: string; activeDeclarativeManifestVersion?: number }[]) || []) : []
+  const publishedNames = new Set(published.map(p => p.name))
+  const drafts: CustomConnector[] = projects
+    .filter(p => !publishedNames.has(p.name))
+    .map(p => ({ id: p.builderProjectId, name: p.name, status: 'draft' as const }))
+
+  return { ok: true, connectors: [...published, ...drafts] }
+}
+
 function reasonFrom(r: { status: number; json: Record<string, unknown> }): string {
   const msg = (r.json.message as string) || (r.json.detail as string) || (r.json.raw as string) ||
     (r.json.exceptionClassName ? `${r.json.exceptionClassName}: ${String(r.json.exceptionStack ?? '').slice(0, 200)}` : '') ||

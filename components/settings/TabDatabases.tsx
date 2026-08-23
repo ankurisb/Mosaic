@@ -603,6 +603,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 </a>
               </div>
             )}
+            {user.role === 'admin' && <CustomConnectorsList />}
           </div>
           {user.role === 'admin' && airbyteCount === 0 && (
             <button onClick={() => setShowAirbyteForm(true)}
@@ -1168,6 +1169,72 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── CustomConnectorsList ─────────────────────────────────────
+// Published (Airbyte custom source definitions) + drafts (builder projects),
+// unified. Airbyte is the source of truth; delete removes from Airbyte.
+interface CustomConnectorItem { id: string; name: string; status: 'published' | 'draft' }
+
+function CustomConnectorsList() {
+  const [items, setItems] = React.useState<CustomConnectorItem[] | null>(null)
+  const [err, setErr] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState<string | null>(null)
+
+  const load = React.useCallback(async () => {
+    setErr(null)
+    try {
+      const res = await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list_connectors' }) })
+      const { data } = await safeJson<{ ok?: boolean; connectors?: CustomConnectorItem[]; error?: string }>(res)
+      if (!res.ok || !data?.ok) { setErr(data?.error || 'Could not load connectors'); setItems([]); return }
+      setItems(data.connectors || [])
+    } catch { setErr('Could not load connectors'); setItems([]) }
+  }, [])
+
+  React.useEffect(() => { load() }, [load])
+
+  async function remove(item: CustomConnectorItem) {
+    if (!confirm(`Delete "${item.name}"? This removes the ${item.status} connector from Airbyte.`)) return
+    setBusy(item.id)
+    const action = item.status === 'published' ? 'delete_source_definition' : 'delete_project'
+    const key = item.status === 'published' ? 'sourceDefinitionId' : 'projectId'
+    try {
+      const res = await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, [key]: item.id }) })
+      const { data } = await safeJson<{ ok?: boolean; error?: string }>(res)
+      if (!res.ok || !data?.ok) { setErr(data?.error || 'Delete failed'); setBusy(null); return }
+      await load()
+    } catch { setErr('Delete failed') }
+    setBusy(null)
+  }
+
+  if (items === null) return <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text4)' }}>Loading custom connectors…</div>
+  if (items.length === 0 && !err) return null // nothing built yet — keep the section uncluttered
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 8 }}>Your custom connectors</div>
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 560 }}>
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)' }}>
+            <span style={{ fontSize: 13, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', padding: '2px 8px', borderRadius: 999, flexShrink: 0,
+              background: item.status === 'published' ? 'var(--green-bg)' : 'var(--amber-t)',
+              color: item.status === 'published' ? 'var(--green)' : 'var(--text2)' }}>
+              {item.status}
+            </span>
+            {item.status === 'draft' && (
+              <a href="/connectors" style={{ fontSize: 12, color: 'var(--blue)', textDecoration: 'none', flexShrink: 0 }}>Resume</a>
+            )}
+            <button onClick={() => remove(item)} disabled={busy === item.id}
+              style={{ fontSize: 12, color: 'var(--red)', background: 'none', border: 'none', cursor: busy === item.id ? 'default' : 'pointer', padding: 0, flexShrink: 0, opacity: busy === item.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+              {busy === item.id ? '…' : 'Delete'}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
