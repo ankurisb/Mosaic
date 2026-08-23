@@ -40,9 +40,9 @@ export async function POST(req: Request) {
     }
 
     if (action === 'publish') {
-      const { projectId, name, instanceId } = body
-      if (!projectId || !name) return Response.json({ error: 'projectId and name required' }, { status: 400 })
-      const r = await publish({ projectId, name, instanceId })
+      const { projectId, name, manifest, instanceId } = body
+      if (!projectId || !name || !manifest) return Response.json({ error: 'projectId, name and manifest required' }, { status: 400 })
+      const r = await publish({ projectId, name, manifest, instanceId })
       if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
       return Response.json({ ok: true, sourceDefinitionId: r.sourceDefinitionId })
     }

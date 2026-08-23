@@ -60,8 +60,11 @@ async function getToken(inst: AirbyteInstance): Promise<string | null> {
         signal: AbortSignal.timeout(10_000),
       })
       if (res.ok) {
-        const data = await res.json()
-        tokenCache.set(cacheKey, { token: data.access_token, expiresAt: Date.now() + 50 * 60_000 })
+        const data = await res.json() as { access_token: string; expires_in?: number }
+        // abctl tokens expire in ~15 min. Honour expires_in (default 14 min) and
+        // refresh 30s early — hardcoding a long TTL serves stale/dead tokens.
+        const expiresAt = Date.now() + ((data.expires_in || 840) * 1000)
+        tokenCache.set(cacheKey, { token: data.access_token, expiresAt })
         return data.access_token
       }
     } catch { /* try next url */ }
@@ -153,14 +156,20 @@ export async function readStream(params: {
 }
 
 /** Promote a working draft into a real custom source definition (usable like the built-in connectors). */
-export async function publish(params: { projectId: string; name: string; instanceId?: string }): Promise<{ ok: boolean; sourceDefinitionId?: string; reason?: string }> {
+export async function publish(params: { projectId: string; name: string; manifest: Record<string, unknown>; instanceId?: string }): Promise<{ ok: boolean; sourceDefinitionId?: string; reason?: string }> {
   const inst = await loadInstance(params.instanceId)
   const ws = await workspaceId(inst)
   const r = await config(inst, '/connector_builder_projects/publish', {
     workspaceId: ws,
     builderProjectId: params.projectId,
     name: params.name,
-    initialDeclarativeManifestVersion: 1,
+    // Airbyte promotes a specific manifest version — the draft must be supplied,
+    // not just referenced by project id.
+    initialDeclarativeManifest: {
+      manifest: params.manifest,
+      version: 1,
+      description: `Custom connector "${params.name}" created via Mosaic`,
+    },
   })
   if (!r.ok) return { ok: false, reason: reasonFrom(r) }
   return { ok: true, sourceDefinitionId: r.json.sourceDefinitionId as string }
