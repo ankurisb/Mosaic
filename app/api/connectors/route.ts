@@ -9,7 +9,7 @@
 // the LLM; this route is the Airbyte-side orchestration + the human-in-the-loop
 // test/publish gates. The connector runs in Airbyte's sandbox, never in Mosaic.
 import { getSession } from '@/lib/auth'
-import { createProject, readStream, publish } from '@/lib/airbyte-connector-builder'
+import { createProject, readStream, publish, listProjects, deleteProject, deleteSourceDefinition } from '@/lib/airbyte-connector-builder'
 import { generateManifest, refineManifest } from '@/lib/ai/connector-prompt'
 
 export const runtime = 'nodejs'
@@ -64,6 +64,28 @@ export async function POST(req: Request) {
       const r = await publish({ projectId, name, manifest, instanceId })
       if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
       return Response.json({ ok: true, sourceDefinitionId: r.sourceDefinitionId })
+    }
+
+    if (action === 'list_projects') {
+      const r = await listProjects(body.instanceId)
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true, projects: r.projects })
+    }
+
+    if (action === 'delete_project') {
+      const { projectId, instanceId } = body
+      if (!projectId) return Response.json({ error: 'projectId required' }, { status: 400 })
+      const r = await deleteProject(projectId, instanceId)
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true })
+    }
+
+    if (action === 'delete_source_definition') {
+      const { sourceDefinitionId, instanceId } = body
+      if (!sourceDefinitionId) return Response.json({ error: 'sourceDefinitionId required' }, { status: 400 })
+      const r = await deleteSourceDefinition(sourceDefinitionId, instanceId)
+      if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
+      return Response.json({ ok: true })
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 })

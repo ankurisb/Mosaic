@@ -186,6 +186,33 @@ export async function publish(params: { projectId: string; name: string; manifes
   return { ok: true, sourceDefinitionId: r.json.sourceDefinitionId as string }
 }
 
+/** List connector-builder projects (drafts) in the workspace. */
+export async function listProjects(instanceId?: string): Promise<{ ok: boolean; projects?: { builderProjectId: string; name: string }[]; reason?: string }> {
+  const inst = await loadInstance(instanceId)
+  const ws = await workspaceId(inst)
+  const r = await config(inst, '/connector_builder_projects/list', { workspaceId: ws })
+  if (!r.ok) return { ok: false, reason: reasonFrom(r) }
+  const projects = (r.json.projects as { builderProjectId: string; name: string }[]) || []
+  return { ok: true, projects }
+}
+
+/** Delete a connector-builder project (draft). */
+export async function deleteProject(projectId: string, instanceId?: string): Promise<{ ok: boolean; reason?: string }> {
+  const inst = await loadInstance(instanceId)
+  const ws = await workspaceId(inst)
+  const r = await config(inst, '/connector_builder_projects/delete', { workspaceId: ws, builderProjectId: projectId })
+  if (!r.ok) return { ok: false, reason: reasonFrom(r) }
+  return { ok: true }
+}
+
+/** Delete a published custom source definition. */
+export async function deleteSourceDefinition(sourceDefinitionId: string, instanceId?: string): Promise<{ ok: boolean; reason?: string }> {
+  const inst = await loadInstance(instanceId)
+  const r = await config(inst, '/source_definitions/delete', { sourceDefinitionId })
+  if (!r.ok) return { ok: false, reason: reasonFrom(r) }
+  return { ok: true }
+}
+
 function reasonFrom(r: { status: number; json: Record<string, unknown> }): string {
   const msg = (r.json.message as string) || (r.json.detail as string) || (r.json.raw as string) ||
     (r.json.exceptionClassName ? `${r.json.exceptionClassName}: ${String(r.json.exceptionStack ?? '').slice(0, 200)}` : '') ||
