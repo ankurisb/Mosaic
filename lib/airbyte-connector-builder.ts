@@ -159,14 +159,25 @@ export async function readStream(params: {
 export async function publish(params: { projectId: string; name: string; manifest: Record<string, unknown>; instanceId?: string }): Promise<{ ok: boolean; sourceDefinitionId?: string; reason?: string }> {
   const inst = await loadInstance(params.instanceId)
   const ws = await workspaceId(inst)
+  // Airbyte's DeclarativeSourceManifestInjector reads spec.connectionSpecification
+  // as an ObjectNode (camelCase). The declarative manifest embeds its spec as
+  // {type:'Spec', connection_specification:{...}} (snake_case) — the wrong shape
+  // here, causing a MissingNode->ObjectNode cast error. Build the API-model spec
+  // explicitly with connectionSpecification.
+  const manifestSpec = params.manifest.spec as { connection_specification?: Record<string, unknown> } | undefined
+  const connectionSpecification = manifestSpec?.connection_specification ?? {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    type: 'object',
+    properties: {},
+    additionalProperties: true,
+  }
   const r = await config(inst, '/connector_builder_projects/publish', {
     workspaceId: ws,
     builderProjectId: params.projectId,
     name: params.name,
-    // Airbyte promotes a specific manifest version — the draft must be supplied,
-    // not just referenced by project id.
     initialDeclarativeManifest: {
       manifest: params.manifest,
+      spec: { connectionSpecification },
       version: 1,
       description: `Custom connector "${params.name}" created via Mosaic`,
     },
