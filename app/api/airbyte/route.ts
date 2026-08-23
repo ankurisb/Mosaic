@@ -67,7 +67,8 @@ async function ab(
   publicPath: string,
   configPath: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
-  body?: unknown
+  body?: unknown,
+  timeoutMs = 15000
 ): Promise<unknown> {
   const base     = inst.url.replace(/\/$/, '')
   const password = inst.password_enc ? decrypt(inst.password_enc) : 'password'
@@ -117,7 +118,7 @@ async function ab(
         method: a.method,
         headers,
         body: hasBody ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (res.ok) {
         const txt = await res.text()
@@ -303,11 +304,16 @@ export async function GET(req: Request) {
         `/streams?sourceId=${srcId}`,
         '/sources/discover_schema',
         'GET',
-        { sourceId: srcId }
+        { sourceId: srcId },
+        90000
       ) as any
-      // Public API returns array of stream properties
-      // Config API returns { catalog: { streams: [...] } }
-      const streams = data.data || data.catalog?.streams || data.streams || []
+      // Response shape varies by API surface:
+      //  - Public API GET /streams: a bare ARRAY of stream configs
+      //  - Public API sometimes wraps as { data: [...] }
+      //  - Config API discover_schema: { catalog: { streams: [...] } }
+      const streams = Array.isArray(data)
+        ? data
+        : (data.data || data.catalog?.streams || data.streams || data.streams?.streams || [])
       return Response.json({ streams })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }
@@ -621,53 +627,57 @@ export async function POST(req: Request) {
     const { sourceId, destinationId, name } = body
     if (!sourceId || !destinationId) return Response.json({ error: 'sourceId and destinationId required' }, { status: 400 })
     try {
-      // 1. Discover the source's streams
+      // 1. Discover the source's streams (cold-start container spin-up can take
+      //    30s+, so allow a generous timeout for this step specifically).
       const disc = await ab(inst,
         `/streams?sourceId=${sourceId}`,
         '/sources/discover_schema',
         'GET',
-        { sourceId }
+        { sourceId },
+        90000
       ) as any
-      const catalog = disc.catalog || disc.data?.catalog || disc.data || {}
-      const streams = catalog.streams || []
-      if (!streams.length) return Response.json({ error: 'No streams discovered on the source' }, { status: 422 })
+      // Public API returns a bare array of stream descriptors ({ streamName, ... });
+      // config API nests them under catalog.streams ({ stream: { name } }).
+      const rawStreams: any[] = Array.isArray(disc)
+        ? disc
+        : (disc.data || disc.catalog?.streams || disc.streams || [])
+      if (!rawStreams.length) return Response.json({ error: 'No streams discovered on the source' }, { status: 422 })
+      const streamNames = rawStreams
+        .map(s => s.streamName || s.name || s.stream?.name)
+        .filter(Boolean)
 
-      // 2. Build a sync catalog: select every stream, full_refresh|overwrite so
-      //    the landed tables are complete and self-contained.
-      const syncCatalog = {
-        streams: streams.map((s: any) => ({
-          stream: s.stream || s,
-          config: {
-            selected: true,
-            syncMode: 'full_refresh',
-            destinationSyncMode: 'overwrite',
-            ...(s.config || {}),
-          },
+      // 2. Build the public-API connection catalog: select every stream, full
+      //    refresh|overwrite so the landed tables are complete and self-contained.
+      const configurations = {
+        streams: streamNames.map((name: string) => ({
+          name,
+          syncMode: 'full_refresh_overwrite',
         })),
       }
 
-      // 3. Create the connection (manual schedule — operator syncs on demand)
+      // 3. Create the connection (manual schedule — operator syncs on demand).
+      //    Public API uses `configurations`; config API uses `syncCatalog`. We
+      //    send `configurations` since this instance speaks the public API.
       const conn = await ab(inst, '/connections', '/connections/create', 'POST', {
         sourceId,
         destinationId,
         name: name || 'Mosaic pipeline',
-        status: 'active',
+        configurations,
         schedule: { scheduleType: 'manual' },
-        syncCatalog,
       }) as any
       const connectionId = conn.connectionId || conn.id
       if (!connectionId) return Response.json({ error: 'Connection was not created' }, { status: 502 })
 
       // 4. Trigger the first sync
       const job = await ab(inst, '/jobs', '/connections/sync', 'POST',
-        { type: 'sync', connectionId }) as any
+        { type: 'sync', connectionId, jobType: 'sync' }) as any
       await sql`UPDATE airbyte_instances SET last_synced=${nowExpr()} WHERE id=${body.instanceId}`
 
       return Response.json({
         ok: true,
         connectionId,
         jobId: job.jobId || job.id || job.job?.id || null,
-        streamCount: streams.length,
+        streamCount: streamNames.length,
       })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
   }

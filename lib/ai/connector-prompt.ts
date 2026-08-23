@@ -38,6 +38,16 @@ The manifest MUST have this exact shape and required blocks:
     {
       "type": "DeclarativeStream",
       "name": "<stream name>",
+      "primary_key": "<field or [] if none>",
+      "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { /* one entry PER field a record contains, e.g. "id": {"type":["integer","null"]}, "name": {"type":["string","null"]} */ }
+        }
+      },
       "retriever": {
         "type": "SimpleRetriever",
         "requester": {
@@ -61,6 +71,13 @@ The manifest MUST have this exact shape and required blocks:
 
 CRITICAL RULES:
 - The "spec" block is REQUIRED. Omitting it makes the connector fail to load.
+- Every stream MUST have a "schema_loader" of type InlineSchemaLoader whose schema
+  declares the record fields under "properties". This is what lets Airbyte
+  DISCOVER the stream and land it to a table — a stream with no declared schema is
+  invisible to sync. Infer the fields from the description and any sample provided;
+  make every field nullable (e.g. {"type":["string","null"]}) so real-world nulls
+  don't break the sync. Include "additionalProperties": true so unexpected fields
+  still flow through.
 - field_path is [] ONLY when the response body IS the array of records. If records
   are nested (e.g. {"items":[...]}, {"data":{"results":[...]}}), set field_path
   accordingly (["items"] or ["data","results"]).
