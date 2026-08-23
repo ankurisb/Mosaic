@@ -213,6 +213,17 @@ export async function deleteSourceDefinition(sourceDefinitionId: string, instanc
   return { ok: true }
 }
 
+/** Fetch a destination's non-secret config (host/port/database/schema/username).
+ *  Airbyte redacts the password (returns "**********"), so the caller must supply
+ *  the real password separately when registering a Mosaic connection. */
+export async function getDestinationConfig(destinationId: string, instanceId?: string): Promise<{ ok: boolean; config?: Record<string, unknown>; reason?: string }> {
+  const inst = await loadInstance(instanceId)
+  const r = await config(inst, '/destinations/get', { destinationId })
+  if (!r.ok) return { ok: false, reason: reasonFrom(r) }
+  const cfg = (r.json.configuration as Record<string, unknown>) || (r.json.connectionConfiguration as Record<string, unknown>) || {}
+  return { ok: true, config: cfg }
+}
+
 export interface CustomConnector {
   id: string          // sourceDefinitionId (published) or builderProjectId (draft)
   name: string

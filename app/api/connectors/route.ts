@@ -9,8 +9,11 @@
 // the LLM; this route is the Airbyte-side orchestration + the human-in-the-loop
 // test/publish gates. The connector runs in Airbyte's sandbox, never in Mosaic.
 import { getSession } from '@/lib/auth'
-import { createProject, readStream, publish, listProjects, deleteProject, deleteSourceDefinition, listCustomConnectors } from '@/lib/airbyte-connector-builder'
+import { createProject, readStream, publish, listProjects, deleteProject, deleteSourceDefinition, listCustomConnectors, getDestinationConfig } from '@/lib/airbyte-connector-builder'
 import { generateManifest, refineManifest } from '@/lib/ai/connector-prompt'
+import { getDb } from '@/lib/db'
+import { encrypt } from '@/lib/encrypt'
+import { syncToSuperset } from '@/lib/superset-sync'
 
 export const runtime = 'nodejs'
 
@@ -64,6 +67,36 @@ export async function POST(req: Request) {
       const r = await publish({ projectId, name, manifest, instanceId })
       if (!r.ok) return Response.json({ error: r.reason }, { status: 502 })
       return Response.json({ ok: true, sourceDefinitionId: r.sourceDefinitionId })
+    }
+
+    if (action === 'register_connection') {
+      // Register the Airbyte destination (where the connector's data lands) as a
+      // queryable Mosaic connection. Host/port/db/schema/username come from the
+      // destination config; the password is operator-supplied (Airbyte redacts it).
+      const { destinationId, password, label, instanceId } = body
+      if (!destinationId || !label) return Response.json({ error: 'destinationId and label required' }, { status: 400 })
+      const dc = await getDestinationConfig(destinationId, instanceId)
+      if (!dc.ok) return Response.json({ error: dc.reason }, { status: 502 })
+      const cfg = dc.config || {}
+      const host = cfg.host as string | undefined
+      const port = (cfg.port as number | undefined) ?? 5432
+      const database = cfg.database as string | undefined
+      const schema = (cfg.schema as string | undefined) || 'public'
+      const username = cfg.username as string | undefined
+      if (!host || !database) return Response.json({ error: 'Destination config missing host/database' }, { status: 422 })
+      // Airbyte redacts the password as "**********" — require a real one from the operator.
+      const realPassword = (password && password !== '**********') ? password : null
+      const sql = getDb()
+      const passwordEnc = realPassword ? encrypt(realPassword) : null
+      const rows = await sql`
+        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,schema_name,read_only,description)
+        VALUES(${label},'postgres','development',${host},${port},${database},${username || null},${passwordEnc},${schema},true,${'Landed by custom connector via Airbyte'})
+        RETURNING id`
+      const newId = (rows[0] as { id: string }).id
+      // Register with Superset too, so the landed data is dashboard-able like any
+      // other SQL connection (best-effort — don't fail registration if it lags).
+      syncToSuperset({ id: newId, label, dialect: 'postgres', host, port: Number(port), database_name: database, username: username || undefined, password: realPassword || undefined, schema_name: schema }).catch(() => {})
+      return Response.json({ ok: true, connectionId: newId, host, database, schema })
     }
 
     if (action === 'list_connectors') {

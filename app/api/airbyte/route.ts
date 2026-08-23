@@ -662,6 +662,7 @@ export async function POST(req: Request) {
         sourceId,
         destinationId,
         name: name || 'Mosaic pipeline',
+        status: 'active',
         configurations,
         schedule: { scheduleType: 'manual' },
       }) as any
