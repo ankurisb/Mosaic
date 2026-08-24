@@ -72,6 +72,10 @@ export default function TabAudit({ user }: { user: SessionUser }) {
   const [compLoading,  setCompLoading]  = useState(false)
   const [showComp,     setShowComp]     = useState(false)
   const [expandedSec,  setExpandedSec]  = useState<string | null>(null)
+  // CISO is an optional bring-your-own integration (not bundled). Only surface
+  // the "Open CISO Assistant" links when the operator has actually configured a
+  // CISO instance (Settings → Keys); otherwise they'd point at a dead URL.
+  const [cisoUrl,      setCisoUrl]      = useState<string | null>(null)
 
   // Filters
   const [sinceIdx,     setSinceIdx]     = useState(1)
@@ -118,6 +122,24 @@ export default function TabAudit({ user }: { user: SessionUser }) {
     } finally { setCompLoading(false) }
   }
   useEffect(() => { if (showComp && !compliance) loadCompliance() }, [showComp])
+
+  // Resolve whether a CISO instance is configured (bring-your-own). The health
+  // endpoint reports CISO as 'unconfigured' when no URL is set; in that case we
+  // hide the portal links entirely rather than link to a dead localhost URL.
+  // The browser-facing portal URL comes from NEXT_PUBLIC_CISO_URL (a BYO
+  // deployment sets it to its own CISO); we only show the link when CISO is both
+  // configured (health) and has a public URL to open.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/health')
+        const j = await r.json()
+        const configured = j?.ciso?.status && j.ciso.status !== 'unconfigured'
+        const publicUrl = process.env.NEXT_PUBLIC_CISO_URL
+        setCisoUrl(configured && publicUrl ? publicUrl : null)
+      } catch { setCisoUrl(null) }
+    })()
+  }, [])
 
   function exportCsv() {
     const since = SINCE_OPTIONS[sinceIdx].value()
@@ -350,13 +372,16 @@ export default function TabAudit({ user }: { user: SessionUser }) {
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
             ISO 27001 Compliance Documents
           </div>
-          {/* CISO Assistant link — GRC governance layer */}
-          <button
-            onClick={() => window.open('http://localhost:8443', '_blank', 'noopener,noreferrer')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none', background: 'rgba(59,130,246,.07)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 1l3 2v4c0 2-1.5 3.5-3 4.5C4.5 10.5 3 9 3 7V3l3-2z"/><path d="M5 7l1.2 1.2L9 5"/></svg>
-            Open CISO Assistant
-          </button>
+          {/* CISO Assistant link — only shown when a CISO instance is configured
+              (bring-your-own). CISO is not bundled by default. */}
+          {cisoUrl && (
+            <button
+              onClick={() => window.open(cisoUrl, '_blank', 'noopener,noreferrer')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none', background: 'rgba(59,130,246,.07)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 1l3 2v4c0 2-1.5 3.5-3 4.5C4.5 10.5 3 9 3 7V3l3-2z"/><path d="M5 7l1.2 1.2L9 5"/></svg>
+              Open CISO Assistant
+            </button>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {[
@@ -379,13 +404,24 @@ export default function TabAudit({ user }: { user: SessionUser }) {
             </div>
           ))}
         </div>
-        {/* Two-layer compliance model explanation */}
+        {/* Governance-layer note. When a CISO instance is connected (bring-your-
+            own), point to it for the governance artefacts; otherwise explain that
+            these documents above are Mosaic's own audit-backed evidence and that a
+            GRC tool can optionally be connected in Settings → Keys. */}
         <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(59,130,246,.05)', border: '1px solid rgba(59,130,246,.15)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--blue-t)" strokeWidth="1.6" style={{ marginTop: 1, flexShrink: 0 }}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v3M7 4.5v.5"/></svg>
           <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 }}>
-            Go to{' '}
-            <button onClick={() => window.open('http://localhost:8443', '_blank', 'noopener,noreferrer')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--blue-t)', fontWeight: 500, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>CISO Assistant ↗</button>
-            {' '}to view governance related artefacts (risk register, SoA sign-off, SOPs, supplier register).
+            {cisoUrl ? (
+              <>
+                Go to{' '}
+                <button onClick={() => window.open(cisoUrl, '_blank', 'noopener,noreferrer')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--blue-t)', fontWeight: 500, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>CISO Assistant ↗</button>
+                {' '}to view governance related artefacts (risk register, SoA sign-off, SOPs, supplier register).
+              </>
+            ) : (
+              <>
+                The documents above are Mosaic&rsquo;s own audit-backed compliance evidence (logging, encryption, RBAC, retention). For the governance layer — risk register, SoA sign-off, SOPs, supplier register — you can optionally connect a GRC tool such as CISO Assistant in Settings &rarr; Keys.
+              </>
+            )}
           </div>
         </div>
       </div>
