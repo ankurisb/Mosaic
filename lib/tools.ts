@@ -221,6 +221,32 @@ Only use tool names that are listed for that connection. If unsure what a server
       required: ['connection_id', 'tool_name']
     },
   },
+  {
+    name: 'create_alert',
+    description: `Draft a monitoring alert from the user's natural-language request (e.g. "email me when scrap rate on line 3 goes above 5%"). This creates an Alert (the simple watch-and-notify tier): it checks one data source on a schedule and sends a message when a threshold condition is met.
+
+IMPORTANT — this is a WRITE action, so it is a two-step, draft-then-confirm flow:
+1. First call WITHOUT confirmed (or confirmed=false): the tool resolves the data source and notification channel, builds the alert definition, and returns it as a DRAFT for you to show the user. It does NOT create anything yet. Present the draft clearly (what it watches, the condition, the schedule, where it notifies) and ask the user to confirm.
+2. Only after the user explicitly confirms, call again with the SAME fields plus confirmed=true to actually create the alert.
+
+Never pass confirmed=true until the user has seen the draft and said yes. If the source or channel can't be resolved unambiguously, the tool returns the available options — relay them and ask the user to pick, rather than guessing.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short human-readable name for the alert, e.g. "High scrap rate — Line 3".' },
+        source_hint: { type: 'string', description: 'The data source to monitor, as the user referred to it (a connection label or name). The tool resolves it to a real connection.' },
+        query: { type: 'string', description: 'A SQL query that returns the value to check (single value / first column of first row). E.g. "SELECT scrap_rate FROM line_metrics WHERE line=3 ORDER BY ts DESC LIMIT 1".' },
+        column: { type: 'string', description: 'The column whose value is compared, if the query returns multiple columns. Optional if the query returns a single value.' },
+        op: { type: 'string', enum: ['>', '>=', '<', '<=', '=', '!='], description: 'Comparison operator for the threshold.' },
+        threshold: { type: 'number', description: 'The threshold value to compare against.' },
+        interval_seconds: { type: 'number', description: 'How often to check, in seconds (e.g. 3600 = hourly). Default 3600 if unspecified.' },
+        channel_hint: { type: 'string', description: 'Where to send the notification, as the user referred to it (a channel name, or a type like "email"/"slack"). The tool resolves it to a configured channel.' },
+        message_template: { type: 'string', description: 'Optional message to send when the alert fires. A sensible default is generated if omitted.' },
+        confirmed: { type: 'boolean', description: 'Leave false/omit on the first (draft) call. Set true ONLY after the user has seen the draft and explicitly confirmed, to actually create the alert.' },
+      },
+      required: ['name', 'source_hint', 'query', 'op', 'threshold', 'channel_hint']
+    },
+  },
 ]
 
 export async function runTool(
@@ -332,7 +358,104 @@ export async function runTool(
     }
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
     case 'render_chart': return renderChart(input)
+    case 'create_alert': return createAlertTool(input, guardrailCtx)
     default: throw new Error(`Unknown tool: ${name}`)
+  }
+}
+
+// -- create_alert ----------------------------------------------
+// Chat-to-automation bridge: turns a natural-language "alert me when X" into a
+// real Alert (integration_rules row). Two-step draft-then-confirm — the first
+// call resolves the source + channel and returns a DRAFT (creates nothing);
+// only confirmed=true actually writes the alert. Admin-only, mirroring the
+// RulesPage (alerts are configured by admins).
+async function createAlertTool(
+  input: Record<string, unknown>,
+  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string },
+): Promise<unknown> {
+  if ((guardrailCtx?.userRole || 'user') !== 'admin') {
+    return { error: 'Creating alerts requires an admin role. Ask an administrator to set this up, or configure it in Settings → Rules → Alerts.' }
+  }
+  const { getDb } = await import('@/lib/db')
+  const sql = getDb()
+
+  const name = String(input.name || '').trim()
+  const query = String(input.query || '').trim()
+  const op = String(input.op || '')
+  const threshold = input.threshold
+  const column = input.column ? String(input.column) : ''
+  const interval = Number(input.interval_seconds) > 0 ? Math.floor(Number(input.interval_seconds)) : 3600
+  const sourceHint = String(input.source_hint || '').trim()
+  const channelHint = String(input.channel_hint || '').trim()
+  const confirmed = input.confirmed === true
+
+  if (!name || !query || !op || threshold === undefined || threshold === null) {
+    return { error: 'Missing required fields. Need at least: name, source_hint, query, op, threshold, channel_hint.' }
+  }
+
+  // -- Resolve the data source (connection) from the hint --
+  const conns = await sql`SELECT id, label, dialect FROM db_connections` as Array<{ id: string; label: string; dialect: string }>
+  if (!conns.length) return { error: 'No data connections are configured yet. Add one under Settings → Data sources first.' }
+  const hintLower = sourceHint.toLowerCase()
+  let srcMatches = conns.filter(c => c.label.toLowerCase() === hintLower)
+  if (!srcMatches.length) srcMatches = conns.filter(c => c.label.toLowerCase().includes(hintLower) || hintLower.includes(c.label.toLowerCase()))
+  if (!srcMatches.length) {
+    return { needs_clarification: 'source', message: `Couldn't match a data source to "${sourceHint}".`, available_sources: conns.map(c => c.label) }
+  }
+  if (srcMatches.length > 1) {
+    return { needs_clarification: 'source', message: `"${sourceHint}" matches multiple sources — which one?`, matching_sources: srcMatches.map(c => c.label) }
+  }
+  const source = srcMatches[0]
+
+  // -- Resolve the notification channel from the hint --
+  const channels = await sql`SELECT id, name, type FROM integration_channels WHERE active = true` as Array<{ id: string; name: string; type: string }>
+  if (!channels.length) return { error: 'No notification channels are configured yet. Add one under Settings → Rules (email, Slack, Teams, or webhook) before creating an alert.' }
+  const chLower = channelHint.toLowerCase()
+  let chMatches = channels.filter(c => c.name.toLowerCase() === chLower || c.type.toLowerCase() === chLower)
+  if (!chMatches.length) chMatches = channels.filter(c => c.name.toLowerCase().includes(chLower) || c.type.toLowerCase().includes(chLower))
+  if (!chMatches.length) {
+    return { needs_clarification: 'channel', message: `Couldn't match a notification channel to "${channelHint}".`, available_channels: channels.map(c => `${c.name} (${c.type})`) }
+  }
+  if (chMatches.length > 1) {
+    return { needs_clarification: 'channel', message: `"${channelHint}" matches multiple channels — which one?`, matching_channels: chMatches.map(c => `${c.name} (${c.type})`) }
+  }
+  const channel = chMatches[0]
+
+  const condition = JSON.stringify({ op, threshold, column: column || undefined, interval })
+  const messageTemplate = String(input.message_template || '').trim()
+    || `Alert "${name}": ${column || 'value'} ${op} ${threshold} on ${source.label}.`
+
+  // -- Draft (no write) unless explicitly confirmed --
+  if (!confirmed) {
+    return {
+      __draft: true,
+      message: 'This is a DRAFT — nothing has been created yet. Show the user this summary and ask them to confirm. Only if they say yes, call create_alert again with confirmed=true and the identical fields.',
+      draft: {
+        name,
+        watches: `${source.label} — runs: ${query}`,
+        condition: `${column || 'result'} ${op} ${threshold}`,
+        checks_every: interval >= 3600 ? `${interval / 3600}h` : `${interval / 60}m`,
+        notifies: `${channel.name} (${channel.type})`,
+        message_on_fire: messageTemplate,
+      },
+    }
+  }
+
+  // -- Confirmed: create the alert --
+  try {
+    const nextRun = new Date(Date.now() + interval * 1000).toISOString()
+    const rows = await sql`
+      INSERT INTO integration_rules
+        (name, active, trigger_type, source_type, source_id, query, condition, channel_id, message_template, next_run_at, created_by)
+      VALUES (${name}, true, ${'threshold'}, ${'database'}, ${source.id}, ${query}, ${condition}, ${channel.id}, ${messageTemplate}, ${nextRun}, ${guardrailCtx?.userId || null})
+      RETURNING id` as Array<{ id: string }>
+    return {
+      created: true,
+      alert_id: rows[0]?.id,
+      message: `Alert "${name}" created and active. It will check ${source.label} every ${interval >= 3600 ? interval / 3600 + 'h' : interval / 60 + 'm'} and notify ${channel.name} when ${column || 'the value'} ${op} ${threshold}. You can manage it under Settings → Rules → Alerts.`,
+    }
+  } catch (e) {
+    return { error: `Failed to create the alert: ${(e as Error).message}` }
   }
 }
 

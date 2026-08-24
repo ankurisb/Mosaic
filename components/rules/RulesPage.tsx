@@ -270,13 +270,23 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   )
 
   // -- Tab strip ------------------------------------------------
+  const TAB_HINTS: Record<'alerts'|'workflow'|'automation', string> = {
+    alerts:     'Simple watch-and-notify: check one source on a schedule and send a message when a threshold is crossed. Start here for "tell me when X."',
+    workflow:   'Multi-condition rules with AND/OR logic, several actions and recipients, and rate limiting. Use when one alert isn\u2019t enough — combined conditions or richer routing.',
+    automation: 'Full workflow automation via n8n for complex or multi-step logic (branching, external systems, transforms). Mosaic and n8n call each other, so automations can query your data and trigger syncs.',
+  }
   const tabStrip = (
+    <div>
     <div style={{ display: 'flex', gap: 2, padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', marginTop: -1 }}>
       {(['alerts', 'workflow', 'automation'] as const).map(tab => (
         <button key={tab} onClick={() => { setActiveTab(tab); setView('list') }} style={{ padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400, color: activeTab === tab ? 'var(--text)' : 'var(--text3)', background: 'none', border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent-fg)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1 }}>
           {tab === 'alerts' ? 'Alerts' : tab === 'workflow' ? 'Workflow rules' : 'Automation'}
         </button>
       ))}
+    </div>
+    <div style={{ padding: '8px 24px 0', fontSize: 12, color: 'var(--text3)', lineHeight: 1.5, maxWidth: 720 }}>
+      {TAB_HINTS[activeTab]}
+    </div>
     </div>
   )
 

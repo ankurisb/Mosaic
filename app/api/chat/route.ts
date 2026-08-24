@@ -28,6 +28,56 @@ const MODEL_PRICING: Record<string, { input: number; output: number; label: stri
 }
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 
+// Pick the RCA workflow whose purpose best fits the user's problem.
+// Primary: a fast Haiku classify call reasons over each workflow's name +
+// description + problem_type + keywords and returns the best match (or none).
+// Fallback: deterministic keyword-overlap scoring — identical to the original
+// behaviour — used whenever the classify call can't run (no key, air-gapped,
+// timeout, parse error), so matching degrades gracefully rather than breaking.
+async function matchWorkflowSemantic(
+  problem: string,
+  workflows: Record<string, unknown>[],
+): Promise<Record<string, unknown> | null> {
+  const keywordMatch = (): Record<string, unknown> | null => {
+    const lower = problem.toLowerCase()
+    let best: Record<string, unknown> | null = null
+    let bestScore = 0
+    for (const wf of workflows) {
+      const keywords = (wf.keywords as string[]) || []
+      const score = keywords.filter((kw) => lower.includes(kw.toLowerCase())).length
+      if (score > bestScore) { bestScore = score; best = wf }
+    }
+    return best
+  }
+
+  let apiKey: string | null = null
+  try { apiKey = await getKey('ANTHROPIC_API_KEY') } catch { apiKey = null }
+  if (!apiKey) return keywordMatch()
+
+  try {
+    const catalog = workflows.map((wf, i) => {
+      const kw = ((wf.keywords as string[]) || []).join(', ')
+      return `${i}. "${wf.name}" (type: ${wf.problem_type})${wf.description ? ` — ${wf.description}` : ''}${kw ? ` [keywords: ${kw}]` : ''}`
+    }).join('\n')
+
+    const anthropic = new Anthropic({ apiKey })
+    const resp = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 16,
+      system: `You match a user's manufacturing problem to the single most relevant investigation workflow from a numbered list. Consider each workflow's purpose, not just literal word overlap. Reply with ONLY the number of the best-fitting workflow, or "none" if no workflow is a reasonable fit. No other text.`,
+      messages: [{ role: 'user', content: `Workflows:\n${catalog}\n\nProblem: "${problem}"\n\nBest workflow number (or "none"):` }],
+    })
+    const text = resp.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('').trim().toLowerCase()
+    if (text.startsWith('none')) return null
+    const idx = parseInt(text.match(/\d+/)?.[0] ?? '', 10)
+    if (Number.isInteger(idx) && idx >= 0 && idx < workflows.length) return workflows[idx]
+    // Unparseable answer -> fall back rather than guess
+    return keywordMatch()
+  } catch {
+    return keywordMatch()
+  }
+}
+
 export async function POST(req: Request) {
   const requestId = req.headers.get('x-request-id') || newRequestId()
   const requestStart = Date.now()
@@ -236,16 +286,21 @@ Communicate naturally. Lead with the answer. Match response length to question c
   let matchedWorkflow: Record<string, unknown> | null = null
 
   if (isRcaQuery(lastUserContent)) {
-    // Try to match a specific workflow template from DB
+    // Match a specific workflow template from DB. We use a fast Haiku classify
+    // call to pick the workflow whose PURPOSE best fits the user's problem
+    // (semantic), rather than raw keyword overlap which missed problems phrased
+    // without the exact keywords. The workflow DEFINITION is unchanged — a match
+    // still injects that workflow's data-steps/renderers as guidance below.
+    // Keyword overlap remains as a deterministic fallback if the classify call
+    // is unavailable (air-gapped / no key / error), so matching never regresses
+    // to worse than before.
     try {
       const matchRes = await sql`
         SELECT * FROM rca_workflows WHERE active = true ORDER BY created_at ASC`
-      const lower = lastUserContent.toLowerCase()
-      let bestScore = 0
-      for (const wf of matchRes as Record<string, unknown>[]) {
-        const keywords = (wf.keywords as string[]) || []
-        const score = keywords.filter((kw: string) => lower.includes(kw.toLowerCase())).length
-        if (score > bestScore) { bestScore = score; matchedWorkflow = wf }
+      const workflows = matchRes as Record<string, unknown>[]
+
+      if (workflows.length) {
+        matchedWorkflow = await matchWorkflowSemantic(lastUserContent, workflows)
       }
     } catch { /* no workflows table yet -- fall through to generic */ }
 
