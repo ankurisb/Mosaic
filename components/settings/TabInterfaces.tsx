@@ -10,7 +10,7 @@ const META: Record<Surface, { label: string; desc: string; href: string; externa
   n8n:      { label: 'Workflow Automation', desc: 'Build and run automation workflows (n8n).',        href: '/api/authz/n8n-login' },
   superset: { label: 'Analytics',           desc: 'Explore and build dashboards (Superset).',         href: '/api/authz/superset-login' },
   airbyte:  { label: 'Data Pipelines',      desc: 'Manage data source syncs (Airbyte).',              href: '/settings#data-sources' },
-  ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).',  href: process.env.NEXT_PUBLIC_CISO_URL || 'http://localhost:8443', external: true },
+  ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).',  href: process.env.NEXT_PUBLIC_CISO_URL || '', external: true },
 }
 
 // Map a health status to a dot colour + human label.
@@ -60,7 +60,15 @@ export default function TabInterfaces() {
     else window.location.href = href
   }
 
+  // Surfaces the user is allowed to see. CISO is an optional bring-your-own
+  // integration (not bundled) — only show its row when a browser-facing CISO URL
+  // is actually configured (NEXT_PUBLIC_CISO_URL). Without one there's no valid
+  // portal to open, so we hide the row rather than present a dead link. (Backend
+  // reachability alone isn't enough: a leftover bundled container may be up with
+  // no public URL to send the browser to.)
+  const cisoConfigured = !!(META.ciso.href && /^https?:\/\//.test(META.ciso.href))
   const accessible = SURFACES.filter(s => (surfaces || []).includes(s))
+    .filter(s => !(s === 'ciso' && !cisoConfigured))
 
   return (
     <div className="fade-in">

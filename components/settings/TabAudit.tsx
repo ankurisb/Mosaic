@@ -123,22 +123,14 @@ export default function TabAudit({ user }: { user: SessionUser }) {
   }
   useEffect(() => { if (showComp && !compliance) loadCompliance() }, [showComp])
 
-  // Resolve whether a CISO instance is configured (bring-your-own). The health
-  // endpoint reports CISO as 'unconfigured' when no URL is set; in that case we
-  // hide the portal links entirely rather than link to a dead localhost URL.
-  // The browser-facing portal URL comes from NEXT_PUBLIC_CISO_URL (a BYO
-  // deployment sets it to its own CISO); we only show the link when CISO is both
-  // configured (health) and has a public URL to open.
+  // Resolve whether a CISO portal is available to link to. CISO is an optional
+  // bring-your-own integration (not bundled); the portal link only makes sense
+  // when a browser-facing CISO URL is configured (NEXT_PUBLIC_CISO_URL). Without
+  // one there's nothing valid to open, so the links stay hidden — regardless of
+  // whether a leftover bundled backend happens to be reachable.
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch('/api/health')
-        const j = await r.json()
-        const configured = j?.ciso?.status && j.ciso.status !== 'unconfigured'
-        const publicUrl = process.env.NEXT_PUBLIC_CISO_URL
-        setCisoUrl(configured && publicUrl ? publicUrl : null)
-      } catch { setCisoUrl(null) }
-    })()
+    const publicUrl = process.env.NEXT_PUBLIC_CISO_URL
+    setCisoUrl(publicUrl && /^https?:\/\//.test(publicUrl) ? publicUrl : null)
   }, [])
 
   function exportCsv() {
