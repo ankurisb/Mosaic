@@ -627,6 +627,46 @@ export async function POST(req: Request) {
     const { sourceId, destinationId, name } = body
     if (!sourceId || !destinationId) return Response.json({ error: 'sourceId and destinationId required' }, { status: 400 })
     try {
+      // 0. Pre-flight: verify the chosen destination is actually reachable, so a
+      //    misconfigured/unreachable destination fails fast with a clear message
+      //    instead of building a connection whose first sync errors after the fact.
+      try {
+        const chk = await ab(inst,
+          `/destinations/${destinationId}/check_connection`,
+          '/destinations/check_connection',
+          'POST',
+          { destinationId },
+          30000
+        ) as any
+        // Airbyte returns the check outcome under one of these shapes depending on
+        // API surface: { status: 'succeeded'|'failed' }, { jobInfo: { succeeded } },
+        // or a bare { succeeded }. Treat anything not explicitly successful as a
+        // failure so a broken destination is caught here, not after the sync.
+        const explicitStatus = typeof chk.status === 'string' ? chk.status.toLowerCase() : null
+        const succeeded = explicitStatus === 'succeeded'
+          || chk.succeeded === true
+          || chk.jobInfo?.succeeded === true
+        const failed = explicitStatus === 'failed'
+          || chk.succeeded === false
+          || chk.jobInfo?.succeeded === false
+        if (failed || !succeeded) {
+          const msg = chk.message || chk.jobInfo?.failureReason?.externalMessage
+            || 'The destination is not reachable — check its configuration in Airbyte.'
+          return Response.json({ error: `Destination check failed: ${msg}` }, { status: 422 })
+        }
+      } catch (e) {
+        // A timeout or error here means the check itself couldn't complete — which
+        // for an unreachable destination is exactly what happens (the check hangs).
+        // Treat that as a failure so we don't build a doomed pipeline. (If the
+        // endpoint is genuinely missing on some instance, the message still guides
+        // the operator to verify the destination.)
+        const m = (e as Error).message || ''
+        const hint = /timeout|abort/i.test(m)
+          ? 'the destination did not respond (likely unreachable)'
+          : m
+        return Response.json({ error: `Could not verify the destination: ${hint}. Check its configuration in Airbyte.` }, { status: 422 })
+      }
+
       // 1. Discover the source's streams (cold-start container spin-up can take
       //    30s+, so allow a generous timeout for this step specifically).
       const disc = await ab(inst,

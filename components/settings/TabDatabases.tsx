@@ -1273,49 +1273,61 @@ function CustomConnectorsList({ instanceId }: { instanceId: string }) {
   )
 }
 
-// Walks a published connector all the way to queryable data: create a source ->
-// build the pipeline (connection + first sync) -> register the landed Postgres
-// destination as a Mosaic connection. The destination password is operator-
-// supplied (Airbyte redacts it).
+// Walks a published connector all the way to queryable data: pick a destination ->
+// create a source -> build the pipeline (connection + first sync) -> optionally
+// register the landed destination as a Mosaic connection. The destination is
+// chosen by the operator from those configured in Airbyte (not hardcoded); it and
+// its credentials are Airbyte's domain.
+interface AbDestination { destinationId?: string; id?: string; name?: string; destinationName?: string; destinationType?: string }
+
 function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector: CustomConnectorItem; instanceId: string; onClose: () => void; onDone: () => void }) {
-  const [phase, setPhase] = React.useState<'idle' | 'building' | 'built' | 'registering' | 'done'>('idle')
+  const [phase, setPhase] = React.useState<'loading' | 'pick' | 'building' | 'built' | 'registering' | 'done'>('loading')
   const [err, setErr] = React.useState<string | null>(null)
   const [password, setPassword] = React.useState('')
   const [info, setInfo] = React.useState<{ jobId?: string; streamCount?: number } | null>(null)
+  const [destinations, setDestinations] = React.useState<AbDestination[]>([])
+  const [destId, setDestId] = React.useState<string>('')
+  const [workspaceId, setWorkspaceId] = React.useState<string>('')
+
+  const destName = (d: AbDestination) => d.name || d.destinationName || d.destinationType || (d.destinationId || d.id || '').slice(0, 8)
+
+  // Load the workspace + available destinations up front so the operator picks one.
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const instRes = await fetch('/api/airbyte?action=list')
+        const instJson = await instRes.json()
+        const inst = (instJson.instances || []).find((i: { id: string; workspace_id?: string }) => i.id === instanceId)
+        if (!inst?.workspace_id) { setErr('Airbyte workspace not discovered yet.'); setPhase('pick'); return }
+        setWorkspaceId(inst.workspace_id)
+        const destRes = await fetch(`/api/airbyte?action=destinations&id=${instanceId}`)
+        const destJson = await destRes.json()
+        const dests: AbDestination[] = destJson.destinations || destJson.data || []
+        setDestinations(dests)
+        if (dests.length) setDestId(dests[0].destinationId || dests[0].id || '')
+        setPhase('pick')
+      } catch (e) { setErr((e as Error).message); setPhase('pick') }
+    })()
+  }, [instanceId])
 
   async function run() {
+    if (!destId) { setErr('Choose a destination first.'); return }
     setErr(null); setPhase('building')
     try {
-      // 1. resolve workspace + postgres destination
-      const instRes = await fetch('/api/airbyte?action=list')
-      const instJson = await instRes.json()
-      const inst = (instJson.instances || []).find((i: { id: string; workspace_id?: string }) => i.id === instanceId)
-      if (!inst?.workspace_id) { setErr('Airbyte workspace not discovered yet.'); setPhase('idle'); return }
-      const destRes = await fetch(`/api/airbyte?action=destinations&id=${instanceId}`)
-      const destJson = await destRes.json()
-      const pg = (destJson.destinations || []).find((d: { destinationName?: string; destinationType?: string }) => /postgres/i.test(d.destinationName || d.destinationType || ''))
-      if (!pg) { setErr('No Postgres destination configured in Airbyte.'); setPhase('idle'); return }
-      const destinationId = pg.destinationId || pg.id
-      // 2. create a source from the published connector
-      const csRes = await fetch('/api/airbyte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_source', instanceId, workspaceId: inst.workspace_id, name: `${connector.name} source`, definitionId: connector.id, config: {} }) })
+      const csRes = await fetch('/api/airbyte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_source', instanceId, workspaceId, name: `${connector.name} source`, definitionId: connector.id, config: {} }) })
       const cs = await csRes.json()
-      if (cs.error || !cs.sourceId) { setErr(cs.error || 'Could not create source'); setPhase('idle'); return }
-      // 3. build the pipeline (connection + first sync)
-      const bpRes = await fetch('/api/airbyte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'build_pipeline', instanceId, sourceId: cs.sourceId, destinationId, name: `${connector.name} pipeline` }) })
+      if (cs.error || !cs.sourceId) { setErr(cs.error || 'Could not create source'); setPhase('pick'); return }
+      const bpRes = await fetch('/api/airbyte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'build_pipeline', instanceId, sourceId: cs.sourceId, destinationId: destId, name: `${connector.name} pipeline` }) })
       const bp = await bpRes.json()
-      if (!bp.ok) { setErr(bp.error || 'Could not build the pipeline'); setPhase('idle'); return }
+      if (!bp.ok) { setErr(bp.error || 'Could not build the pipeline'); setPhase('pick'); return }
       setInfo({ jobId: bp.jobId, streamCount: bp.streamCount }); setPhase('built')
-    } catch (e) { setErr((e as Error).message); setPhase('idle') }
+    } catch (e) { setErr((e as Error).message); setPhase('pick') }
   }
 
   async function register() {
     setErr(null); setPhase('registering')
     try {
-      const destRes = await fetch(`/api/airbyte?action=destinations&id=${instanceId}`)
-      const destJson = await destRes.json()
-      const pg = (destJson.destinations || []).find((d: { destinationName?: string; destinationType?: string }) => /postgres/i.test(d.destinationName || d.destinationType || ''))
-      const destinationId = pg.destinationId || pg.id
-      const res = await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'register_connection', destinationId, password, label: `${connector.name} (landed)`, instanceId }) })
+      const res = await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'register_connection', destinationId: destId, password, label: `${connector.name} (landed)`, instanceId }) })
       const { data } = await safeJson<{ ok?: boolean; error?: string }>(res)
       if (!res.ok || !data?.ok) { setErr(data?.error || 'Registration failed'); setPhase('built'); return }
       setPhase('done')
@@ -1323,43 +1335,63 @@ function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector:
   }
 
   const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }
-  const modal: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '22px 24px', width: 460, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,.2)' }
+  const modal: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '22px 24px', width: 480, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,.2)' }
   const btnP: React.CSSProperties = { height: 36, padding: '0 16px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', background: 'var(--blue)', color: '#fff', border: 'none', cursor: 'pointer' }
   const btnG: React.CSSProperties = { height: 36, padding: '0 16px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', background: 'var(--bg)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }
+  const field: React.CSSProperties = { width: '100%', height: 36, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 13, padding: '0 12px', outline: 'none', boxSizing: 'border-box' }
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Set up sync — {connector.name}</div>
         <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5, marginBottom: 16 }}>
-          Mosaic will create a source from this connector, sync its data into the Postgres destination, and register it as a queryable connection.
+          Mosaic will create a source from this connector and sync its data into the destination you choose, then optionally register it as a queryable connection.
         </div>
         {err && <div style={{ fontSize: 12, color: 'var(--red)', background: 'var(--red-t)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: 12 }}>{err}</div>}
 
-        {phase === 'idle' && (
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button onClick={onClose} style={btnG}>Cancel</button>
-            <button onClick={run} style={btnP}>Start sync</button>
+        {phase === 'loading' && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Loading destinations…</div>}
+
+        {phase === 'pick' && (
+          <div>
+            {destinations.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 14 }}>
+                No destinations are configured in Airbyte yet. Add a destination (Postgres, Snowflake, BigQuery, etc.) in the Airbyte interface, then come back to set up the sync.
+              </div>
+            ) : (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text2)', marginBottom: 6 }}>Sync into destination</label>
+                <select value={destId} onChange={e => setDestId(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+                  {destinations.map(d => { const id = d.destinationId || d.id || ''; return <option key={id} value={id}>{destName(d)}</option> })}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Destinations are managed in Airbyte. To add one, use the Airbyte interface.</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={onClose} style={btnG}>Cancel</button>
+              {destinations.length > 0 && <button onClick={run} disabled={!destId} style={{ ...btnP, opacity: destId ? 1 : 0.5 }}>Start sync</button>}
+            </div>
           </div>
         )}
+
         {phase === 'building' && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Creating the source and starting the first sync… this can take up to a minute.</div>}
+
         {(phase === 'built' || phase === 'registering') && (
           <div>
             <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 12 }}>
-              Sync started{info?.streamCount ? ` (${info.streamCount} stream${info.streamCount === 1 ? '' : 's'})` : ''}. To query the landed data, register the destination as a Mosaic connection — enter the destination database password (Airbyte doesn&rsquo;t expose it).
+              Sync started{info?.streamCount ? ` (${info.streamCount} stream${info.streamCount === 1 ? '' : 's'})` : ''}. To query the landed data from Mosaic, register the destination as a connection — enter its database password (Airbyte doesn&rsquo;t expose it).
             </div>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Destination database password"
-              style={{ width: '100%', height: 36, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 13, padding: '0 12px', outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Destination database password" style={{ ...field, marginBottom: 12 }} />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={onDone} style={btnG}>Skip for now</button>
               <button onClick={register} disabled={!password || phase === 'registering'} style={{ ...btnP, opacity: (!password || phase === 'registering') ? 0.5 : 1 }}>{phase === 'registering' ? 'Registering…' : 'Register connection'}</button>
             </div>
           </div>
         )}
+
         {phase === 'done' && (
           <div>
             <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 16 }}>
-              Done. The landed data is now a Mosaic connection you can query in chat, dashboards, and reports. It may take a moment for the first sync to finish populating.
+              Done. The landed data is now a Mosaic connection you can query in chat, dashboards, and reports. The first sync may take a moment to finish populating.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button onClick={onDone} style={btnP}>Close</button></div>
           </div>
