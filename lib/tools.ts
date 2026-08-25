@@ -1325,10 +1325,33 @@ async function readLocalFiles(
   const fs   = await import('fs/promises')
   const path = await import('path')
 
-  const basePath = path.join(
-    (server.share_path as string) || '/',
-    (server.sub_path   as string) || '',
-  )
+  // -- Path containment -------------------------------------------------
+  // share_path is the granted root: everything this reader touches MUST stay
+  // inside it. sub_path is joined onto it, and later a filename is selected by
+  // hint; neither may escape the root (via '..', an absolute sub_path, or a
+  // symlink pointing outside). We resolve to real absolute paths and assert
+  // containment. This matters most for the desktop build, where a user grants a
+  // specific local/network folder and Mosaic must not read beyond it.
+  const shareRoot = path.resolve((server.share_path as string) || '/')
+  // realpath the root so symlink comparisons are apples-to-apples; fall back to
+  // the resolved path if the root itself can't be realpath'd yet.
+  let rootReal = shareRoot
+  try { rootReal = await fs.realpath(shareRoot) } catch { /* keep resolved */ }
+
+  const withinRoot = (candidate: string): boolean => {
+    const rel = path.relative(rootReal, candidate)
+    // Inside iff the relative path doesn't start with '..' and isn't absolute
+    // (path.relative returns '' for the root itself, which is fine).
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+  }
+
+  // Resolve the target directory (share_path + sub_path) and contain it.
+  const joined = path.resolve(shareRoot, (server.sub_path as string) || '')
+  let basePath = joined
+  try { basePath = await fs.realpath(joined) } catch { /* dir may not exist yet; use resolved */ }
+  if (!withinRoot(basePath)) {
+    throw new Error(`Access denied: the requested path is outside the permitted share (${server.label || 'file server'}).`)
+  }
 
   let entries: { name: string; mtime: Date; size: number }[] = []
   try {
@@ -1354,6 +1377,14 @@ async function readLocalFiles(
   const best = entries.find(e => e.name.toLowerCase().includes(hint)) || entries[0]
 
   const filePath = path.join(basePath, best.name)
+  // Contain the selected file too: realpath it and assert it's still inside the
+  // granted root, so a symlink within the directory (or an odd filename) can't
+  // be used to read outside the share.
+  let fileReal = filePath
+  try { fileReal = await fs.realpath(filePath) } catch { /* missing -> read will fail naturally */ }
+  if (!withinRoot(fileReal)) {
+    throw new Error(`Access denied: the selected file resolves outside the permitted share (${server.label || 'file server'}).`)
+  }
   const ext = best.name.split('.').pop()?.toLowerCase() || ''
 
   // Read content based on extension
