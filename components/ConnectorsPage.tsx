@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import AppShell from './AppShell'
 import type { SessionUser } from '@/lib/auth'
 
@@ -28,6 +28,23 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
   const [note, setNote] = useState('')
   const [published, setPublished] = useState<string | null>(null)
   const [refineOpen, setRefineOpen] = useState(false)
+
+  // Custom-connector building requires a self-hosted Airbyte — Cloud's public API
+  // doesn't expose the connector-builder endpoints. Detect the connected instance
+  // and, if it's Cloud (or none is connected), show the Enterprise message rather
+  // than let the workshop run and hit a 403. 'checking' avoids a flash of the
+  // workshop before detection resolves.
+  const [gate, setGate] = useState<'checking' | 'ok' | 'cloud' | 'none'>('checking')
+  useEffect(() => {
+    fetch('/api/airbyte?action=list').then(r => r.json()).then(d => {
+      const instances = d.instances || []
+      if (!instances.length) { setGate('none'); return }
+      const anyCloud = instances.some((i: { url?: string }) => /(^|\.)airbyte\.com/i.test(i.url || ''))
+      const anySelfHosted = instances.some((i: { url?: string }) => !/(^|\.)airbyte\.com/i.test(i.url || ''))
+      // Self-hosted present -> builder works. Only Cloud -> gated.
+      setGate(anySelfHosted ? 'ok' : anyCloud ? 'cloud' : 'none')
+    }).catch(() => setGate('ok')) // on error, don't block — fail open to the workshop
+  }, [])
 
   function reset() {
     setStep('describe'); setManifest(null); setStreamName(''); setProjectId(null)
@@ -104,7 +121,27 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
             </p>
           </div>
 
-          {published ? (
+          {gate === 'checking' ? (
+            <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Checking your Airbyte connection…</div>
+          ) : gate !== 'ok' ? (
+            <div style={{ padding: '28px 24px', borderRadius: 14, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 620 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, background: 'rgba(97,92,245,0.12)' }}>
+                  <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+                </span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '3px 8px', borderRadius: 999 }}>Enterprise</span>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, margin: 0 }}>
+                {gate === 'cloud'
+                  ? <>You&rsquo;re connected to <strong>Airbyte Cloud</strong>, which gives you the standard catalog of 300+ connectors. Building a connector to <em>any</em> source — including your proprietary and internal systems — from a plain-language description is available on the <strong>self-hosted Enterprise edition</strong>, where connectors are built and run entirely within your network.</>
+                  : <>Building AI custom connectors needs a <strong>self-hosted Airbyte</strong> instance. Connect one under <strong>Settings → Data sources → Airbyte</strong>, or use <strong>Airbyte Cloud</strong> for the standard 300+ connector catalog. The AI connector builder is part of the self-hosted <strong>Enterprise edition</strong>.</>}
+              </p>
+              <a href="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 16, padding: '8px 14px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, fontWeight: 500, color: 'var(--text)', textDecoration: 'none' }}>
+                Go to Data sources
+              </a>
+            </div>
+          ) : published ? (
             <div style={{ background: 'var(--green-bg)', border: '1px solid var(--green-t)', borderRadius: 'var(--radius)', padding: '20px 22px' }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Connector published</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>
