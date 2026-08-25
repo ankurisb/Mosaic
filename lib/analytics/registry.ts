@@ -142,8 +142,16 @@ export const ANALYTICS_REGISTRY: AnalysisDefinition[] = [
   },
 ]
 
-export function formatAnalyticsForPrompt(disabled: string[] = []): string {
-  const active = ANALYTICS_REGISTRY.filter(a => !disabled.includes(a.name))
+export function formatAnalyticsForPrompt(disabled: string[] = [], available?: string[] | null): string {
+  // `available` is the set of analyses the stats sidecar actually implements
+  // (from /capabilities). When provided, we only advertise analyses that are
+  // both not-admin-disabled AND genuinely runnable — so a registry entry with no
+  // sidecar handler is simply never offered, instead of failing at run time.
+  // When null/undefined (capabilities unknown, e.g. sidecar unreachable), we fall
+  // back to advertising the full registry rather than nothing.
+  const active = ANALYTICS_REGISTRY.filter(a =>
+    !disabled.includes(a.name) && (!available || available.includes(a.name))
+  )
   const byCategory: Record<string, AnalysisDefinition[]> = {}
   for (const a of active) {
     if (!byCategory[a.category]) byCategory[a.category] = []
@@ -166,4 +174,32 @@ export function formatAnalyticsForPrompt(disabled: string[] = []): string {
     lines.push('')
   }
   return lines.join('\n')
+}
+
+// ── Sidecar capability discovery ─────────────────────────────
+// Fetch (and cache) the list of analyses the stats sidecar actually implements,
+// so formatAnalyticsForPrompt only advertises runnable ones. Cached for a short
+// TTL to avoid hitting the sidecar on every chat request; on any failure we
+// return null, which makes the caller fall back to the full registry (fail-open
+// — never silently drop all analyses because the capability probe hiccuped).
+let _capCache: { at: number; analyses: string[] | null } = { at: 0, analyses: null }
+const CAP_TTL_MS = 60_000
+
+export async function getSidecarCapabilities(): Promise<string[] | null> {
+  const now = Date.now()
+  if (_capCache.analyses && now - _capCache.at < CAP_TTL_MS) return _capCache.analyses
+  const base = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 2000)
+    const res = await fetch(`${base}/capabilities`, { signal: ctrl.signal })
+    clearTimeout(t)
+    if (!res.ok) return null
+    const data = await res.json() as { analyses?: string[] }
+    const analyses = Array.isArray(data.analyses) ? data.analyses : null
+    _capCache = { at: now, analyses }
+    return analyses
+  } catch {
+    return null  // unreachable / older sidecar without /capabilities -> fall back to full registry
+  }
 }

@@ -17,6 +17,14 @@ class AnalysisRequest(BaseModel):
 def health():
     return {"ok": True, "service": "mosaic-stats"}
 
+@app.get("/capabilities")
+def capabilities():
+    # Report the analyses this sidecar actually implements. Mosaic intersects
+    # this with its analysis registry so the AI is only ever told about analyses
+    # that can genuinely be computed — a registry entry with no handler here is
+    # simply not offered, rather than failing at run time.
+    return {"analyses": sorted(HANDLERS.keys())}
+
 @app.post("/analyse")
 def analyse(req: AnalysisRequest):
     try:

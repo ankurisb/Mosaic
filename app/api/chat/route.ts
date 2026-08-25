@@ -355,8 +355,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       }).join('\n')
     : ''
 
-  // Inject available statistical analyses (excluding admin-disabled ones)
-  const { formatAnalyticsForPrompt } = await import('@/lib/analytics/registry')
+  // Inject available statistical analyses (excluding admin-disabled ones, and —
+  // via the sidecar's /capabilities — only those it can actually compute).
+  const { formatAnalyticsForPrompt, getSidecarCapabilities } = await import('@/lib/analytics/registry')
   let disabledAnalyses: string[] = []
   try {
     const disabledRows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'DISABLED_ANALYSES'`
@@ -368,7 +369,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         : (typeof raw === 'string' ? JSON.parse(raw) : [])
     }
   } catch { }
-  const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses)
+  // Only advertise analyses the sidecar actually implements. null (probe failed /
+  // older sidecar) falls back to the full registry inside formatAnalyticsForPrompt.
+  let sidecarCaps: string[] | null = null
+  try { sidecarCaps = await getSidecarCapabilities() } catch { }
+  const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses, sidecarCaps)
 
   // Nudge the model to make its rigour legible: when it uses a formal statistical
   // method or follows an RCA workflow, it should say so plainly and cite the key
