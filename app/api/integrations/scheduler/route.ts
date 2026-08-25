@@ -9,6 +9,7 @@ import { log } from '@/lib/logger'
 import { runTool }         from '@/lib/tools'
 import { ensureCronSecret } from '@/lib/keys'
 import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
+import { resolveGroupMembers } from '@/lib/notify-recipients'
 import { runReport }       from '@/lib/report-runner'
 export const runtime = 'nodejs'
 
@@ -421,40 +422,96 @@ export async function POST(req: Request) {
             else errors.push(`${groupId}/${channelId}: ${result.error}`)
 
             // -- Dispatch to notification group members ----------
+            // Groups are resolved via the shared hybrid resolver: members can be
+            // raw email/phone contacts, user references (email pulled live), or
+            // role references (all active users of a role). Every member that
+            // can't be reached is captured with a reason and surfaced in the run
+            // log, so an alert that only reaches some recipients is never silent.
             const emailChId = (g.email_channel_id as string | null) ?? null
             const smsChId   = (g.sms_channel_id   as string | null) ?? null
-            // Use group-level recipients (not action-level) for group dispatch
             const groupRecipients = recipients.filter(r => r.type === 'group')
+
+            const deliveryDelivered: string[] = []
+            const deliveryFailed: string[] = []
+            const deliverySkipped: string[] = []
+
+            // Cache the two channels (email/sms) once — they're rule-level.
+            async function loadChannel(chId: string | null): Promise<import('@/lib/notify').Channel | null> {
+              if (!chId) return null
+              const [row] = await sql`SELECT * FROM integration_channels WHERE id = ${chId} AND active = true`
+              if (!row) return null
+              const ch = row as Record<string, unknown>
+              const cfg: Record<string, unknown> = typeof ch.config === 'string'
+                ? (() => { try { return JSON.parse(ch.config as string) } catch { return {} } })()
+                : (ch.config as Record<string, unknown>) || {}
+              return { id: ch.id as string, name: ch.name as string, type: ch.type as string, config: cfg }
+            }
+            const emailChannel = await loadChannel(emailChId)
+            const smsChannel   = await loadChannel(smsChId)
+
             for (const grpRef of groupRecipients) {
               const grpId = grpRef.group_id as string
-              if (!grpId) continue
-              const [grpRow] = await sql`SELECT members FROM notification_groups WHERE id = ${grpId}`
-              if (!grpRow) continue
+              const grpLabel = (grpRef.label as string) || grpId || 'group'
+              if (!grpId) { deliverySkipped.push(`${grpLabel}: recipient has no group_id`); continue }
+              const [grpRow] = await sql`SELECT name, members FROM notification_groups WHERE id = ${grpId}`
+              if (!grpRow) {
+                // #3 — dangling reference: rule points at a deleted group. Record
+                // it loudly instead of notifying nobody in silence.
+                deliverySkipped.push(`${grpLabel}: group no longer exists (deleted?) — no one was notified for it`)
+                continue
+              }
               const members: Record<string, unknown>[] = typeof grpRow.members === 'string'
                 ? (() => { try { return JSON.parse(grpRow.members as string) } catch { return [] } })()
                 : (grpRow.members as Record<string, unknown>[]) || []
-              for (const member of members) {
-                const mtype = member.type as string
-                let mChId: string | null = null
-                if (mtype === 'email') mChId = emailChId
-                else if (mtype === 'phone') mChId = smsChId
-                if (!mChId) continue
-                const [mChanRow] = await sql`SELECT * FROM integration_channels WHERE id = ${mChId} AND active = true`
-                if (!mChanRow) continue
-                const mCh = mChanRow as Record<string, unknown>
-                const mChConfig: Record<string, unknown> = typeof mCh.config === 'string'
-                  ? (() => { try { return JSON.parse(mCh.config as string) } catch { return {} } })()
-                  : (mCh.config as Record<string, unknown>) || {}
-                const mChannel: import('@/lib/notify').Channel = {
-                  id: mCh.id as string, name: mCh.name as string,
-                  type: mCh.type as string, config: mChConfig,
+
+              const { targets, skipped } = await resolveGroupMembers(sql, members)
+              // Members the resolver itself couldn't turn into an address.
+              for (const s of skipped) deliverySkipped.push(`${grpRow.name}/${s.descriptor}: ${s.reason}`)
+
+              for (const target of targets) {
+                const channel = target.kind === 'email' ? emailChannel : smsChannel
+                if (!channel) {
+                  // #1 — no channel of this kind configured on the rule: the member
+                  // is real and deliverable, but there's nowhere to send. Loud.
+                  deliverySkipped.push(`${grpRow.name}/${target.address}: no ${target.kind === 'email' ? 'email' : 'SMS'} channel configured on this rule`)
+                  continue
                 }
-                // Override recipients field for SMS/email with individual member address
-                if (mtype === 'email' && member.address) mChannel.config = { ...mChConfig, recipients: [member.address] }
-                if (mtype === 'phone'  && member.number)  mChannel.config = { ...mChConfig, to_number: member.number }
-                const mResult = await sendNotification(mChannel, message)
-                if (!mResult.ok) errors.push(`${groupId}/group-member: ${mResult.error}`)
+                // #4 — build a fresh per-send channel scoped to THIS target only,
+                // so the address override can never inherit or clobber the base
+                // channel's other recipients. Start from base config, then set the
+                // single destination field for this kind.
+                const perSendConfig: Record<string, unknown> = { ...channel.config }
+                if (target.kind === 'email') perSendConfig.recipients = [target.address]
+                else perSendConfig.to_number = target.address
+                const perSendChannel: import('@/lib/notify').Channel = {
+                  id: channel.id, name: channel.name, type: channel.type, config: perSendConfig,
+                }
+                const mResult = await sendNotification(perSendChannel, message)
+                if (mResult.ok) deliveryDelivered.push(`${target.address} (${target.via})`)
+                else {
+                  deliveryFailed.push(`${target.address}: ${mResult.error}`)
+                  errors.push(`${groupId}/group-member ${target.address}: ${mResult.error}`)
+                }
               }
+            }
+
+            // #5 — record a per-recipient delivery summary in the run log so an
+            // admin can see "delivered N, skipped M, failed K" with reasons,
+            // rather than delivery quietly being partial.
+            if (groupRecipients.length) {
+              const summary = {
+                delivered: deliveryDelivered.length,
+                failed: deliveryFailed.length,
+                skipped: deliverySkipped.length,
+                skipped_reasons: deliverySkipped.slice(0, 20),
+                failed_reasons: deliveryFailed.slice(0, 20),
+              }
+              const anyProblem = deliveryFailed.length > 0 || deliverySkipped.length > 0
+              await sql`
+                INSERT INTO integration_runs (rule_id, status, message_sent, error, latency_ms)
+                VALUES (${groupId}, ${anyProblem ? 'partial' : 'sent'},
+                        ${`group dispatch: ${deliveryDelivered.length} delivered, ${deliveryFailed.length} failed, ${deliverySkipped.length} skipped`},
+                        ${anyProblem ? JSON.stringify(summary) : null}, 0)`
             }
           }
 

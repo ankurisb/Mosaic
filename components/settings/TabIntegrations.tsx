@@ -11,7 +11,7 @@ interface Channel {
 }
 interface NotifGroup {
   id: string; name: string; description: string
-  members: Array<{ type: string; address?: string; role?: string; number?: string; group_id?: string; label?: string }>
+  members: Array<{ type: string; address?: string; role?: string; number?: string; group_id?: string; label?: string; user_id?: string }>
 }
 
 const CHAN_EMPTY = { name: '', type: 'slack', active: true, webhook_url: '', smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '', from_address: '', recipients: '', url: '', account_sid: '', auth_token: '', from_number: '', to_number: '', template_sid: '', content_variables: '' }
@@ -247,7 +247,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, minHeight: 36, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '6px 8px', marginBottom: 8 }}>
               {groupForm.members.map((m, i) => (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 99, background: m.type === 'role' ? 'var(--blue-bg)' : m.type === 'phone' ? 'var(--green-bg)' : 'var(--bg3)', border: '1px solid var(--border)', color: m.type === 'role' ? 'var(--blue-t)' : 'var(--text2)' }}>
-                  {m.type === 'email' ? m.address : m.type === 'phone' ? m.number : `Role: ${m.role}`}
+                  {m.type === 'email' ? m.address : m.type === 'phone' ? m.number : m.type === 'user' ? `User: ${m.label || m.user_id}` : `Role: ${m.role}`}
                   <button onClick={() => setGroupForm(p => ({ ...p, members: p.members.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 14, lineHeight: 1, padding: '0 4px', marginLeft: 2 }}>×</button>
                 </span>
               ))}
@@ -282,7 +282,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
             <div style={{ padding: '8px 18px 10px', display: 'flex', flexWrap: 'wrap', gap: 4, borderTop: '1px solid var(--border)' }}>
               {g.members.map((m, i) => (
                 <span key={i} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: m.type === 'role' ? 'var(--blue-bg)' : m.type === 'phone' ? 'var(--green-bg)' : 'var(--bg3)', border: '1px solid var(--border)', color: m.type === 'role' ? 'var(--blue-t)' : 'var(--text2)' }}>
-                  {m.type === 'email' ? `@ ${m.address}` : m.type === 'phone' ? ` ${m.number}` : `Role: ${m.role}`}
+                  {m.type === 'email' ? `@ ${m.address}` : m.type === 'phone' ? ` ${m.number}` : m.type === 'user' ? `User: ${m.label || m.user_id}` : `Role: ${m.role}`}
                 </span>
               ))}
             </div>
@@ -314,15 +314,30 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
 }
 
 // -- Add member sub-component ----------------------------------
-function AddMemberRow({ onAdd }: { onAdd: (m: { type: string; address?: string; number?: string; role?: string }) => void }) {
+function AddMemberRow({ onAdd }: { onAdd: (m: { type: string; address?: string; number?: string; role?: string; user_id?: string; label?: string }) => void }) {
   const [type, setType] = useState('email')
   const [val,  setVal]  = useState('')
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name?: string }>>([])
+
+  // Load users lazily the first time the "User" option is chosen, so the group
+  // editor can reference real accounts (email pulled live at send time).
+  useEffect(() => {
+    if (type === 'user' && users.length === 0) {
+      fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {})
+    }
+  }, [type])
 
   function add() {
     if (!val) return
     if (type === 'email'  && !val.includes('@')) return
     if (type === 'phone'  && !val.startsWith('+')) return
-    onAdd(type === 'email' ? { type, address: val } : type === 'phone' ? { type, number: val } : { type, role: val })
+    if (type === 'user') {
+      const u = users.find(x => x.id === val)
+      if (!u) return
+      onAdd({ type: 'user', user_id: u.id, label: u.name || u.email })
+    } else {
+      onAdd(type === 'email' ? { type, address: val } : type === 'phone' ? { type, number: val } : { type, role: val })
+    }
     setVal('')
   }
 
@@ -331,14 +346,20 @@ function AddMemberRow({ onAdd }: { onAdd: (m: { type: string; address?: string; 
       <div style={{ flexShrink: 0 }}>
         <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Add by</div>
         <select style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 12, color: 'var(--text)', outline: 'none', cursor: 'pointer', width: 120, fontFamily: 'inherit' }} value={type} onChange={e => { setType(e.target.value); setVal('') }}>
+          <option value="user">User</option>
           <option value="email">Email</option>
           <option value="phone">Phone (SMS/WA)</option>
           <option value="role">Role</option>
         </select>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{type === 'email' ? 'Email address' : type === 'phone' ? 'Phone number (E.164)' : 'User role'}</div>
-        {type === 'role' ? (
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{type === 'email' ? 'Email address' : type === 'phone' ? 'Phone number (E.164)' : type === 'user' ? 'User (email synced automatically)' : 'User role'}</div>
+        {type === 'user' ? (
+          <select style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 12, color: 'var(--text)', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }} value={val} onChange={e => setVal(e.target.value)}>
+            <option value="">{users.length ? 'Select user...' : 'Loading...'}</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>)}
+          </select>
+        ) : type === 'role' ? (
           <select style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 12, color: 'var(--text)', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }} value={val} onChange={e => setVal(e.target.value)}>
             <option value="">Select...</option>
             <option value="admin">All admins</option>

@@ -74,6 +74,23 @@ const EMPTY_GROUP: Omit<RuleGroup, 'id' | 'created_at' | 'last_fired_at' | 'fire
 const TRIGGER_LABELS: Record<string, string> = { schedule: 'Scheduled', threshold: 'Threshold', rca_complete: 'RCA completed', manual: 'Manual' }
 const OP_LABELS: Record<string, string> = { '<': '<', '<=': '', '>': '>', '>=': '', '==': '=', '!=': '' }
 
+// Render a run's error field. Group-dispatch runs store a JSON summary of who
+// couldn't be reached (delivered/failed/skipped counts + reasons); turn that into
+// a short readable line. Plain-string errors pass through unchanged.
+function fmtDeliveryError(err: string | null): string {
+  if (!err) return ''
+  try {
+    const s = JSON.parse(err) as { delivered?: number; failed?: number; skipped?: number; skipped_reasons?: string[]; failed_reasons?: string[] }
+    if (typeof s.delivered === 'number' || typeof s.skipped === 'number' || typeof s.failed === 'number') {
+      const parts: string[] = []
+      const reasons = [...(s.failed_reasons || []), ...(s.skipped_reasons || [])]
+      if (reasons.length) parts.push(reasons.join('; '))
+      return parts.join(' — ') || `${s.skipped || 0} recipient(s) not reached`
+    }
+  } catch { /* not JSON — plain error string */ }
+  return err
+}
+
 function fmtInterval(sec: number) {
   if (sec >= 86400) return `${Math.floor(sec / 86400)}d`
   if (sec >= 3600)  return `${Math.floor(sec / 3600)}h`
@@ -382,10 +399,10 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                   <div style={{ fontSize: 12, color: 'var(--text4)' }}>No runs yet</div>
                 ) : (alertRunLogs[rule.id] || []).map(run => (
                   <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 11 }}>
-                    <span style={{ fontWeight: 600, color: run.status === 'sent' ? '#16a34a' : run.status === 'error' ? '#dc2626' : 'var(--text3)', flexShrink: 0 }}>{run.status}</span>
+                    <span style={{ fontWeight: 600, color: run.status === 'sent' ? '#16a34a' : run.status === 'error' ? '#dc2626' : run.status === 'partial' ? '#d97706' : 'var(--text3)', flexShrink: 0 }}>{run.status}</span>
                     <span style={{ color: 'var(--text3)', flexShrink: 0 }}>{fmtDateAlert(run.triggered_at)}</span>
                     {run.message_sent && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>{run.message_sent}</span>}
-                    {run.error && <span style={{ color: '#dc2626', flex: 1 }}>{run.error}</span>}
+                    {run.error && <span style={{ color: run.status === 'partial' ? '#d97706' : '#dc2626', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fmtDeliveryError(run.error)}>{fmtDeliveryError(run.error)}</span>}
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text4)', flexShrink: 0 }}>{run.latency_ms}ms</span>
                   </div>
                 ))}
