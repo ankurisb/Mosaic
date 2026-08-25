@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import { SupersetLink } from './SupersetLink'
+import { useSuperset } from './useSuperset'
 import { safeJson } from '@/lib/fetch'
 
 interface Dashboard {
@@ -24,6 +25,12 @@ const REFRESH_OPTS = [
 export default function DashboardsPage({ user }: { user: SessionUser }) {
   const router = useRouter()
   const isAdmin = user.role === 'admin'
+  // Superset ("Mosaic Analytics") is an optional/Enterprise capability. When it
+  // isn't configured (e.g. the desktop edition, which uses Mosaic's own built-in
+  // dashboards), the whole external-analytics linking UI is hidden — no dangling
+  // references to a Superset that isn't there.
+  const { status: supersetStatus } = useSuperset()
+  const supersetAvailable = !!supersetStatus?.configured
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -232,7 +239,8 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                   <span style={{ fontSize: 11, color: 'var(--text4)', marginLeft: 'auto' }}>{timeAgo(d.updated_at)}</span>
                 </div>
 
-                {/* Superset link row */}
+                {/* Superset link row — only when external analytics (Superset) is configured */}
+                {supersetAvailable && (
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={e => e.stopPropagation()}>
                   {d.superset_embed_uuid ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -270,6 +278,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                     )
                   ) : null}
                 </div>
+                )}
 
               </div>
             ))}

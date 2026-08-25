@@ -67,8 +67,13 @@ export default function TabInterfaces() {
   // reachability alone isn't enough: a leftover bundled container may be up with
   // no public URL to send the browser to.)
   const cisoConfigured = !!(META.ciso.href && /^https?:\/\//.test(META.ciso.href))
+  // Superset ("Analytics") is optional/Enterprise. In editions without it (e.g.
+  // desktop, which uses Mosaic's own built-in dashboards), /api/health reports it
+  // 'unconfigured' — hide the row entirely rather than show a dead Analytics tool,
+  // so the desktop edition carries no Superset reference. Same pattern as CISO.
   const accessible = SURFACES.filter(s => (surfaces || []).includes(s))
     .filter(s => !(s === 'ciso' && !cisoConfigured))
+    .filter(s => !(s === 'superset' && health.superset === 'unconfigured'))
 
   return (
     <div className="fade-in">

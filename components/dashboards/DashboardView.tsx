@@ -135,7 +135,12 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     setLoading(true)
     loadStructure().then(dash => {
       if (!dash) return
-      if (dash.superset_embed_uuid) {
+      // Only take the Superset-embed path when Superset is actually configured.
+      // A dashboard may carry a stale superset_embed_uuid from an edition/env that
+      // had Superset; without it (e.g. desktop), fall through to Mosaic's own
+      // native panel rendering rather than trying to embed a Superset that isn't
+      // there.
+      if (dash.superset_embed_uuid && supersetStatus?.configured) {
         fetchGuestToken(id).finally(() => setLoading(false))
       } else {
         fetchData(true).finally(() => setLoading(false))
