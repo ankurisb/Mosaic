@@ -868,7 +868,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               ) : null
             })()}
             {/* Hidden file input */}
-            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt" style={{ display: 'none' }}
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt,.docx,.pptx" style={{ display: 'none' }}
               onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
 
             {/* + menu */}

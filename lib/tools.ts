@@ -1939,6 +1939,45 @@ export async function extractFileText(buf: Buffer, filename: string, maxChars = 
   if (['txt', 'md', 'log'].includes(ext)) {
     return buf.toString('utf8').slice(0, maxChars)
   }
+  // DOCX / PPTX: both are ZIP archives of XML. We already ship jszip, so extract
+  // text with no extra dependency (no mammoth / python). DOCX text lives in
+  // word/document.xml as <w:t>; PPTX text is spread across ppt/slides/slideN.xml
+  // as <a:t>. Word/PowerPoint split runs across many tags, so we join them.
+  if (ext === 'docx' || ext === 'pptx') {
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = await JSZip.loadAsync(buf)
+      const decode = (s: string) => s
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+      if (ext === 'docx') {
+        const doc = zip.file('word/document.xml')
+        if (!doc) return '(docx: no document.xml found)'
+        const xml = await doc.async('string')
+        const parts = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(m => decode(m[1]))
+        // paragraph breaks: <w:p> boundaries become newlines
+        const text = parts.join('').length
+          ? xml.split(/<\/w:p>/).map(p => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(m => decode(m[1])).join('')).filter(Boolean).join('\n')
+          : ''
+        return text.slice(0, maxChars) || '(docx parsed but no text found)'
+      } else {
+        // PPTX: iterate slides in order, label each.
+        const slideNames = Object.keys(zip.files)
+          .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+          .sort((a, b) => (parseInt(a.match(/slide(\d+)/)![1]) - parseInt(b.match(/slide(\d+)/)![1])))
+        if (!slideNames.length) return '(pptx: no slides found)'
+        const out: string[] = []
+        for (const name of slideNames) {
+          const xml = await zip.file(name)!.async('string')
+          const parts = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)].map(m => decode(m[1])).filter(Boolean)
+          if (parts.length) out.push(`[Slide ${name.match(/slide(\d+)/)![1]}]\n${parts.join('\n')}`)
+        }
+        return out.join('\n\n').slice(0, maxChars) || '(pptx parsed but no text found)'
+      }
+    } catch (e) {
+      return `(could not extract ${ext}: ${(e as Error).message})`
+    }
+  }
   let parsed: Record<string, unknown>
   try {
     parsed = await parseFileContent(buf, filename, 500, undefined)
