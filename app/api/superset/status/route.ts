@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { NextRequest } from 'next/server'
+import { supersetSetting } from '@/lib/superset-auth'
 
 export async function GET(_req: NextRequest) {
   const session = await getSession()
@@ -13,11 +14,15 @@ export async function GET(_req: NextRequest) {
   //  - SUPERSET_PUBLIC_URL browser-facing origin behind Caddy (…:8445). This is
   //                        what we hand back to the client for links and embeds;
   //                        a browser cannot resolve the internal Docker hostname.
-  const supersetUrl = process.env.SUPERSET_URL
+  // Both resolve settings-first (kv_settings via supersetSetting) then env, so a
+  // customer can point Mosaic at their OWN Superset from Settings → Keys ("bring
+  // your own") without redeploying. Configured = a non-empty SUPERSET_URL exists
+  // in either place.
+  const supersetUrl = await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || '')
   if (!supersetUrl) {
     return Response.json({ configured: false })
   }
-  const publicUrl = process.env.SUPERSET_PUBLIC_URL || 'https://localhost:8445/'
+  const publicUrl = await supersetSetting('SUPERSET_PUBLIC_URL', process.env.SUPERSET_PUBLIC_URL || 'https://localhost:8445/')
 
   let reachable = false
   try {

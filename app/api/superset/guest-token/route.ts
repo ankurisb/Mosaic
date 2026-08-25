@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth'
 import { canAccessSurface } from '@/lib/permissions'
 import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
+import { supersetSetting } from '@/lib/superset-auth'
 import { NextRequest } from 'next/server'
 export const runtime = 'nodejs'
 
@@ -20,9 +21,9 @@ export async function GET(req: NextRequest) {
   const embedUuid = rows[0]?.superset_embed_uuid
   if (!embedUuid) return Response.json({ error: 'No Superset dashboard linked' }, { status: 404 })
 
-  const url = process.env.SUPERSET_URL || 'http://localhost:8088'
-  const user = process.env.SUPERSET_ADMIN_USER || 'admin'
-  const pass = process.env.SUPERSET_ADMIN_PASSWORD || ''
+  const url = await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')
+  const user = await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
+  const pass = await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
 
   const loginRes = await fetch(`${url}/api/v1/security/login`, {
     method: 'POST',

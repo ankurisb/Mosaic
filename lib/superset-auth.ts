@@ -15,8 +15,9 @@ import { getDb } from './db'
 // Settings resolve from the encrypted kv_settings table first (set in the UI,
 // Settings -> Keys), falling back to env. This is what allows a customer to
 // point Mosaic at their OWN Superset ("bring your own") without redeploying —
-// and, licensing-wise, without us shipping them a copy.
-async function setting(key: string, fallback: string): Promise<string> {
+// and, licensing-wise, without us shipping them a copy. Exported so the status
+// and guest-token endpoints resolve config the same settings-first way.
+export async function supersetSetting(key: string, fallback: string): Promise<string> {
   try {
     const sql = getDb()
     const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = ${key}`
@@ -41,9 +42,9 @@ function pickSession(res: Response): string | null {
  * authenticated session, to relay to the browser. Throws if login fails.
  */
 export async function ensureSupersetSession(): Promise<string> {
-  const SUPERSET_URL = (await setting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')).replace(/\/$/, '')
-  const SUPERSET_USER = await setting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
-  const SUPERSET_PASS = await setting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
+  const SUPERSET_URL = (await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')).replace(/\/$/, '')
+  const SUPERSET_USER = await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
+  const SUPERSET_PASS = await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
 
   // 1. GET the login page: yields a session cookie + a CSRF token bound to it.
   const loginPage = await fetch(`${SUPERSET_URL}/login/`, { signal: AbortSignal.timeout(8000) })

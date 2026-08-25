@@ -26,6 +26,13 @@ const KNOWN_KEYS = [
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
   // n8n
   'N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY',
+  // Superset (bring-your-own). Resolved settings-first by the status,
+  // guest-token and native-login paths (via supersetSetting), so a customer can
+  // point Mosaic at their OWN Superset from here without redeploying. SUPERSET_URL
+  // is the internal/reachable address; SUPERSET_PUBLIC_URL is the browser-facing
+  // origin for links/embeds; ADMIN_USER/PASSWORD is the service account Mosaic
+  // authenticates with to mint guest tokens.
+  'SUPERSET_URL', 'SUPERSET_PUBLIC_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD',
   // GitHub update checker
   'GITHUB_TOKEN', 'GITHUB_REPO',
   // App config
@@ -44,12 +51,10 @@ const KNOWN_KEYS = [
   // that kv_settings itself lives in. A value stored here could never be read
   // before that connection exists, so it was a silent no-op. Env-only.
   //
-  // SUPERSET_* and AIRBYTE_* are likewise excluded. They are internal service
-  // accounts, set once in .env and shared by compose across both containers
-  // (SUPERSET_ADMIN_PASSWORD bootstraps the Superset admin AND is Mosaic's auth;
-  // AIRBYTE_* is basic auth on both the proxy and Mosaic's caller). All are read
-  // from process.env, never getKey, so storing them here did nothing. End users
-  // reach Superset through the SSO gate, not these credentials. Env-only.
+  // SUPERSET_* is now settable here (bring-your-own — see above). AIRBYTE_* is
+  // excluded: it is basic auth on both the proxy and Mosaic's caller, read from
+  // process.env, never getKey — Airbyte's own BYO config lives in Settings → Data
+  // sources (airbyte_instances), not here.
 ]
 
 export async function GET() {

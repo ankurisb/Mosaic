@@ -20,18 +20,15 @@ const KEY_SECTIONS = [
   // it defines already exists, so the field was always a silent no-op. It is
   // env-only bootstrap config; see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   { title: 'GitHub — Update Checker',  keys: ['GITHUB_TOKEN', 'GITHUB_REPO'] },
-  // Superset Analytics and Airbyte Connectors are intentionally NOT here. Their
-  // credentials are internal service accounts, set once in .env and shared by
-  // compose across both containers (e.g. SUPERSET_ADMIN_PASSWORD bootstraps the
-  // Superset admin AND is what Mosaic authenticates with; AIRBYTE_* is basic
-  // auth on both the proxy and Mosaic's caller). Editing them here can't reach
-  // the other container, and all of them are read from process.env, never via
-  // getKey — so the fields were silent no-ops. End users reach Superset through
-  // the SSO gate, not these credentials. SUPERSET_URL is likewise an internal
-  // Docker address fixed by the compose topology (its one getKey consumer falls
-  // back to process.env). All env-only; see ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
+  // Superset is bring-your-own: SUPERSET_URL / SUPERSET_PUBLIC_URL / ADMIN_USER /
+  // ADMIN_PASSWORD resolve settings-first (via supersetSetting) in the status,
+  // guest-token and native-login paths, so a customer can point Mosaic at their
+  // OWN Superset from here without redeploying. AIRBYTE_* remains env-only (basic
+  // auth shared by compose across both containers); Airbyte's BYO config lives in
+  // Settings → Data sources. See ENV_TEMPLATE.md / DEPLOY_RUNBOOK.md.
   { title: 'Notifications — Twilio',   keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'] },
   { title: 'n8n Automation',           keys: ['N8N_URL', 'N8N_API_KEY', 'N8N_MOSAIC_API_KEY'] },
+  { title: 'Superset Analytics',       keys: ['SUPERSET_URL', 'SUPERSET_PUBLIC_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD'] },
   { title: 'CISO Assistant',           keys: ['CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD'] },
 ]
 
@@ -51,6 +48,10 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   CISO_API_URL:            { label: 'CISO Assistant URL',       hint: 'Base URL of your CISO backend · point at your own instance to use it',              placeholder: 'http://ciso-backend:8000' },
   CISO_SUPERUSER_EMAIL:    { label: 'CISO admin email',         hint: 'Mosaic authenticates as this to provision users when access is granted',            placeholder: 'admin@yourcompany.com' },
   CISO_SUPERUSER_PASSWORD: { label: 'CISO admin password',      hint: 'Stored encrypted · required for user provisioning',                                 placeholder: 'Stored encrypted', secret: true },
+  SUPERSET_URL:            { label: 'Superset URL',             hint: 'Reachable base URL of your Superset (server-side · used for health + API)',         placeholder: 'http://superset:8088' },
+  SUPERSET_PUBLIC_URL:     { label: 'Superset public URL',      hint: 'Browser-facing URL for links & embeds · what users\u2019 browsers open',            placeholder: 'https://superset.yourco.com/' },
+  SUPERSET_ADMIN_USER:     { label: 'Superset service user',    hint: 'Account Mosaic authenticates as to mint guest tokens · needs dashboard access',     placeholder: 'admin' },
+  SUPERSET_ADMIN_PASSWORD: { label: 'Superset service password',hint: 'Paired with the service user · stored encrypted',                                    placeholder: 'Stored encrypted', secret: true },
 }
 
 // Tool launch links live in the "Connected tools" tab (TabInterfaces), which
