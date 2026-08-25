@@ -129,8 +129,18 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [sandboxMsg, setSandboxMsg] = useState('')
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
   const [airbyteCount, setAirbyteCount] = useState(0)
+  // Detect whether the connected Airbyte is Cloud (api.airbyte.com). Cloud's
+  // public API doesn't expose the connector-builder endpoints, so the AI custom-
+  // connector workshop is an Enterprise (self-hosted) capability. We gate on the
+  // actual instance URL — the capability, not a marketing tier — so it's correct
+  // regardless of edition labelling.
+  const [airbyteIsCloud, setAirbyteIsCloud] = useState(false)
   React.useEffect(() => {
-    fetch('/api/airbyte?action=list').then(r => r.json()).then(d => setAirbyteCount((d.instances || []).length)).catch(() => {})
+    fetch('/api/airbyte?action=list').then(r => r.json()).then(d => {
+      const instances = d.instances || []
+      setAirbyteCount(instances.length)
+      setAirbyteIsCloud(instances.some((i: { url?: string }) => /(^|\.)airbyte\.com/i.test(i.url || '')))
+    }).catch(() => {})
   }, [showAirbyteForm])
 
   // Apply a parsed connection string -- fills all fields, auto-selects dialect
@@ -595,13 +605,28 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               You don't need the Airbyte browser open — just Docker running.
             </div>
             {user.role === 'admin' && (
-              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: 'var(--text3)' }}>No connector for your source?</span>
-                <a href="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text)', textDecoration: 'none', fontWeight: 500 }}>
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>
-                  Build one with AI
-                </a>
-              </div>
+              airbyteIsCloud ? (
+                <div style={{ marginTop: 14, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 560 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: 'rgba(97,92,245,0.12)' }}>
+                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '2px 7px', borderRadius: 999 }}>Enterprise</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
+                    Build a connector to <em>any</em> source — including your proprietary and internal systems — by describing it in plain language. Available on the self-hosted Enterprise edition, where connectors are built and run entirely within your network. The standard catalog of 300+ connectors is available here.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>No connector for your source?</span>
+                  <a href="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text)', textDecoration: 'none', fontWeight: 500 }}>
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>
+                    Build one with AI
+                  </a>
+                </div>
+              )
             )}
           </div>
           {user.role === 'admin' && airbyteCount === 0 && (
@@ -1143,11 +1168,12 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
             </div>
             <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, fontSize: 12, color: '#15803d', lineHeight: 1.5, marginBottom: 16, border: '1px solid #bbf7d0' }}>
               <strong>Docker Compose</strong> — use Username: <code style={{fontFamily:'var(--font-mono)'}}>airbyte</code> / Password: <code style={{fontFamily:'var(--font-mono)'}}>password</code><br/>
-              <strong>abctl (Kubernetes)</strong> — use your email + password from <code style={{fontFamily:'var(--font-mono)'}}>abctl local credentials</code>, plus Client ID &amp; Secret below.
+              <strong>abctl (Kubernetes)</strong> — use your email + password from <code style={{fontFamily:'var(--font-mono)'}}>abctl local credentials</code>, plus Client ID &amp; Secret below.<br/>
+              <strong>Airbyte Cloud</strong> — URL <code style={{fontFamily:'var(--font-mono)'}}>https://api.airbyte.com</code> + the Client ID &amp; Secret from an Application (Cloud → Settings → Applications). Standard 300+ connectors; AI custom connectors are Enterprise (self-hosted) only.
             </div>
             {([
               { key: 'label',         label: 'Label',            ph: 'Local Airbyte',              type: 'text',     hint: '' },
-              { key: 'url',           label: 'Airbyte URL',      ph: 'http://localhost:8000',      type: 'text',     hint: 'Default port 8000', req: true },
+              { key: 'url',           label: 'Airbyte URL',      ph: 'http://localhost:8000',      type: 'text',     hint: 'Self-hosted: http://localhost:8000 · Airbyte Cloud: https://api.airbyte.com (with your Cloud application client ID & secret)', req: true },
               { key: 'username',      label: 'Email / Username', ph: 'airbyte or your@email.com', type: 'text',     hint: '' },
               { key: 'password',      label: 'Password',         ph: editing ? '(unchanged)' : 'password', type: 'password', hint: editing ? 'Leave blank to keep existing' : '' },
               { key: 'client_id',     label: 'Client ID',        ph: 'abctl only',                 type: 'text',     hint: 'OAuth2 client ID for abctl deployments' },
