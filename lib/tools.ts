@@ -1442,6 +1442,29 @@ async function readLocalFiles(
 
 
 // -- File server reader ----------------------------------------
+// -- Path containment for local/mounted file servers ------------------
+// share_path is the granted root; nothing the local reader touches may escape
+// it (via '..', an absolute sub_path, or a symlink pointing outside). Both the
+// directory listing and the eventual file read run through assertWithinShare so
+// a traversal or outward symlink is rejected. Matters most for the desktop
+// build, where a user grants a specific local/network folder.
+async function assertWithinShare(shareRoot: string, candidate: string): Promise<string> {
+  const path = await import('path')
+  const fsp  = await import('fs/promises')
+  const rootAbs = path.resolve(shareRoot || '/')
+  let rootReal = rootAbs
+  try { rootReal = await fsp.realpath(rootAbs) } catch { /* root may not exist yet */ }
+  const candAbs = path.resolve(candidate)
+  let candReal = candAbs
+  try { candReal = await fsp.realpath(candAbs) } catch { /* missing -> use resolved */ }
+  const rel = path.relative(rootReal, candReal)
+  const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+  if (!inside) {
+    throw new Error('Access denied: the requested path is outside the permitted share.')
+  }
+  return candReal
+}
+
 async function readFileServer(
   serverId: string,
   fileHint: string,
@@ -1590,6 +1613,8 @@ async function listFiles(
   if (transport === 'local') {
     const { readdir, stat } = await import('fs/promises')
     const { join } = await import('path')
+    // Contain the listing directory within the granted share root.
+    await assertWithinShare(fs.share_path as string, basePath)
     const entries = await readdir(basePath)
     const files: FileEntry[] = []
     for (const name of entries) {
@@ -1813,7 +1838,10 @@ async function fetchFileContent(
 ): Promise<Buffer> {
   if (transport === 'local') {
     const { readFile } = await import('fs/promises')
-    return readFile(filePath)
+    // Re-assert containment on the actual file read: a symlink inside the share
+    // (or a path smuggled via the file list) must not escape the granted root.
+    const safe = await assertWithinShare(fs.share_path as string, filePath)
+    return readFile(safe)
   }
   if (transport === 's3') {
     const endpoint  = (fs.endpoint_url as string) || 'https://s3.amazonaws.com'
