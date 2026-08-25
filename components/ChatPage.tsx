@@ -439,11 +439,14 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     if (taRef.current) { taRef.current.style.height = 'auto' }
     const history = [...(active?.messages || []), { role: 'user' as const, content: text }]
     try {
-      // Build system prompt — inject pinned sources as explicit instruction
+      // Build system prompt — inform the model of the pinned scope. This is now
+      // backed by HARD server-side enforcement (allowed_sources below): calls to
+      // other sources are rejected, so tell the model plainly rather than as a
+      // soft preference.
       const pinnedNote = pinnedSources.length > 0
-        ? '\n\nFocus your data queries on these sources selected by the user: ' +
+        ? '\n\nThe user has scoped this chat to these data sources: ' +
           pinnedSources.map(s => `"${s.label}" (id: ${s.id})`).join(', ') +
-          '. Prefer these sources unless the question clearly requires a different one.'
+          '. Only these sources are available — queries to any other source will be rejected. Work exclusively within this scope; if a question needs a source outside it, say so and ask the user to add it.'
         : ''
       abortRef.current = new AbortController()
       const res = await fetch('/api/chat', {
@@ -455,6 +458,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           model,
           conversation_id: cid.startsWith('local-') ? null : cid,
           title: newTitle || convs.find(c => c.id === cid)?.title,
+          // Hard scope: when the user has pinned sources, send their ids so the
+          // server restricts tool calls to them (not just the prompt hint above).
+          allowed_sources: pinnedSources.map(s => s.id),
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Request failed')

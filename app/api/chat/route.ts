@@ -86,7 +86,13 @@ export async function POST(req: Request) {
 
   const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
   reqLog.info('Chat request received')
-  const { messages, system, conversation_id, title, model: requestedModel } = await req.json()
+  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources } = await req.json()
+  // Hard source-scoping: the chat picker sends the ids of pinned sources. When
+  // present, tool calls are restricted to these ids (enforced in runTool). An
+  // empty/absent list means no restriction (all sources allowed) — the default.
+  const allowedSources: string[] | undefined = Array.isArray(allowed_sources) && allowed_sources.length > 0
+    ? allowed_sources.map((s: unknown) => String(s))
+    : undefined
   if (!messages?.length) return Response.json({ error: 'No messages' }, { status: 400 })
 
   // Audit chat start now that we have the body
@@ -569,7 +575,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           }
           const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
             try {
-              const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined }
+              const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources }
               const result = await runTool(block.name, block.input as Record<string, unknown>, guardrailCtx)
               // HITL: if tool requires confirmation, surface to client and halt
               if (result && typeof result === 'object' && (result as Record<string,unknown>).__hitl_required) {

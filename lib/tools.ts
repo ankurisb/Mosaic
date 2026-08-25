@@ -252,12 +252,37 @@ Never pass confirmed=true until the user has seen the draft and said yes. If the
 export async function runTool(
   name: string,
   input: Record<string, unknown>,
-  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string }
+  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[] }
 ): Promise<unknown> {
   const role = guardrailCtx?.userRole || 'user'
   const auditCtx: GuardrailAuditCtx | undefined = guardrailCtx
     ? { userId: guardrailCtx.userId, userEmail: guardrailCtx.userEmail, userRole: role, conversationId: guardrailCtx.conversationId }
     : undefined
+
+  // Source scoping — HARD enforcement of the user's data-source selection.
+  // When the user pins specific sources in the chat picker, those ids arrive as
+  // allowedSources and any source-touching tool call MUST target one of them.
+  // Empty/undefined allowedSources means "no selection" => all sources allowed
+  // (the flexible default). This turns the picker from a prompt-level preference
+  // into an actual boundary, so a pinned scope cannot be silently escaped.
+  if (guardrailCtx?.allowedSources && guardrailCtx.allowedSources.length > 0) {
+    const SOURCE_TOOLS = new Set(['query_database', 'call_api', 'read_file_server', 'query_airbyte', 'query_prism'])
+    if (SOURCE_TOOLS.has(name)) {
+      const targetId = String(
+        input.connection_id || input.server_id || input.service_id || input.source_id || ''
+      )
+      // Only enforce when the tool actually names a source. (query_airbyte/prism
+      // without an explicit id fall through — they resolve their own target and
+      // are covered by the connection-level access rules below.)
+      if (targetId && !guardrailCtx.allowedSources.includes(targetId)) {
+        return {
+          error: `That data source is outside the sources you selected for this chat. To use it, add it to the selected sources (the + menu) or clear the selection to allow all sources.`,
+          blocked: true,
+          out_of_scope: true,
+        }
+      }
+    }
+  }
 
   // Type 3 — Action controls: check before every tool call
   try {
