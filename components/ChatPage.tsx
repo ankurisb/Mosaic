@@ -161,16 +161,77 @@ function ToolCalls({
           )}
           {tools.map((tc, j) => (
             <div key={j} style={{ marginBottom: j < tools.length - 1 ? 10 : 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 3 }}>{resolveToolLabel(tc)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {typeof tc.input === 'object' ? JSON.stringify(tc.input) : String(tc.input)}
-              </div>
-              {tc.result !== undefined && (
-                <div style={{ fontSize: 11, color: String(JSON.stringify(tc.result)).includes('"error"') ? 'var(--red-t)' : 'var(--green-t)' }}>
-                  {String(JSON.stringify(tc.result)).includes('"error"') ? '✗' : '✓'} {JSON.stringify(tc.result).slice(0, 200)}{JSON.stringify(tc.result).length > 200 ? '…' : ''}
-                </div>
+              {tc.name === 'run_statistical_analysis' ? (
+                <AnalysisChip input={tc.input} result={tc.result} />
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 3 }}>{resolveToolLabel(tc)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {typeof tc.input === 'object' ? JSON.stringify(tc.input) : String(tc.input)}
+                  </div>
+                  {tc.result !== undefined && (
+                    <div style={{ fontSize: 11, color: String(JSON.stringify(tc.result)).includes('"error"') ? 'var(--red-t)' : 'var(--green-t)' }}>
+                      {String(JSON.stringify(tc.result)).includes('"error"') ? '✗' : '✓'} {JSON.stringify(tc.result).slice(0, 200)}{JSON.stringify(tc.result).length > 200 ? '…' : ''}
+                    </div>
+                  )}
+                </>
               )}
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Rich chip for a statistical analysis, making the rigour legible: shows the
+// method name and the key computed figures (slope, R², Cpk, control limits…)
+// rather than a raw JSON blob, so a user can see the conclusion came from real
+// computation. Falls back gracefully if the result shape is unexpected.
+function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
+  const inp = (input || {}) as Record<string, unknown>
+  const analysisType = String(inp.analysis_type || 'analysis')
+  const labelMap: Record<string, string> = {
+    control_chart: 'Control Chart (SPC)', process_capability: 'Process Capability (Cp/Cpk)',
+    trend: 'Linear Trend Regression', anomaly_detection: 'Anomaly Detection',
+    changepoint_detection: 'Changepoint Detection', correlation: 'Correlation Analysis',
+    distribution: 'Distribution Analysis', hypothesis_test: 'Hypothesis Test',
+  }
+  const pretty = labelMap[analysisType] || analysisType.replace(/_/g, ' ')
+  const res = (result || {}) as Record<string, unknown>
+  const r = (res.result || res) as Record<string, unknown>
+  const hasError = JSON.stringify(res).includes('"error"')
+  const pending = result === undefined
+
+  // Pull a few headline metrics if present, in a friendly order.
+  const metricKeys = ['slope', 'r_squared', 'p_value', 'trend_direction', 'cpk', 'cp', 'ppk',
+    'mean', 'ucl', 'lcl', 'sigma', 'out_of_control_points', 'anomaly_count', 'anomaly_rate',
+    'capability_rating', 'days_to_threshold', 'changepoints']
+  const fmt = (v: unknown): string => {
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/\.?0+$/, '')
+    if (Array.isArray(v)) return String(v.length)
+    return String(v)
+  }
+  const metrics = metricKeys
+    .filter(k => r[k] !== undefined && r[k] !== null)
+    .slice(0, 6)
+    .map(k => ({ k: k.replace(/_/g, ' '), v: fmt(r[k]) }))
+
+  return (
+    <div style={{ border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 11px', background: 'linear-gradient(135deg, rgba(37,99,235,0.05), rgba(37,99,235,0.01))' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: metrics.length ? 7 : 0 }}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#2563eb" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 13h12M4 13V8M8 13V4M12 13V6"/></svg>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>{pretty}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: '#2563eb', background: 'rgba(37,99,235,0.1)', padding: '1px 6px', borderRadius: 999 }}>Computed</span>
+        {pending && <span style={{ fontSize: 10, color: 'var(--text3)' }}>running…</span>}
+        {hasError && <span style={{ fontSize: 10, color: 'var(--red-t)' }}>failed</span>}
+      </div>
+      {metrics.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px' }}>
+          {metrics.map((m, i) => (
+            <span key={i} style={{ fontSize: 10.5, color: 'var(--text2)' }}>
+              <span style={{ color: 'var(--text3)' }}>{m.k}:</span> <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{m.v}</span>
+            </span>
           ))}
         </div>
       )}

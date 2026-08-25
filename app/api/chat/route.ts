@@ -370,11 +370,17 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   } catch { }
   const analyticsBlock = '\n\n' + formatAnalyticsForPrompt(disabledAnalyses)
 
+  // Nudge the model to make its rigour legible: when it uses a formal statistical
+  // method or follows an RCA workflow, it should say so plainly and cite the key
+  // computed figures, so an industrial user can see (and trust) that the
+  // conclusion came from real computation, not an eyeballed guess.
+  const rigourNote = '\n\nWhen you run a statistical analysis (run_statistical_analysis) or follow an RCA workflow, state it explicitly in your answer — name the method (e.g. "linear trend regression", "process capability (Cpk)") and cite the key computed values (slope, R², p-value, Cpk, control limits, etc.). Do not present a statistical conclusion as if it were a casual observation; make clear it came from a real computation. If you did not run a formal analysis, do not imply that you did.'
+
   // Type 1 — AI output rules injection
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + aiRulesBlock
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
