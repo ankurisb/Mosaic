@@ -461,8 +461,13 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           // Hard scope: when the user has pinned sources, send their ids so the
           // server restricts tool calls to them (not just the prompt hint above).
           allowed_sources: pinnedSources.map(s => s.id),
+          // Uploaded files for this turn: images (native vision) + documents
+          // (extracted to text server-side). Sent once with the message.
+          attachments: attachments.map(a => ({ name: a.name, type: a.type, data: a.data })),
         }),
       })
+      // Attachments are consumed by this turn — clear them so they don't re-send.
+      if (attachments.length > 0) setAttachments([])
       if (!res.ok) throw new Error((await res.json()).error || 'Request failed')
       const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = ''
       while (true) {

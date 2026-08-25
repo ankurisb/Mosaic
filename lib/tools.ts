@@ -1929,6 +1929,39 @@ async function fetchFileContent(
 }
 
 // -- Parse file content by extension --------------------------
+// Extract a plain-text representation of an uploaded file, for inlining into a
+// chat message. Reuses parseFileContent (pdf-parse / xlsx / csv / json / xml /
+// text) and flattens its structured result to text, so chat attachments and the
+// file-server tool share one extraction path. Returns '' if nothing usable.
+export async function extractFileText(buf: Buffer, filename: string, maxChars = 12000): Promise<string> {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  // Plain text types: decode directly.
+  if (['txt', 'md', 'log'].includes(ext)) {
+    return buf.toString('utf8').slice(0, maxChars)
+  }
+  let parsed: Record<string, unknown>
+  try {
+    parsed = await parseFileContent(buf, filename, 500, undefined)
+  } catch (e) {
+    return `(could not extract ${ext || 'file'}: ${(e as Error).message})`
+  }
+  // Prefer an explicit text field (pdf/xml); otherwise serialise structured data
+  // (csv/xlsx/json rows) compactly.
+  if (typeof parsed.text === 'string' && parsed.text.trim()) {
+    return (parsed.text as string).slice(0, maxChars)
+  }
+  if (parsed.note && !parsed.data && !parsed.sheets) {
+    return String(parsed.note)
+  }
+  try {
+    const payload = parsed.data ?? parsed.sheets ?? parsed
+    const json = JSON.stringify(payload, null, 0)
+    return json.slice(0, maxChars)
+  } catch {
+    return ''
+  }
+}
+
 async function parseFileContent(
   buf: Buffer,
   filename: string,

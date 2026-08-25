@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
+import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
 
   const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
   reqLog.info('Chat request received')
-  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources } = await req.json()
+  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments } = await req.json()
   // Hard source-scoping: the chat picker sends the ids of pinned sources. When
   // present, tool calls are restricted to these ids (enforced in runTool). An
   // empty/absent list means no restriction (all sources allowed) — the default.
@@ -469,6 +470,19 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       const send = (o: object) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'))
       try {
         let history: Anthropic.MessageParam[] = trimmedMessages.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        // Attachments belong to the latest user turn. Rebuild that message's
+        // content with image blocks (native vision) and extracted document text,
+        // so uploaded files actually reach the model. No attachments => unchanged
+        // string content (cheapest path).
+        if (Array.isArray(attachments) && attachments.length > 0 && history.length > 0) {
+          for (let i = history.length - 1; i >= 0; i--) {
+            if (history[i].role === 'user') {
+              const baseText = typeof history[i].content === 'string' ? history[i].content as string : ''
+              history[i] = { role: 'user', content: await buildUserContent(baseText, attachments as IncomingAttachment[]) }
+              break
+            }
+          }
+        }
         let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0
         // Send real DB conversation ID to client so it can sync local state
         if (convId) send({ type: 'conv_id', id: convId })
