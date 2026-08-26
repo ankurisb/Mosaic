@@ -21,6 +21,11 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# DB CLI tools for consistent backups (scripts/backup.sh runs these in-container):
+#   sqlite             → sqlite3 CLI for VACUUM INTO snapshots (SQLite deployments)
+#   postgresql-client  → pg_dump for logical dumps (Postgres deployments)
+RUN apk add --no-cache sqlite postgresql-client
+
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 mosaic
 
