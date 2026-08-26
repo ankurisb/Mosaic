@@ -72,7 +72,25 @@ export async function GET(req: NextRequest) {
   const guestData = await guestRes.json()
   log.info({ service: 'superset-guest-token' }, 'Guest token response received')
   const guestToken = guestData.token
-  if (!guestToken) return Response.json({ error: 'Guest token failed', detail: guestData }, { status: 502 })
+  if (!guestToken) {
+    // Distinguish the common BYO cause — embedding not set up on their Superset —
+    // from a generic failure, so the UI can tell the user how to fix it rather
+    // than showing an opaque error. Superset returns 404 / a feature-flag or
+    // "not found" style message when EMBEDDED_SUPERSET is off or the dashboard
+    // isn't registered as embeddable.
+    const detailStr = JSON.stringify(guestData).toLowerCase()
+    const embeddingNotEnabled =
+      guestRes.status === 404 ||
+      /feature|embedded|not found|no such|embeddable|disabled/.test(detailStr)
+    if (embeddingNotEnabled) {
+      return Response.json({
+        error: 'embedding_not_enabled',
+        message: 'This Superset instance is not set up for embedding. Enable the EMBEDDED_SUPERSET feature flag and mark the dashboard as embeddable, or open it directly in Superset.',
+        detail: guestData,
+      }, { status: 409 })
+    }
+    return Response.json({ error: 'Guest token failed', detail: guestData }, { status: 502 })
+  }
 
   return Response.json({ token: guestToken, embed_uuid: embedUuid, superset_url: url })
 }

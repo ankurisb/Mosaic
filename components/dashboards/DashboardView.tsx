@@ -90,6 +90,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [toast, setToast] = useState('')
   const [guestToken, setGuestToken] = useState<string|null>(null)
   const [guestTokenLoading, setGuestTokenLoading] = useState(false)
+  const [embedError, setEmbedError] = useState<string|null>(null)
   // Browser-facing Superset origin (Caddy, :8445) — never the internal Docker
   // hostname, which the browser can't resolve. Served by /api/superset/status.
   const { status: supersetStatus } = useSuperset()
@@ -102,7 +103,18 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     try {
       const r = await fetch(`/api/superset/guest-token?dashboard_id=${dashboardId}`)
       const d = await r.json()
-      if (d.token) setGuestToken(d.token)
+      if (d.token) {
+        setGuestToken(d.token)
+        setEmbedError(null)
+      } else if (d.error === 'embedding_not_enabled') {
+        // BYO Superset that isn't set up for embedding — show a helpful message
+        // with an "open in Superset" fallback, not a broken iframe.
+        setEmbedError(d.message || 'This Superset instance is not set up for embedding.')
+      } else {
+        setEmbedError('Could not load the embedded dashboard.')
+      }
+    } catch {
+      setEmbedError('Could not reach Superset to load the embedded dashboard.')
     } finally {
       setGuestTokenLoading(false)
     }
@@ -299,6 +311,19 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
               guestToken={guestToken}
               supersetUrl={supersetStatus.url}
             />
+          ) : embedError ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text4)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text2)' }}>Dashboard can&rsquo;t be embedded</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text3)', lineHeight: 1.6, maxWidth: 440 }}>{embedError}</div>
+              {supersetStatus?.url && (
+                <a href={supersetStatus.url} target="_blank" rel="noopener noreferrer"
+                  style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12.5, fontWeight: 500, color: 'var(--text)', textDecoration: 'none' }}>
+                  Open in Superset
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+                </a>
+              )}
+            </div>
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Failed to load dashboard</div>
           )}
