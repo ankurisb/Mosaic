@@ -160,15 +160,14 @@ services:
       # /app/logs. Mount a writable volume there.
       - mosaic-logs:/app/logs
       - backup-status:/backup-status:ro
-    depends_on:
-      # NOTE: bundled tools (superset, n8n, ciso) are deliberately NOT listed.
-      # They are profile-gated and absent in "bring your own" deployments, and
-      # Mosaic reaches them over HTTP at runtime rather than needing them at
-      # boot. Listing them here would make a BYO compose project invalid.
-      elasticsearch:
-        condition: service_healthy
-      openmeter:
-        condition: service_healthy
+    # NOTE: no depends_on. Bundled tools (superset, n8n, ciso), the metering
+    # stack (openmeter et al.), and elasticsearch are profile-gated and may be
+    # absent in Personal / "bring your own" deployments; Mosaic reaches them over
+    # HTTP at runtime rather than needing them at boot. Metering (lib/metering.ts)
+    # is fire-and-forget and no-ops when OpenMeter is absent; FTS search degrades
+    # gracefully when the Elasticsearch index isn't present. A hard depends_on
+    # here would make a Personal or BYO compose project hang waiting for services
+    # that never start.
     networks:
       - mosaic-net
     healthcheck:
@@ -489,6 +488,7 @@ services:
   openmeter-postgres:
     image: postgres:15-alpine
     container_name: mosaic-openmeter-postgres
+    profiles: ["metering"]   # Enterprise metering (billing) stack — off in Personal edition
     restart: unless-stopped
     environment:
       - POSTGRES_DB=openmeter
@@ -507,6 +507,7 @@ services:
   openmeter-redpanda:
     image: redpandadata/redpanda:latest
     container_name: mosaic-openmeter-redpanda
+    profiles: ["metering"]   # Enterprise metering (billing) stack — off in Personal edition
     restart: unless-stopped
     command:
       - redpanda
@@ -531,6 +532,7 @@ services:
   openmeter-clickhouse:
     image: clickhouse/clickhouse-server:24.3-alpine
     container_name: mosaic-openmeter-clickhouse
+    profiles: ["metering"]   # Enterprise metering (billing) stack — off in Personal edition
     restart: unless-stopped
     environment:
       - CLICKHOUSE_DB=openmeter
@@ -555,6 +557,7 @@ services:
   openmeter:
     image: ghcr.io/openmeterio/openmeter:latest
     container_name: mosaic-openmeter
+    profiles: ["metering"]   # Enterprise metering (billing) stack — off in Personal edition
     restart: unless-stopped
     command: ["/bin/sh", "/etc/openmeter/start.sh"]
     ports:
@@ -584,6 +587,7 @@ services:
   openmeter-sink-worker:
     image: ghcr.io/openmeterio/openmeter:latest
     container_name: mosaic-openmeter-sink-worker
+    profiles: ["metering"]   # Enterprise metering (billing) stack — off in Personal edition
     restart: unless-stopped
     command: ["/usr/local/bin/openmeter-sink-worker", "--config", "/etc/openmeter/config.yaml"]
     volumes:
