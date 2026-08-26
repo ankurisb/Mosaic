@@ -1,0 +1,74 @@
+{
+  "name": "mosaic-installer",
+  "version": "3.0.0",
+  "description": "Mosaic Installer",
+  "main": "electron.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "29.4.6",
+    "electron-builder": "24.9.1"
+  },
+  "build": {
+    "appId": "ai.ugx.mosaic",
+    "productName": "Mosaic",
+    "copyright": "Copyright © 2026 UGX Systems",
+    "files": [
+      "electron.js",
+      "preload.js",
+      "renderer/**/*",
+      "scripts/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "deploy",
+        "to": "deploy"
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Mosaic Installer",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mosaic Installer"
+    }
+  },
+  "author": {
+    "name": "UGX Systems",
+    "email": "hello@ugx.ai",
+    "url": "https://ugx.ai"
+  }
+}

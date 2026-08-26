@@ -1,0 +1,5 @@
+# docker-compose.yml here is a build-time copy of the repo root compose,
+# refreshed by build-mac.sh / build-win.bat. Not committed to avoid drift —
+# the repo root docker-compose.yml is the single source of truth.
+docker-compose.yml
+.env
