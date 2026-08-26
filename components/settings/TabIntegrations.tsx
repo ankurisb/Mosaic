@@ -181,7 +181,7 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
           {(chanForm.type === 'twilio_sms' || chanForm.type === 'twilio_whatsapp') && (
             <>
               <Alert variant={chanForm.type === 'twilio_whatsapp' ? 'warning' : 'info'}>
-                {chanForm.type === 'twilio_whatsapp' ? 'WhatsApp requires a Meta-approved message template. Register in Meta Business Manager and enter the Content Template SID below.' : 'SMS via Twilio. Credentials are encrypted at rest. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in Vercel environment variables.'}
+                {chanForm.type === 'twilio_whatsapp' ? 'WhatsApp requires a Meta-approved message template. Register in Meta Business Manager and enter the Content Template SID below.' : 'SMS via Twilio. Enter your Account SID and Auth token below — they are stored encrypted at rest.'}
               </Alert>
               <Grid cols={2}><Field label="Account SID" required><input style={MONO} value={chanForm.account_sid} onChange={e => setChanForm(p => ({ ...p, account_sid: e.target.value }))} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" /></Field><Field label="Auth token" hint="Stored encrypted"><input style={MONO} type="password" value={chanForm.auth_token} onChange={e => setChanForm(p => ({ ...p, auth_token: e.target.value }))} placeholder="Stored encrypted" /></Field></Grid>
               <Grid cols={2}><Field label="From number" required hint="E.164 format"><input style={MONO} value={chanForm.from_number} onChange={e => setChanForm(p => ({ ...p, from_number: e.target.value }))} placeholder="+14155552671" /></Field><Field label="To number" required hint="E.164 format"><input style={MONO} value={chanForm.to_number} onChange={e => setChanForm(p => ({ ...p, to_number: e.target.value }))} placeholder="+919876543210" /></Field></Grid>
@@ -298,10 +298,9 @@ export default function TabIntegrations({ user }: { user: SessionUser }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 3 }}>Scheduler: Scheduler running every minute</div>
           <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 }}>
-            Defined in <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>vercel.json</code>.
-            Calls <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>POST /api/integrations/scheduler</code> every minute.
+            Mosaic calls <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>POST /api/integrations/scheduler</code> over loopback every minute.
             Only processes rules whose <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>next_run_at</code> has passed.
-            Set <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>CRON_SECRET</code> in Vercel env to secure the endpoint.
+            The endpoint is secured with <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>CRON_SECRET</code>, which is generated automatically on first run — no setup needed.
           </div>
         </div>
       </div>
