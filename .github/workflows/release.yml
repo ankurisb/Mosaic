@@ -1,54 +1,140 @@
-# Mosaic Installer
+name: Release
 
-A cross-platform (macOS + Windows) Electron installer that deploys Mosaic via
-Docker Compose against prebuilt GHCR images.
+# Publishes Mosaic's core images to GHCR and cuts a GitHub Release whenever a
+# version tag is pushed (e.g. `git tag v1.3.0 && git push origin v1.3.0`).
+#
+# Why this exists:
+#   - The pull-based installer deploys Mosaic by `docker compose pull` against
+#     these published images (no on-device build), so they must exist per version.
+#   - Mosaic's in-app update check (/api/deployment) compares the running version
+#     against the latest GitHub *Release*. Cutting a Release here is what makes the
+#     "update available" indicator light up on deployed instances.
+#
+# Only the core images that every edition needs and that change each release are
+# built here (mosaic, stats, tunnel, watchdog, backup). The Enterprise-bundled
+# services (Superset, CISO) are thin, rarely-changing customizations of pinned
+# upstream images and are handled separately.
 
-## What it does
+on:
+  push:
+    tags:
+      - 'v*'
 
-1. **Edition picker** — Personal (core only) or Enterprise (full self-hosted stack).
-   The choice maps to Docker Compose profiles:
-   - Personal → no profiles (core services)
-   - Enterprise → `--profile bundled --profile metering`
-2. **Minimal config** — edition, admin account, port. **No Anthropic key** (Mosaic
-   runs without AI; the key is added later in Settings).
-3. **Preflight** — checks Docker is installed and running, RAM, disk, port, internet.
-4. **Deploy** — `docker compose pull` (falls back to a local build if images aren't
-   published yet) then `up -d` with the edition's profiles.
-5. **Ready** — waits for the app, then offers to open it.
+env:
+  REGISTRY: ghcr.io
+  # Image repository prefix. Images publish as ghcr.io/<owner>/mosaic-<service>.
+  IMAGE_PREFIX: ${{ github.repository_owner }}/mosaic
 
-## Requirements (end user)
+jobs:
+  # -- Build + push each core image (one matrix job per service) ---------------
+  images:
+    name: Build & push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # required to push to GHCR
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: mosaic
+            context: .
+            dockerfile: Dockerfile
+          - service: mosaic-stats
+            context: ./services/stats-sidecar
+            dockerfile: Dockerfile
+          - service: mosaic-tunnel
+            context: ./services/tunnel
+            dockerfile: Dockerfile
+          - service: mosaic-watchdog
+            context: ./services/watchdog
+            dockerfile: Dockerfile
+          - service: mosaic-backup
+            context: ./services/backup
+            dockerfile: Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-- **Docker Desktop** (both editions). The installer checks for it but does not
-  install it.
-- ~5 GB free disk for Personal, ~15 GB for Enterprise.
+      # Derive the version from the tag (refs/tags/v1.3.0 -> 1.3.0). Fails the
+      # run if the tag isn't a semver-looking vX.Y.Z, to avoid publishing junk
+      # tags that the semver-based update check can't compare.
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          RAW="${GITHUB_REF#refs/tags/}"
+          VER="${RAW#v}"
+          if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "Tag '$RAW' is not a vX.Y.Z version tag -- refusing to publish." >&2
+            exit 1
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $VER"
 
-## Building
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-The app bundles `deploy/docker-compose.yml` (a copy of the repo's compose). The
-build scripts refresh it automatically before packaging.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-- **macOS** (universal DMG): `./build-mac.sh` — run on a Mac.
-- **Windows** (NSIS .exe): `build-win.bat` — run on Windows. electron-builder
-  cannot produce a Windows NSIS installer from macOS, so both platforms need their
-  own build host (or a CI matrix with a mac and a windows runner).
+      # Lowercase the image name -- GHCR requires lowercase repository paths, and
+      # a repository owner can contain uppercase.
+      - name: Compute image name
+        id: img
+        run: |
+          NAME="${REGISTRY}/${IMAGE_PREFIX}-${{ matrix.service }}"
+          echo "name=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-Output lands in `dist/`.
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+          push: true
+          # Multi-arch so both Apple Silicon and Intel/AMD hosts can pull natively.
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ steps.img.outputs.name }}:${{ steps.ver.outputs.version }}
+            ${{ steps.img.outputs.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-## Dependencies
+  # -- Cut the GitHub Release (only after all images pushed) ------------------
+  release:
+    name: Create GitHub Release
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # required to create a Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-The installer deploys prebuilt images from GHCR, published by the repo's release
-workflow (`.github/workflows/release.yml`) on a version tag. Until images are
-published, the installer falls back to building locally from the bundled compose's
-`build:` contexts (slower, but works).
+      - name: Resolve version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
-## Icons
+      # Creates the Release the in-app update check reads. Notes are auto-
+      # generated from commits since the previous tag; edit on GitHub if desired.
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Mosaic v${{ steps.ver.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Mosaic **v${{ steps.ver.outputs.version }}**
 
-`assets/icon.svg` is the source. electron-builder needs raster forms
-(`icon.png` ≥512px for mac, `icon.ico` for Windows); generate them from the SVG
-(the mac build script does this if `rsvg-convert` is available).
+            Core images published to GHCR for this version:
+            - `ghcr.io/${{ github.repository_owner }}/mosaic:${{ steps.ver.outputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/mosaic-stats:${{ steps.ver.outputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/mosaic-tunnel:${{ steps.ver.outputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/mosaic-watchdog:${{ steps.ver.outputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/mosaic-backup:${{ steps.ver.outputs.version }}`
 
-## Version
-
-Installer version is independent of Mosaic's version. It deploys
-`MOSAIC_VERSION` (defaults to `latest`); pin a specific release by setting it in
-the generated `.env`.
+            Deployed instances will show this version as an available update in
+            Settings once they poll the update check.
