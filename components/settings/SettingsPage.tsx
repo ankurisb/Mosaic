@@ -91,6 +91,18 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
 
   const [tab, setTab] = useState(user.role === 'admin' ? 'setup' : 'keys')
 
+  // Update check: /api/deployment already compares the running version against
+  // the latest GitHub release (via GITHUB_TOKEN). We only surface the result —
+  // the operator decides when to upgrade; Mosaic never forces or auto-applies an
+  // update. When one is available we show a subtle link to the release.
+  const [update, setUpdate] = useState<{ available: boolean; latest: string | null; url: string | null }>({ available: false, latest: null, url: null })
+  useEffect(() => {
+    fetch('/api/deployment')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.updateAvailable) setUpdate({ available: true, latest: d.latestVersion || null, url: d.latestReleaseUrl || null }) })
+      .catch(() => {})
+  }, [])
+
   // Sync from URL hash after mount (SSR-safe — no window access during SSR)
   useEffect(() => {
     const hash = window.location.hash.replace('#', '')
@@ -149,7 +161,21 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
             <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
-            <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>v{APP_VERSION}</div>
+            <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>v{APP_VERSION}</span>
+              {update.available && (
+                <a
+                  href={update.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={update.latest ? `Version ${update.latest} is available — click to view the release` : 'A new version is available'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--blue-t)', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
+                  {update.latest ? `v${update.latest} available` : 'update available'}
+                </a>
+              )}
+            </div>
           </div>
           <ThemeToggle />
         </div>
