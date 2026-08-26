@@ -607,7 +607,10 @@ services:
     networks:
       - mosaic-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      # Use Python's urllib (always present in the python image) rather than curl,
+      # which isn't installed here — the previous curl-based check always failed,
+      # marking a healthy service 'unhealthy'. Exit non-zero on any error/non-200.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health', timeout=5).status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
