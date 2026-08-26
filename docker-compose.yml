@@ -20,6 +20,7 @@ services:
   # Mosaic talks to it via http://mosaic-tunnel:3100.
   # Tunnel only runs when admin starts a session from Settings → Remote Support.
   mosaic-tunnel:
+    image: ghcr.io/ankurisb/mosaic-tunnel:${MOSAIC_VERSION:-latest}
     build:
       context: ./services/tunnel
       dockerfile: Dockerfile
@@ -39,6 +40,7 @@ services:
   # Open http://localhost:3099 if Mosaic isn't loading.
   # No depends_on — starts independently of everything else.
   mosaic-watchdog:
+    image: ghcr.io/ankurisb/mosaic-watchdog:${MOSAIC_VERSION:-latest}
     build:
       context: ./services/watchdog
       dockerfile: Dockerfile
@@ -59,6 +61,7 @@ services:
   # Override schedule: BACKUP_SCHEDULE_HOURS=12 in .env
   # Override retention: BACKUP_KEEP=14 in .env
   mosaic-backup:
+    image: ghcr.io/ankurisb/mosaic-backup:${MOSAIC_VERSION:-latest}
     build:
       context: ./services/backup
       dockerfile: Dockerfile
@@ -84,6 +87,11 @@ services:
 
   # ── Mosaic ──────────────────────────────────────────────────
   mosaic:
+    # image: names the published GHCR artifact; build: says how to build it from
+    # source. Dev builds locally (docker compose build / up --build); the installer
+    # deploys with `docker compose pull` which fetches this image and never builds.
+    # MOSAIC_VERSION pins a release (set by the installer); defaults to latest.
+    image: ghcr.io/ankurisb/mosaic:${MOSAIC_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -603,6 +611,7 @@ services:
   # Internal only — never exposed to host.
   # Claude calls it via run_statistical_analysis tool.
   mosaic-stats:
+    image: ghcr.io/ankurisb/mosaic-stats:${MOSAIC_VERSION:-latest}
     build:
       context: ./services/stats-sidecar
       dockerfile: Dockerfile
