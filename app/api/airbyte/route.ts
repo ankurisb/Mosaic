@@ -28,8 +28,13 @@ async function getOAuthToken(base: string, clientId: string, clientSecret: strin
   const cached = tokenCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now() + 30000) return cached.token
 
-  // abctl uses /api/v1/applications/token (NOT /api/public/v1/)
+  // Token endpoint differs by Airbyte flavour:
+  //   - Airbyte Cloud (api.airbyte.com):  /v1/applications/token   (no /api prefix)
+  //   - Self-hosted abctl / Kubernetes:   /api/v1/applications/token
+  //   - Some builds expose the public API: /api/public/v1/applications/token
+  // Try all three so the same client works against Cloud and self-hosted.
   const urls = [
+    `${base}/v1/applications/token`,
     `${base}/api/v1/applications/token`,
     `${base}/api/public/v1/applications/token`,
   ]
@@ -106,6 +111,9 @@ async function ab(
   }
 
   const attempts = [
+    // Airbyte Cloud (api.airbyte.com) serves the public API at /v1 (no /api prefix).
+    { url: `${base}/v1${publicPath}`,            method },
+    // Self-hosted abctl / public-API builds:
     { url: `${base}/api/public/v1${publicPath}`, method },
     { url: `${base}/api/v1${configPath}`,        method: 'POST' as const },
   ]
