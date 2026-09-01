@@ -144,13 +144,19 @@ async function install(config, rawEmit) {
     } else if (!fs.existsSync(destCompose)) {
       throw new Error('Bundled docker-compose.yml not found in installer resources.')
     }
-    // Copy any adjacent deploy assets (Caddyfile, etc.) if present.
+    // Copy every bundled deploy asset into the install folder, recursively. The
+    // compose bind-mounts host-path files (docker/caddy/Caddyfile, the openmeter/
+    // ciso/superset configs, NETWORK.md), so the whole tree must be present or the
+    // containers fail to start (Docker creates an empty dir where a file is
+    // expected). fs.cpSync (Node 16.7+) handles nested dirs.
     const deployDir = path.join(config.resourcesDir || __dirname, 'deploy')
     if (fs.existsSync(deployDir)) {
       for (const f of fs.readdirSync(deployDir)) {
-        if (f === 'docker-compose.yml') continue
+        if (f === 'docker-compose.yml') continue // already placed above
+        if (f === '.gitignore' || f === '.gitkeep') continue
         const src = path.join(deployDir, f)
-        if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(installDir, f))
+        const dest = path.join(installDir, f)
+        fs.cpSync(src, dest, { recursive: true })
       }
     }
 

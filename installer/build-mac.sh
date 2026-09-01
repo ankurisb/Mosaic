@@ -5,9 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "==> Refreshing bundled deploy files from the repo…"
-# The installer ships the current compose so a fresh install matches this repo.
+# The installer ships the compose PLUS every host-path file the compose bind-mounts
+# (Caddyfile, openmeter/ciso/superset configs, NETWORK.md), so a fresh install has
+# everything the containers expect. Without these, bind mounts fail at container
+# start (Docker creates an empty dir where a file is expected).
+rm -rf deploy/docker deploy/NETWORK.md
 cp ../docker-compose.yml deploy/docker-compose.yml
-echo "    deploy/docker-compose.yml updated"
+cp -R ../docker deploy/docker
+cp ../NETWORK.md deploy/NETWORK.md
+echo "    deploy/ refreshed: docker-compose.yml, docker/, NETWORK.md"
 
 echo "==> Installing installer dependencies…"
 npm install
