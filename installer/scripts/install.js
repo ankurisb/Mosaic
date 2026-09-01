@@ -171,24 +171,25 @@ async function install(config, rawEmit) {
         ? 'Pulling Enterprise images (first run downloads several GB)…'
         : 'Pulling Mosaic images (first run may take a few minutes)…' })
 
-    // Pull first (so download progress is distinct from startup), then up. If the
-    // registry pull fails (e.g. images not published / private), fall back to a
-    // local build so the installer still works from a source bundle.
-    let pulled = true
+    // Pull the published images, then start. This installer ships only the
+    // compose file (not the source tree), so it is strictly pull-based — there is
+    // no local-build fallback. If the pull fails, surface a clear, honest error
+    // rather than attempting a build that can't succeed.
     try {
       await run(`docker compose ${profiles} pull`, installDir, d => {
         emit({ step: 5, total: TOTAL, pct: 55, label: `Downloading: ${d.trim().slice(0, 58)}` })
       })
     } catch (e) {
-      pulled = false
-      emit({ step: 5, total: TOTAL, pct: 45, label: 'Images not available to pull — building locally…' })
+      throw new Error(
+        'Could not download the Mosaic images from the registry. This usually means ' +
+        'the release images are not published or not public yet, or there is no internet ' +
+        'connection. Check your connection and try again; if it persists, the images for ' +
+        'this version may not be available. (' + (e.message || 'pull failed').slice(0, 120) + ')'
+      )
     }
 
     emit({ step: 5, total: TOTAL, pct: 70, label: 'Starting Mosaic services…' })
-    const upCmd = pulled
-      ? `docker compose ${profiles} up -d`
-      : `docker compose ${profiles} up -d --build`
-    await run(upCmd, installDir, d => {
+    await run(`docker compose ${profiles} up -d`, installDir, d => {
       emit({ step: 5, total: TOTAL, pct: 80, label: `Starting: ${d.trim().slice(0, 58)}` })
     })
 
