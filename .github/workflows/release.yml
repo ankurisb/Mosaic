@@ -22,8 +22,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Image repository prefix. Images publish as ghcr.io/<owner>/mosaic-<service>.
-  IMAGE_PREFIX: ${{ github.repository_owner }}/mosaic
+  # Image owner. Service names already start with "mosaic" (mosaic, mosaic-stats,
+  # …), so images publish as ghcr.io/<owner>/<service> — e.g. ghcr.io/ankurisb/
+  # mosaic and ghcr.io/ankurisb/mosaic-stats.
+  IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
   # -- Build + push each core image (one matrix job per service) ---------------
@@ -86,7 +88,7 @@ jobs:
       - name: Compute image name
         id: img
         run: |
-          NAME="${REGISTRY}/${IMAGE_PREFIX}-${{ matrix.service }}"
+          NAME="${REGISTRY}/${IMAGE_OWNER}/${{ matrix.service }}"
           echo "name=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build & push
