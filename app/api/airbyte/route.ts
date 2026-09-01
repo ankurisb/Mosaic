@@ -48,10 +48,20 @@ async function getOAuthToken(base: string, clientId: string, clientSecret: strin
         signal: AbortSignal.timeout(10000),
       })
       if (res.ok) {
-        const data = await res.json() as { access_token: string; expires_in?: number }
-        const expiresAt = Date.now() + ((data.expires_in || 840) * 1000) // 14 min default (tokens expire in 15)
-        tokenCache.set(cacheKey, { token: data.access_token, expiresAt })
-        return data.access_token
+        // A 200 isn't enough: some Airbyte flavours (abctl) serve their web UI at
+        // /v1/... and return 200 with HTML for a non-API path. Only accept a real
+        // JSON token response; otherwise treat it as a miss and try the next URL.
+        const ct = res.headers.get('content-type') || ''
+        if (ct.includes('application/json')) {
+          const data = await res.json() as { access_token: string; expires_in?: number }
+          if (data && data.access_token) {
+            const expiresAt = Date.now() + ((data.expires_in || 840) * 1000) // 14 min default (tokens expire in 15)
+            tokenCache.set(cacheKey, { token: data.access_token, expiresAt })
+            return data.access_token
+          }
+        }
+        lastErr = `${res.status} from ${url}: non-JSON or tokenless response (likely a UI route)`
+        continue
       }
       const errTxt = await res.text().catch(() => '')
       lastErr = `${res.status} from ${url}: ${errTxt.slice(0, 100)}`
@@ -129,7 +139,14 @@ async function ab(
         signal: AbortSignal.timeout(timeoutMs),
       })
       if (res.ok) {
+        // Guard against a UI route answering 200 with HTML (abctl serves its web
+        // app at /v1/...). Only accept JSON; otherwise fall through to the next URL.
+        const ct = res.headers.get('content-type') || ''
         const txt = await res.text()
+        if (!ct.includes('application/json') && !/^\s*[[{]/.test(txt)) {
+          lastErr = `${res.status} from ${a.url}: non-JSON response (likely a UI route)`
+          continue
+        }
         return txt ? JSON.parse(txt) : {}
       }
       const errTxt = await res.text().catch(() => '')
