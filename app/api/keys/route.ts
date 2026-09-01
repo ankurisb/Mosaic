@@ -79,9 +79,26 @@ export async function GET() {
   // credentials, so returning the value rather than a masked preview is safe.
   const PLAIN_KEYS = new Set(['SEARCH_PROVIDER', 'GITHUB_REPO', 'N8N_URL', 'CISO_API_URL'])
 
-  // Seed from env vars first (lowest priority — kv_settings overrides below)
+  // Bundled-service scaffolding keys. docker-compose.yml bakes default URLs/creds
+  // for the bundled optional services into the mosaic container's env (e.g.
+  // SUPERSET_URL=http://superset:8088, N8N_URL=http://n8n:5678) so the app can
+  // reach them WHEN they're running. But a compose default is NOT the user having
+  // deliberately configured a bring-your-own service — treating it as "configured"
+  // makes optional services look set up on a fresh install when they aren't
+  // (n8n showing configured with no API key; all Superset fields green in Personal
+  // where Superset isn't even running). For these keys, "configured" requires a
+  // real kv_settings value (set in the UI), not a mere env default.
+  const SCAFFOLDING_KEYS = new Set([
+    'SUPERSET_URL', 'SUPERSET_PUBLIC_URL', 'SUPERSET_ADMIN_USER', 'SUPERSET_ADMIN_PASSWORD',
+    'N8N_URL', 'AIRBYTE_URL',
+    'CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD',
+  ])
+
+  // Seed from env vars first (lowest priority — kv_settings overrides below).
+  // Scaffolding keys are skipped here: only a genuine kv_settings value (loop
+  // below) marks them configured.
   KNOWN_KEYS.forEach(k => {
-    if (process.env[k]) {
+    if (process.env[k] && !SCAFFOLDING_KEYS.has(k)) {
       const v = process.env[k] as string
       result[k] = { configured: true, preview: v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***',
         ...(PLAIN_KEYS.has(k) ? { value: v } : {}) }
