@@ -121,24 +121,17 @@
       </div>
     </div>
 
-    <!-- STEP 2: Admin + port -->
+    <!-- STEP 2: Admin -->
     <div class="step" id="step-admin">
       <h1>Administrator</h1>
       <div class="sub">Mosaic creates this account on first boot. You'll change the password after signing in.</div>
       <label>Admin email</label>
       <input id="adminEmail" type="email" placeholder="you@company.com" autocomplete="off">
-      <div class="row">
-        <div>
-          <label>Name</label>
-          <input id="adminName" type="text" placeholder="Administrator" autocomplete="off">
-        </div>
-        <div>
-          <label>Port</label>
-          <input id="port" type="number" value="3000" autocomplete="off">
-        </div>
-      </div>
+      <label>Name</label>
+      <input id="adminName" type="text" placeholder="Administrator" autocomplete="off">
       <label>Temporary password</label>
       <input id="adminPassword" type="password" placeholder="Choose a strong password" autocomplete="off">
+      <div class="note">Mosaic will be available at <code>https://localhost</code> after install (a self-signed certificate is used for local access).</div>
       <div class="btnrow">
         <button class="ghost" onclick="go('edition')">Back</button>
         <button onclick="go('preflight')">Continue</button>
@@ -183,7 +176,7 @@
 </div>
 
 <script>
-  const state = { edition: 'personal', appUrl: 'http://localhost:3000' }
+  const state = { edition: 'personal', appUrl: 'https://localhost' }
 
   function selectEdition(e) {
     state.edition = e
@@ -203,7 +196,6 @@
       adminEmail: document.getElementById('adminEmail').value.trim(),
       adminName: document.getElementById('adminName').value.trim() || 'Administrator',
       adminPassword: document.getElementById('adminPassword').value,
-      port: Number(document.getElementById('port').value) || 3000,
     }
   }
 
@@ -229,7 +221,7 @@
   let unsubProgress
   function startInstall() {
     const cfg = currentConfig()
-    state.appUrl = 'http://localhost:' + cfg.port
+    state.appUrl = 'https://localhost'
     go('installing')
 
     unsubProgress = window.installer.onProgress(d => {
