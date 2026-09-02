@@ -172,6 +172,43 @@ async function ab(
   throw new Error(lastErr || 'Airbyte unreachable')
 }
 
+// Translate a raw Airbyte API error (often "409 Conflict: {json…}") into a clean,
+// actionable message + an appropriate HTTP status, so the UI shows something a
+// human understands instead of raw status codes and JSON. Falls back to a trimmed
+// version of the original for anything we don't specifically recognise.
+function friendlyAirbyteError(err: unknown): { message: string; status: number } {
+  const raw = err instanceof Error ? err.message : String(err ?? '')
+  const codeMatch = raw.match(/\b(4\d\d|5\d\d)\b/)
+  const code = codeMatch ? Number(codeMatch[1]) : 0
+  const low = raw.toLowerCase()
+
+  if (code === 409 || /try-again-later|already running|conflict/.test(low)) {
+    return { message: 'A sync is already running on this connection. Wait for it to finish before starting another.', status: 409 }
+  }
+  if (code === 429 || /rate.?limit|too many requests/.test(low)) {
+    return { message: 'Airbyte is rate-limiting requests. Please wait a moment and try again.', status: 429 }
+  }
+  if (code === 401 || /unauthorized/.test(low)) {
+    return { message: 'Airbyte rejected the credentials. Check the client ID / secret (or API key) for this instance in its settings.', status: 401 }
+  }
+  if (code === 403 || /forbidden/.test(low)) {
+    return { message: 'Airbyte refused this request. On Airbyte Cloud some operations (e.g. the connector catalog) aren\u2019t available — those are self-hosted only.', status: 403 }
+  }
+  if (code === 404 || /not found|no such/.test(low)) {
+    return { message: 'Airbyte couldn\u2019t find that resource. It may have been deleted, or the instance is pointing at the wrong workspace.', status: 404 }
+  }
+  if (code === 400 || /bad request|invalid/.test(low)) {
+    // Surface Airbyte's own detail if present — config errors are usually specific.
+    const detail = (raw.match(/"(?:detail|message)":"([^"]+)"/) || [])[1]
+    return { message: detail ? `Airbyte rejected the request: ${detail}` : 'Airbyte rejected the request (invalid configuration).', status: 400 }
+  }
+  if (/timeout|abort|unreachable|fetch failed|econnrefused/.test(low)) {
+    return { message: 'Couldn\u2019t reach Airbyte. Check that the instance URL is correct and reachable.', status: 502 }
+  }
+  // Unknown — return a trimmed original so we never hide a real error entirely.
+  return { message: raw.slice(0, 180) || 'Airbyte request failed.', status: 502 }
+}
+
 // ── Table setup ───────────────────────────────────────────────
 async function ensureTable() {
   const sql = getDb()
@@ -283,7 +320,7 @@ export async function GET(req: Request) {
       const wsId = await getWorkspaceId(sql, inst)
       const data = await ab(inst, `/sources?workspaceIds=${wsId}&limit=100`, '/sources/list', 'GET', { workspaceId: wsId }) as any
       return Response.json({ sources: data.data || data.sources || [] })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Source detail
@@ -292,7 +329,7 @@ export async function GET(req: Request) {
       const srcId = searchParams.get('sourceId')
       const data = await ab(inst, `/sources/${srcId}`, '/sources/get', 'GET', { sourceId: srcId }) as any
       return Response.json({ source: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Source definitions (connector catalog from live Airbyte instance)
@@ -339,7 +376,7 @@ export async function GET(req: Request) {
         { sourceDefinitionId: defId, workspaceId: wsId }
       ) as any
       return Response.json({ spec: data.connectionSpecification || data.spec || data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Destinations list
@@ -348,7 +385,7 @@ export async function GET(req: Request) {
       const wsId = await getWorkspaceId(sql, inst)
       const data = await ab(inst, `/destinations?workspaceIds=${wsId}&limit=100`, '/destinations/list', 'GET', { workspaceId: wsId }) as any
       return Response.json({ destinations: data.data || data.destinations || [] })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Connections list
@@ -357,7 +394,7 @@ export async function GET(req: Request) {
       const wsId = await getWorkspaceId(sql, inst)
       const data = await ab(inst, `/connections?workspaceIds=${wsId}&limit=100`, '/connections/list', 'GET', { workspaceId: wsId }) as any
       return Response.json({ connections: data.data || data.connections || [] })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Connection detail
@@ -366,7 +403,7 @@ export async function GET(req: Request) {
       const cid = searchParams.get('connectionId')
       const data = await ab(inst, `/connections/${cid}`, '/connections/get', 'GET', { connectionId: cid }) as any
       return Response.json({ connection: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Stream schema for a source
@@ -388,7 +425,7 @@ export async function GET(req: Request) {
         ? data
         : (data.data || data.catalog?.streams || data.streams || data.streams?.streams || [])
       return Response.json({ streams })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Jobs list
@@ -400,7 +437,7 @@ export async function GET(req: Request) {
         { configTypes: ['sync'], pagination: { pageSize: 20, rowOffset: 0 },
           ...(cid ? { connectionId: cid } : {}) }) as any
       return Response.json({ jobs: data.data || data.jobs || [] })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Single job status
@@ -409,7 +446,7 @@ export async function GET(req: Request) {
       const jobId = searchParams.get('jobId')
       const data = await ab(inst, `/jobs/${jobId}`, '/jobs/get', 'GET', { id: Number(jobId) }) as any
       return Response.json({ job: data.job || data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Pipelines: connections enriched with latest job status
@@ -474,7 +511,7 @@ export async function GET(req: Request) {
       )
 
       return Response.json({ pipelines: enriched })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Source definition spec (for dynamic add-source form)
@@ -504,7 +541,7 @@ export async function GET(req: Request) {
         { sourceDefinitionId: defId }
       ) as any
       return Response.json({ spec: data.connectionSpecification || data.spec || data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   return Response.json({ error: 'Unknown action' }, { status: 400 })
@@ -567,7 +604,7 @@ export async function POST(req: Request) {
       const wsId = ws[0].workspaceId || ws[0].id
       await sql`UPDATE airbyte_instances SET workspace_id=${wsId} WHERE id=${body.id}`
       return Response.json({ ok: true, workspaceId: wsId, count: ws.length })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Create source in Airbyte
@@ -584,7 +621,7 @@ export async function POST(req: Request) {
         connectionConfiguration: body.config,
       }) as any
       return Response.json({ ok: true, sourceId: data.sourceId || data.id, source: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Update source in Airbyte
@@ -599,7 +636,7 @@ export async function POST(req: Request) {
         connectionConfiguration: body.config,
       }) as any
       return Response.json({ ok: true, source: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Delete source in Airbyte
@@ -610,7 +647,7 @@ export async function POST(req: Request) {
     try {
       await ab(inst, `/sources/${body.sourceId}`, '/sources/delete', 'DELETE', { sourceId: body.sourceId })
       return Response.json({ ok: true })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Create connection in Airbyte
@@ -628,7 +665,7 @@ export async function POST(req: Request) {
         syncCatalog: body.syncCatalog,
       }) as any
       return Response.json({ ok: true, connectionId: data.connectionId || data.id, connection: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Update connection (pause/resume/reschedule)
@@ -644,7 +681,7 @@ export async function POST(req: Request) {
         ...(body.name     !== undefined ? { name: body.name } : {}),
       }) as any
       return Response.json({ ok: true, connection: data })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Delete connection
@@ -655,7 +692,7 @@ export async function POST(req: Request) {
     try {
       await ab(inst, `/connections/${body.connectionId}`, '/connections/delete', 'DELETE', { connectionId: body.connectionId })
       return Response.json({ ok: true })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Trigger sync job
@@ -672,7 +709,7 @@ export async function POST(req: Request) {
         { jobType: 'sync', type: 'sync', connectionId: body.connectionId }) as any
       await sql`UPDATE airbyte_instances SET last_synced=${nowExpr()} WHERE id=${body.instanceId}`
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ ok: false, error: f.message }, { status: f.status }) }
   }
 
   // ── Trigger reset job
@@ -682,9 +719,9 @@ export async function POST(req: Request) {
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
       const data = await ab(inst, '/jobs', '/connections/reset', 'POST',
-        { type: 'reset', connectionId: body.connectionId }) as any
+        { jobType: 'reset', type: 'reset', connectionId: body.connectionId }) as any
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ ok: false, error: f.message }, { status: f.status }) }
   }
 
   // ── Cancel a running job
@@ -695,7 +732,7 @@ export async function POST(req: Request) {
     try {
       await ab(inst, `/jobs/${body.jobId}`, '/jobs/cancel', 'DELETE', { id: body.jobId })
       return Response.json({ ok: true })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   // ── Build a full pipeline from an existing source to a destination.
@@ -805,7 +842,7 @@ export async function POST(req: Request) {
         jobId: job.jobId || job.id || job.job?.id || null,
         streamCount: streamNames.length,
       })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) { const f = friendlyAirbyteError(e); return Response.json({ error: f.message }, { status: f.status }) }
   }
 
   return Response.json({ error: 'Unknown action' }, { status: 400 })
