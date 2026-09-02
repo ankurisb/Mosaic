@@ -25,7 +25,7 @@ async function checkWithTimeout<T>(
 }
 
 /** Probe an HTTP endpoint. Never throws — returns a ServiceStatus. */
-async function probe(url: string, path: string, timeoutMs = 3000): Promise<ServiceStatus> {
+async function probe(url: string, path: string, timeoutMs = 8000): Promise<ServiceStatus> {
   const t = Date.now()
   try {
     const res = await checkWithTimeout(
