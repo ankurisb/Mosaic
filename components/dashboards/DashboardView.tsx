@@ -306,6 +306,14 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {guestTokenLoading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading dashboard...</div>
+          ) : (typeof window !== 'undefined' && window.location.protocol === 'https:' && /^http:\/\//i.test(supersetStatus?.url || '')) ? (
+            // Synchronous mixed-content short-circuit: Mosaic is on https but the
+            // (BYO) Superset URL is http, so the browser would block the embed.
+            // Show the Personal-edition "opens in Superset" explainer directly —
+            // don't even attempt the embed. This is the intended behaviour, not a
+            // failure. (Checked here rather than via the embed SDK's async error so
+            // it never falls through to a bare "Failed to load".)
+            <SupersetConnectDiagram supersetUrl={supersetStatus?.url} onOpen={() => {}} />
           ) : embedError ? (
             // A BYO Superset that can't be embedded (usually a local http Superset
             // blocked as mixed content on Mosaic's https page) gets the friendly
