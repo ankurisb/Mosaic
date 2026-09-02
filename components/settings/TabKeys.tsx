@@ -77,13 +77,13 @@ function N8nSetupSteps({ generatedKey, n8nUrl }: { generatedKey: string; n8nUrl?
         )}
       </div>
       <ol style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: 'var(--text3)', lineHeight: 1.9 }}>
-        <li>In n8n, go to <b style={{ color: 'var(--text2)' }}>Credentials → Add credential</b> and choose <b style={{ color: 'var(--text2)' }}>Header Auth</b>.</li>
-        <li>Fill it in exactly:
-          <Field label="Name" value="Mosaic API" mono={false} />
-          <Field label="Header Name" value="Authorization" />
-          <Field label="Header Value" value={bearer} />
+        <li>In n8n&rsquo;s main sidebar (not Settings) open <b style={{ color: 'var(--text2)' }}>Credentials</b>, click <b style={{ color: 'var(--text2)' }}>Add credential</b>, and choose the <b style={{ color: 'var(--text2)' }}>Header Auth</b> type.</li>
+        <li>On the Connection tab, fill the two fields exactly — n8n&rsquo;s <b style={{ color: 'var(--text2)' }}>Name</b> field is the HTTP header name, not a label:
+          <Field label="Name" value="Authorization" />
+          <Field label="Value" value={bearer} />
         </li>
-        <li>Save the credential. Then in any HTTP Request node that calls Mosaic, set <b style={{ color: 'var(--text2)' }}>Authentication → Header Auth</b> and pick <b style={{ color: 'var(--text2)' }}>Mosaic API</b>.</li>
+        <li>Optionally rename the credential itself to <b style={{ color: 'var(--text2)' }}>Mosaic API</b> (the title at the top of the dialog) so it&rsquo;s easy to find, then Save.</li>
+        <li>In any HTTP Request node that calls Mosaic, set <b style={{ color: 'var(--text2)' }}>Authentication → Header Auth</b> and select this credential.</li>
       </ol>
       {!generatedKey && (
         <div style={{ fontSize: 10.5, color: 'var(--text4)', marginTop: 8, fontStyle: 'italic' }}>
