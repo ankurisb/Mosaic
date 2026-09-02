@@ -274,7 +274,22 @@ export async function GET(req: Request) {
       ) as any
       const defs = data.data || data.sourceDefinitions || []
       return Response.json({ definitions: defs })
-    } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
+    } catch (e) {
+      const msg = (e as Error).message || ''
+      // Airbyte Cloud's public API does not expose the connector catalog
+      // (source_definitions) or the connector builder — those are self-hosted /
+      // Enterprise only. Rather than surface a raw "403 Forbidden", explain the
+      // boundary so it reads as an intentional edition difference, not a failure.
+      const isCloud = /(^|\.)airbyte\.com/i.test(inst.url)
+      if (isCloud && /403|forbidden/i.test(msg)) {
+        return Response.json({
+          error: 'catalog_unavailable_on_cloud',
+          message: 'Browsing and creating connectors from the catalog isn\u2019t available on Airbyte Cloud. On Cloud, create your sources in the Airbyte Cloud web app; Mosaic then reads the synced data. To create connectors directly from Mosaic — including the AI custom-connector builder — use a self-hosted Airbyte (the Enterprise edition bundles one).',
+          cloud: true,
+        }, { status: 409 })
+      }
+      return Response.json({ error: msg }, { status: 500 })
+    }
   }
 
   // ── Source definition spec (config schema for a connector type)

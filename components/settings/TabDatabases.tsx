@@ -726,6 +726,9 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   const [sourceName, setSourceName]   = React.useState('')
   const [wizardSaving, setWizardSaving] = React.useState(false)
   const [defSearch, setDefSearch]     = React.useState('')
+  // When browsing the catalog on Airbyte Cloud (which doesn't expose it), we show
+  // this as an intentional edition boundary instead of an empty grid / raw 403.
+  const [catalogNotice, setCatalogNotice] = React.useState('')
 
   const onCountChangeRef = React.useRef(onCountChange)
   React.useEffect(() => { onCountChangeRef.current = onCountChange }, [onCountChange])
@@ -831,8 +834,19 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   async function openWizard(instId: string) {
     setWizardInst(instId); setWizardStep(1); setSelectedDef(null)
     setSourceSpec(null); setSourceConfig({}); setSourceName(''); setDefSearch('')
-    setShowWizard(true); setDefsLoading(true)
-    try { const r = await fetch(`/api/airbyte?action=source_definitions&id=${instId}`); const d = await r.json(); setConnDefs(d.definitions || []) }
+    setCatalogNotice(''); setShowWizard(true); setDefsLoading(true)
+    try {
+      const r = await fetch(`/api/airbyte?action=source_definitions&id=${instId}`)
+      const d = await r.json()
+      // Airbyte Cloud doesn't expose the catalog — show it as an intentional
+      // edition boundary, not a failure.
+      if (d.error === 'catalog_unavailable_on_cloud' || d.cloud) {
+        setCatalogNotice(d.message || 'The connector catalog isn\u2019t available on Airbyte Cloud.')
+        setConnDefs([])
+      } else {
+        setConnDefs(d.definitions || [])
+      }
+    }
     catch { showToast('Failed to load connectors', false) }
     finally { setDefsLoading(false) }
   }
@@ -1110,7 +1124,18 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
                 <input placeholder="Search 300+ connectors..." value={defSearch} onChange={e => setDefSearch(e.target.value)}
                   style={{ width: '100%', padding: '8px 12px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', marginBottom: 12, boxSizing: 'border-box' }} autoFocus />
                 {defsLoading && <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}><Spinner size={16} /> Loading connectors…</div>}
-                {!defsLoading && (
+                {!defsLoading && catalogNotice && (
+                  <div style={{ padding: '18px 20px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1V7A5 5 0 0 0 7 7v3H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z"/></svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Connector catalog is self-hosted only</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>{catalogNotice}</div>
+                    </div>
+                  </div>
+                )}
+                {!defsLoading && !catalogNotice && (
                   <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {filteredDefs.map(def => (
                       <button key={def.sourceDefinitionId || def.id} onClick={() => selectDef(def)}
