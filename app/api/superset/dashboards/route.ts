@@ -1,10 +1,16 @@
 import { getSession } from '@/lib/auth'
 import { NextRequest } from 'next/server'
+import { supersetSetting } from '@/lib/superset-auth'
 
 async function getSupersetToken(): Promise<{ token: string; cookie: string } | null> {
-  const url = process.env.SUPERSET_URL
-  const user = process.env.SUPERSET_ADMIN_USER
-  const pass = process.env.SUPERSET_ADMIN_PASSWORD
+  // Resolve settings-first (kv_settings via supersetSetting) then env — a BYO
+  // Superset configured in Settings must win over the compose defaults, exactly
+  // like the status and guest-token endpoints. Reading process.env directly here
+  // meant a BYO admin password was ignored and login failed, leaving the
+  // "link to Superset dashboard" dropdown empty.
+  const url = await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || '')
+  const user = await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
+  const pass = await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
   if (!url || !user || !pass) return null
 
   const res = await fetch(`${url}/api/v1/security/login`, {
@@ -25,7 +31,7 @@ export async function GET(_req: NextRequest) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const url = process.env.SUPERSET_URL
+  const url = await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || '')
   if (!url) return Response.json({ dashboards: [] })
 
   const auth = await getSupersetToken()

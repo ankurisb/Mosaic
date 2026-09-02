@@ -1,13 +1,16 @@
 import { getSession } from '@/lib/auth'
 import { log } from '@/lib/logger'
 import { getDb } from '@/lib/db'
+import { supersetSetting } from '@/lib/superset-auth'
 import { NextRequest } from 'next/server'
 export const runtime = 'nodejs'
 
 async function getSupersetAuth() {
-  const url = process.env.SUPERSET_URL || 'http://localhost:8088'
-  const user = process.env.SUPERSET_ADMIN_USER || 'admin'
-  const pass = process.env.SUPERSET_ADMIN_PASSWORD || ''
+  // Settings-first (BYO) then env — same as the status/guest-token/dashboards
+  // endpoints, so a Superset configured in the UI is used for the embed handshake.
+  const url = await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')
+  const user = await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin')
+  const pass = await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || '')
 
   const loginRes = await fetch(`${url}/api/v1/security/login`, {
     method: 'POST',
