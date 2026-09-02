@@ -244,6 +244,25 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── Workspaces: list all workspaces (id + name) and flag the one Mosaic uses.
+  // An Airbyte account can have several workspaces; Mosaic reads sources/
+  // connections from ONE (inst.workspace_id). Surfacing them lets the user see
+  // and switch which workspace is active, so they don't create sources in a
+  // workspace Mosaic isn't looking at.
+  if (action === 'workspaces') {
+    try {
+      const data = await ab(inst, '/workspaces', '/workspaces/list', 'GET') as any
+      const ws = (data.data || data.workspaces || []).map((w: any) => ({
+        id: w.workspaceId || w.id,
+        name: w.name || w.slug || w.workspaceId || w.id,
+        active: (w.workspaceId || w.id) === inst.workspace_id,
+      }))
+      return Response.json({ workspaces: ws, activeWorkspaceId: inst.workspace_id || (ws[0]?.id ?? null) })
+    } catch (e) {
+      return Response.json({ error: (e as Error).message }, { status: 500 })
+    }
+  }
+
   // ── Sources list
   if (action === 'sources') {
     try {
@@ -511,6 +530,14 @@ export async function POST(req: Request) {
   // ── Delete instance
   if (action === 'delete_instance') {
     await sql`DELETE FROM airbyte_instances WHERE id=${body.id}`
+    return Response.json({ ok: true })
+  }
+
+  // ── Set active workspace: let the user choose which workspace Mosaic reads
+  // sources/connections from, for accounts with more than one.
+  if (action === 'set_workspace') {
+    if (!body.id || !body.workspace_id) return Response.json({ error: 'id and workspace_id required' }, { status: 400 })
+    await sql`UPDATE airbyte_instances SET workspace_id = ${body.workspace_id} WHERE id = ${body.id}`
     return Response.json({ ok: true })
   }
 

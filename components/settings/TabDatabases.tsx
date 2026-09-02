@@ -955,6 +955,8 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
 
             {isAdmin && inst.workspace_id && <CustomConnectorsList instanceId={inst.id} isCloud={/(^|\.)airbyte\.com/i.test(inst.url)} />}
 
+            {isAdmin && <WorkspaceSelector instanceId={inst.id} onChange={() => { loadPipelines(inst.id); if (expanded === inst.id) loadPipelines(inst.id) }} />}
+
             {isExp && (
               <div style={{ borderTop: '1px solid var(--border)' }}>
                 {pipelinesLoading[inst.id] && <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}><Spinner size={14} /> Loading pipelines…</div>}
@@ -1221,6 +1223,55 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── WorkspaceSelector ────────────────────────────────────────
+// An Airbyte account can hold several workspaces; Mosaic reads sources/connections
+// from ONE. This shows which workspace is active and lets the user switch — so
+// they never create sources in a workspace Mosaic isn't looking at. Renders only
+// when there are 2+ workspaces (single-workspace accounts see nothing).
+function WorkspaceSelector({ instanceId, onChange }: { instanceId: string; onChange?: () => void }) {
+  const [workspaces, setWorkspaces] = React.useState<{ id: string; name: string; active: boolean }[]>([])
+  const [saving, setSaving] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try {
+      const r = await fetch(`/api/airbyte?action=workspaces&id=${instanceId}`)
+      const d = await r.json()
+      if (Array.isArray(d.workspaces)) setWorkspaces(d.workspaces)
+    } catch { /* silent — selector just won't show */ }
+  }, [instanceId])
+  React.useEffect(() => { load() }, [load])
+
+  if (workspaces.length < 2) return null // nothing to choose
+  const active = workspaces.find(w => w.active) || workspaces[0]
+
+  async function pick(wsId: string) {
+    if (wsId === active.id) return
+    setSaving(true)
+    try {
+      await fetch('/api/airbyte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_workspace', id: instanceId, workspace_id: wsId }) })
+      await load()
+      onChange?.()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Workspace</span>
+      <select
+        value={active.id}
+        onChange={e => pick(e.target.value)}
+        disabled={saving}
+        style={{ fontSize: 12.5, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', cursor: 'pointer', maxWidth: 320 }}
+      >
+        {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+      <span style={{ fontSize: 11, color: 'var(--text4)' }}>
+        {saving ? 'Switching…' : `Mosaic reads sources & connections from this workspace (${workspaces.length} available)`}
+      </span>
     </div>
   )
 }
