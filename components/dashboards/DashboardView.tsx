@@ -7,6 +7,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import PanelChart from './PanelChart'
 import PanelBuilder from './PanelBuilder'
 import { SupersetEmbed } from './SupersetEmbed'
+import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
 
 interface Panel {
@@ -306,6 +307,17 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           {guestTokenLoading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading dashboard...</div>
           ) : embedError ? (
+            // A BYO Superset that can't be embedded (usually a local http Superset
+            // blocked as mixed content on Mosaic's https page) gets the friendly
+            // "opens in Superset" explainer with a diagram — this is the intended
+            // Personal-edition behaviour, not a failure. Other embed errors (a
+            // genuinely misconfigured bundled Superset) keep the plain notice.
+            /mixed content|http:\/\//i.test(embedError) ? (
+              <SupersetConnectDiagram
+                supersetUrl={supersetStatus?.url}
+                onOpen={() => {}}
+              />
+            ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text4)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text2)' }}>Dashboard can&rsquo;t be embedded</div>
@@ -318,6 +330,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 </a>
               )}
             </div>
+            )
           ) : guestToken && supersetStatus?.url ? (
             <SupersetEmbed
               embedUuid={dashboard.superset_embed_uuid!}
