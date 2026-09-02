@@ -49,7 +49,11 @@ function N8nSetupSteps({ generatedKey, n8nUrl }: { generatedKey: string; n8nUrl?
   const copy = (text: string, label: string) => {
     navigator.clipboard?.writeText(text).then(() => { setCopied(label); setTimeout(() => setCopied(''), 1500) }).catch(() => {})
   }
-  const credsUrl = n8nUrl ? `${n8nUrl.replace(/\/$/, '')}/home/credentials` : null
+  // Link to the n8n home rather than a deep credentials path: n8n's client-side
+  // credentials route varies by version and (on Cloud) by project scoping, and a
+  // wrong deep path silently redirects to the workflows page. The base URL always
+  // opens n8n; the user clicks "Credentials" in the left nav from there.
+  const n8nHome = n8nUrl ? n8nUrl.replace(/\/$/, '') : null
 
   const Field = ({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
@@ -66,9 +70,9 @@ function N8nSetupSteps({ generatedKey, n8nUrl }: { generatedKey: string; n8nUrl?
     <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8 }}>
       <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text2)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
         How to add this key in n8n
-        {credsUrl && (
-          <a href={credsUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none' }}>
-            open n8n credentials ↗
+        {n8nHome && (
+          <a href={n8nHome} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none' }}>
+            open n8n ↗
           </a>
         )}
       </div>
