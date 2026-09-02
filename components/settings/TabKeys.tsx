@@ -32,7 +32,16 @@ const KEY_SECTIONS = [
   { title: 'CISO Assistant',           keys: ['CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD'] },
 ]
 
-const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean; options?: string[] }> = {
+// Generate a URL-safe random secret in the browser (used for the "Generate"
+// action on keys like N8N_MOSAIC_API_KEY, so the user never has to run openssl or
+// invent a value). 32 random bytes -> hex.
+function genSecret(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean; options?: string[]; generatable?: boolean }> = {
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
   SEARCH_PROVIDER:         { label: 'Web search provider',      hint: 'Which service powers web search',                                                    placeholder: 'tavily', options: ['tavily', 'perplexity'] },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · used when provider is Tavily',           placeholder: 'tvly-...', secret: true },
@@ -44,7 +53,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   TWILIO_AUTH_TOKEN:       { label: 'Twilio Auth Token',        hint: 'Paired with Account SID · stored encrypted',                                        placeholder: 'Stored encrypted', secret: true },
   N8N_URL:                 { label: 'n8n URL',                  hint: 'Base URL of your n8n instance · default: http://localhost:5678',                    placeholder: 'http://localhost:5678' },
   N8N_API_KEY:             { label: 'n8n API key',              hint: 'Generated in n8n Settings → API · used by Mosaic to import workflows',              placeholder: 'n8n_...', secret: true },
-  N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'Paste into n8n as Header Auth credential · n8n uses this to call Mosaic',           placeholder: 'Generate below' },
+  N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'n8n uses this to call Mosaic back. Click Generate, then in n8n add a Header Auth credential: header "Authorization", value "Bearer <this key>".',           placeholder: 'Click Generate to create one', generatable: true },
   CISO_API_URL:            { label: 'CISO Assistant URL',       hint: 'Base URL of your CISO backend · point at your own instance to use it',              placeholder: 'http://ciso-backend:8000' },
   CISO_SUPERUSER_EMAIL:    { label: 'CISO admin email',         hint: 'Mosaic authenticates as this to provision users when access is granted',            placeholder: 'admin@yourcompany.com' },
   CISO_SUPERUSER_PASSWORD: { label: 'CISO admin password',      hint: 'Stored encrypted · required for user provisioning',                                 placeholder: 'Stored encrypted', secret: true },
@@ -190,6 +199,11 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                                   onKeyDown={e => { if (e.key === 'Enter') save(key); if (e.key === 'Escape') setEditing(null) }}
                                   autoFocus
                                 />
+                              )}
+                              {meta.generatable && (
+                                <Btn onClick={() => setVals(p => ({ ...p, [key]: genSecret() }))}>
+                                  Generate
+                                </Btn>
                               )}
                               <Btn variant="primary" onClick={() => save(key)} disabled={saving === key}>
                                 {saving === key ? <Spinner size={12} /> : 'Save'}
