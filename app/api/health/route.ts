@@ -107,9 +107,15 @@ export async function GET() {
         }
       })(),
 
-      // n8n
+      // n8n — resolve settings-first (a saved BYO N8N_URL must win over the
+      // compose scaffolding default N8N_URL=http://n8n:5678, which is always set in
+      // the container env). getKey() is env-FIRST, so it would return the bundled
+      // default and probe the wrong host; resolveN8nUrl() is settings-first.
       (async (): Promise<ServiceStatus> => {
-        const url = (await getKey('N8N_URL').catch(() => null)) || process.env.N8N_URL
+        const { resolveN8nUrl } = await import('@/lib/n8n')
+        const url = await resolveN8nUrl().catch(() => null)
+        // Treat the bundled default as "configured" only when a bundled n8n is
+        // actually expected; if it's unreachable we still report its real status.
         if (!url) return { status: 'unconfigured', detail: 'Set n8n URL in Settings → Keys' }
         return probe(url, '/healthz')
       })(),
