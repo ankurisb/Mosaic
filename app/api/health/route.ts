@@ -1,7 +1,7 @@
 import { APP_VERSION } from '@/lib/version'
 import { log, newRequestId } from '@/lib/logger'
 import { getDb } from '@/lib/db'
-import { getKey } from '@/lib/keys'
+import { getKey, getKeySettingsFirstStrict } from '@/lib/keys'
 import { getSecret } from '@/lib/secret'
 export const runtime = 'nodejs'
 
@@ -85,23 +85,55 @@ export async function GET() {
         }
       })(),
 
-      // Superset — getKey() honours the kv_settings override (set in the UI),
-      // so a "bring your own" Superset is health-checked too. Previously this
-      // read process.env only and ignored the configured value.
+      // Superset — settings-first. A saved BYO SUPERSET_URL is probed and its true
+      // status reported. If only the compose scaffolding default (superset:8088)
+      // exists and it isn't reachable, that means Superset simply isn't part of
+      // this deployment (e.g. Personal edition) — report 'unconfigured', not a
+      // scary 'error', since the user never set it up.
       (async (): Promise<ServiceStatus> => {
-        const url = (await getKey('SUPERSET_URL').catch(() => null)) || process.env.SUPERSET_URL
+        const byo = await getKeySettingsFirstStrict('SUPERSET_URL')
+        const url = byo || process.env.SUPERSET_URL
         if (!url) return { status: 'unconfigured', detail: 'Set Superset URL in Settings → Keys' }
-        return probe(url, '/health')
+        const st = await probe(url, '/health')
+        if (st.status !== 'ok' && !byo) {
+          return { status: 'unconfigured', detail: 'Superset is not configured for this deployment' }
+        }
+        return st
       })(),
 
-      // Airbyte — registered instance (Settings → Data sources)
+      // Airbyte — registered instance (Settings → Data sources). The public API
+      // path differs by flavour (Cloud: /v1, abctl: /api/public/v1, older:
+      // /api/v1), so a single hardcoded path gives a false red for the others.
+      // Try the health endpoint across flavours and treat a 401 as "up" — the
+      // service answered, it just wants auth (a full authenticated ping lives in
+      // /api/airbyte?action=ping).
       (async (): Promise<ServiceStatus> => {
         try {
           const sql = getDb()
-          const rows = await sql`SELECT url FROM airbyte_instances WHERE active = true LIMIT 1`.catch(() => [])
-          const url = (rows[0] as { url?: string })?.url
-          if (!url) return { status: 'unconfigured', detail: 'Add an Airbyte instance in Settings → Data sources' }
-          return probe(url, '/api/v1/health')
+          const rows = await sql`SELECT url FROM airbyte_instances WHERE active = true`.catch(() => [])
+          const urls = (rows as { url?: string }[]).map(r => r.url).filter(Boolean) as string[]
+          if (urls.length === 0) return { status: 'unconfigured', detail: 'Add an Airbyte instance in Settings → Data sources' }
+          // There may be several active instances (e.g. a bundled one that isn't
+          // running plus a reachable Cloud one). Report healthy if ANY reachable;
+          // only error if none respond.
+          const paths = ['/v1/health', '/api/public/v1/health', '/api/v1/health', '/health']
+          const t = Date.now()
+          let anyDegraded = false
+          for (const url of urls) {
+            const base = url.replace(/\/$/, '')
+            for (const p of paths) {
+              try {
+                const res = await fetch(`${base}${p}`, { signal: AbortSignal.timeout(8000) })
+                if (res.ok || res.status === 401 || res.status === 403) {
+                  return { status: 'ok', latency_ms: Date.now() - t }
+                }
+                anyDegraded = true
+              } catch { /* try next */ }
+            }
+          }
+          return anyDegraded
+            ? { status: 'degraded', error: 'configured instance(s) returned errors', latency_ms: Date.now() - t }
+            : { status: 'error', error: 'no configured Airbyte instance is reachable', latency_ms: Date.now() - t }
         } catch (err) {
           return { status: 'error', error: (err as Error).message }
         }
@@ -120,11 +152,18 @@ export async function GET() {
         return probe(url, '/healthz')
       })(),
 
-      // CISO Assistant — was not health-checked at all before.
+      // CISO Assistant — settings-first, same treatment as Superset: a BYO
+      // CISO_API_URL reports its true status; a scaffolding-only default that's
+      // unreachable means CISO isn't part of this deployment -> 'unconfigured'.
       (async (): Promise<ServiceStatus> => {
-        const url = (await getKey('CISO_API_URL').catch(() => null)) || process.env.CISO_API_URL
+        const byo = await getKeySettingsFirstStrict('CISO_API_URL')
+        const url = byo || process.env.CISO_API_URL
         if (!url) return { status: 'unconfigured', detail: 'Set CISO URL in Settings → Keys' }
-        return probe(url, '/api/build')
+        const st = await probe(url, '/api/build')
+        if (st.status !== 'ok' && !byo) {
+          return { status: 'unconfigured', detail: 'CISO is not configured for this deployment' }
+        }
+        return st
       })(),
 
       // Schema migrations
