@@ -650,8 +650,12 @@ export async function POST(req: Request) {
     try { inst = await getInstance(sql, body.instanceId) }
     catch { return Response.json({ error: 'Instance not found' }, { status: 404 }) }
     try {
+      // Airbyte Cloud's public API triggers a sync via POST /v1/jobs with
+      // { connectionId, jobType: 'sync' }. Self-hosted config API uses
+      // /connections/sync with { connectionId }. ab() tries the public path first;
+      // send both field spellings so whichever endpoint answers accepts the body.
       const data = await ab(inst, '/jobs', '/connections/sync', 'POST',
-        { type: 'sync', connectionId: body.connectionId }) as any
+        { jobType: 'sync', type: 'sync', connectionId: body.connectionId }) as any
       await sql`UPDATE airbyte_instances SET last_synced=${nowExpr()} WHERE id=${body.instanceId}`
       return Response.json({ ok: true, jobId: data.jobId || data.id || data.job?.id || null })
     } catch (e) { return Response.json({ error: (e as Error).message }, { status: 500 }) }
