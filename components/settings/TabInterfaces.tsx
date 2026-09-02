@@ -52,8 +52,21 @@ export default function TabInterfaces() {
 
   // Break-glass link to the raw Airbyte portal. Admin-only. Fallback for when
   // the in-Mosaic wrapper can't do something; deliberately NOT customer-facing
-  // (exposing Airbyte's own UI carries ELv2 considerations).
-  const airbytePortalUrl = process.env.NEXT_PUBLIC_AIRBYTE_PORTAL_URL || 'http://localhost:8000'
+  // Airbyte's own UI. For a self-hosted/bundled instance this is the local proxy;
+  // for Airbyte Cloud it's cloud.airbyte.com. We resolve it from the configured
+  // instance so the link doesn't dead-end at localhost:8000 for a Cloud user.
+  const [airbytePortalUrl, setAirbytePortalUrl] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/airbyte?action=list')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const inst = (d?.instances || []).find((i: { active?: number }) => i.active) || d?.instances?.[0]
+        if (!inst) { setAirbytePortalUrl(null); return }
+        // Cloud API host -> the Cloud web app; otherwise the instance's own URL.
+        setAirbytePortalUrl(/(^|\.)airbyte\.com/i.test(inst.url) ? 'https://cloud.airbyte.com' : inst.url)
+      })
+      .catch(() => setAirbytePortalUrl(null))
+  }, [])
 
   function open(href: string, external?: boolean) {
     if (external) window.open(href, '_blank', 'noopener')
@@ -99,7 +112,7 @@ export default function TabInterfaces() {
             const m = META[s]
             const st = health[s] || 'unknown'
             const dot = DOT[st]
-            const showPortal = s === 'airbyte' && isAdmin
+            const showPortal = s === 'airbyte' && isAdmin && !!airbytePortalUrl
             return (
               <div
                 key={s}
@@ -131,7 +144,7 @@ export default function TabInterfaces() {
                 {/* admin-only Airbyte portal link — stops row navigation */}
                 {showPortal && (
                   <a
-                    href={airbytePortalUrl}
+                    href={airbytePortalUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}
