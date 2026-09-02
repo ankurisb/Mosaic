@@ -41,7 +41,56 @@ function genSecret(): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean; options?: string[]; generatable?: boolean }> = {
+// Step-by-step panel showing exactly where the Mosaic-API-key-for-n8n goes on the
+// n8n side. Renders under the N8N_MOSAIC_API_KEY field once it's generated/saved.
+function N8nSetupSteps({ generatedKey, n8nUrl }: { generatedKey: string; n8nUrl?: string }) {
+  const [copied, setCopied] = useState('')
+  const bearer = generatedKey ? `Bearer ${generatedKey}` : 'Bearer <your key>'
+  const copy = (text: string, label: string) => {
+    navigator.clipboard?.writeText(text).then(() => { setCopied(label); setTimeout(() => setCopied(''), 1500) }).catch(() => {})
+  }
+  const credsUrl = n8nUrl ? `${n8nUrl.replace(/\/$/, '')}/home/credentials` : null
+
+  const Field = ({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+      <span style={{ fontSize: 11, color: 'var(--text3)', minWidth: 92 }}>{label}</span>
+      <code style={{ flex: 1, fontSize: 11, fontFamily: mono ? 'var(--font-mono)' : 'inherit', background: 'var(--bg3)', padding: '3px 8px', borderRadius: 4, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</code>
+      <button
+        onClick={() => copy(value, label)}
+        style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}
+      >{copied === label ? 'Copied' : 'Copy'}</button>
+    </div>
+  )
+
+  return (
+    <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text2)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+        How to add this key in n8n
+        {credsUrl && (
+          <a href={credsUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--blue-t)', textDecoration: 'none' }}>
+            open n8n credentials ↗
+          </a>
+        )}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: 'var(--text3)', lineHeight: 1.9 }}>
+        <li>In n8n, go to <b style={{ color: 'var(--text2)' }}>Credentials → Add credential</b> and choose <b style={{ color: 'var(--text2)' }}>Header Auth</b>.</li>
+        <li>Fill it in exactly:
+          <Field label="Name" value="Mosaic API" mono={false} />
+          <Field label="Header Name" value="Authorization" />
+          <Field label="Header Value" value={bearer} />
+        </li>
+        <li>Save the credential. Then in any HTTP Request node that calls Mosaic, set <b style={{ color: 'var(--text2)' }}>Authentication → Header Auth</b> and pick <b style={{ color: 'var(--text2)' }}>Mosaic API</b>.</li>
+      </ol>
+      {!generatedKey && (
+        <div style={{ fontSize: 10.5, color: 'var(--text4)', marginTop: 8, fontStyle: 'italic' }}>
+          The key is stored encrypted, so its value can&rsquo;t be shown again. If you didn&rsquo;t copy it, click Update → Generate to make a new one.
+        </div>
+      )}
+    </div>
+  )
+}
+
+const KEY_META: Record<string, { label: string; hint: string; placeholder: string; secret?: boolean; options?: string[]; generatable?: boolean; n8nSetup?: boolean }> = {
   ANTHROPIC_API_KEY:       { label: 'Anthropic API key',        hint: 'Powers all Mosaic AI completions · get it from console.anthropic.com',              placeholder: 'sk-ant-api03-...', secret: true },
   SEARCH_PROVIDER:         { label: 'Web search provider',      hint: 'Which service powers web search',                                                    placeholder: 'tavily', options: ['tavily', 'perplexity'] },
   TAVILY_API_KEY:          { label: 'Tavily API key',           hint: 'Web search · free tier at app.tavily.com · used when provider is Tavily',           placeholder: 'tvly-...', secret: true },
@@ -53,7 +102,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   TWILIO_AUTH_TOKEN:       { label: 'Twilio Auth Token',        hint: 'Paired with Account SID · stored encrypted',                                        placeholder: 'Stored encrypted', secret: true },
   N8N_URL:                 { label: 'n8n URL',                  hint: 'Base URL of your n8n instance · default: http://localhost:5678',                    placeholder: 'http://localhost:5678' },
   N8N_API_KEY:             { label: 'n8n API key',              hint: 'Generated in n8n Settings → API · used by Mosaic to import workflows',              placeholder: 'n8n_...', secret: true },
-  N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'n8n uses this to call Mosaic back. Click Generate, then in n8n add a Header Auth credential: header "Authorization", value "Bearer <this key>".',           placeholder: 'Click Generate to create one', generatable: true },
+  N8N_MOSAIC_API_KEY:      { label: 'Mosaic API key (for n8n)', hint: 'Lets your n8n workflows call Mosaic back (query data, trigger syncs, send notifications). Click Generate, Save, then follow the steps below to add it in n8n.',           placeholder: 'Click Generate to create one', generatable: true, n8nSetup: true },
   CISO_API_URL:            { label: 'CISO Assistant URL',       hint: 'Base URL of your CISO backend · point at your own instance to use it',              placeholder: 'http://ciso-backend:8000' },
   CISO_SUPERUSER_EMAIL:    { label: 'CISO admin email',         hint: 'Mosaic authenticates as this to provision users when access is granted',            placeholder: 'admin@yourcompany.com' },
   CISO_SUPERUSER_PASSWORD: { label: 'CISO admin password',      hint: 'Stored encrypted · required for user provisioning',                                 placeholder: 'Stored encrypted', secret: true },
@@ -223,6 +272,9 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                           </div>
                         )}
                       </div>
+                      {meta.n8nSetup && (isEditing || status?.configured) && (
+                        <N8nSetupSteps generatedKey={isEditing ? (vals[key] || '') : ''} n8nUrl={keys['N8N_URL']?.value} />
+                      )}
                     </div>
                   )
                 })}
