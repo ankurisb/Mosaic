@@ -305,12 +305,6 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {guestTokenLoading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading dashboard...</div>
-          ) : guestToken && supersetStatus?.url ? (
-            <SupersetEmbed
-              embedUuid={dashboard.superset_embed_uuid!}
-              guestToken={guestToken}
-              supersetUrl={supersetStatus.url}
-            />
           ) : embedError ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text4)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
@@ -324,6 +318,13 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 </a>
               )}
             </div>
+          ) : guestToken && supersetStatus?.url ? (
+            <SupersetEmbed
+              embedUuid={dashboard.superset_embed_uuid!}
+              guestToken={guestToken}
+              supersetUrl={supersetStatus.url}
+              onError={(msg) => setEmbedError(msg)}
+            />
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13 }}>Failed to load dashboard</div>
           )}
