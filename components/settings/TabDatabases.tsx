@@ -953,7 +953,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
               </div>
             </div>
 
-            {isAdmin && inst.workspace_id && <CustomConnectorsList instanceId={inst.id} />}
+            {isAdmin && inst.workspace_id && <CustomConnectorsList instanceId={inst.id} isCloud={/(^|\.)airbyte\.com/i.test(inst.url)} />}
 
             {isExp && (
               <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -1230,7 +1230,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
 // unified. Airbyte is the source of truth; delete removes from Airbyte.
 interface CustomConnectorItem { id: string; name: string; status: 'published' | 'draft' }
 
-function CustomConnectorsList({ instanceId }: { instanceId: string }) {
+function CustomConnectorsList({ instanceId, isCloud }: { instanceId: string; isCloud?: boolean }) {
   const [items, setItems] = React.useState<CustomConnectorItem[] | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
@@ -1240,13 +1240,18 @@ function CustomConnectorsList({ instanceId }: { instanceId: string }) {
 
   const load = React.useCallback(async () => {
     setErr(null)
+    // Airbyte Cloud has no connector-builder endpoints (custom connectors are a
+    // self-hosted capability). Don't call the API and don't show a red error —
+    // just render nothing, so the card stays clean. The Enterprise note above the
+    // instance already explains custom connectors are self-hosted only.
+    if (isCloud) { setItems([]); return }
     try {
       const res = await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list_connectors', instanceId }) })
       const { data } = await safeJson<{ ok?: boolean; connectors?: CustomConnectorItem[]; error?: string }>(res)
       if (!res.ok || !data?.ok) { setErr(data?.error || 'Could not load connectors'); setItems([]); return }
       setItems(data.connectors || [])
     } catch { setErr('Could not load connectors'); setItems([]) }
-  }, [instanceId])
+  }, [instanceId, isCloud])
 
   React.useEffect(() => { load() }, [load])
 
