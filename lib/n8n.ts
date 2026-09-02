@@ -27,6 +27,20 @@ export async function resolveN8nUrl(): Promise<string> {
   return url.replace(/\/$/, '')
 }
 
+/** Resolve the n8n public-API key (settings-first, encrypted kv_settings). */
+export async function resolveN8nApiKey(): Promise<string | null> {
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'N8N_API_KEY'`
+    if (rows.length) {
+      const { decrypt } = await import('./encrypt')
+      const v = decrypt(rows[0].value_enc as string)
+      if (v) return v
+    }
+  } catch { /* fall through */ }
+  return process.env.N8N_API_KEY || null
+}
+
 /** POST /rest/login. Returns the raw `n8n-auth=...` Set-Cookie string, or null. */
 async function login(baseUrl: string): Promise<string | null> {
   const res = await fetch(`${baseUrl}/rest/login`, {
