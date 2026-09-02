@@ -150,8 +150,22 @@ async function ab(
         return txt ? JSON.parse(txt) : {}
       }
       const errTxt = await res.text().catch(() => '')
-      lastErr = `${res.status} ${res.statusText}${errTxt ? ': ' + errTxt.slice(0, 120) : ''}`
+      lastErr = `${res.status} ${res.statusText}${errTxt ? ': ' + errTxt.slice(0, 160) : ''}`
+      // Distinguish "wrong URL, try the next candidate" from "right endpoint,
+      // real error". A 404 (route not found) or a non-JSON body means this URL
+      // isn't the API — keep trying the other flavour paths. But a JSON error at
+      // any other status (409 sync-already-running, 429 rate-limited, 400 bad
+      // request, 401/403 auth) came from the REAL endpoint — surface it now
+      // rather than falling through to a fallback URL that returns a misleading
+      // 403. Otherwise meaningful Cloud errors get masked.
+      const ct = res.headers.get('content-type') || ''
+      const looksJson = ct.includes('application/json') || /^\s*[[{]/.test(errTxt)
+      if (res.status !== 404 && looksJson) {
+        throw new Error(lastErr)
+      }
     } catch (e) {
+      // Re-throw a surfaced business error; otherwise record and try next URL.
+      if (e instanceof Error && e.message === lastErr && lastErr) throw e
       lastErr = (e as Error).message
     }
   }
