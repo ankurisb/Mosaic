@@ -182,7 +182,7 @@ export async function GET() {
           if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); n8nUrl = decrypt(rows[0].value_enc as string) }
         } catch {}
         const start = Date.now()
-        const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(3000) })
+        const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(8000) })
         return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: n8nUrl })
       } catch {
         return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running' })
@@ -191,16 +191,31 @@ export async function GET() {
       
     })(),
     (async () => {
-    // Check Airbyte
+    // Check Airbyte — probe ALL active instances (there may be a dead bundled one
+    // plus a reachable Cloud one) across the flavour-specific health paths (Cloud:
+    // /v1, abctl: /api/public/v1, older: /api/v1). 401/403 = reachable-but-auth-
+    // gated = healthy. Report healthy if ANY instance answers.
       try {
-        const airbytes = await sql`SELECT url FROM airbyte_instances WHERE active = true LIMIT 1`
-        if (airbytes.length) {
-          const start = Date.now()
-          const res = await fetch(`${airbytes[0].url}/api/v1/health`, { signal: AbortSignal.timeout(4000) })
-          return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: airbytes[0].url })
-        } else {
+        const airbytes = await sql`SELECT url FROM airbyte_instances WHERE active = true`
+        if (!airbytes.length) {
           return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
         }
+        const paths = ['/v1/health', '/api/public/v1/health', '/api/v1/health', '/health']
+        const start = Date.now()
+        let anyDegraded = false
+        for (const inst of airbytes) {
+          const base = (inst.url as string).replace(/\/$/, '')
+          for (const p of paths) {
+            try {
+              const res = await fetch(`${base}${p}`, { signal: AbortSignal.timeout(8000) })
+              if (res.ok || res.status === 401 || res.status === 403) {
+                return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'healthy', latencyMs: Date.now() - start, url: inst.url })
+              }
+              anyDegraded = true
+            } catch { /* try next */ }
+          }
+        }
+        return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: anyDegraded ? 'degraded' : 'down', latencyMs: Date.now() - start })
       } catch {
         return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'down', latencyMs: null })
       }
