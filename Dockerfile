@@ -35,6 +35,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
+# DB migration files — read at runtime by lib/migrate.ts (process.cwd()/migrations).
+# Without this the migration runner finds no directory and silently skips, so schema
+# changes never reach production installs.
+COPY --from=builder /app/migrations ./migrations
 
 # Data directory for SQLite
 RUN mkdir -p /data && chown mosaic:nodejs /data
