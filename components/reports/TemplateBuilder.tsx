@@ -155,7 +155,13 @@ function SectionCard({
   onMoveUp: () => void
   onMoveDown: () => void
 }) {
-  const [open, setOpen] = useState(true)
+  // Start collapsed once a section is already configured (has a data source, or is a
+  // filled text/narrative section) — this keeps a multi-section template compact
+  // instead of a wall of tall expanded cards. New/incomplete sections start open.
+  const isConfigured = (section.source_type !== 'none' && !!section.source_id) ||
+    (section.type === 'text' && !!section.content) ||
+    (section.type === 'ai_narrative' && !!section.ai_prompt)
+  const [open, setOpen] = useState(!isConfigured)
   const up = <T,>(k: keyof Section, v: T) => onChange({ ...section, [k]: v })
 
   const needsSource = section.type !== 'text'
