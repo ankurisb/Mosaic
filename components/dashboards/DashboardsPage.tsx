@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import { SupersetLink } from './SupersetLink'
+import { QueriesTable } from './QueriesTable'
 import { useSuperset } from './useSuperset'
 import { safeJson } from '@/lib/fetch'
 
@@ -36,7 +37,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
   const supersetAvailable = !!supersetStatus?.configured
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [loading, setLoading] = useState(true)
-  const [expandedQuery, setExpandedQuery] = useState<string | null>(null)  // dashboard id whose SQL is shown
+  const [showQueries, setShowQueries] = useState(false)  // the Queries & dashboards table modal
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', is_public: false, refresh_sec: 300 })
   const [saving, setSaving] = useState(false)
@@ -153,6 +154,14 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <SupersetLink />
+            {dashboards.some(d => d.source_kind === 'superset_query') && (
+              <button onClick={() => setShowQueries(true)}
+                title="View all queries & dashboards"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                Queries
+              </button>
+            )}
             <button onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', flexShrink: 0 }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg>
             New dashboard
@@ -236,38 +245,26 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                 </div>
                 {d.description && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 }}>{d.description}</div>}
 
-                {/* Query-built dashboards (Mosaic authored the SQL, built it in Superset).
-                    Show the connection, a toggle to view the SQL, and a direct link. */}
+                {/* Query-built dashboards: a clean badge + connection. The full SQL,
+                    created date and link live in the "Queries" table (header button),
+                    not crammed into the card. */}
                 {d.source_kind === 'superset_query' && (
-                  <div onClick={e => e.stopPropagation()} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
-                        Built from query
-                      </span>
-                      {d.source_connection && (
-                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>on {d.source_connection}</span>
-                      )}
-                      {d.source_sql && (
-                        <button
-                          onClick={() => setExpandedQuery(expandedQuery === d.id ? null : d.id)}
-                          style={{ fontSize: 11, color: 'var(--blue-t)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}
-                        >
-                          {expandedQuery === d.id ? 'hide query' : 'view query'}
-                        </button>
-                      )}
-                      {supersetStatus?.url && d.superset_dashboard_id != null && (
-                        <a
-                          href={`${supersetStatus.url.replace(/\/$/, '')}/superset/dashboard/${d.superset_dashboard_id}/`}
-                          target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize: 11, color: 'var(--blue-t)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}
-                        >
-                          open in Superset
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
-                        </a>
-                      )}
-                    </div>
-                    {expandedQuery === d.id && d.source_sql && (
-                      <pre style={{ marginTop: 8, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 140, overflow: 'auto' }}>{d.source_sql}</pre>
+                  <div onClick={e => e.stopPropagation()} style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                      Built from query
+                    </span>
+                    {d.source_connection && (
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>on {d.source_connection}</span>
+                    )}
+                    {supersetStatus?.url && d.superset_dashboard_id != null && (
+                      <a
+                        href={`${supersetStatus.url.replace(/\/$/, '')}/superset/dashboard/${d.superset_dashboard_id}/`}
+                        target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 11, color: 'var(--blue-t)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}
+                      >
+                        open in Superset
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+                      </a>
                     )}
                   </div>
                 )}
@@ -333,6 +330,22 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
           </div>
         )}
       </div>
+
+      {/* Queries & dashboards table */}
+      {showQueries && (
+        <QueriesTable
+          rows={dashboards.filter(d => d.source_kind === 'superset_query').map(d => ({
+            id: d.id,
+            name: d.name,
+            source_sql: d.source_sql,
+            source_connection: d.source_connection,
+            superset_dashboard_id: d.superset_dashboard_id,
+            updated_at: d.updated_at,
+          }))}
+          supersetUrl={supersetStatus?.url}
+          onClose={() => setShowQueries(false)}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
