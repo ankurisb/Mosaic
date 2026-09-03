@@ -12,8 +12,9 @@ interface Section {
   title: string
   // data binding
   source_type: 'database' | 'api' | 'none'
-  source_id: string       // db_connection id or api_service id
-  query: string           // SQL or API path
+  source_id: string       // db_connection id or api_connection id
+  saved_query_id?: string // DB sections reference a saved query
+  query: string           // legacy inline SQL / API path (back-compat)
   // ai narrative
   ai_prompt: string       // prompt sent to Claude with query results injected
   // text / static
@@ -209,40 +210,46 @@ function SectionCard({
 
           {/* Source picker */}
           {needsSource && section.source_type === 'database' && (
-            <div style={FIELD}>
-              <label style={LABEL}>Connection</label>
-              <select style={INP} value={section.source_id} onChange={e => up('source_id', e.target.value)}>
-                <option value="">— Select a database connection —</option>
-                {dbs.map(d => <option key={d.id} value={d.id}>{d.label} ({d.dialect})</option>)}
-              </select>
-            </div>
+            <>
+              <div style={FIELD}>
+                <label style={LABEL}>Connection</label>
+                <select style={INP} value={section.source_id} onChange={e => { up('source_id', e.target.value); up('saved_query_id', '') }}>
+                  <option value="">— Select a database connection —</option>
+                  {dbs.map(d => <option key={d.id} value={d.id}>{d.label} ({d.dialect})</option>)}
+                </select>
+              </div>
+              {section.source_id && (
+                <div style={FIELD}>
+                  <label style={LABEL}>Query <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(saved query — results injected into section)</span></label>
+                  {(() => {
+                    const connLabel = dbs.find(d => d.id === section.source_id)?.label
+                    const matches = savedQueries.filter(q => q.connection_id === section.source_id || (!q.connection_id && !!connLabel && q.connection_label === connLabel))
+                    return (
+                      <>
+                        <select style={INP} value={section.saved_query_id || ''} onChange={e => up('saved_query_id', e.target.value)}>
+                          <option value="">— Select a saved query —</option>
+                          {matches.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
+                        </select>
+                        {matches.length === 0 && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries for this connection. Create one in the Query Builder.</div>}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+            </>
           )}
           {needsSource && section.source_type === 'api' && (
             <div style={FIELD}>
-              <label style={LABEL}>API service</label>
+              <label style={LABEL}>API connection <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(carries its endpoint — no free path)</span></label>
               <select style={INP} value={section.source_id} onChange={e => up('source_id', e.target.value)}>
-                <option value="">— Select an API service —</option>
-                {apis.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                <option value="">— Select an API connection —</option>
+                {apiConns.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
             </div>
           )}
 
-          {/* Query */}
-          {needsQuery && section.source_type !== 'none' && (
-            <div style={FIELD}>
-              <label style={LABEL}>
-                {section.source_type === 'database' ? 'SQL query' : 'API path / endpoint'}
-                <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>
-                  {section.source_type === 'database' ? '(results injected into section)' : '(relative path, e.g. /odata/Equipment)'}
-                </span>
-              </label>
-              <textarea style={TEXTAREA}
-                placeholder={section.source_type === 'database'
-                  ? 'SELECT machine_id, oee_pct, availability FROM oee_weekly\nWHERE week >= date(\'now\', \'-7 days\')\nORDER BY oee_pct ASC LIMIT 10'
-                  : '/odata/Equipment?$filter=Plant eq \'P001\'&$top=20'}
-                value={section.query} onChange={e => up('query', e.target.value)} />
-            </div>
-          )}
+          {/* Query — inline free SQL/path removed (Step 4): DB sections use a saved
+              query (picker above), API sections use the connection's endpoint. */}
 
           {/* Chart type */}
           {needsChart && (
@@ -540,6 +547,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   })
   const [dbs, setDbs]       = useState<DbConnection[]>([])
   const [apis, setApis]     = useState<ApiService[]>([])
+  const [apiConns, setApiConns] = useState<Array<{ id: string; label: string }>>([])
+  const [savedQueries, setSavedQueries] = useState<Array<{ id: string; name: string; connection_id: string; connection_label: string }>>([])
   const [groups, setGroups] = useState<NotifGroup[]>([])
   const [saving, setSaving]   = useState(false)
   const [loading, setLoading] = useState(isEdit)
@@ -548,7 +557,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   // Load connections
   useEffect(() => {
     fetch('/api/connections').then(r => r.json()).then(d => setDbs(d.connections || []))
-    fetch('/api/services').then(r => r.json()).then(d => setApis(d.services || []))
+    fetch('/api/services').then(r => r.json()).then(d => { setApis(d.services || []); setApiConns(d.connections || []) })
+    fetch('/api/saved-queries').then(r => r.json()).then(d => setSavedQueries(d.queries || [])).catch(() => {})
     fetch('/api/integrations/groups').then(r => r.json()).then(d => setGroups(d.groups || [])).catch(() => {})
   }, [])
 

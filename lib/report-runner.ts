@@ -14,8 +14,10 @@ export interface ReportSection {
   type: 'kpi' | 'table' | 'chart' | 'ai_narrative' | 'text'
   title: string
   source_type: 'database' | 'api' | 'none'
-  source_id: string
-  query: string
+  source_id: string            // db_connection id, or api_connection id (aligned with rules)
+  saved_query_id?: string      // DB sections reference a saved query instead of inline SQL
+  query: string                // legacy inline SQL / API path (kept for back-compat)
+  match_mode?: string
   ai_prompt: string
   content: string
   chart_type?: string
@@ -28,32 +30,54 @@ const REPORTS_DIR = join(process.cwd(), 'data', 'reports')
 // ── Query executor ────────────────────────────────────────────────────────────
 
 async function executeSection(section: ReportSection): Promise<{ rows: Row[]; error?: string }> {
-  if (section.source_type === 'none' || !section.source_id || !section.query) {
+  if (section.source_type === 'none' || !section.source_id) {
     return { rows: [] }
   }
   try {
     const { runTool } = await import('./tools')
+    const { extractRows } = await import('./condition-eval')
+    const sql = getDb()
+
     if (section.source_type === 'database') {
+      // Resolve the section's saved query to SQL (aligned with rules); fall back to
+      // legacy inline SQL so pre-migration templates still run.
+      let querySql = section.query
+      if (section.saved_query_id) {
+        const sq = await sql`SELECT query FROM saved_queries WHERE id = ${section.saved_query_id} LIMIT 1` as unknown as { query: string }[]
+        if (sq.length) querySql = sq[0].query
+      }
+      if (!querySql) return { rows: [] }
       const result = await runTool('query_database', {
         connection_id: section.source_id,
-        sql: section.query,
+        sql: querySql,
       }) as { rows?: Row[]; error?: string }
       return { rows: result.rows || [], error: result.error }
     }
+
     if (section.source_type === 'api') {
-      const sql = getDb()
-      const [svc] = await sql`SELECT * FROM api_services WHERE id = ${section.source_id}`
-      if (!svc) return { rows: [], error: 'API service not found' }
-      const { applyAuth } = await import('./api-auth')
-      const base = String(svc.base_url).replace(/\/$/, '')
-      const path = section.query.startsWith('/') ? section.query : `/${section.query}`
-      const headers: Record<string, string> = { 'Accept': 'application/json' }
-      await applyAuth(svc as Record<string, unknown>, headers)
-      const res = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(15000) })
-      if (!res.ok) return { rows: [], error: `HTTP ${res.status}` }
-      const data = await res.json()
-      const raw = data?.value ?? data?.results ?? data?.data ?? data
-      return { rows: Array.isArray(raw) ? raw.slice(0, 200) : [raw] }
+      // Aligned with rules: source_id is an api_connection id (carries its endpoint).
+      // Use call_api + robust extractRows (handles OData/wrappers via the connection's
+      // pagination_data_path) instead of the old ad-hoc value/results/data peek.
+      const [conn] = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${section.source_id} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
+      if (!conn) {
+        // Back-compat: an older template may still reference an api_SERVICE + free path.
+        const [svc] = await sql`SELECT * FROM api_services WHERE id = ${section.source_id}`
+        if (!svc) return { rows: [], error: 'API source not found' }
+        const { applyAuth } = await import('./api-auth')
+        const base = String(svc.base_url).replace(/\/$/, '')
+        const path = section.query.startsWith('/') ? section.query : `/${section.query}`
+        const headers: Record<string, string> = { 'Accept': 'application/json' }
+        await applyAuth(svc as Record<string, unknown>, headers)
+        const res = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(15000) })
+        if (!res.ok) return { rows: [], error: `HTTP ${res.status}` }
+        return { rows: extractRows(await res.json()).slice(0, 200) }
+      }
+      const data = await runTool('call_api', {
+        connection_id: section.source_id,
+        method: 'GET',
+        path: (section.query || '').trim(),
+      })
+      return { rows: extractRows(data, conn.pagination_data_path || undefined).slice(0, 200) }
     }
   } catch (e) {
     return { rows: [], error: (e as Error).message }
