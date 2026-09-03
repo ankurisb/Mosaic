@@ -91,6 +91,21 @@ export async function POST(req: Request) {
   // Unique-ish names to avoid collisions across repeated builds.
   const stamp = Date.now().toString(36)
   const chartLabel = chartName || dashboardTitle || `Chart ${stamp}`
+
+  // Guard: adding a chart REBUILDS the dashboard's position_json layout. That's safe
+  // for dashboards Mosaic created (it owns their simple stacked layout), but would
+  // DESTROY a layout the user hand-designed in Superset. So only allow "add to
+  // existing" for dashboards Mosaic built (i.e. we have a dashboards row for it).
+  if (targetDashboardId) {
+    const [owned] = await getDb()`SELECT id FROM dashboards WHERE superset_dashboard_id = ${targetDashboardId} LIMIT 1` as unknown as { id: string }[]
+    if (!owned) {
+      return Response.json({
+        error: 'Mosaic can only add charts to dashboards it created. This dashboard was made in Superset, and adding a chart would overwrite its custom layout — edit it in Superset instead.',
+        code: 'not_mosaic_owned',
+      }, { status: 409 })
+    }
+  }
+
   const result = targetDashboardId
     ? await addChartToDashboard({
         supersetDatabaseId: dbId,
