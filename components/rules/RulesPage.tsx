@@ -346,13 +346,14 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 <input style={{ ...INP_A, width: 80 }} type="number" value={alertForm.threshold} onChange={e => setAlertForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" />
               </div>
               {/* Query: pick a saved query (authored in the Query Builder). It carries
-                  its own connection, so it replaces the source + SQL fields. */}
+                  its own connection, so it replaces the source + SQL fields. Inline SQL
+                  is no longer accepted — legacy alerts were migrated to saved queries. */}
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
               <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => setAlertForm(p => ({ ...p, saved_query_id: e.target.value }))}>
-                <option value="">{alertForm.query ? 'Existing inline query (legacy)' : 'Select a saved query…'}</option>
+                <option value="">Select a saved query…</option>
                 {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
               </select>
-              {savedQueries.length === 0 && !alertForm.query && (
+              {savedQueries.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries yet. Create one in the Query Builder, then pick it here.</div>
               )}
             </div>
@@ -362,7 +363,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Run every</label><select style={SEL_A} value={alertForm.interval} onChange={e => setAlertForm(p => ({ ...p, interval: e.target.value }))}>{INTERVAL_OPTS_ALERT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
               <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
                 <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => setAlertForm(p => ({ ...p, saved_query_id: e.target.value }))}>
-                  <option value="">{alertForm.query ? 'Existing inline query (legacy)' : 'Select a saved query…'}</option>
+                  <option value="">Select a saved query…</option>
                   {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
                 </select>
               </div>

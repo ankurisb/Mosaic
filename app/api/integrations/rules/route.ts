@@ -57,12 +57,12 @@ export async function POST(req: Request) {
     if (!name?.trim())        return Response.json({ error: 'Name required' },         { status: 400 })
     if (!trigger_type)        return Response.json({ error: 'Trigger type required' },  { status: 400 })
     if (!channel_id)          return Response.json({ error: 'Channel required' },       { status: 400 })
-    // A saved query supplies its own source + SQL, so it satisfies the source
-    // requirement; only validate the legacy inline source/query when there's no
-    // saved_query_id.
-    if (!saved_query_id) {
-      const srcErr = validateSource(trigger_type, source_type, source_id, query)
-      if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    // A saved query supplies the source + SQL. Threshold/schedule alerts now REQUIRE
+    // one (inline SQL is no longer accepted for new alerts — Step 3b). rca_complete
+    // needs no query.
+    const needsQuery = trigger_type === 'threshold' || trigger_type === 'schedule'
+    if (needsQuery && !saved_query_id) {
+      return Response.json({ error: 'Select a saved query (create one in the Query Builder).' }, { status: 400 })
     }
 
     // Compute initial next_run_at for schedule rules
@@ -88,9 +88,9 @@ export async function POST(req: Request) {
       query, condition, channel_id, message_template,
     } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
-    if (!body.saved_query_id) {
-      const srcErr = validateSource(trigger_type, source_type, source_id, query)
-      if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    const needsQ = trigger_type === 'threshold' || trigger_type === 'schedule'
+    if (needsQ && !body.saved_query_id) {
+      return Response.json({ error: 'Select a saved query (create one in the Query Builder).' }, { status: 400 })
     }
     const nextRun = computeNextRun(trigger_type, condition || {})
     await sql`

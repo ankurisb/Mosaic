@@ -38,6 +38,13 @@ export async function register() {
         db.close()
       }
     }
+
+    // Data migrations (application logic, not DDL) run after the schema is in place,
+    // for both SQLite and Postgres, via the app's DB interface.
+    const { getDb } = await import('@/lib/db')
+    const { runDataMigrations } = await import('@/lib/migrate-data')
+    await runDataMigrations(getDb())
+    log.info({ service: 'instrumentation' }, 'Data migrations ensured at startup')
   } catch (err) {
     // A migration failure means the schema is not in a known-good state. Fail LOUD
     // rather than serve requests against a broken/partial schema — a crash at boot
