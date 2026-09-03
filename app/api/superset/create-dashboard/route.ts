@@ -10,7 +10,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
-import { createDashboard, resolveDatabaseId, validateChartSpec, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
+import { createDashboard, addChartToDashboard, resolveDatabaseId, validateChartSpec, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
 
 export const runtime = 'nodejs'
 
@@ -24,16 +24,19 @@ export async function POST(req: Request) {
   if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
-  const { connectionLabel, sql, dashboardTitle, chartName, chart } = body as {
+  const { connectionLabel, sql, dashboardTitle, chartName, chart, targetDashboardId } = body as {
     connectionLabel?: string
     sql?: string
     dashboardTitle?: string
     chartName?: string
     chart?: ChartSpec
+    targetDashboardId?: number   // when set, ADD this chart to an existing dashboard instead of creating a new one
   }
 
-  if (!connectionLabel || !sql || !dashboardTitle || !chart?.vizType) {
-    return Response.json({ error: 'connectionLabel, sql, dashboardTitle and chart.vizType are required' }, { status: 400 })
+  // dashboardTitle is required for a new dashboard; when adding to an existing one
+  // it's used as the chart name if chartName is omitted.
+  if (!connectionLabel || !sql || !chart?.vizType || (!targetDashboardId && !dashboardTitle)) {
+    return Response.json({ error: 'connectionLabel, sql, chart.vizType and (dashboardTitle or targetDashboardId) are required' }, { status: 400 })
   }
   if (!VALID_VIZ.has(chart.vizType)) {
     return Response.json({ error: `Unsupported chart type "${chart.vizType}"` }, { status: 400 })
@@ -87,14 +90,24 @@ export async function POST(req: Request) {
 
   // Unique-ish names to avoid collisions across repeated builds.
   const stamp = Date.now().toString(36)
-  const result = await createDashboard({
-    supersetDatabaseId: dbId,
-    sql,
-    datasetName: `mosaic_${stamp}`,
-    chartName: chartName || dashboardTitle,
-    dashboardTitle,
-    chart,
-  })
+  const chartLabel = chartName || dashboardTitle || `Chart ${stamp}`
+  const result = targetDashboardId
+    ? await addChartToDashboard({
+        supersetDatabaseId: dbId,
+        sql,
+        datasetName: `mosaic_${stamp}`,
+        chartName: chartLabel,
+        chart,
+        dashboardId: targetDashboardId,
+      })
+    : await createDashboard({
+        supersetDatabaseId: dbId,
+        sql,
+        datasetName: `mosaic_${stamp}`,
+        chartName: chartLabel,
+        dashboardTitle: dashboardTitle!,
+        chart,
+      })
 
   if (!result.ok) {
     return Response.json({ error: `Failed at ${result.step}: ${result.reason}`, ...result }, { status: 502 })

@@ -316,6 +316,117 @@ export async function createDashboard(input: CreateDashboardInput): Promise<Crea
   return { ok: true, datasetId, chartId, dashboardId }
 }
 
+// ── Multi-chart: add another chart (from another query) to an EXISTING dashboard ──
+//
+// Superset renders a dashboard from its position_json layout, NOT just from the
+// chart<->dashboard link. So to add a chart we must (a) create the dataset+chart,
+// then (b) merge a node for it into the dashboard's position_json grid. Charts that
+// are linked but missing from position_json are attached-but-invisible.
+
+// Build (or extend) a position_json layout so that `chartIds` render stacked, each
+// full-width, in the order given. We regenerate the whole layout from the chart
+// list each time — simpler and deterministic than diffing an existing grid, and the
+// charts + their order are the source of truth.
+function buildPositionJson(chartIds: { id: number; name: string }[]): string {
+  const layout: Record<string, unknown> = {
+    DASHBOARD_VERSION_KEY: 'v2',
+    ROOT_ID: { type: 'ROOT', id: 'ROOT_ID', children: ['GRID_ID'] },
+    GRID_ID: { type: 'GRID', id: 'GRID_ID', children: [] as string[], parents: ['ROOT_ID'] },
+    HEADER_ID: { id: 'HEADER_ID', type: 'HEADER', meta: { text: '' } },
+  }
+  const gridChildren: string[] = []
+  chartIds.forEach((c, i) => {
+    const rowId = `ROW-${i}`
+    const chartNodeId = `CHART-${c.id}`
+    layout[rowId] = {
+      type: 'ROW', id: rowId, children: [chartNodeId], parents: ['ROOT_ID', 'GRID_ID'],
+      meta: { background: 'BACKGROUND_TRANSPARENT' },
+    }
+    layout[chartNodeId] = {
+      type: 'CHART', id: chartNodeId, children: [], parents: ['ROOT_ID', 'GRID_ID', rowId],
+      meta: { chartId: c.id, sliceName: c.name, width: 12, height: 50, uuid: undefined },
+    }
+    gridChildren.push(rowId)
+  })
+  ;(layout.GRID_ID as { children: string[] }).children = gridChildren
+  return JSON.stringify(layout)
+}
+
+export interface AddChartInput {
+  supersetDatabaseId: number
+  sql: string
+  datasetName: string
+  chartName: string
+  chart: ChartSpec
+  dashboardId: number   // the EXISTING dashboard to add to
+}
+
+export async function addChartToDashboard(input: AddChartInput): Promise<CreateDashboardResult> {
+  const auth = await authenticate()
+  if (!auth) return { ok: false, step: 'auth', reason: 'Could not authenticate with Superset' }
+
+  // 1. dataset + 2. metric + 3. chart — same as createDashboard's build steps.
+  const built = await createDatasetAndChart(auth, input)
+  if (!built.ok) return built
+  const { datasetId, chartId } = built
+
+  // 4. link the new chart to the dashboard.
+  const link = await api(auth, 'PUT', `/api/v1/chart/${chartId}`, { dashboards: [input.dashboardId] })
+  if (!link.ok) return { ok: false, step: 'link', reason: reasonFrom(link), datasetId, chartId, dashboardId: input.dashboardId }
+
+  // 5. rebuild the dashboard's layout to include ALL its charts (existing + new),
+  //    so the new one actually renders.
+  const dashRes = await api(auth, 'GET', `/api/v1/dashboard/${input.dashboardId}/charts`)
+  const charts = (dashRes.json.result as { id: number; slice_name: string }[] | undefined) || []
+  const ordered = charts.map(c => ({ id: c.id, name: c.slice_name }))
+  // Ensure the just-created chart is present (the charts endpoint can lag).
+  if (!ordered.some(c => c.id === chartId)) ordered.push({ id: chartId!, name: input.chartName })
+
+  const positionJson = buildPositionJson(ordered)
+  const put = await api(auth, 'PUT', `/api/v1/dashboard/${input.dashboardId}`, { position_json: positionJson })
+  if (!put.ok) return { ok: false, step: 'dashboard', reason: reasonFrom(put), datasetId, chartId, dashboardId: input.dashboardId }
+
+  log.info({ service: 'superset-dashboard' }, `Added chart "${input.chartName}" (id ${chartId}) to dashboard ${input.dashboardId}`)
+  return { ok: true, datasetId, chartId, dashboardId: input.dashboardId }
+}
+
+// Shared: create the virtual dataset, define its metric, and create the chart.
+// Used by both createDashboard and addChartToDashboard.
+async function createDatasetAndChart(auth: Auth, input: { supersetDatabaseId: number; sql: string; datasetName: string; chartName: string; chart: ChartSpec }): Promise<CreateDashboardResult> {
+  const ds = await api(auth, 'POST', '/api/v1/dataset/', {
+    database: input.supersetDatabaseId,
+    table_name: input.datasetName,
+    sql: input.sql,
+  })
+  if (!ds.ok || !ds.json.id) return { ok: false, step: 'dataset', reason: reasonFrom(ds) }
+  const datasetId = ds.json.id as number
+
+  const metricName = input.chart.value ? `${input.chart.value}_m` : 'value_m'
+  if (input.chart.vizType !== 'table' && input.chart.value) {
+    const put = await api(auth, 'PUT', `/api/v1/dataset/${datasetId}?override_columns=true`, {
+      metrics: [{ metric_name: metricName, expression: `MAX(${input.chart.value})`, metric_type: 'max' }],
+    })
+    if (!put.ok) {
+      await api(auth, 'DELETE', `/api/v1/dataset/${datasetId}`).catch(() => {})
+      return { ok: false, step: 'dataset', reason: `could not define metric: ${reasonFrom(put)}`, datasetId }
+    }
+  }
+
+  const params = buildParams(datasetId, input.chart, metricName)
+  const chart = await api(auth, 'POST', '/api/v1/chart/', {
+    slice_name: input.chartName,
+    viz_type: SUPERSET_VIZ[input.chart.vizType],
+    datasource_id: datasetId,
+    datasource_type: 'table',
+    params: JSON.stringify(params),
+  })
+  if (!chart.ok || !chart.json.id) {
+    await api(auth, 'DELETE', `/api/v1/dataset/${datasetId}`).catch(() => {})
+    return { ok: false, step: 'chart', reason: reasonFrom(chart), datasetId }
+  }
+  return { ok: true, datasetId, chartId: chart.json.id as number }
+}
+
 function reasonFrom(r: { code: number; json: Record<string, unknown> }): string {
   const msg = (r.json.message as string) ||
     (Array.isArray(r.json.errors) ? (r.json.errors[0] as { message?: string })?.message : '') ||
