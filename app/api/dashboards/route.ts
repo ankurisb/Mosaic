@@ -11,6 +11,8 @@ export async function GET() {
   const rows = await sql`
     SELECT d.id, d.name, d.description, d.owner_id, d.is_public,
            d.refresh_sec, d.created_at, d.updated_at, d.superset_embed_uuid,
+           d.source_kind, d.source_sql, d.source_connection, d.source_chart_spec,
+           d.superset_dashboard_id, d.superset_chart_id, d.superset_dataset_id,
            COUNT(p.id) AS panel_count
     FROM   dashboards d
     LEFT JOIN dashboard_panels p ON p.dashboard_id = d.id

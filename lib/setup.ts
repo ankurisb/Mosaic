@@ -298,6 +298,19 @@ export async function setupDatabase() {
   await sql`CREATE INDEX IF NOT EXISTS idx_panels_dashboard ON dashboard_panels(dashboard_id, sort_order)`.catch(() => {})
   await sql`ALTER TABLE dashboards ADD COLUMN superset_embed_uuid TEXT`.catch(() => {})
 
+  // Persist what Mosaic knows about a dashboard it BUILT in Superset from a query
+  // (the query is authored here but otherwise only lives in Superset's virtual
+  // dataset). Lets Mosaic show "dashboards I created" with their SQL, and re-open
+  // / re-run them without spelunking Superset. Nullable — only set for the
+  // build-in-Superset flow; embed-only and native dashboards leave them empty.
+  await sql`ALTER TABLE dashboards ADD COLUMN source_kind TEXT`.catch(() => {})          // 'superset_query' | null
+  await sql`ALTER TABLE dashboards ADD COLUMN source_sql TEXT`.catch(() => {})           // the authored SQL
+  await sql`ALTER TABLE dashboards ADD COLUMN source_connection TEXT`.catch(() => {})    // connection label the SQL ran against
+  await sql`ALTER TABLE dashboards ADD COLUMN source_chart_spec TEXT`.catch(() => {})    // JSON chart spec (vizType, dimension, metric…)
+  await sql`ALTER TABLE dashboards ADD COLUMN superset_dashboard_id INTEGER`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN superset_chart_id INTEGER`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN superset_dataset_id INTEGER`.catch(() => {})
+
   // -- Notification recipient groups ----------------------------
   await sql`CREATE TABLE IF NOT EXISTS notification_groups (
     id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

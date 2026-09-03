@@ -8,6 +8,8 @@
 // (execute + confirm rows) for the first gate, then confirms the chart mapping,
 // then calls this. So everything here is already user-approved.
 import { getSession } from '@/lib/auth'
+import { getDb } from '@/lib/db'
+import { log } from '@/lib/logger'
 import { createDashboard, resolveDatabaseId, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
 
 export const runtime = 'nodejs'
@@ -65,5 +67,28 @@ export async function POST(req: Request) {
   if (!result.ok) {
     return Response.json({ error: `Failed at ${result.step}: ${result.reason}`, ...result }, { status: 502 })
   }
+
+  // Persist a record in Mosaic of the dashboard it just built in Superset, so the
+  // authored query doesn't only live in Superset's virtual dataset. Best-effort —
+  // a bookkeeping failure must not fail the (already successful) build.
+  try {
+    const sqlDb = getDb()
+    const publicUrl = (await import('@/lib/superset-auth')
+      .then(m => m.supersetSetting('SUPERSET_PUBLIC_URL', process.env.SUPERSET_PUBLIC_URL || ''))
+      .catch(() => '')) as string
+    void publicUrl // (link is derived in the UI from status + superset_dashboard_id)
+    await sqlDb`
+      INSERT INTO dashboards
+        (name, description, owner_id, source_kind, source_sql, source_connection,
+         source_chart_spec, superset_dashboard_id, superset_chart_id, superset_dataset_id)
+      VALUES
+        (${dashboardTitle}, ${'Built in Superset from a Mosaic query'}, ${session.id},
+         ${'superset_query'}, ${sql}, ${connectionLabel},
+         ${JSON.stringify(chart)}, ${result.dashboardId ?? null}, ${result.chartId ?? null}, ${result.datasetId ?? null})
+    `
+  } catch (e) {
+    log.warn({ service: 'superset-create-dashboard', err: (e as Error).message }, 'built dashboard but failed to record it in Mosaic')
+  }
+
   return Response.json(result)
 }

@@ -196,6 +196,16 @@ export async function setupDatabasePostgres(): Promise<void> {
     updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
+  // Metadata for dashboards Mosaic BUILT in Superset from a query (mirrors the
+  // SQLite migration). Postgres supports ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS source_kind TEXT`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS source_sql TEXT`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS source_connection TEXT`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS source_chart_spec TEXT`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS superset_dashboard_id INTEGER`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS superset_chart_id INTEGER`.catch(() => {})
+  await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS superset_dataset_id INTEGER`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS dashboard_panels (
     id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     dashboard_id TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
