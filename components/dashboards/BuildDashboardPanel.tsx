@@ -25,7 +25,10 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
   onClose: () => void
   onBuilt: (msg: string) => void
 }) {
+  const [mode, setMode]     = useState<'new' | 'existing'>('new')
   const [title, setTitle]   = useState('')
+  const [targetId, setTargetId] = useState<number | ''>('')  // Superset dashboard id to add to
+  const [existing, setExisting] = useState<{ supersetId: number; name: string }[]>([])
   const [vizType, setViz]   = useState('bar')
   const [dimension, setDim] = useState(columns[0] || '')
   const [value, setValue]   = useState(columns[1] || columns[0] || '')
@@ -37,6 +40,16 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
   const [buildError, setBuildError] = useState('')
 
   const viz = VIZ_TYPES.find(v => v.value === vizType)!
+
+  // Load the user's existing query-built dashboards (to offer "add to existing").
+  useEffect(() => {
+    fetch('/api/dashboards').then(r => r.ok ? r.json() : { dashboards: [] }).then(d => {
+      const rows = (d.dashboards || [])
+        .filter((x: { source_kind?: string; superset_dashboard_id?: number }) => x.source_kind === 'superset_query' && x.superset_dashboard_id != null)
+        .map((x: { superset_dashboard_id: number; name: string }) => ({ supersetId: x.superset_dashboard_id, name: x.name }))
+      setExisting(rows)
+    }).catch(() => {})
+  }, [])
 
   const chartSpec = useCallback(() => {
     if (vizType === 'table') return { vizType, columns: tableCols }
@@ -66,19 +79,26 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
   }, [connectionLabel, sql, chartSpec])
 
   async function build() {
-    if (!title.trim() || !validation?.valid) return
+    const addingToExisting = mode === 'existing'
+    if (addingToExisting ? !targetId : !title.trim()) return
+    if (!validation?.valid) return
     setBuilding(true); setBuildError('')
     try {
+      const payload: Record<string, unknown> = { connectionLabel, sql, chartName: (title.trim() || 'Chart'), chart: chartSpec() }
+      if (addingToExisting) { payload.targetDashboardId = targetId }
+      else { payload.dashboardTitle = title.trim() }
       const res = await fetch('/api/superset/create-dashboard', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionLabel, sql, dashboardTitle: title.trim(), chartName: title.trim(), chart: chartSpec() }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok || !data.ok) {
         setBuildError(data.error || `Build failed (HTTP ${res.status})`)
         return
       }
-      onBuilt(`Dashboard "${title.trim()}" built in Superset.`)
+      onBuilt(addingToExisting
+        ? `Chart added to "${existing.find(e => e.supersetId === targetId)?.name || 'dashboard'}".`
+        : `Dashboard "${title.trim()}" built in Superset.`)
       onClose()
     } catch (e) {
       setBuildError(e instanceof Error ? e.message : 'Build failed')
@@ -86,6 +106,8 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
       setBuilding(false)
     }
   }
+
+  const canBuild = !!validation?.valid && (mode === 'existing' ? !!targetId : !!title.trim()) && !building
 
   const field = (label: string, node: React.ReactNode) => (
     <div style={{ marginBottom: 12 }}>
@@ -108,8 +130,35 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
             Builds a Superset dashboard from this query on <b style={{ color: 'var(--text2)' }}>{connectionLabel}</b>. The result columns are: {columns.join(', ')}.
           </div>
 
-          {field('Dashboard title', (
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Avg temperature by machine" style={selStyle} />
+          {/* New dashboard vs add to an existing one (multi-chart). Only offer the
+              toggle when there IS an existing query-built dashboard to add to. */}
+          {existing.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', padding: 3 }}>
+              {(['new', 'existing'] as const).map(m => (
+                <button key={m} onClick={() => setMode(m)}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: mode === m ? 'var(--surface)' : 'transparent', color: mode === m ? 'var(--text)' : 'var(--text3)', fontSize: 12, fontWeight: mode === m ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: mode === m ? 'var(--shadow)' : 'none' }}>
+                  {m === 'new' ? 'New dashboard' : 'Add to existing'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mode === 'existing' ? (
+            field('Add this chart to', (
+              <select value={targetId} onChange={e => setTargetId(e.target.value ? Number(e.target.value) : '')} style={selStyle}>
+                <option value="">Select a dashboard…</option>
+                {existing.map(d => <option key={d.supersetId} value={d.supersetId}>{d.name}</option>)}
+              </select>
+            ))
+          ) : (
+            field('Dashboard title', (
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Avg temperature by machine" style={selStyle} />
+            ))
+          )}
+
+          {/* When adding to an existing dashboard, still let the user name this chart. */}
+          {mode === 'existing' && field('Chart name', (
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Peak temperature" style={selStyle} />
           ))}
 
           {field('Chart type', (
@@ -172,9 +221,9 @@ export function BuildDashboardPanel({ connectionLabel, sql, columns, onClose, on
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
             <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-            <button onClick={build} disabled={!title.trim() || !validation?.valid || building}
-              style={{ padding: '8px 18px', borderRadius: 'var(--radius-pill)', border: 'none', background: (!title.trim() || !validation?.valid || building) ? 'var(--bg3)' : 'var(--accent-bg)', color: (!title.trim() || !validation?.valid || building) ? 'var(--text4)' : 'var(--accent-fg)', fontSize: 13, fontWeight: 500, cursor: (!title.trim() || !validation?.valid || building) ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-              {building ? 'Building…' : 'Build in Superset'}
+            <button onClick={build} disabled={!canBuild}
+              style={{ padding: '8px 18px', borderRadius: 'var(--radius-pill)', border: 'none', background: !canBuild ? 'var(--bg3)' : 'var(--accent-bg)', color: !canBuild ? 'var(--text4)' : 'var(--accent-fg)', fontSize: 13, fontWeight: 500, cursor: !canBuild ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              {building ? 'Building…' : (mode === 'existing' ? 'Add chart' : 'Build in Superset')}
             </button>
           </div>
         </div>

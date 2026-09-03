@@ -311,6 +311,22 @@ export async function setupDatabase() {
   await sql`ALTER TABLE dashboards ADD COLUMN superset_chart_id INTEGER`.catch(() => {})
   await sql`ALTER TABLE dashboards ADD COLUMN superset_dataset_id INTEGER`.catch(() => {})
 
+  // Per-chart records for dashboards Mosaic built in Superset. A dashboard can hold
+  // MANY charts, each from its own query — this is the one-row-per-(dashboard,chart)
+  // store. The dashboards.* superset_* columns above hold the FIRST chart for back-
+  // compat; new charts (including the first, going forward) also land here.
+  await sql`CREATE TABLE IF NOT EXISTS dashboard_charts (
+    id                    TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    dashboard_id          TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    chart_name            TEXT NOT NULL DEFAULT '',
+    source_sql            TEXT NOT NULL DEFAULT '',
+    source_connection     TEXT NOT NULL DEFAULT '',
+    source_chart_spec     TEXT NOT NULL DEFAULT '{}',
+    superset_chart_id     INTEGER,
+    superset_dataset_id   INTEGER,
+    created_at            TEXT DEFAULT (datetime('now'))
+  )`
+
   // -- Notification recipient groups ----------------------------
   await sql`CREATE TABLE IF NOT EXISTS notification_groups (
     id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

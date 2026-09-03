@@ -206,6 +206,18 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS superset_chart_id INTEGER`.catch(() => {})
   await sql`ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS superset_dataset_id INTEGER`.catch(() => {})
 
+  await sql`CREATE TABLE IF NOT EXISTS dashboard_charts (
+    id                    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    dashboard_id          TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    chart_name            TEXT NOT NULL DEFAULT '',
+    source_sql            TEXT NOT NULL DEFAULT '',
+    source_connection     TEXT NOT NULL DEFAULT '',
+    source_chart_spec     TEXT NOT NULL DEFAULT '{}',
+    superset_chart_id     INTEGER,
+    superset_dataset_id   INTEGER,
+    created_at            TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+
   await sql`CREATE TABLE IF NOT EXISTS dashboard_panels (
     id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     dashboard_id TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,

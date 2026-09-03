@@ -8,7 +8,7 @@
 // (execute + confirm rows) for the first gate, then confirms the chart mapping,
 // then calls this. So everything here is already user-approved.
 import { getSession } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { createDashboard, addChartToDashboard, resolveDatabaseId, validateChartSpec, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
 
@@ -113,24 +113,45 @@ export async function POST(req: Request) {
     return Response.json({ error: `Failed at ${result.step}: ${result.reason}`, ...result }, { status: 502 })
   }
 
-  // Persist a record in Mosaic of the dashboard it just built in Superset, so the
-  // authored query doesn't only live in Superset's virtual dataset. Best-effort —
-  // a bookkeeping failure must not fail the (already successful) build.
+  // Persist in Mosaic. A dashboard can hold many charts, so records live in
+  // dashboard_charts (one row per chart). For a NEW dashboard we also create the
+  // parent dashboards row; for an ADD we find the existing parent and just append a
+  // chart row — no phantom duplicate dashboard. Best-effort: bookkeeping failure
+  // must not fail the (already successful) build.
   try {
     const sqlDb = getDb()
-    const publicUrl = (await import('@/lib/superset-auth')
-      .then(m => m.supersetSetting('SUPERSET_PUBLIC_URL', process.env.SUPERSET_PUBLIC_URL || ''))
-      .catch(() => '')) as string
-    void publicUrl // (link is derived in the UI from status + superset_dashboard_id)
-    await sqlDb`
-      INSERT INTO dashboards
-        (name, description, owner_id, source_kind, source_sql, source_connection,
-         source_chart_spec, superset_dashboard_id, superset_chart_id, superset_dataset_id)
-      VALUES
-        (${dashboardTitle}, ${'Built in Superset from a Mosaic query'}, ${session.id},
-         ${'superset_query'}, ${sql}, ${connectionLabel},
-         ${JSON.stringify(chart)}, ${result.dashboardId ?? null}, ${result.chartId ?? null}, ${result.datasetId ?? null})
-    `
+    let mosaicDashId: string | null = null
+
+    if (targetDashboardId) {
+      // Find the Mosaic dashboard that owns this Superset dashboard.
+      const [row] = await sqlDb`SELECT id FROM dashboards WHERE superset_dashboard_id = ${targetDashboardId} LIMIT 1` as unknown as { id: string }[]
+      mosaicDashId = row?.id ?? null
+    } else {
+      const inserted = await sqlDb`
+        INSERT INTO dashboards
+          (name, description, owner_id, source_kind, source_sql, source_connection,
+           source_chart_spec, superset_dashboard_id, superset_chart_id, superset_dataset_id)
+        VALUES
+          (${dashboardTitle}, ${'Built in Superset from a Mosaic query'}, ${session.id},
+           ${'superset_query'}, ${sql}, ${connectionLabel},
+           ${JSON.stringify(chart)}, ${result.dashboardId ?? null}, ${result.chartId ?? null}, ${result.datasetId ?? null})
+        RETURNING id
+      ` as unknown as { id: string }[]
+      mosaicDashId = inserted[0]?.id ?? null
+    }
+
+    if (mosaicDashId) {
+      await sqlDb`
+        INSERT INTO dashboard_charts
+          (dashboard_id, chart_name, source_sql, source_connection, source_chart_spec,
+           superset_chart_id, superset_dataset_id)
+        VALUES
+          (${mosaicDashId}, ${chartLabel}, ${sql}, ${connectionLabel}, ${JSON.stringify(chart)},
+           ${result.chartId ?? null}, ${result.datasetId ?? null})
+      `
+      // Keep the dashboard's updated_at fresh so it sorts to the top after an add.
+      await sqlDb`UPDATE dashboards SET updated_at = ${nowExpr()} WHERE id = ${mosaicDashId}`.catch(() => {})
+    }
   } catch (e) {
     log.warn({ service: 'superset-create-dashboard', err: (e as Error).message }, 'built dashboard but failed to record it in Mosaic')
   }
