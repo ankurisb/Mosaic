@@ -218,6 +218,19 @@ export async function setupDatabasePostgres(): Promise<void> {
     created_at            TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
+  await sql`CREATE TABLE IF NOT EXISTS saved_queries (
+    id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    owner_id          TEXT REFERENCES users(id) ON DELETE CASCADE,
+    name              TEXT NOT NULL,
+    description       TEXT NOT NULL DEFAULT '',
+    connection_id     TEXT,
+    connection_label  TEXT NOT NULL DEFAULT '',
+    connection_type   TEXT NOT NULL DEFAULT 'db',
+    query             TEXT NOT NULL DEFAULT '',
+    created_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+
   await sql`CREATE TABLE IF NOT EXISTS dashboard_panels (
     id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     dashboard_id TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,

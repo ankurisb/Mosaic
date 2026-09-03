@@ -158,7 +158,24 @@ export default function TabQueryRunner() {
       setConnections(all)
       if (all.length > 0) setSelectedId(all[0].id)
     })
-    try { const s = localStorage.getItem('mosaic_saved_queries'); if (s) setSavedQueries(JSON.parse(s)) } catch {}
+    // Load saved queries from the DB (single source of truth). One-time migration:
+    // if the old browser localStorage store has queries, push them to the DB then
+    // clear it, so nothing a user saved before is lost.
+    ;(async () => {
+      try {
+        const legacy = localStorage.getItem('mosaic_saved_queries')
+        if (legacy) {
+          const arr = JSON.parse(legacy) as { label: string; connectionId?: string; connectionLabel?: string; query: string }[]
+          for (const q of arr) {
+            if (!q.label || !q.query) continue
+            await fetch('/api/saved-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'create', name: q.label, connection_id: q.connectionId, connection_label: q.connectionLabel, query: q.query }) }).catch(() => {})
+          }
+          localStorage.removeItem('mosaic_saved_queries')
+        }
+      } catch {}
+      loadSavedQueries()
+    })()
   }, [])
 
   // ── Schema / table dropdown ───────────────────────────────────────────
@@ -225,21 +242,40 @@ export default function TabQueryRunner() {
   // Close saved panel on outside click
   useEffect(() => { const h = (e: MouseEvent) => { if (savedPanelRef.current && !savedPanelRef.current.contains(e.target as Node)) setShowSavedPanel(false) }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h) }, [])
 
-  // ── Saved queries ─────────────────────────────────────────────────────
-  function saveQuery() {
+  // ── Saved queries (DB-backed — the single source of truth) ────────────
+  async function saveQuery() {
     if (!saveLabel.trim() || !selectedConn) return
-    const sq: SavedQuery = { id: Date.now().toString(), label: saveLabel.trim(), connectionId: selectedId, connectionLabel: selectedConn.label, query: query.trim(), savedAt: new Date().toISOString() }
-    const updated = [sq, ...savedQueries].slice(0, 50); setSavedQueries(updated)
-    try { localStorage.setItem('mosaic_saved_queries', JSON.stringify(updated)) } catch {}
+    try {
+      await fetch('/api/saved-queries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create', name: saveLabel.trim(),
+          connection_id: selectedId, connection_label: selectedConn.label,
+          connection_type: selectedConn.type ?? 'db', query: query.trim(),
+        }),
+      })
+      await loadSavedQueries()
+    } catch {}
     setSaveLabel(''); setShowSave(false)
   }
-  function deleteSaved(id: string) { const u = savedQueries.filter(q => q.id !== id); setSavedQueries(u); try { localStorage.setItem('mosaic_saved_queries', JSON.stringify(u)) } catch {} }
+  async function loadSavedQueries() {
+    try {
+      const r = await fetch('/api/saved-queries')
+      const d = await r.json()
+      const rows: SavedQuery[] = (d.queries || []).map((q: Record<string, string>) => ({
+        id: q.id, label: q.name, connectionId: q.connection_id || '',
+        connectionLabel: q.connection_label || '', query: q.query, savedAt: q.updated_at || q.created_at,
+      }))
+      setSavedQueries(rows)
+    } catch {}
+  }
+  async function deleteSaved(id: string) {
+    setSavedQueries(savedQueries.filter(q => q.id !== id))
+    try { await fetch('/api/saved-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) }) } catch {}
+  }
   function loadSaved(sq: SavedQuery) {
     const conn = connections.find(c => c.id === sq.connectionId) ?? connections.find(c => c.label === sq.connectionLabel)
-    if (conn) {
-      setSelectedId(conn.id); setSelectedTable(''); setTableOptions([])
-      if (!sq.connectionId || sq.connectionId !== conn.id) { const u = savedQueries.map(q => q.id === sq.id ? { ...q, connectionId: conn.id } : q); setSavedQueries(u); try { localStorage.setItem('mosaic_saved_queries', JSON.stringify(u)) } catch {} }
-    }
+    if (conn) { setSelectedId(conn.id); setSelectedTable(''); setTableOptions([]) }
     setQuery(sq.query); setResult(null); setError(null)
     setShowSavedPanel(false); setSavedSearch('')
   }
