@@ -45,11 +45,14 @@ export async function POST(req: Request) {
   }
 
   // Reuse the query-runner internally (same execution path the user's preview uses).
+  // Call the app's OWN internal port, not new URL(req.url).origin — behind Caddy that
+  // origin is the external https://localhost, which the container can't reach / whose
+  // self-signed cert Node rejects ("fetch failed"). The app listens on 3001 inside.
   let columns: string[] = []
   let rows: Record<string, unknown>[] = []
   try {
-    const origin = new URL(req.url).origin
-    const res = await fetch(`${origin}/api/query-runner`, {
+    const internal = `http://127.0.0.1:${process.env.PORT || '3001'}`
+    const res = await fetch(`${internal}/api/query-runner`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: req.headers.get('cookie') || '' },
       body: JSON.stringify({ connectionId: conn.id, query: sql, limit: 200 }),

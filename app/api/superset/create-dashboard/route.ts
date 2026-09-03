@@ -52,8 +52,8 @@ export async function POST(req: Request) {
     const dbConn = getDb()
     const [c] = await dbConn`SELECT id FROM db_connections WHERE label = ${connectionLabel} LIMIT 1` as unknown as { id: string }[]
     if (c) {
-      const origin = new URL(req.url).origin
-      const qr = await fetch(`${origin}/api/query-runner`, {
+      const internal = `http://127.0.0.1:${process.env.PORT || '3001'}`
+      const qr = await fetch(`${internal}/api/query-runner`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: req.headers.get('cookie') || '' },
         body: JSON.stringify({ connectionId: c.id, query: sql, limit: 200 }),
