@@ -7,7 +7,7 @@ import { safeJson } from '@/lib/fetch'
 interface Condition {
   id: string; source_type: string; source_id: string
   field: string; op: string; value: number; logic: string; query: string
-  saved_query_id?: string
+  saved_query_id?: string; match_mode?: string
 }
 interface RuleAction {
   type: string; channel_id: string | null; channel_type: string
@@ -40,7 +40,7 @@ interface AlertRun {
   id: string; triggered_at: string; status: string
   message_sent: string | null; error: string | null; latency_ms: number
 }
-const ALERT_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', saved_query_id: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
+const ALERT_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', saved_query_id: '', match_mode: 'first', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
 const TRIGGER_TYPE_OPTS = [
   { value: 'threshold',    label: 'Threshold alert' },
   { value: 'schedule',     label: 'Scheduled report' },
@@ -169,7 +169,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     try {
       const action = alertEditing ? 'update' : 'create'
       const condition: Record<string, unknown> = {}
-      if (alertForm.trigger_type === 'threshold') { condition.operator = alertForm.op; condition.value = Number(alertForm.threshold); condition.column = alertForm.column }
+      if (alertForm.trigger_type === 'threshold') { condition.operator = alertForm.op; condition.value = Number(alertForm.threshold); condition.column = alertForm.column; condition.match_mode = alertForm.match_mode }
       if (alertForm.trigger_type === 'schedule')  { condition.interval_sec = Number(alertForm.interval) }
       if (alertForm.source_type === 'file_server' && alertForm.trigger_type !== 'rca_complete') { condition.file_format = alertForm.file_format }
       const body: Record<string, unknown> = { action, name: alertForm.name.trim(), active: alertForm.active, trigger_type: alertForm.trigger_type, source_type: alertForm.source_type, source_id: alertForm.source_id || null, query: alertForm.query || null, saved_query_id: alertForm.saved_query_id || null, condition, channel_id: alertForm.channel_id, message_template: alertForm.message_template }
@@ -357,6 +357,15 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               {savedQueries.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries yet. Create one in the Query Builder, then pick it here.</div>
               )}
+              {/* Match mode: compare the first result row, or fire if ANY row matches
+                  (e.g. 'alert if any machine is over threshold'). */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Trigger when</span>
+                <select style={{ ...SEL_A, width: 150, fontSize: 12 }} value={alertForm.match_mode} onChange={e => setAlertForm(p => ({ ...p, match_mode: e.target.value }))}>
+                  <option value="first">the result matches</option>
+                  <option value="any">any row matches</option>
+                </select>
+              </div>
             </div>
           )}
           {alertForm.trigger_type === 'schedule' && (
@@ -406,7 +415,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               {isAdmin && (
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => toggleAlert(rule.id)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>{rule.active ? 'Pause' : 'Resume'}</button>
-                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), match_mode: String(rule.condition.match_mode || 'first'), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
                   <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
                 </div>
               )}
@@ -744,6 +753,10 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                   {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
                 </select>
                 <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
+                <select style={{ ...SEL, width: 110, fontSize: 11 }} value={c.match_mode || 'first'} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, match_mode: e.target.value } : x) }))} title="Evaluate the first result row, or fire if any row matches">
+                  <option value="first">first row</option>
+                  <option value="any">any row</option>
+                </select>
               </div>
               <div style={{ marginTop: 6, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
                 {c.source_type === 'api' ? (
@@ -780,7 +793,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
             </div>
           </div>
         ))}
-        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND', query: '', saved_query_id: '' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND', query: '', saved_query_id: '', match_mode: 'first' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
           + Add condition
         </button>
       </Section>

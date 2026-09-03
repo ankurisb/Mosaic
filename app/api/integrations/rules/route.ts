@@ -29,24 +29,8 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { action } = body
 
-  // -- Source validation (shared by create + update) -------------
-  // Threshold and schedule rules MUST have a valid source bound; otherwise
-  // the scheduler silently skips them (see app/api/integrations/scheduler/route.ts).
-  // rca_complete rules don't run a query, so they're exempt.
-  const VALID_SOURCE_TYPES = ['database', 'api', 'file_server'] as const
-  function validateSource(triggerType: string, srcType: unknown, srcId: unknown, q: unknown) {
-    if (triggerType !== 'threshold' && triggerType !== 'schedule') return null
-    if (!srcId || typeof srcId !== 'string' || !srcId.trim()) {
-      return 'Source is required for threshold and schedule rules'
-    }
-    if (!srcType || !VALID_SOURCE_TYPES.includes(srcType as typeof VALID_SOURCE_TYPES[number])) {
-      return `Source type must be one of: ${VALID_SOURCE_TYPES.join(', ')}`
-    }
-    if (!q || typeof q !== 'string' || !q.trim()) {
-      return 'Query is required for threshold and schedule rules'
-    }
-    return null
-  }
+  // Threshold/schedule rules must reference a saved query (validated inline at
+  // create/update). Legacy inline-source validation was removed in Step 3b.
 
   // -- CREATE ----------------------------------------------------
   if (action === 'create') {
