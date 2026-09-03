@@ -8,9 +8,20 @@
 
 import { log } from '@/lib/logger'
 
-const SUPERSET_URL = process.env.SUPERSET_URL || 'http://localhost:8088'
-const SUPERSET_USER = process.env.SUPERSET_ADMIN_USER || 'admin'
-const SUPERSET_PASS = process.env.SUPERSET_ADMIN_PASSWORD || ''
+// Resolve Superset config settings-FIRST (kv_settings via supersetSetting) then
+// env. These MUST NOT be module-level env constants: docker-compose bakes in the
+// bundled defaults (superset:8088 / Admin1234!), so reading env at load time made
+// sync ignore a bring-your-own Superset's saved credentials and fail auth with a
+// 401 — while every other Superset endpoint (already migrated) worked. Resolve per
+// call instead.
+async function supersetCfg(): Promise<{ url: string; user: string; pass: string }> {
+  const { supersetSetting } = await import('./superset-auth')
+  return {
+    url: (await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')).replace(/\/$/, ''),
+    user: await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin'),
+    pass: await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || ''),
+  }
+}
 
 // Dialects that Superset can handle — others are claude-app only
 const SUPERSET_SUPPORTED_DIALECTS = ['postgres', 'mysql', 'mssql', 'clickhouse']
@@ -33,12 +44,13 @@ interface ConnectionParams {
 
 async function getSupersetToken(): Promise<string | null> {
   try {
-    const res = await fetch(`${SUPERSET_URL}/api/v1/security/login`, {
+    const { url, user, pass } = await supersetCfg()
+    const res = await fetch(`${url}/api/v1/security/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: SUPERSET_USER,
-        password: SUPERSET_PASS,
+        username: user,
+        password: pass,
         provider: 'db',
         refresh: false,
       }),
@@ -56,7 +68,8 @@ type CsrfPair = { csrfToken: string; sessionCookie: string | null }
 
 async function getCsrfToken(accessToken: string): Promise<CsrfPair | null> {
   try {
-    const res = await fetch(`${SUPERSET_URL}/api/v1/security/csrf_token/`, {
+    const { url } = await supersetCfg()
+    const res = await fetch(`${url}/api/v1/security/csrf_token/`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(5000),
     })
@@ -136,6 +149,8 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<SyncResult
     return { ok: false, status: 'failed', reason }
   }
 
+  const { url } = await supersetCfg()
+
   try {
     const accessToken = await getSupersetToken()
     if (!accessToken) {
@@ -165,13 +180,13 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<SyncResult
       }),
     }
 
-    const res = await fetch(`${SUPERSET_URL}/api/v1/database/`, {
+    const res = await fetch(`${url}/api/v1/database/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
         'X-CSRFToken': csrfToken,
-        Referer: SUPERSET_URL,
+        Referer: url,
         ...(sessionCookie ? { Cookie: sessionCookie } : {}),
       },
       body: JSON.stringify(body),
@@ -212,7 +227,8 @@ export async function syncToSuperset(conn: ConnectionParams): Promise<SyncResult
 async function findSupersetDatabaseId(accessToken: string, name: string): Promise<number | null> {
   try {
     const q = encodeURIComponent(`(filters:!((col:database_name,opr:eq,value:'${name.replace(/'/g, "\\'")}')))`)
-    const res = await fetch(`${SUPERSET_URL}/api/v1/database/?q=${q}`, {
+    const { url } = await supersetCfg()
+    const res = await fetch(`${url}/api/v1/database/?q=${q}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(5000),
     })
