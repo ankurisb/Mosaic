@@ -176,16 +176,30 @@ export async function GET() {
     (async () => {
     // Check n8n
       try {
-        let n8nUrl = process.env.N8N_URL || 'http://localhost:5678'
+        // Distinguish a saved BYO n8n from the compose scaffolding default. If only
+        // the default (n8n:5678 / localhost:5678) exists and it's unreachable, n8n
+        // isn't part of this deployment -> report 'unknown/not configured', not a
+        // scary 'down'. Same treatment as Superset/CISO/Airbyte.
+        let byo: string | null = null
         try {
           const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'N8N_URL'`
-          if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); n8nUrl = decrypt(rows[0].value_enc as string) }
+          if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); byo = decrypt(rows[0].value_enc as string) || null }
         } catch {}
+        const n8nUrl = byo || process.env.N8N_URL
+        if (!n8nUrl) {
+          return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
+        }
         const start = Date.now()
-        const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(8000) })
-        return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: n8nUrl })
+        try {
+          const res = await fetch(`${n8nUrl}/healthz`, { signal: AbortSignal.timeout(8000) })
+          return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: n8nUrl })
+        } catch {
+          // Unreachable + only the scaffolding default => not configured for this deployment.
+          if (!byo) return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
+          return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not reachable' })
+        }
       } catch {
-        return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not running' })
+        return ({ id: 'n8n', label: 'n8n Automation', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
       }
     
       

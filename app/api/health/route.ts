@@ -144,12 +144,18 @@ export async function GET() {
       // the container env). getKey() is env-FIRST, so it would return the bundled
       // default and probe the wrong host; resolveN8nUrl() is settings-first.
       (async (): Promise<ServiceStatus> => {
-        const { resolveN8nUrl } = await import('@/lib/n8n')
-        const url = await resolveN8nUrl().catch(() => null)
-        // Treat the bundled default as "configured" only when a bundled n8n is
-        // actually expected; if it's unreachable we still report its real status.
+        // A saved BYO N8N_URL is probed and its true status reported. If only the
+        // compose scaffolding default (http://n8n:5678) exists and it isn't
+        // reachable, n8n simply isn't part of this deployment (Personal, no bundled
+        // n8n) — report 'unconfigured', not a scary 'error', same as Superset/CISO.
+        const byo = await getKeySettingsFirstStrict('N8N_URL')
+        const url = byo || process.env.N8N_URL
         if (!url) return { status: 'unconfigured', detail: 'Set n8n URL in Settings → Keys' }
-        return probe(url, '/healthz')
+        const st = await probe(url, '/healthz')
+        if (st.status !== 'ok' && !byo) {
+          return { status: 'unconfigured', detail: 'n8n is not configured for this deployment' }
+        }
+        return st
       })(),
 
       // CISO Assistant — settings-first, same treatment as Superset: a BYO
