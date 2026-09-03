@@ -556,10 +556,13 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   const [loading, setLoading] = useState(isEdit)
   const [error, setError]     = useState('')
 
-  // Load connections
+  // Load connections. If a fetch fails, surface it rather than silently leaving the
+  // dropdowns empty (which looks like "no connections exist" when it's really a
+  // transient load failure).
   useEffect(() => {
     fetch('/api/connections').then(r => r.json()).then(d => setDbs(d.connections || []))
-    fetch('/api/services').then(r => r.json()).then(d => { setApis(d.services || []); setApiConns(d.connections || []) })
+      .catch(() => setError('Could not load database connections — refresh to retry.'))
+    fetch('/api/services').then(r => r.json()).then(d => { setApis(d.services || []); setApiConns(d.connections || []) }).catch(() => {})
     fetch('/api/saved-queries').then(r => r.json()).then(d => setSavedQueries(d.queries || [])).catch(() => {})
     fetch('/api/integrations/groups').then(r => r.json()).then(d => setGroups(d.groups || [])).catch(() => {})
   }, [])
