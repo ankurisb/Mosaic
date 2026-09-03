@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { BuildDashboardPanel } from '@/components/dashboards/BuildDashboardPanel'
+import { useSuperset } from '@/components/dashboards/useSuperset'
 
 type ConnType = 'db' | 'api' | 'fileserver'
 interface Connection { id: string; label: string; dialect: string; environment: string; type: ConnType; group: string; subgroup: string; shortLabel: string; hint: string; inputLabel: string }
@@ -66,6 +68,10 @@ export default function TabQueryRunner() {
   const [result, setResult] = useState<QueryResult | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Build-dashboard flow (Superset). Only offered for DB queries with a result set.
+  const [showBuild, setShowBuild] = useState(false)
+  const [buildToast, setBuildToast] = useState('')
+  const { status: supersetStatus } = useSuperset()
   const [limit, setLimit] = useState(500)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
@@ -413,7 +419,17 @@ export default function TabQueryRunner() {
         {result && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{result.rowCount} row{result.rowCount !== 1 ? 's' : ''} · {result.durationMs}ms · {result.label}{result.file ? ` · ${result.file}` : ''}</span>
-            <button onClick={exportCsv} style={GHOST_BTN}>{exported ? 'Exported ✓' : 'Export CSV'}</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {/* Build a Superset dashboard from this query — only for DB queries with
+                  rows, and only when Superset is configured. */}
+              {supersetStatus?.configured && result.rows.length > 0 && !isApi && query.trim() && (
+                <button onClick={() => setShowBuild(true)} style={{ ...GHOST_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="12" width="5" height="9" rx="1"/><rect x="10" y="6" width="5" height="15" rx="1"/><rect x="17" y="9" width="4" height="12" rx="1"/></svg>
+                  Build dashboard
+                </button>
+              )}
+              <button onClick={exportCsv} style={GHOST_BTN}>{exported ? 'Exported ✓' : 'Export CSV'}</button>
+            </div>
           </div>
         )}
         <div style={{ minHeight: 160 }}>
@@ -479,6 +495,20 @@ export default function TabQueryRunner() {
           })()}
         </div>
       </div>
+
+      {/* Build-dashboard panel (Superset) */}
+      {showBuild && result && selectedConn && (
+        <BuildDashboardPanel
+          connectionLabel={selectedConn.label}
+          sql={query.trim()}
+          columns={result.columns}
+          onClose={() => setShowBuild(false)}
+          onBuilt={(msg) => { setBuildToast(msg); setTimeout(() => setBuildToast(''), 3500) }}
+        />
+      )}
+      {buildToast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 1001 }}>{buildToast}</div>
+      )}
     </div>
   )
 }
