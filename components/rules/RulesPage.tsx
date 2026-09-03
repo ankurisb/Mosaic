@@ -753,16 +753,28 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                     Uses the selected API connection&rsquo;s configured endpoint.
                   </div>
                 ) : (
-                  // DB condition: pick a saved query, FILTERED to the selected connection.
-                  <>
-                    <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: e.target.value } : x) }))}>
-                      <option value="">Select a saved query…</option>
-                      {savedQueries.filter(q => q.connection_id === c.source_id).map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
-                    </select>
-                    {savedQueries.filter(q => q.connection_id === c.source_id).length === 0 && c.source_id && (
-                      <div style={{ fontSize: 10.5, color: 'var(--text4)', marginTop: 4 }}>No saved queries for this connection. Create one in the Query Builder.</div>
-                    )}
-                  </>
+                  // DB condition: pick a saved query, filtered to the selected
+                  // connection. Match by connection_id, but fall back to
+                  // connection_label for queries saved without an id (legacy/import),
+                  // so a valid query for this connection still appears.
+                  (() => {
+                    const connLabel = dbConns.find(d => d.id === c.source_id)?.label
+                    const matches = savedQueries.filter(q =>
+                      q.connection_id === c.source_id ||
+                      (!q.connection_id && !!connLabel && q.connection_label === connLabel)
+                    )
+                    return (
+                      <>
+                        <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: e.target.value } : x) }))}>
+                          <option value="">Select a saved query…</option>
+                          {matches.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
+                        </select>
+                        {matches.length === 0 && c.source_id && (
+                          <div style={{ fontSize: 10.5, color: 'var(--text4)', marginTop: 4 }}>No saved queries for this connection. Create one in the Query Builder.</div>
+                        )}
+                      </>
+                    )
+                  })()
                 )}
               </div>
             </div>
