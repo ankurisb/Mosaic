@@ -21,6 +21,7 @@ interface Section {
   content: string
   // display options
   chart_type?: 'bar' | 'line' | 'pie' | 'number'
+  width?: 'full' | 'half' | 'third'   // layout width in its row
 }
 
 interface DbConnection { id: string; label: string; dialect: string }
@@ -62,7 +63,7 @@ function defaultSection(type: SectionType): Section {
     id: uid(), type, title: '',
     source_type: type === 'text' || type === 'ai_narrative' ? 'none' : 'database',
     source_id: '', query: '', ai_prompt: '', content: '',
-    chart_type: 'bar',
+    chart_type: 'bar', width: 'full',
   }
 }
 
@@ -181,6 +182,7 @@ function SectionCard({
             {SECTION_LABELS[section.type]}
           </span>
         {section.title && <span style={{ fontSize: 12, color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>— {section.title}</span>}
+        {(section.width && section.width !== 'full') && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', marginLeft: section.title ? 0 : 'auto' }}>{section.width === 'half' ? '½' : '⅓'} width</span>}
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
           <button onClick={onMoveUp} disabled={index === 0} title="Move up"
             style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg)', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.35 : 1, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↑</button>
@@ -199,6 +201,20 @@ function SectionCard({
             <label style={LABEL}>Section title</label>
             <input style={INP} placeholder={`e.g. ${SECTION_LABELS[section.type]}`}
               value={section.title} onChange={e => up('title', e.target.value)} />
+          </div>
+
+          {/* Width — controls how wide this section is in its row. Half/third sections
+              sit side-by-side; full breaks to its own row. */}
+          <div style={FIELD}>
+            <label style={LABEL}>Width</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([['full', 'Full width'], ['half', 'Half'], ['third', 'Third']] as const).map(([w, lbl]) => (
+                <button key={w} onClick={() => up('width', w)}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${(section.width || 'full') === w ? 'var(--blue)' : 'var(--border2)'}`, background: (section.width || 'full') === w ? '#eff6ff' : 'var(--bg)', color: (section.width || 'full') === w ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: (section.width || 'full') === w ? 600 : 400 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Source type */}

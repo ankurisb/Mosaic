@@ -18,6 +18,7 @@ export interface ReportSection {
   saved_query_id?: string      // DB sections reference a saved query instead of inline SQL
   query: string                // legacy inline SQL / API path (kept for back-compat)
   match_mode?: string
+  width?: 'full' | 'half' | 'third'   // layout: how wide the section is in its row
   ai_prompt: string
   content: string
   chart_type?: string
@@ -159,7 +160,12 @@ async function renderSectionHtml(section: ReportSection): Promise<string> {
       break
     }
   }
-  return `<div class="section">${title}${body}</div>`
+  // Wrap in a flex item sized by the section's width, so half/third sections sit
+  // side-by-side in an auto-wrapping row. flex-basis drives the width; a small
+  // subtraction accounts for the row gap. Renders identically in the browser and in
+  // headless-Chromium PDF (both understand flexbox).
+  const basis = section.width === 'half' ? 'calc(50% - 8px)' : section.width === 'third' ? 'calc(33.333% - 11px)' : '100%'
+  return `<div class="section" style="flex:1 1 ${basis};max-width:${basis};box-sizing:border-box">${title}${body}</div>`
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -221,7 +227,7 @@ export async function runReport(
         </div>
       </div>`
 
-    const body      = coverHtml + sectionHtmls.join('')
+    const body      = coverHtml + `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">${sectionHtmls.join('')}</div>`
     const html      = htmlShell(name, body, `${type.charAt(0).toUpperCase() + type.slice(1)} Report · ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`)
     const pdfBuffer = await renderHtmlToPdf(html)
 
