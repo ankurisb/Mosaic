@@ -143,11 +143,13 @@ const FIELD: React.CSSProperties = { display: 'flex', flexDirection: 'column', g
 // ── Section card ──────────────────────────────────────────────────────────────
 
 function SectionCard({
-  section, index, total, dbs, apis,
+  section, index, total, dbs, apis, apiConns, savedQueries,
   onChange, onRemove, onMoveUp, onMoveDown,
 }: {
   section: Section, index: number, total: number,
   dbs: DbConnection[], apis: ApiService[],
+  apiConns: Array<{ id: string; label: string }>,
+  savedQueries: Array<{ id: string; name: string; connection_id: string; connection_label: string }>,
   onChange: (s: Section) => void
   onRemove: () => void
   onMoveUp: () => void
@@ -699,7 +701,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
 
         {template.sections.map((s, i) => (
           <SectionCard key={s.id} section={s} index={i} total={template.sections.length}
-            dbs={dbs} apis={apis}
+            dbs={dbs} apis={apis} apiConns={apiConns} savedQueries={savedQueries}
             onChange={ns => updateSection(i, ns)}
             onRemove={() => removeSection(i)}
             onMoveUp={() => moveSection(i, -1)}
