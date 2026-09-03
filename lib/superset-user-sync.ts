@@ -9,16 +9,29 @@
  * Fire-and-forget — never blocks Mosaic user operations.
  */
 
-const SUPERSET_URL  = process.env.SUPERSET_URL  || 'http://localhost:8088'
-const SUPERSET_USER = process.env.SUPERSET_ADMIN_USER     || 'admin'
-const SUPERSET_PASS = process.env.SUPERSET_ADMIN_PASSWORD || ''
+import { log } from '@/lib/logger'
+
+// Resolve Superset config settings-FIRST (kv_settings via supersetSetting) then
+// env — NOT as module-level env constants. docker-compose bakes in the bundled
+// defaults (superset:8088 / Admin1234!), so reading env at import time made user
+// sync ignore a bring-your-own Superset's saved credentials and silently fail
+// against the wrong host. Resolve per call instead.
+async function supersetCfg(): Promise<{ url: string; user: string; pass: string }> {
+  const { supersetSetting } = await import('./superset-auth')
+  return {
+    url: (await supersetSetting('SUPERSET_URL', process.env.SUPERSET_URL || 'http://localhost:8088')).replace(/\/$/, ''),
+    user: await supersetSetting('SUPERSET_ADMIN_USER', process.env.SUPERSET_ADMIN_USER || 'admin'),
+    pass: await supersetSetting('SUPERSET_ADMIN_PASSWORD', process.env.SUPERSET_ADMIN_PASSWORD || ''),
+  }
+}
 
 async function getSupersetToken(): Promise<string | null> {
   try {
-    const res = await fetch(`${SUPERSET_URL}/api/v1/security/login`, {
+    const { url, user, pass } = await supersetCfg()
+    const res = await fetch(`${url}/api/v1/security/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: SUPERSET_USER, password: SUPERSET_PASS, provider: 'db', refresh: false }),
+      body: JSON.stringify({ username: user, password: pass, provider: 'db', refresh: false }),
       signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return null
@@ -29,7 +42,8 @@ async function getSupersetToken(): Promise<string | null> {
 
 async function getCsrfToken(token: string): Promise<string | null> {
   try {
-    const res = await fetch(`${SUPERSET_URL}/api/v1/security/csrf_token/`, {
+    const { url } = await supersetCfg()
+    const res = await fetch(`${url}/api/v1/security/csrf_token/`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(5000),
     })
@@ -44,7 +58,8 @@ export async function syncUserToSuperset(params: {
   password: string
   role: 'admin' | 'user'
 }): Promise<void> {
-  if (!SUPERSET_PASS) return  // Superset not configured
+  const { url, pass } = await supersetCfg()
+  if (!pass) return  // Superset not configured
 
   try {
     const accessToken = await getSupersetToken()
@@ -57,7 +72,7 @@ export async function syncUserToSuperset(params: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
       'X-CSRFToken': csrfToken,
-      'Referer': SUPERSET_URL,
+      'Referer': url,
     }
 
     const firstName = params.name.split(' ')[0] || params.name
@@ -69,14 +84,14 @@ export async function syncUserToSuperset(params: {
 
     // Check if user already exists
     const listRes = await fetch(
-      `${SUPERSET_URL}/api/v1/security/users/?q=(filters:!((col:email,opr:eq,val:'${params.email}')))`,
+      `${url}/api/v1/security/users/?q=(filters:!((col:email,opr:eq,val:'${params.email}')))`,
       { headers, signal: AbortSignal.timeout(5000) }
     )
     const listData = await listRes.json() as { result?: { id: number }[] }
     const existing = listData.result?.[0]
 
     // Get Admin role ID
-    const rolesRes = await fetch(`${SUPERSET_URL}/api/v1/security/roles/`, { headers, signal: AbortSignal.timeout(5000) })
+    const rolesRes = await fetch(`${url}/api/v1/security/roles/`, { headers, signal: AbortSignal.timeout(5000) })
     const rolesData = await rolesRes.json() as { result?: { id: number; name: string }[] }
     const adminRole = rolesData.result?.find(r => r.name === 'Admin')
     if (!adminRole) return
@@ -92,12 +107,12 @@ export async function syncUserToSuperset(params: {
     }
 
     if (existing) {
-      await fetch(`${SUPERSET_URL}/api/v1/security/users/${existing.id}`, {
+      await fetch(`${url}/api/v1/security/users/${existing.id}`, {
         method: 'PUT', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
       })
       log.info({ service: 'superset-user-sync' }, `[superset-user-sync] Updated admin "${params.email}" in Superset`)
     } else {
-      await fetch(`${SUPERSET_URL}/api/v1/security/users/`, {
+      await fetch(`${url}/api/v1/security/users/`, {
         method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
       })
       log.info({ service: 'superset-user-sync' }, `[superset-user-sync] Created admin "${params.email}" in Superset`)
