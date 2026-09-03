@@ -306,6 +306,7 @@ export async function setupDatabasePostgres(): Promise<void> {
     created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at       TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
+  await sql`ALTER TABLE integration_rules ADD COLUMN IF NOT EXISTS saved_query_id TEXT`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS integration_runs (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

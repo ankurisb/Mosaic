@@ -418,6 +418,8 @@ export async function setupDatabase() {
   )`
 
   await sql`CREATE INDEX IF NOT EXISTS idx_rules_next_run   ON integration_rules(next_run_at) WHERE active = 1`.catch(() => {})
+  // Step 3a: an alert may reference a saved query (settings-first over inline SQL).
+  await sql`ALTER TABLE integration_rules ADD COLUMN saved_query_id TEXT`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_runs_rule        ON integration_runs(rule_id, triggered_at DESC)`.catch(() => {})
 
   // Migration: drop FK on integration_runs.rule_id so rule_groups can also log runs

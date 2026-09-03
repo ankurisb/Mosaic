@@ -31,7 +31,7 @@ interface RuleGroup {
 interface AlertRule {
   id: string; name: string; active: boolean
   trigger_type: string; source_type: string; source_id: string | null
-  query: string | null; condition: Record<string, unknown>
+  query: string | null; saved_query_id: string | null; condition: Record<string, unknown>
   channel_id: string; channel_name: string; channel_type: string
   message_template: string; last_run_at: string | null; next_run_at: string | null
 }
@@ -39,7 +39,7 @@ interface AlertRun {
   id: string; triggered_at: string; status: string
   message_sent: string | null; error: string | null; latency_ms: number
 }
-const ALERT_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
+const ALERT_EMPTY = { name: '', active: true, trigger_type: 'threshold', source_type: 'database', source_id: '', query: '', saved_query_id: '', channel_id: '', message_template: '', op: '<', threshold: '', column: '', interval: '3600', file_format: 'csv' }
 const TRIGGER_TYPE_OPTS = [
   { value: 'threshold',    label: 'Threshold alert' },
   { value: 'schedule',     label: 'Scheduled report' },
@@ -124,6 +124,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [toast,     setToast]     = useState('')
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
+  const [savedQueries, setSavedQueries] = useState<Array<{id:string;name:string;connection_label:string;query:string}>>([])
   const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
   const [notifGroups, setNotifGroups] = useState<Array<{id:string;name:string;members:unknown[]}>>([])  
   // Alert (integration_rules) state
@@ -141,13 +142,14 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [rd, dbr, apr, chr, ngr, alr] = await Promise.all([
+      const [rd, dbr, apr, chr, ngr, alr, sqr] = await Promise.all([
         fetch('/api/rules').then(r => r.json()),
         fetch('/api/connections').then(r => r.json()).catch(() => ({ connections: [] })),
         fetch('/api/services').then(r => r.json()).catch(() => ({ services: [] })),
         fetch('/api/integrations/channels').then(r => r.json()).catch(() => ({ channels: [] })),
         fetch('/api/integrations/groups').then(r => r.json()).catch(() => ({ groups: [] })),
         fetch('/api/integrations/rules').then(r => r.json()).catch(() => ({ rules: [] })),
+        fetch('/api/saved-queries').then(r => r.json()).catch(() => ({ queries: [] })),
       ])
       setGroups(rd.groups || [])
       setDbConns(dbr.connections || [])
@@ -155,6 +157,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       setChannels(chr.channels || [])
       setNotifGroups(ngr.groups || [])
       setAlerts(alr.rules || [])
+      setSavedQueries(sqr.queries || [])
     } finally { setLoading(false) }
   }, [])
 
@@ -168,7 +171,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       if (alertForm.trigger_type === 'threshold') { condition.operator = alertForm.op; condition.value = Number(alertForm.threshold); condition.column = alertForm.column }
       if (alertForm.trigger_type === 'schedule')  { condition.interval_sec = Number(alertForm.interval) }
       if (alertForm.source_type === 'file_server' && alertForm.trigger_type !== 'rca_complete') { condition.file_format = alertForm.file_format }
-      const body: Record<string, unknown> = { action, name: alertForm.name.trim(), active: alertForm.active, trigger_type: alertForm.trigger_type, source_type: alertForm.source_type, source_id: alertForm.source_id || null, query: alertForm.query || null, condition, channel_id: alertForm.channel_id, message_template: alertForm.message_template }
+      const body: Record<string, unknown> = { action, name: alertForm.name.trim(), active: alertForm.active, trigger_type: alertForm.trigger_type, source_type: alertForm.source_type, source_id: alertForm.source_id || null, query: alertForm.query || null, saved_query_id: alertForm.saved_query_id || null, condition, channel_id: alertForm.channel_id, message_template: alertForm.message_template }
       if (alertEditing) body.id = alertEditing
       await fetch('/api/integrations/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       setShowAlertForm(false); setAlertEditing(null); setAlertForm({ ...ALERT_EMPTY })
@@ -342,13 +345,27 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 <select style={{ ...SEL_A, width: 64 }} value={alertForm.op} onChange={e => setAlertForm(p => ({ ...p, op: e.target.value }))}>{['<','<=','>','>=','=='].map(op => <option key={op} value={op}>{op}</option>)}</select>
                 <input style={{ ...INP_A, width: 80 }} type="number" value={alertForm.threshold} onChange={e => setAlertForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" />
               </div>
-              <input style={MONO_A} value={alertForm.query || ''} onChange={e => setAlertForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT avg(oee_pct) as oee_pct FROM oee_hourly" />
+              {/* Query: pick a saved query (authored in the Query Builder). It carries
+                  its own connection, so it replaces the source + SQL fields. */}
+              <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
+              <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => setAlertForm(p => ({ ...p, saved_query_id: e.target.value }))}>
+                <option value="">{alertForm.query ? 'Existing inline query (legacy)' : 'Select a saved query…'}</option>
+                {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
+              </select>
+              {savedQueries.length === 0 && !alertForm.query && (
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries yet. Create one in the Query Builder, then pick it here.</div>
+              )}
             </div>
           )}
           {alertForm.trigger_type === 'schedule' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
               <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Run every</label><select style={SEL_A} value={alertForm.interval} onChange={e => setAlertForm(p => ({ ...p, interval: e.target.value }))}>{INTERVAL_OPTS_ALERT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-              <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>SQL query</label><input style={MONO_A} value={alertForm.query || ''} onChange={e => setAlertForm(p => ({ ...p, query: e.target.value }))} placeholder="SELECT line, avg(oee_pct) FROM oee_daily GROUP BY line" /></div>
+              <div><label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
+                <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => setAlertForm(p => ({ ...p, saved_query_id: e.target.value }))}>
+                  <option value="">{alertForm.query ? 'Existing inline query (legacy)' : 'Select a saved query…'}</option>
+                  {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
+                </select>
+              </div>
             </div>
           )}
           {alertForm.trigger_type === 'rca_complete' && (
@@ -387,7 +404,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               {isAdmin && (
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => toggleAlert(rule.id)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>{rule.active ? 'Pause' : 'Resume'}</button>
-                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
                   <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
                 </div>
               )}

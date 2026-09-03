@@ -10,7 +10,7 @@ export async function GET() {
   const sql = getDb()
   const rows = await sql`
     SELECT r.id, r.name, r.active, r.trigger_type, r.source_type, r.source_id,
-           r.query, r.condition, r.message_template,
+           r.query, r.saved_query_id, r.condition, r.message_template,
            r.last_run_at, r.next_run_at, r.created_at,
            r.channel_id, c.name AS channel_name, c.type AS channel_type
     FROM   integration_rules r
@@ -52,24 +52,29 @@ export async function POST(req: Request) {
   if (action === 'create') {
     const {
       name, trigger_type, source_type, source_id,
-      query, condition, channel_id, message_template,
+      query, condition, channel_id, message_template, saved_query_id,
     } = body
     if (!name?.trim())        return Response.json({ error: 'Name required' },         { status: 400 })
     if (!trigger_type)        return Response.json({ error: 'Trigger type required' },  { status: 400 })
     if (!channel_id)          return Response.json({ error: 'Channel required' },       { status: 400 })
-    const srcErr = validateSource(trigger_type, source_type, source_id, query)
-    if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    // A saved query supplies its own source + SQL, so it satisfies the source
+    // requirement; only validate the legacy inline source/query when there's no
+    // saved_query_id.
+    if (!saved_query_id) {
+      const srcErr = validateSource(trigger_type, source_type, source_id, query)
+      if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    }
 
     // Compute initial next_run_at for schedule rules
     const nextRun = computeNextRun(trigger_type, condition || {})
 
     const rows = await sql`
       INSERT INTO integration_rules
-        (name, trigger_type, source_type, source_id, query,
+        (name, trigger_type, source_type, source_id, query, saved_query_id,
          condition, channel_id, message_template, next_run_at, created_by)
       VALUES
         (${name.trim()}, ${trigger_type}, ${source_type ?? 'query'}, ${source_id ?? null},
-         ${query ?? null}, ${JSON.stringify(condition ?? {})}, ${channel_id},
+         ${query ?? null}, ${saved_query_id ?? null}, ${JSON.stringify(condition ?? {})}, ${channel_id},
          ${message_template ?? ''}, ${nextRun}, ${session.id})
       RETURNING id`
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.RULE_CREATE, `integration_rule:${rows[0].id}`, 'success', { name: name.trim(), trigger_type, channel_id })
@@ -83,8 +88,10 @@ export async function POST(req: Request) {
       query, condition, channel_id, message_template,
     } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
-    const srcErr = validateSource(trigger_type, source_type, source_id, query)
-    if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    if (!body.saved_query_id) {
+      const srcErr = validateSource(trigger_type, source_type, source_id, query)
+      if (srcErr) return Response.json({ error: srcErr }, { status: 400 })
+    }
     const nextRun = computeNextRun(trigger_type, condition || {})
     await sql`
       UPDATE integration_rules SET
@@ -94,6 +101,7 @@ export async function POST(req: Request) {
         source_type      = ${source_type ?? 'query'},
         source_id        = ${source_id ?? null},
         query            = ${query ?? null},
+        saved_query_id   = ${body.saved_query_id ?? null},
         condition        = ${JSON.stringify(condition ?? {})},
         channel_id       = ${channel_id},
         message_template = ${message_template ?? ''},

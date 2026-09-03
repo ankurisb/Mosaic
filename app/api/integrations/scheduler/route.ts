@@ -60,6 +60,26 @@ export async function POST(req: Request) {
         config: r.channel_config as Record<string, unknown>,
       }
 
+      // Step 3a: if this alert references a saved query, resolve it to SQL +
+      // connection and let it OVERRIDE the legacy inline source/query fields. Alerts
+      // without a saved_query_id keep using their inline query unchanged, so nothing
+      // breaks. A saved_query_id that no longer resolves leaves the inline fields in
+      // place (best-effort) rather than crashing the scheduler run.
+      if (r.saved_query_id) {
+        try {
+          const sq = await sql`SELECT connection_id, connection_type, query FROM saved_queries WHERE id = ${r.saved_query_id as string} LIMIT 1` as unknown as { connection_id: string; connection_type: string; query: string }[]
+          if (sq.length) {
+            r.query = sq[0].query
+            r.source_id = sq[0].connection_id
+            // saved_queries stores connection_type as 'db' | 'api' | 'fileserver';
+            // the scheduler expects 'database' | 'api' | 'file_server'.
+            r.source_type = sq[0].connection_type === 'db' ? 'database'
+              : sq[0].connection_type === 'fileserver' ? 'file_server'
+              : sq[0].connection_type || 'database'
+          }
+        } catch { /* fall back to inline fields */ }
+      }
+
       // -- THRESHOLD rule --------------------------------------
       if (r.trigger_type === 'threshold') {
         const queryStr = r.query as string
