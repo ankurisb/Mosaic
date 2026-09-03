@@ -139,11 +139,14 @@ export function validateChartSpec(
   const cols = columns || []
   const list = cols.length ? `Available columns: ${cols.join(', ')}.` : 'The query returned no columns.'
 
-  // A column is "numeric" if every non-null sample value parses as a finite number.
-  const isNumeric = (col: string): boolean => {
+  // Numeric-ness of a column, tri-state: 'yes' | 'no' | 'unknown'. 'unknown' means
+  // there were no sample values to judge (e.g. an empty result set) — we must NOT
+  // then claim the column is non-numeric, which would falsely block an otherwise-
+  // valid query. The empty-result warning below covers that case instead.
+  const numericness = (col: string): 'yes' | 'no' | 'unknown' => {
     const vals = (rows || []).map(r => r?.[col]).filter(v => v !== null && v !== undefined && v !== '')
-    if (vals.length === 0) return false
-    return vals.every(v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v))))
+    if (vals.length === 0) return 'unknown'
+    return vals.every(v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)))) ? 'yes' : 'no'
   }
   const has = (col?: string | null): boolean => !!col && cols.includes(col)
 
@@ -168,7 +171,7 @@ export function validateChartSpec(
     // Single-number vizzes: need one numeric value.
     if (!spec.value) errors.push(`A ${spec.vizType} chart needs a numeric value column, but none was set. ${list}`)
     else if (!has(spec.value)) errors.push(`Value column "${spec.value}" isn't in the query result. ${list}`)
-    else if (!isNumeric(spec.value)) errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} needs a number.`)
+    else if (numericness(spec.value) === 'no') errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} needs a number.`)
   } else {
     // bar / line / donut: need a dimension (category) + a numeric value.
     if (!spec.dimension) errors.push(`A ${spec.vizType} chart needs a category (dimension) column, but none was set. ${list}`)
@@ -176,7 +179,7 @@ export function validateChartSpec(
 
     if (!spec.value) errors.push(`A ${spec.vizType} chart needs a value column, but none was set. ${list}`)
     else if (!has(spec.value)) errors.push(`Value column "${spec.value}" isn't in the query result. ${list}`)
-    else if (!isNumeric(spec.value)) errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} chart plots a number.`)
+    else if (numericness(spec.value) === 'no') errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} chart plots a number.`)
 
     // The exact "Duplicate column/metric labels" trap: dimension and value the same.
     if (spec.dimension && spec.value && spec.dimension === spec.value) {
