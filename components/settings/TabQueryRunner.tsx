@@ -6,7 +6,7 @@ import { useSuperset } from '@/components/dashboards/useSuperset'
 type ConnType = 'db' | 'api' | 'fileserver'
 interface Connection { id: string; label: string; dialect: string; environment: string; type: ConnType; group: string; subgroup: string; shortLabel: string; hint: string; inputLabel: string }
 interface QueryResult { columns: string[]; rows: Record<string, any>[]; rowCount: number; durationMs: number; dialect: string; label: string; file?: string; modified?: string; note?: string }
-interface SavedQuery { id: string; label: string; connectionId: string; connectionLabel: string; query: string; savedAt: string }
+interface SavedQuery { id: string; label: string; connectionId: string; connectionLabel: string; connectionType?: string; query: string; savedAt: string }
 
 const DIALECT_LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server', sqlite: 'SQLite', mongodb: 'MongoDB', clickhouse: 'ClickHouse', influxdb: 'InfluxDB', elasticsearch: 'Elasticsearch', api: 'REST API', file: 'File' }
 const ENV_DOT: Record<string, string> = { production: '#e24b4a', staging: '#ef9f27', development: '#1D9E75' }
@@ -69,7 +69,7 @@ export default function TabQueryRunner() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Build-dashboard flow (Superset). Only offered for DB queries with a result set.
-  const [showBuild, setShowBuild] = useState(false)
+  const [buildContext, setBuildContext] = useState<{ connectionLabel: string; sql: string; columns: string[] } | null>(null)
   const [buildToast, setBuildToast] = useState('')
   const { status: supersetStatus } = useSuperset()
   const [limit, setLimit] = useState(500)
@@ -264,7 +264,8 @@ export default function TabQueryRunner() {
       const d = await r.json()
       const rows: SavedQuery[] = (d.queries || []).map((q: Record<string, string>) => ({
         id: q.id, label: q.name, connectionId: q.connection_id || '',
-        connectionLabel: q.connection_label || '', query: q.query, savedAt: q.updated_at || q.created_at,
+        connectionLabel: q.connection_label || '', connectionType: q.connection_type || 'db',
+        query: q.query, savedAt: q.updated_at || q.created_at,
       }))
       setSavedQueries(rows)
     } catch {}
@@ -278,6 +279,35 @@ export default function TabQueryRunner() {
     if (conn) { setSelectedId(conn.id); setSelectedTable(''); setTableOptions([]) }
     setQuery(sq.query); setResult(null); setError(null)
     setShowSavedPanel(false); setSavedSearch('')
+  }
+
+  // Build a dashboard from a SAVED query (Option A hub). Runs it once to learn the
+  // result columns, then opens the build panel with that context. Separate from the
+  // "current query" build path so the two don't interfere.
+  async function buildFromSaved(sq: SavedQuery) {
+    const conn = connections.find(c => c.id === sq.connectionId) ?? connections.find(c => c.label === sq.connectionLabel)
+    if (!conn) { setError(`Connection "${sq.connectionLabel}" for this query no longer exists.`); return }
+    setShowSavedPanel(false)
+    try {
+      const res = await fetch('/api/query-runner', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: conn.id, connectionType: 'db', query: sq.query, limit: 200 }) })
+      const data = await res.json()
+      if (!res.ok || !data.columns?.length) { setError(data.error || 'Could not run the saved query to build a dashboard.'); return }
+      setBuildContext({ connectionLabel: conn.label, sql: sq.query, columns: data.columns })
+    } catch (e: any) { setError(e?.message ?? 'Could not run the saved query.') }
+  }
+
+  // Save the CURRENT query, then build a dashboard from it (the fast path — every
+  // dashboard is still backed by a saved query).
+  async function saveAndBuild() {
+    if (!query.trim() || !selectedConn || !result?.columns?.length) return
+    const name = saveLabel.trim() || `Query ${new Date().toLocaleString()}`
+    try {
+      await fetch('/api/saved-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', name, connection_id: selectedId, connection_label: selectedConn.label, connection_type: selectedConn.type ?? 'db', query: query.trim() }) })
+      await loadSavedQueries()
+    } catch {}
+    setBuildContext({ connectionLabel: selectedConn.label, sql: query.trim(), columns: result.columns })
   }
 
   // ── Export / copy ─────────────────────────────────────────────────────
@@ -368,6 +398,9 @@ export default function TabQueryRunner() {
                         <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.connectionLabel}</div>
                       </div>
                       <button style={{ ...GHOST_BTN, flexShrink: 0 }} onClick={() => loadSaved(sq)}>Load</button>
+                      {supersetStatus?.configured && sq.connectionType !== 'api' && sq.connectionType !== 'fileserver' && (
+                        <button style={{ ...GHOST_BTN, flexShrink: 0 }} onClick={() => buildFromSaved(sq)}>Build dashboard</button>
+                      )}
                       <button style={{ ...GHOST_BTN, color: 'var(--text4)', flexShrink: 0 }} onClick={() => deleteSaved(sq.id)}>Delete</button>
                     </div>
                   ))
@@ -459,9 +492,9 @@ export default function TabQueryRunner() {
               {/* Build a Superset dashboard from this query — only for DB queries with
                   rows, and only when Superset is configured. */}
               {supersetStatus?.configured && result.rows.length > 0 && !isApi && query.trim() && (
-                <button onClick={() => setShowBuild(true)} style={{ ...GHOST_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={saveAndBuild} style={{ ...GHOST_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="12" width="5" height="9" rx="1"/><rect x="10" y="6" width="5" height="15" rx="1"/><rect x="17" y="9" width="4" height="12" rx="1"/></svg>
-                  Build dashboard
+                  Save &amp; build dashboard
                 </button>
               )}
               <button onClick={exportCsv} style={GHOST_BTN}>{exported ? 'Exported ✓' : 'Export CSV'}</button>
@@ -532,13 +565,14 @@ export default function TabQueryRunner() {
         </div>
       </div>
 
-      {/* Build-dashboard panel (Superset) */}
-      {showBuild && result && selectedConn && (
+      {/* Build-dashboard panel (Superset). Driven by buildContext, which is set by
+          'Save & build' (current query) or 'Build dashboard' on a saved query. */}
+      {buildContext && (
         <BuildDashboardPanel
-          connectionLabel={selectedConn.label}
-          sql={query.trim()}
-          columns={result.columns}
-          onClose={() => setShowBuild(false)}
+          connectionLabel={buildContext.connectionLabel}
+          sql={buildContext.sql}
+          columns={buildContext.columns}
+          onClose={() => setBuildContext(null)}
           onBuilt={(msg) => { setBuildToast(msg); setTimeout(() => setBuildToast(''), 3500) }}
         />
       )}
