@@ -215,7 +215,7 @@ function SectionCard({
             <>
               <div style={FIELD}>
                 <label style={LABEL}>Connection</label>
-                <select style={INP} value={section.source_id} onChange={e => { up('source_id', e.target.value); up('saved_query_id', '') }}>
+                <select style={INP} value={section.source_id} onChange={e => onChange({ ...section, source_id: e.target.value, saved_query_id: '' })}>
                   <option value="">— Select a database connection —</option>
                   {dbs.map(d => <option key={d.id} value={d.id}>{d.label} ({d.dialect})</option>)}
                 </select>
