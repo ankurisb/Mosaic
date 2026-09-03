@@ -126,6 +126,16 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
   const [savedQueries, setSavedQueries] = useState<Array<{id:string;name:string;connection_id:string;connection_label:string;query:string}>>([])
+  // Cache of a saved query's result columns (for the field picker), keyed by saved_query_id.
+  const [sqColumns, setSqColumns] = useState<Record<string, string[]>>({})
+  const fetchColumns = useCallback(async (savedQueryId: string) => {
+    if (!savedQueryId || sqColumns[savedQueryId]) return
+    try {
+      const r = await fetch('/api/saved-queries/columns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saved_query_id: savedQueryId }) })
+      const d = await r.json()
+      setSqColumns(prev => ({ ...prev, [savedQueryId]: d.columns || [] }))
+    } catch { setSqColumns(prev => ({ ...prev, [savedQueryId]: [] })) }
+  }, [sqColumns])
   const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
   const [notifGroups, setNotifGroups] = useState<Array<{id:string;name:string;members:unknown[]}>>([])  
   // Alert (integration_rules) state
@@ -247,6 +257,9 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   function startEdit(g: RuleGroup) {
     setEditingId(g.id)
     setForm({ name: g.name, description: g.description, active: g.active, logic: g.logic, trigger: g.trigger, conditions: g.conditions, controls: g.controls, actions: g.actions, recipients: g.recipients, message_template: g.message_template, email_channel_id: g.email_channel_id || '', sms_channel_id: g.sms_channel_id || '' })
+    // Prefetch result columns for any condition already bound to a saved query, so
+    // the field picker is populated when the group opens for editing.
+    for (const c of (g.conditions || [])) { if (c.saved_query_id) fetchColumns(c.saved_query_id) }
     setView('builder')
   }
 
@@ -342,7 +355,17 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           {alertForm.trigger_type === 'threshold' && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8 }}>
-                <input style={MONO_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))} placeholder="column name" />
+                {(() => {
+                  const cols = alertForm.saved_query_id ? sqColumns[alertForm.saved_query_id] : undefined
+                  return cols && cols.length > 0 ? (
+                    <select style={SEL_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))}>
+                      <option value="">— select column —</option>
+                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                    </select>
+                  ) : (
+                    <input style={MONO_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))} placeholder="column name" />
+                  )
+                })()}
                 <select style={{ ...SEL_A, width: 64 }} value={alertForm.op} onChange={e => setAlertForm(p => ({ ...p, op: e.target.value }))}>{['<','<=','>','>=','=='].map(op => <option key={op} value={op}>{op}</option>)}</select>
                 <input style={{ ...INP_A, width: 80 }} type="number" value={alertForm.threshold} onChange={e => setAlertForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" />
               </div>
@@ -350,7 +373,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                   its own connection, so it replaces the source + SQL fields. Inline SQL
                   is no longer accepted — legacy alerts were migrated to saved queries. */}
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
-              <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => setAlertForm(p => ({ ...p, saved_query_id: e.target.value }))}>
+              <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => { const v = e.target.value; setAlertForm(p => ({ ...p, saved_query_id: v })); if (v) fetchColumns(v) }}>
                 <option value="">Select a saved query…</option>
                 {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
               </select>
@@ -415,7 +438,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               {isAdmin && (
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => toggleAlert(rule.id)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>{rule.active ? 'Pause' : 'Resume'}</button>
-                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), match_mode: String(rule.condition.match_mode || 'first'), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+                  <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), match_mode: String(rule.condition.match_mode || 'first'), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); if (rule.saved_query_id) fetchColumns(rule.saved_query_id); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
                   <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
                 </div>
               )}
@@ -748,7 +771,17 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.filter((_, i) => i !== ci) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: '0 6px', flexShrink: 0, lineHeight: 1 }}>×</button>
               </div>
               <div style={{ display: 'flex', gap: 8, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
-                <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name (result column to compare)" />
+                {(() => {
+                  const cols = c.saved_query_id ? sqColumns[c.saved_query_id] : undefined
+                  return cols && cols.length > 0 ? (
+                    <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))}>
+                      <option value="">— select field —</option>
+                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                    </select>
+                  ) : (
+                    <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name (result column to compare)" />
+                  )
+                })()}
                 <select style={{ ...SEL, width: 58, fontSize: 12 }} value={c.op} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, op: e.target.value } : x) }))}>
                   {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
                 </select>
@@ -778,7 +811,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                     )
                     return (
                       <>
-                        <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: e.target.value } : x) }))}>
+                        <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => { const v = e.target.value; setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: v } : x) })); if (v) fetchColumns(v) }}>
                           <option value="">Select a saved query…</option>
                           {matches.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
                         </select>
