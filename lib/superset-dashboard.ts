@@ -113,25 +113,35 @@ const SUPERSET_VIZ: Record<VizType, string> = {
   gauge: 'gauge_chart',
 }
 
-function buildParams(dsId: number, spec: ChartSpec): Record<string, unknown> {
+function buildParams(dsId: number, spec: ChartSpec, metricName: string): Record<string, unknown> {
   const ds = `${dsId}__table`
   const rowLimit = spec.rowLimit ?? 100
   switch (spec.vizType) {
     case 'bar':
     case 'line':
+      // Reference the DEFINED metric (created on the dataset below), not the raw
+      // column — echarts bar/line require a metric, and the SQL's pre-aggregated
+      // value column is not one until we define it.
+      //
+      // The dimension goes on x_axis ONLY. The ECharts bar/line vizzes use
+      // `groupby` for an additional series breakdown, not the x dimension — putting
+      // the dimension in BOTH x_axis and groupby makes Superset request the column
+      // twice and fail with "Duplicate column/metric labels". So groupby stays
+      // empty here (no series split); x_axis carries the category.
       return { datasource: ds, viz_type: SUPERSET_VIZ[spec.vizType], row_limit: rowLimit,
-        metrics: spec.value ? [spec.value] : [], groupby: spec.dimension ? [spec.dimension] : [], x_axis: spec.dimension }
+        metrics: [metricName], groupby: [], x_axis: spec.dimension }
     case 'table':
+      // Table shows the raw columns as-is — no metric needed.
       return { datasource: ds, viz_type: 'table', row_limit: rowLimit, query_mode: 'raw',
         columns: spec.columns ?? [spec.dimension, spec.value].filter(Boolean),
         all_columns: spec.columns ?? [spec.dimension, spec.value].filter(Boolean) }
     case 'donut':
       return { datasource: ds, viz_type: 'pie', row_limit: rowLimit, donut: true,
-        metric: spec.value, groupby: spec.dimension ? [spec.dimension] : [] }
+        metric: metricName, groupby: spec.dimension ? [spec.dimension] : [] }
     case 'kpi':
-      return { datasource: ds, viz_type: 'big_number_total', metric: spec.value }
+      return { datasource: ds, viz_type: 'big_number_total', metric: metricName }
     case 'gauge':
-      return { datasource: ds, viz_type: 'gauge_chart', metric: spec.value, groupby: [] }
+      return { datasource: ds, viz_type: 'gauge_chart', metric: metricName, groupby: [] }
   }
 }
 
@@ -170,8 +180,25 @@ export async function createDashboard(input: CreateDashboardInput): Promise<Crea
   }
   const datasetId = ds.json.id as number
 
+  // Define a metric on the dataset for the value column. The SQL already
+  // aggregated (e.g. AVG(temperature) AS avg_temp), so the column holds one
+  // value per group; MAX() is a harmless passthrough that turns it into a
+  // Superset metric the aggregate charts (bar/line/donut/kpi/gauge) can
+  // reference. Table doesn't need it. Verified: without a defined metric the
+  // chart renders "Metric does not exist" / Unexpected error.
+  const metricName = input.chart.value ? `${input.chart.value}_m` : 'value_m'
+  if (input.chart.vizType !== 'table' && input.chart.value) {
+    const put = await api(auth, 'PUT', `/api/v1/dataset/${datasetId}?override_columns=true`, {
+      metrics: [{ metric_name: metricName, expression: `MAX(${input.chart.value})`, metric_type: 'max' }],
+    })
+    if (!put.ok) {
+      await api(auth, 'DELETE', `/api/v1/dataset/${datasetId}`).catch(() => {})
+      return { ok: false, step: 'dataset', reason: `could not define metric: ${reasonFrom(put)}`, datasetId }
+    }
+  }
+
   // 2. chart from the templated params
-  const params = buildParams(datasetId, input.chart)
+  const params = buildParams(datasetId, input.chart, metricName)
   const chart = await api(auth, 'POST', '/api/v1/chart/', {
     slice_name: input.chartName,
     viz_type: SUPERSET_VIZ[input.chart.vizType],
