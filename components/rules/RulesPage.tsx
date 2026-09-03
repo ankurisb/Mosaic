@@ -7,6 +7,7 @@ import { safeJson } from '@/lib/fetch'
 interface Condition {
   id: string; source_type: string; source_id: string
   field: string; op: string; value: number; logic: string; query: string
+  saved_query_id?: string
 }
 interface RuleAction {
   type: string; channel_id: string | null; channel_type: string
@@ -124,7 +125,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const [toast,     setToast]     = useState('')
   const [dbConns,    setDbConns]    = useState<Array<{id:string;label:string}>>([])  
   const [apiSvcs,    setApiSvcs]    = useState<Array<{id:string;label:string}>>([])  
-  const [savedQueries, setSavedQueries] = useState<Array<{id:string;name:string;connection_label:string;query:string}>>([])
+  const [savedQueries, setSavedQueries] = useState<Array<{id:string;name:string;connection_id:string;connection_label:string;query:string}>>([])
   const [channels,   setChannels]   = useState<Array<{id:string;name:string;type:string}>>([])  
   const [notifGroups, setNotifGroups] = useState<Array<{id:string;name:string;members:unknown[]}>>([])  
   // Alert (integration_rules) state
@@ -745,12 +746,29 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
               </div>
               <div style={{ marginTop: 6, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
-                <input style={{ ...INP, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.query || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, query: e.target.value } : x) }))} placeholder={c.source_type === 'api' ? '/endpoint?param=value' : 'SELECT avg(oee_pct) as oee_pct FROM oee_hourly WHERE machine_id = 6'} />
+                {c.source_type === 'api' ? (
+                  // API condition: the selected API connection IS the query (it carries
+                  // its endpoint). No free path — pick the connection above, done.
+                  <div style={{ fontSize: 11, color: 'var(--text3)', padding: '5px 2px' }}>
+                    Uses the selected API connection&rsquo;s configured endpoint.
+                  </div>
+                ) : (
+                  // DB condition: pick a saved query, FILTERED to the selected connection.
+                  <>
+                    <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: e.target.value } : x) }))}>
+                      <option value="">Select a saved query…</option>
+                      {savedQueries.filter(q => q.connection_id === c.source_id).map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
+                    </select>
+                    {savedQueries.filter(q => q.connection_id === c.source_id).length === 0 && c.source_id && (
+                      <div style={{ fontSize: 10.5, color: 'var(--text4)', marginTop: 4 }}>No saved queries for this connection. Create one in the Query Builder.</div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>
         ))}
-        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND', query: '' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
+        <button onClick={() => setForm(p => ({ ...p, conditions: [...p.conditions, { id: 'c-' + Date.now(), source_type: 'database', source_id: '', field: '', op: '<', value: 0, logic: 'AND', query: '', saved_query_id: '' }] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text3)', fontFamily: 'inherit' }}>
           + Add condition
         </button>
       </Section>

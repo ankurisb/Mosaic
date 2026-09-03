@@ -313,12 +313,21 @@ export async function POST(req: Request) {
           try {
             let data: unknown
             if (srcType === 'database') {
-              // Use the condition's own query if configured; fall back to a simple avg query
-              const condQuery = (cond.query as string | undefined)?.trim()
-              const sql = condQuery || `SELECT avg(${field}) as ${field} FROM ${field}`
-              data = await runTool('query_database', { connection_id: srcId, sql })
+              // Resolve the condition's saved query to SQL (Step: rule-group conditions
+              // reference a saved query, not inline SQL). Fall back to the legacy inline
+              // query, then a simple avg, so pre-migration conditions still run.
+              let condQuery = (cond.query as string | undefined)?.trim()
+              if (cond.saved_query_id) {
+                const sq = await sql`SELECT query FROM saved_queries WHERE id = ${cond.saved_query_id as string} LIMIT 1` as unknown as { query: string }[]
+                if (sq.length) condQuery = sq[0].query
+              }
+              const sql2 = condQuery || `SELECT avg(${field}) as ${field} FROM ${field}`
+              data = await runTool('query_database', { connection_id: srcId, sql: sql2 })
             } else if (srcType === 'api') {
-              const condPath = (cond.query as string | undefined)?.trim() || `/${field}`
+              // API condition: the connection carries its endpoint. Use the legacy
+              // inline path only if present; otherwise call the connection's base_path
+              // (path '' lets call_api use the connection default).
+              const condPath = (cond.query as string | undefined)?.trim() || ''
               data = await runTool('call_api', { connection_id: srcId, method: 'GET', path: condPath })
             }
 
