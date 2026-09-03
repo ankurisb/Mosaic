@@ -6,6 +6,7 @@
 
 import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { extractRows, evaluateCondition, type CompareOp } from '@/lib/condition-eval'
 import { runTool }         from '@/lib/tools'
 import { ensureCronSecret } from '@/lib/keys'
 import { sendNotification, sendReportEmail, renderTemplate } from '@/lib/notify'
@@ -98,23 +99,25 @@ export async function POST(req: Request) {
             data = await runTool('read_file_server', { server_id: srcId, file_hint: queryStr })
           }
 
-          // Extract the value from the result
-          const rows = (data as Record<string,unknown>)?.rows as Record<string,unknown>[] | undefined
-          const firstRow = rows?.[0]
+          // Extract the value from the result — same robust shape handling as rule
+          // groups (flat/array/wrapper-keys + configured API data path).
           const valueCol = condition.column as string
-          const rawValue = firstRow ? Number(firstRow[valueCol] ?? firstRow[Object.keys(firstRow)[0]]) : null
-
-          valueSnap = { value: rawValue, column: valueCol, rows_returned: rows?.length ?? 0 }
-
-          // Check threshold condition
+          let apiPath: string | undefined
+          if (srcType === 'api') {
+            const acRow = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${srcId} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
+            apiPath = acRow[0]?.pagination_data_path || undefined
+          }
+          const rows = extractRows(data, apiPath)
+          const mode = (condition.match_mode as string) === 'any' ? 'any' : 'first'
           const op  = condition.operator as string || '<'
           const thr = Number(condition.value)
-          const triggered =
-            op === '<'  ? (rawValue !== null && rawValue < thr)  :
-            op === '<=' ? (rawValue !== null && rawValue <= thr) :
-            op === '>'  ? (rawValue !== null && rawValue > thr)  :
-            op === '>=' ? (rawValue !== null && rawValue >= thr) :
-            op === '==' ? (rawValue !== null && rawValue === thr) : false
+          const evalRes = evaluateCondition(rows, valueCol, op as CompareOp, thr, mode)
+          const rawValue = evalRes.matchedValue
+
+          valueSnap = { value: rawValue, column: valueCol, rows_returned: rows.length }
+
+          // Check threshold condition
+          const triggered = evalRes.met
 
           if (triggered) {
             messageSent = renderTemplate(r.message_template as string || '{source} value is {value}', {
@@ -331,19 +334,23 @@ export async function POST(req: Request) {
               data = await runTool('call_api', { connection_id: srcId, method: 'GET', path: condPath })
             }
 
-            const rows     = (data as Record<string, unknown>)?.rows as Record<string, unknown>[] | undefined
-            const firstRow = rows?.[0]
-            const rawValue = firstRow ? Number(firstRow[field] ?? firstRow[Object.keys(firstRow)[0]]) : null
+            // Extract the comparison value(s) from whatever the tool returned, and
+            // evaluate. DB (query_database) already returns {rows:[...]}; API responses
+            // vary wildly, so extractRows unwraps the common shapes (flat/array/
+            // wrapper-keys) and follows the API connection's configured data path when
+            // set. matchMode 'any' lets a condition fire if ANY row matches.
+            let apiDataPath: string | undefined
+            if (srcType === 'api') {
+              const acRow = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${srcId} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
+              apiDataPath = acRow[0]?.pagination_data_path || undefined
+            }
+            const rows = extractRows(data, apiDataPath)
+            const matchMode = (cond.match_mode as string) === 'any' ? 'any' : 'first'
+            const evalRes = evaluateCondition(rows, field, op as CompareOp, thr, matchMode)
+            const rawValue = evalRes.matchedValue
+            const met = evalRes.met
 
             conditionValues[field] = rawValue
-
-            const met =
-              op === '<'  ? (rawValue !== null && rawValue <  thr) :
-              op === '<=' ? (rawValue !== null && rawValue <= thr) :
-              op === '>'  ? (rawValue !== null && rawValue >  thr) :
-              op === '>=' ? (rawValue !== null && rawValue >= thr) :
-              op === '==' ? (rawValue !== null && rawValue === thr) :
-              op === '!=' ? (rawValue !== null && rawValue !== thr) : false
 
             results.push(met)
             if (met) triggeredConditions.push(`${field} ${op} ${thr} (was ${rawValue})`)
