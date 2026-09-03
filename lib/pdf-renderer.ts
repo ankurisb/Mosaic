@@ -22,7 +22,15 @@ async function getChromiumExecutable(): Promise<{ executablePath: string; args: 
     throw new Error('No Chrome/Chromium found on macOS. Install Google Chrome or Chromium.')
   }
 
-  // Linux/Docker — use @sparticuz/chromium (Lambda-compatible)
+  // Linux/Docker — prefer the arch-native system Chromium (installed via the Alpine
+  // 'chromium' package, set in PUPPETEER_EXECUTABLE_PATH). This works on both amd64
+  // and arm64; @sparticuz/chromium ships an x86-only binary that fails under Rosetta
+  // on Apple Silicon. Fall back to @sparticuz only if the system binary is absent.
+  const { existsSync } = await import('fs')
+  const sysPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
+  if (existsSync(sysPath)) {
+    return { executablePath: sysPath, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] }
+  }
   const chromium = await import('@sparticuz/chromium')
   return {
     executablePath: await chromium.default.executablePath(),

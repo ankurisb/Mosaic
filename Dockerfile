@@ -24,7 +24,13 @@ ENV NODE_ENV=production
 # DB CLI tools for consistent backups (scripts/backup.sh runs these in-container):
 #   sqlite             → sqlite3 CLI for VACUUM INTO snapshots (SQLite deployments)
 #   postgresql-client  → pg_dump for logical dumps (Postgres deployments)
-RUN apk add --no-cache sqlite postgresql-client
+RUN apk add --no-cache sqlite postgresql-client \
+    # Chromium for server-side PDF rendering (report generation). Alpine's package is
+    # arch-native (works on both amd64 and arm64), unlike @sparticuz/chromium which
+    # ships an x86-only binary and fails under Rosetta on Apple Silicon.
+    chromium nss freetype harfbuzz ca-certificates ttf-freefont
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 mosaic
@@ -42,6 +48,8 @@ COPY --from=builder /app/migrations ./migrations
 
 # Data directory for SQLite
 RUN mkdir -p /data && chown mosaic:nodejs /data
+# App data dir for generated report PDFs (report-runner writes to ./data/reports).
+RUN mkdir -p /app/data/reports && chown -R mosaic:nodejs /app/data
 
 USER mosaic
 EXPOSE 3001

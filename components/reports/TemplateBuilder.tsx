@@ -553,6 +553,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   const [savedQueries, setSavedQueries] = useState<Array<{ id: string; name: string; connection_id: string; connection_label: string }>>([])
   const [groups, setGroups] = useState<NotifGroup[]>([])
   const [saving, setSaving]   = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(isEdit)
   const [error, setError]     = useState('')
 
@@ -654,7 +655,14 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
       })
       const d = await res.json()
       if (!res.ok || d.error) { setError(d.error || 'Save failed'); return }
-      router.push('/reports')
+      // Stay on the page so template-building isn't interrupted. For a NEW template,
+      // adopt the returned id so subsequent saves update (not re-create) it and the
+      // URL reflects the edit. Show a brief 'Saved' confirmation instead of leaving.
+      if (!isEdit && d.template?.id) {
+        setTemplate(p => ({ ...p, id: d.template.id }))
+        router.replace(`/reports/template/edit/${d.template.id}`)
+      }
+      setSavedAt(Date.now())
     } catch (e) {
       setError('Network error')
     } finally {
@@ -779,10 +787,14 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
           <button onClick={save} disabled={saving || !template.name}
             style={{ padding: '10px 0', borderRadius: 8, border: 'none', background: 'var(--blue)', color: 'white', fontSize: 14, fontWeight: 700, cursor: template.name ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: !template.name ? 0.5 : 1 }}>
-            {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create template'}
+            {saving ? 'Saving…' : savedAt ? 'Saved ✓ — keep editing' : isEdit ? 'Save changes' : 'Create template'}
+          </button>
+          <button onClick={async () => { await save(); router.push('/reports') }} disabled={saving || !template.name}
+            style={{ padding: '9px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: template.name ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: !template.name ? 0.5 : 1 }}>
+            Save &amp; close
           </button>
           <button onClick={() => router.push('/reports')}
-            style={{ padding: '9px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '7px 0', borderRadius: 8, border: 'none', background: 'none', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
             Cancel
           </button>
         </div>
