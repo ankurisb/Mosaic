@@ -10,7 +10,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
-import { createDashboard, resolveDatabaseId, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
+import { createDashboard, resolveDatabaseId, validateChartSpec, type ChartSpec, type VizType } from '@/lib/superset-dashboard'
 
 export const runtime = 'nodejs'
 
@@ -40,6 +40,38 @@ export async function POST(req: Request) {
   }
   if (!READ_ONLY_SQL.test(sql)) {
     return Response.json({ error: 'Dashboard SQL must be a read-only SELECT/WITH query' }, { status: 400 })
+  }
+
+  // Pre-flight gate: run the query to learn the real result shape and validate the
+  // chart spec against it BEFORE touching Superset. Catches unknown columns,
+  // dimension==value duplication, non-numeric metrics, etc. — so an invalid spec
+  // fails here with a clear message instead of producing a broken Superset dashboard.
+  // (The same validateChartSpec powers /api/superset/validate-dashboard for live UI
+  // validation; this is the server-side backstop for API/chat callers.)
+  try {
+    const dbConn = getDb()
+    const [c] = await dbConn`SELECT id FROM db_connections WHERE label = ${connectionLabel} LIMIT 1` as unknown as { id: string }[]
+    if (c) {
+      const origin = new URL(req.url).origin
+      const qr = await fetch(`${origin}/api/query-runner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: req.headers.get('cookie') || '' },
+        body: JSON.stringify({ connectionId: c.id, query: sql, limit: 200 }),
+        signal: AbortSignal.timeout(20000),
+      })
+      const qd = await qr.json()
+      if (!qr.ok) {
+        return Response.json({ error: `The query didn't run: ${qd.error || `HTTP ${qr.status}`}`, code: 'query_failed' }, { status: 400 })
+      }
+      const v = validateChartSpec(qd.columns || [], qd.rows || [], chart)
+      if (!v.valid) {
+        return Response.json({ error: v.errors.join(' '), code: 'invalid_chart_spec', errors: v.errors, warnings: v.warnings }, { status: 400 })
+      }
+    }
+  } catch (e) {
+    // Validation is a safety gate, not the feature — if it can't run (e.g. the
+    // query-runner is unreachable), log and proceed to the build rather than block.
+    log.warn({ service: 'superset-create-dashboard', err: (e as Error).message }, 'pre-flight validation could not run; proceeding to build')
   }
 
   // Resolve the Superset database for this connection. If it isn't registered,

@@ -113,6 +113,89 @@ const SUPERSET_VIZ: Record<VizType, string> = {
   gauge: 'gauge_chart',
 }
 
+export interface ChartValidation {
+  valid: boolean
+  errors: string[]      // block the build
+  warnings: string[]    // inform, don't block
+}
+
+/**
+ * Validate a chart spec against the ACTUAL query result (columns + sample rows),
+ * BEFORE anything is pushed to Superset. Catches the class of problems that would
+ * otherwise surface as an opaque Superset error or a silently broken chart —
+ * unknown columns, dimension==value duplication, non-numeric metrics, wrong result
+ * shape — and returns clear, actionable messages tied to the query the user wrote.
+ *
+ * Pure and side-effect free, so both a live-validate endpoint and create-dashboard
+ * can call it.
+ */
+export function validateChartSpec(
+  columns: string[],
+  rows: Record<string, unknown>[],
+  spec: ChartSpec,
+): ChartValidation {
+  const errors: string[] = []
+  const warnings: string[] = []
+  const cols = columns || []
+  const list = cols.length ? `Available columns: ${cols.join(', ')}.` : 'The query returned no columns.'
+
+  // A column is "numeric" if every non-null sample value parses as a finite number.
+  const isNumeric = (col: string): boolean => {
+    const vals = (rows || []).map(r => r?.[col]).filter(v => v !== null && v !== undefined && v !== '')
+    if (vals.length === 0) return false
+    return vals.every(v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v))))
+  }
+  const has = (col?: string | null): boolean => !!col && cols.includes(col)
+
+  // -- Viz type --
+  const VALID: VizType[] = ['bar', 'line', 'table', 'donut', 'kpi', 'gauge']
+  if (!VALID.includes(spec.vizType)) {
+    errors.push(`Unsupported chart type "${spec.vizType}". Use one of: ${VALID.join(', ')}.`)
+    return { valid: false, errors, warnings } // nothing else is meaningful
+  }
+
+  // -- Result shape --
+  if (cols.length === 0) errors.push('The query returned no columns to chart.')
+  if ((rows?.length ?? 0) === 0) warnings.push('The query returned no rows, so the chart will be empty.')
+
+  // -- Per-viz field checks --
+  if (spec.vizType === 'table') {
+    const wanted = spec.columns ?? [spec.dimension, spec.value].filter(Boolean) as string[]
+    const missing = wanted.filter(c => !has(c))
+    if (wanted.length === 0) warnings.push('No table columns specified — all query columns will be shown.')
+    if (missing.length) errors.push(`Table column(s) not in the query result: ${missing.join(', ')}. ${list}`)
+  } else if (spec.vizType === 'kpi' || spec.vizType === 'gauge') {
+    // Single-number vizzes: need one numeric value.
+    if (!spec.value) errors.push(`A ${spec.vizType} chart needs a numeric value column, but none was set. ${list}`)
+    else if (!has(spec.value)) errors.push(`Value column "${spec.value}" isn't in the query result. ${list}`)
+    else if (!isNumeric(spec.value)) errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} needs a number.`)
+  } else {
+    // bar / line / donut: need a dimension (category) + a numeric value.
+    if (!spec.dimension) errors.push(`A ${spec.vizType} chart needs a category (dimension) column, but none was set. ${list}`)
+    else if (!has(spec.dimension)) errors.push(`Dimension "${spec.dimension}" isn't in the query result. ${list}`)
+
+    if (!spec.value) errors.push(`A ${spec.vizType} chart needs a value column, but none was set. ${list}`)
+    else if (!has(spec.value)) errors.push(`Value column "${spec.value}" isn't in the query result. ${list}`)
+    else if (!isNumeric(spec.value)) errors.push(`Value column "${spec.value}" is not numeric — a ${spec.vizType} chart plots a number.`)
+
+    // The exact "Duplicate column/metric labels" trap: dimension and value the same.
+    if (spec.dimension && spec.value && spec.dimension === spec.value) {
+      errors.push(`The dimension and value are both "${spec.dimension}" — a chart needs a category column and a separate numeric column.`)
+    }
+
+    // Soft check: aggregated shape. If a dimension value repeats across rows, the SQL
+    // probably isn't grouped, so the chart will double-count.
+    if (spec.dimension && has(spec.dimension) && (rows?.length ?? 0) > 1) {
+      const seen = new Set<unknown>()
+      let dup = false
+      for (const r of rows) { const v = r?.[spec.dimension]; if (seen.has(v)) { dup = true; break } seen.add(v) }
+      if (dup) warnings.push(`The category "${spec.dimension}" repeats across rows — the query may not be grouped, so values could be double-counted. Consider GROUP BY.`)
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings }
+}
+
 function buildParams(dsId: number, spec: ChartSpec, metricName: string): Record<string, unknown> {
   const ds = `${dsId}__table`
   const rowLimit = spec.rowLimit ?? 100
