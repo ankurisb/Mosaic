@@ -11,6 +11,9 @@ interface Dashboard {
   id: string; name: string; description: string
   owner_id: string; is_public: boolean; refresh_sec: number
   panel_count: number; updated_at: string; superset_embed_uuid?: string
+  // Set when Mosaic BUILT this dashboard in Superset from a query.
+  source_kind?: string | null; source_sql?: string | null
+  source_connection?: string | null; superset_dashboard_id?: number | null
 }
 
 const REFRESH_OPTS = [
@@ -33,6 +36,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
   const supersetAvailable = !!supersetStatus?.configured
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedQuery, setExpandedQuery] = useState<string | null>(null)  // dashboard id whose SQL is shown
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', is_public: false, refresh_sec: 300 })
   const [saving, setSaving] = useState(false)
@@ -214,8 +218,15 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
             {dashboards.map(d => (
-              <div key={d.id} className="fade-in" onClick={() => router.push(`/dashboards/${d.id}`)}
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', boxShadow: 'var(--shadow)', transition: 'box-shadow .15s, transform .1s' }}
+              <div key={d.id} className="fade-in"
+                onClick={() => {
+                  // Query-built dashboards live in Superset, not as an in-Mosaic embed —
+                  // clicking the card body does nothing (use "open in Superset" / "view
+                  // query"). Native/embedded dashboards open their Mosaic view.
+                  if (d.source_kind === 'superset_query') return
+                  router.push(`/dashboards/${d.id}`)
+                }}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: d.source_kind === 'superset_query' ? 'default' : 'pointer', boxShadow: 'var(--shadow)', transition: 'box-shadow .15s, transform .1s' }}
                 onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow)'; e.currentTarget.style.transform = 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -224,6 +235,42 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 16, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}></button>
                 </div>
                 {d.description && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 }}>{d.description}</div>}
+
+                {/* Query-built dashboards (Mosaic authored the SQL, built it in Superset).
+                    Show the connection, a toggle to view the SQL, and a direct link. */}
+                {d.source_kind === 'superset_query' && (
+                  <div onClick={e => e.stopPropagation()} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                        Built from query
+                      </span>
+                      {d.source_connection && (
+                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>on {d.source_connection}</span>
+                      )}
+                      {d.source_sql && (
+                        <button
+                          onClick={() => setExpandedQuery(expandedQuery === d.id ? null : d.id)}
+                          style={{ fontSize: 11, color: 'var(--blue-t)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}
+                        >
+                          {expandedQuery === d.id ? 'hide query' : 'view query'}
+                        </button>
+                      )}
+                      {supersetStatus?.url && d.superset_dashboard_id != null && (
+                        <a
+                          href={`${supersetStatus.url.replace(/\/$/, '')}/superset/dashboard/${d.superset_dashboard_id}/`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, color: 'var(--blue-t)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}
+                        >
+                          open in Superset
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+                        </a>
+                      )}
+                    </div>
+                    {expandedQuery === d.id && d.source_sql && (
+                      <pre style={{ marginTop: 8, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 140, overflow: 'auto' }}>{d.source_sql}</pre>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: 'var(--text3)' }}>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" style={{ marginRight: 3, verticalAlign: 'middle' }}><rect x="1" y="2" width="4" height="3" rx=".5"/><rect x="5.5" y="5" width="3.5" height="3" rx=".5"/><rect x="1" y="6" width="3" height="2" rx=".5"/></svg>
@@ -239,8 +286,9 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
                   <span style={{ fontSize: 11, color: 'var(--text4)', marginLeft: 'auto' }}>{timeAgo(d.updated_at)}</span>
                 </div>
 
-                {/* Superset link row — only when external analytics (Superset) is configured */}
-                {supersetAvailable && (
+                {/* Superset link row — only for native/embed dashboards, not query-built
+                    ones (those already live in Superset). */}
+                {supersetAvailable && d.source_kind !== 'superset_query' && (
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={e => e.stopPropagation()}>
                   {d.superset_embed_uuid ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
