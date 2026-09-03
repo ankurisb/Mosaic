@@ -59,19 +59,7 @@ async function executeSection(section: ReportSection): Promise<{ rows: Row[]; er
       // Use call_api + robust extractRows (handles OData/wrappers via the connection's
       // pagination_data_path) instead of the old ad-hoc value/results/data peek.
       const [conn] = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${section.source_id} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
-      if (!conn) {
-        // Back-compat: an older template may still reference an api_SERVICE + free path.
-        const [svc] = await sql`SELECT * FROM api_services WHERE id = ${section.source_id}`
-        if (!svc) return { rows: [], error: 'API source not found' }
-        const { applyAuth } = await import('./api-auth')
-        const base = String(svc.base_url).replace(/\/$/, '')
-        const path = section.query.startsWith('/') ? section.query : `/${section.query}`
-        const headers: Record<string, string> = { 'Accept': 'application/json' }
-        await applyAuth(svc as Record<string, unknown>, headers)
-        const res = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(15000) })
-        if (!res.ok) return { rows: [], error: `HTTP ${res.status}` }
-        return { rows: extractRows(await res.json()).slice(0, 200) }
-      }
+      if (!conn) return { rows: [], error: 'API connection not found — re-select the API source for this section.' }
       const data = await runTool('call_api', {
         connection_id: section.source_id,
         method: 'GET',
@@ -200,8 +188,17 @@ export async function runReport(
   const type = String(t.type || 'operational')
   const now  = new Date()
 
+  // sections may arrive already-parsed (the DB wrapper content-sniffs and JSON.parses
+  // TEXT that looks like JSON) OR as a raw string, depending on the driver. Handle
+  // both — the previous String(...)+JSON.parse assumed a string, so an already-parsed
+  // array became "[object Object],..." -> parse threw -> sections silently empty ->
+  // 0 sections rendered.
   let sections: ReportSection[] = []
-  try { sections = JSON.parse(String(t.sections || '[]')) } catch { sections = [] }
+  if (Array.isArray(t.sections)) {
+    sections = t.sections as ReportSection[]
+  } else {
+    try { sections = JSON.parse(String(t.sections || '[]')) } catch { sections = [] }
+  }
 
   // Create instance as 'running'
   const [instance] = await sql`
