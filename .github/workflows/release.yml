@@ -32,6 +32,10 @@ jobs:
   images:
     name: Build & push ${{ matrix.service }}
     runs-on: ubuntu-latest
+    # The mosaic image now bundles Chromium (server-side PDF rendering), which is a
+    # heavy install under the emulated linux/amd64 build. Give the job generous
+    # headroom so a legitimately-longer build isn't canceled (default was hit).
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write        # required to push to GHCR
