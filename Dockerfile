@@ -28,7 +28,10 @@ RUN apk add --no-cache sqlite postgresql-client \
     # Chromium for server-side PDF rendering (report generation). Alpine's package is
     # arch-native (works on both amd64 and arm64), unlike @sparticuz/chromium which
     # ships an x86-only binary and fails under Rosetta on Apple Silicon.
-    chromium nss freetype harfbuzz ca-certificates ttf-freefont
+    chromium nss freetype harfbuzz ca-certificates ttf-freefont \
+    # CJK + broad Unicode coverage so reports with non-Latin content (Chinese,
+    # Japanese, Korean) render real glyphs instead of tofu boxes.
+    font-noto-cjk
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
