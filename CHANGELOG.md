@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-04
+
+### Added
+- **Query unification** — the Query Builder is now the single place queries are authored and stored (DB-backed `saved_queries`), referenced everywhere else. No free-text SQL outside the Query Builder.
+- Dashboards: build a Superset dashboard from a saved query, with live validation of the chart spec against the real result columns before building.
+- Multi-chart Superset dashboards — add charts from multiple queries to one dashboard (layout via position_json); refuses to modify dashboards Mosaic didn't create (protects hand-designed layouts).
+- Alerts & workflow rule conditions reference saved queries (DB) and pre-configured API connections (API) — no free-text SQL or API paths. Robust API value extraction across common response shapes (flat, arrays, data/results/value/items/records wrappers, OData v2/v4) plus a configurable data path; optional "any row matches" evaluation.
+- Report sections use saved queries (DB) and API connections (API); per-section width (full / half / third) with auto-wrapping row layout, rendered identically in-app and in PDF.
+- Field pickers show a saved query's actual result columns (dropdown) so a mistyped field can't silently prevent a condition from firing.
+- CJK (Noto) fonts in the image so reports with Chinese/Japanese/Korean content render real glyphs.
+- Airbyte: workspace selector; Mosaic → n8n workflow triggering (outbound).
+- Persisted, paginated "Queries & dashboards" view of everything Mosaic built in Superset.
+
+### Fixed
+- **Migrations now run in production.** The Dockerfile never copied `migrations/`, so the migration runner silently skipped in every built image; migrations also only ran on a home-page render. Now migrations (schema + data) run at server boot via `instrumentation.ts`, before any request, with per-statement additive-migration support.
+- **PDF report generation works on ARM (Apple Silicon).** Switched from the x86-only `@sparticuz/chromium` to the arch-native Alpine `chromium` package, fixing the `rosetta error` on arm64; added a writable reports directory.
+- Superset BYO consistency: status, dashboards list, embed, sync, user-sync and the launch button all resolve configuration settings-first (BYO wins over bundled defaults); honest `unconfigured` / `error` / `healthy` status states across Airbyte, n8n, Superset and CISO.
+- Bar/line charts no longer duplicate the dimension (the "Duplicate column/metric labels" error); empty-result queries no longer falsely flagged as non-numeric.
+- Report template editor: connection dropdown selection sticks; edit page no longer crashes; saving keeps you on the page; multi-section templates stay compact.
+- Numerous BYO auth fixes where a service read credentials env-first instead of settings-first.
+
+### Notes
+- Both editions share one image; the browser certificate warning on `https://localhost` (Personal) is expected for a self-signed cert and does not appear on a real domain (Enterprise, with `CADDY_TLS` set for a public certificate).
+
 ## [1.2.1] - 2026-05-24
 
 ### Added
