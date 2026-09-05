@@ -13,7 +13,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   // Version + update status, shown consistently in the nav (not just Settings).
-  const [deploy, setDeploy] = useState<{ version?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [deploy, setDeploy] = useState<{ currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
 
   useEffect(() => {
     fetch('/api/conversations')
@@ -120,7 +120,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
                     Update to v{deploy.latestVersion}
                   </a>
                 ) : (
-                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.version || '—'}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || '—'}</div>
                 )}
               </div>
             </button>
