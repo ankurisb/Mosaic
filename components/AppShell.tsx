@@ -12,12 +12,15 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const [convs, setConvs] = useState<Conv[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  // Version + update status, shown consistently in the nav (not just Settings).
+  const [deploy, setDeploy] = useState<{ version?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
 
   useEffect(() => {
     fetch('/api/conversations')
       .then(r => r.json())
       .then(d => { if (d.conversations?.length) setConvs(d.conversations.slice(0, 30)) })
       .catch(() => {})
+    fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {})
   }, [])
 
   async function signOut() {
@@ -106,7 +109,19 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
               <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                 <div style={{ fontSize: 10, color: 'var(--text3)' }}>{user.role}</div>
-                <div style={{ fontSize: 10, color: 'var(--text4)' }}>v1.0.0</div>
+                {deploy.updateAvailable ? (
+                  // Claude-style update chip — a small rounded pill, shown consistently
+                  // in the nav (not just Settings). Clicking opens the release.
+                  <a href={deploy.latestReleaseUrl || '#'} target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    title={`Version ${deploy.latestVersion} is available`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, textDecoration: 'none', lineHeight: 1.6 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
+                    Update to v{deploy.latestVersion}
+                  </a>
+                ) : (
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.version || '—'}</div>
+                )}
               </div>
             </button>
             {showUserMenu && (
