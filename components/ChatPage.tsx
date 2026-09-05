@@ -248,6 +248,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [showSystem, setShowSystem] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  // Update status for the nav chip (chat page has its own sidebar, not AppShell).
+  const [deploy, setDeploy] = useState<{ currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  useEffect(() => { fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {}) }, [])
   const [model, setModel] = useState('claude-sonnet-4-6')
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -725,7 +728,17 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{APP_VERSION}</div>
+                  {deploy.updateAvailable ? (
+                    <a href={deploy.latestReleaseUrl || '#'} target="_blank" rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      title={`Version ${deploy.latestVersion} is available`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, textDecoration: 'none', lineHeight: 1.6 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
+                      Update to v{deploy.latestVersion}
+                    </a>
+                  ) : (
+                    <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || APP_VERSION}</div>
+                  )}
                 </div>
               )}
             </button>
