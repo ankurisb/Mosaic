@@ -250,7 +250,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [showSystem, setShowSystem] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   // Update status for the nav chip (chat page has its own sidebar, not AppShell).
-  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const [showUpdate, setShowUpdate] = useState(false)
   useEffect(() => { fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {}) }, [])
   const [model, setModel] = useState('claude-sonnet-4-6')

@@ -43,6 +43,9 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+# CHANGELOG.md is read by /api/deployment to show release notes in-app (the update
+# modal). Without it the notes come back empty.
+COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
 # DB migration files — read at runtime by lib/migrate.ts (process.cwd()/migrations).

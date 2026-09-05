@@ -14,7 +14,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   // Version + update status, shown consistently in the nav (not just Settings).
-  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const [showUpdate, setShowUpdate] = useState(false)
 
   useEffect(() => {

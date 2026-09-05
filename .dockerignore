@@ -6,4 +6,5 @@ logs/
 .env.local
 .env*.local
 *.md
+!CHANGELOG.md
 dist/
