@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
+import { UpdateModal } from '@/components/UpdateModal'
 
 interface Conv { id: string; title: string }
 
@@ -13,7 +14,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   // Version + update status, shown consistently in the nav (not just Settings).
-  const [deploy, setDeploy] = useState<{ currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [showUpdate, setShowUpdate] = useState(false)
 
   useEffect(() => {
     fetch('/api/conversations')
@@ -44,6 +46,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+      {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* Sidebar */}
       <div style={{ width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
         {/* Logo */}
@@ -110,15 +113,12 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                 <div style={{ fontSize: 10, color: 'var(--text3)' }}>{user.role}</div>
                 {deploy.updateAvailable ? (
-                  // Claude-style update chip — a small rounded pill, shown consistently
-                  // in the nav (not just Settings). Clicking opens the release.
-                  <a href={deploy.latestReleaseUrl || '#'} target="_blank" rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
+                  <button onClick={e => { e.stopPropagation(); setShowUpdate(true) }}
                     title={`Version ${deploy.latestVersion} is available`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, textDecoration: 'none', lineHeight: 1.6 }}>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.6 }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
                     Update to v{deploy.latestVersion}
-                  </a>
+                  </button>
                 ) : (
                   <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || '—'}</div>
                 )}

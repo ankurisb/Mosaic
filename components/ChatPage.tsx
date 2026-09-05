@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import { APP_VERSION } from '@/lib/version'
+import { UpdateModal } from '@/components/UpdateModal'
 import RcaRenderer from './rca/RcaRenderer'
 import ReactMarkdown from 'react-markdown'
 import SetupBanner from './SetupBanner'
@@ -249,7 +250,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [showSystem, setShowSystem] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   // Update status for the nav chip (chat page has its own sidebar, not AppShell).
-  const [deploy, setDeploy] = useState<{ currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null }>({})
+  const [showUpdate, setShowUpdate] = useState(false)
   useEffect(() => { fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {}) }, [])
   const [model, setModel] = useState('claude-sonnet-4-6')
   const [loadingConvs, setLoadingConvs] = useState(true)
@@ -637,6 +639,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
+      {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* -- Sidebar -- */}
       <div style={{ width: sidebarCollapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
 
@@ -729,13 +732,12 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
                   {deploy.updateAvailable ? (
-                    <a href={deploy.latestReleaseUrl || '#'} target="_blank" rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
+                    <button onClick={e => { e.stopPropagation(); setShowUpdate(true) }}
                       title={`Version ${deploy.latestVersion} is available`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, textDecoration: 'none', lineHeight: 1.6 }}>
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '1px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', border: '1px solid var(--blue-t)', color: 'var(--blue-t)', fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.6 }}>
                       <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
                       Update to v{deploy.latestVersion}
-                    </a>
+                    </button>
                   ) : (
                     <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || APP_VERSION}</div>
                   )}

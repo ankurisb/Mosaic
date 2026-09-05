@@ -76,8 +76,20 @@ export async function GET() {
     }
   } catch { /* offline or no token */ }
 
+  // Infer edition from how Mosaic is served, to drive the update UX:
+  //  - localhost / no real domain (internal self-signed TLS) => Personal edition,
+  //    typically the Electron DMG on a laptop, where the user can self-update.
+  //  - a real hostname with public TLS (CADDY_TLS set) => Enterprise, a server
+  //    deployment where updates are an IT/ops operation, NOT a self-service button.
+  // The client additionally checks for the Electron updater bridge before offering
+  // an in-app "Update now"; this flag drives the messaging either way.
+  const hostname = (process.env.MOSAIC_HOSTNAME || 'localhost').toLowerCase()
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '' || hostname.endsWith('.local')
+  const edition = (isLocalHost && !process.env.CADDY_TLS) ? 'personal' : 'enterprise'
+
   return Response.json({
     mode: isVercel ? 'vercel' : 'self-hosted',
+    edition,
     scheduler: isVercel ? 'Vercel Cron' : 'Built-in',
     database: isSqlite ? 'SQLite (local)' : isNeon ? 'Neon Postgres (cloud)' : 'Postgres',
     appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
