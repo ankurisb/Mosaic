@@ -300,4 +300,62 @@ async function checkRequirements(config) {
   return results
 }
 
-module.exports = { install, checkRequirements }
+module.exports = { install, checkRequirements, update }
+
+// ── The update flow ───────────────────────────────────────────────────────────
+// Pull the newest published images for the ALREADY-INSTALLED deployment, then
+// re-up. Reuses the install helpers (run/dockerEnv/profileArgs). Progress is
+// streamed to the renderer the same way install() does, so the app can show a
+// progress bar. Data/volumes are untouched — this only swaps the app image and
+// restarts; migrations run at boot (instrumentation.ts).
+async function update(config, rawEmit) {
+  const emit = (d) => { try { rawEmit && rawEmit(d) } catch {} }
+  try {
+    const installDir = config.installDir || path.join(HOME, 'Mosaic')
+    if (!fs.existsSync(path.join(installDir, 'docker-compose.yml'))) {
+      throw new Error('No Mosaic installation found to update at ' + installDir)
+    }
+
+    // Respect the installed edition's compose profiles (Personal vs Enterprise),
+    // read from the .env the installer wrote. Falling back to personal (core only).
+    let edition = 'personal'
+    try {
+      const env = fs.readFileSync(path.join(installDir, '.env'), 'utf8')
+      const m = env.match(/^MOSAIC_EDITION=(\w+)/m)
+      if (m && m[1] === 'enterprise') edition = 'enterprise'
+    } catch {}
+    const profiles = profileArgs(edition)
+
+    // Preflight — Docker must be running to pull/up.
+    emit({ pct: 8, label: 'Checking Docker…' })
+    if (!execSafe('docker info')) {
+      throw new Error('Docker is not running. Start Docker Desktop, then try updating again.')
+    }
+
+    // 1 — pull the new images.
+    emit({ pct: 15, label: 'Downloading the new version…' })
+    try {
+      await run(`docker compose ${profiles} pull`, installDir, d => {
+        emit({ pct: 55, label: `Downloading: ${d.trim().slice(0, 58)}` })
+      })
+    } catch (e) {
+      throw new Error('Could not download the new version. Check your internet connection and try again. (' + (e.message || 'pull failed').slice(0, 120) + ')')
+    }
+
+    // 2 — re-up with the new images (recreates changed containers only).
+    emit({ pct: 78, label: 'Applying the update…' })
+    await run(`docker compose ${profiles} up -d`, installDir, d => {
+      emit({ pct: 88, label: `Restarting: ${d.trim().slice(0, 58)}` })
+    })
+
+    // 3 — wait for the app to answer again.
+    emit({ pct: 92, label: 'Waiting for Mosaic to come back…' })
+    const ready = await waitForServer('https://localhost/login', 120)
+
+    emit({ pct: 100, label: ready ? 'Update complete.' : 'Updated — finishing warm-up…', done: true, ready })
+    return { ok: true, ready }
+  } catch (err) {
+    emit({ error: true, message: err.message || String(err) })
+    return { ok: false, error: err.message || String(err) }
+  }
+}

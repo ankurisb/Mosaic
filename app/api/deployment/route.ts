@@ -76,16 +76,20 @@ export async function GET() {
     }
   } catch { /* offline or no token */ }
 
-  // Infer edition from how Mosaic is served, to drive the update UX:
-  //  - localhost / no real domain (internal self-signed TLS) => Personal edition,
-  //    typically the Electron DMG on a laptop, where the user can self-update.
-  //  - a real hostname with public TLS (CADDY_TLS set) => Enterprise, a server
-  //    deployment where updates are an IT/ops operation, NOT a self-service button.
-  // The client additionally checks for the Electron updater bridge before offering
-  // an in-app "Update now"; this flag drives the messaging either way.
-  const hostname = (process.env.MOSAIC_HOSTNAME || 'localhost').toLowerCase()
-  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '' || hostname.endsWith('.local')
-  const edition = (isLocalHost && !process.env.CADDY_TLS) ? 'personal' : 'enterprise'
+  // Edition drives the update UX. Prefer the explicit MOSAIC_EDITION the installer
+  // sets (authoritative); otherwise infer from how Mosaic is served:
+  //  - localhost / no real domain (internal TLS) => Personal (Electron DMG on a
+  //    laptop, can self-update).
+  //  - a real hostname with public TLS (CADDY_TLS) => Enterprise (server, updates
+  //    are an IT operation, not a self-service button).
+  // The client additionally requires the Electron updater bridge before offering an
+  // in-app "Update now"; this flag drives the messaging either way.
+  let edition = (process.env.MOSAIC_EDITION || '').toLowerCase()
+  if (edition !== 'personal' && edition !== 'enterprise') {
+    const hostname = (process.env.MOSAIC_HOSTNAME || 'localhost').toLowerCase()
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '' || hostname.endsWith('.local')
+    edition = (isLocalHost && !process.env.CADDY_TLS) ? 'personal' : 'enterprise'
+  }
 
   return Response.json({
     mode: isVercel ? 'vercel' : 'self-hosted',
