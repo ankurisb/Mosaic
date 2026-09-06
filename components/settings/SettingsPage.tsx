@@ -35,22 +35,22 @@ const ALL_TABS = [
   { id: 'setup',         label: 'Setup',                adminOnly: true  },
   { id: 'account',       label: 'Password',             adminOnly: false },
   { id: 'keys',          label: 'API keys',             adminOnly: true  },
-  { id: 'auth',          label: 'Authentication',       adminOnly: true  },
-  { id: 'users',         label: 'Users',                adminOnly: true  },
+  { id: 'auth',          label: 'Authentication',       adminOnly: true, enterpriseOnly: true  },
+  { id: 'users',         label: 'Users',                adminOnly: true, enterpriseOnly: true  },
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
   { id: 'system-health', label: 'System health',        adminOnly: true  },
   { id: 'data-sources',  label: 'Data sources',         adminOnly: true  },
   { id: 'interfaces',    label: 'Connected tools',      adminOnly: false },
   { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
   { id: 'analytics',     label: 'Analysis capabilities',adminOnly: true  },
-  { id: 'guardrails',    label: 'Guardrails',           adminOnly: true  },
-  { id: 'notifications', label: 'Notifications',        adminOnly: true  },
-  { id: 'developer-api', label: 'Developer API',        adminOnly: true  },
-  { id: 'audit',         label: 'Audit trail',          adminOnly: true  },
-  { id: 'transparency',  label: 'AI Decision Log',      adminOnly: true  },
-  { id: 'data-retention',label: 'Data retention',       adminOnly: true  },
-  { id: 'backup',        label: 'Backup & restore',     adminOnly: true  },
-  { id: 'support',       label: 'Remote support',       adminOnly: true  },
+  { id: 'guardrails',    label: 'Guardrails',           adminOnly: true, enterpriseOnly: true  },
+  { id: 'notifications', label: 'Notifications',        adminOnly: true, enterpriseOnly: true  },
+  { id: 'developer-api', label: 'Developer API',        adminOnly: true, enterpriseOnly: true  },
+  { id: 'audit',         label: 'Audit trail',          adminOnly: true, enterpriseOnly: true  },
+  { id: 'transparency',  label: 'AI Decision Log',      adminOnly: true, enterpriseOnly: true  },
+  { id: 'data-retention',label: 'Data retention',       adminOnly: true, enterpriseOnly: true  },
+  { id: 'backup',        label: 'Backup & restore',     adminOnly: true, enterpriseOnly: true  },
+  { id: 'support',       label: 'Remote support',       adminOnly: true, enterpriseOnly: true  },
   { id: 'about',         label: 'About',                adminOnly: false },
 ]
 
@@ -86,7 +86,13 @@ function TabIcon({ id }: { id: string }) {
 
 export default function SettingsPage({ user }: { user: SessionUser }) {
   const router = useRouter()
-  const TABS = ALL_TABS.filter(t => !t.adminOnly || user.role === 'admin')
+  // Edition gates enterprise-only tabs out of Personal (single-user local app):
+  // Users/Auth/Audit etc. can't function on a localhost, one-person install.
+  const [edition, setEdition] = useState<string>('enterprise')
+  const TABS = ALL_TABS.filter(t =>
+    (!t.adminOnly || user.role === 'admin') &&
+    !(edition === 'personal' && t.enterpriseOnly)
+  )
   const validTabIds = TABS.map(t => t.id)
 
   const [tab, setTab] = useState(user.role === 'admin' ? 'setup' : 'keys')
@@ -99,9 +105,19 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     fetch('/api/deployment')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && d.updateAvailable) setUpdate({ available: true, latest: d.latestVersion || null, url: d.latestReleaseUrl || null }) })
+      .then(d => {
+        if (!d) return
+        if (d.edition) setEdition(d.edition)
+        if (d.updateAvailable) setUpdate({ available: true, latest: d.latestVersion || null, url: d.latestReleaseUrl || null })
+      })
       .catch(() => {})
   }, [])
+
+  // If the current tab got filtered out (e.g. edition resolved to personal after a
+  // deep-link to an enterprise-only tab), fall back to a valid one.
+  useEffect(() => {
+    if (!validTabIds.includes(tab)) setTab(validTabIds[0] || 'account')
+  }, [edition])
 
   // Sync from URL hash after mount (SSR-safe — no window access during SSR)
   useEffect(() => {

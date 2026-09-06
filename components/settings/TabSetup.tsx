@@ -35,6 +35,7 @@ const ITEMS = [
     label: 'Invite team members',
     description: 'Create user accounts for the people who will use Mosaic.',
     critical: false,
+    enterpriseOnly: true,
     href: '#users',
     action: 'Manage users',
   },
@@ -43,6 +44,7 @@ const ITEMS = [
     label: 'Configure notifications',
     description: 'Set up Slack, email or webhook channels for automated alerts and rule triggers.',
     critical: false,
+    enterpriseOnly: true,
     href: '#notifications',
     action: 'Configure',
   },
@@ -52,6 +54,10 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [aiToggleBusy, setAiToggleBusy] = useState(false)
+  // Personal edition hides team/notification steps (no multi-user on a local install).
+  const [edition, setEdition] = useState<string>('enterprise')
+  useEffect(() => { fetch('/api/deployment').then(r => r.ok ? r.json() : null).then(d => { if (d?.edition) setEdition(d.edition) }).catch(() => {}) }, [])
+  const visibleItems = ITEMS.filter(i => !(edition === 'personal' && i.enterpriseOnly))
 
   useEffect(() => {
     fetch('/api/setup-status')
@@ -109,14 +115,14 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
                     : 'Complete required steps to activate Mosaic'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-                {ITEMS.filter(i => status?.[i.key]?.done).length} of {ITEMS.length} steps complete
+                {visibleItems.filter(i => status?.[i.key]?.done).length} of {visibleItems.length} steps complete
               </div>
             </div>
             {/* Progress bar */}
             <div style={{ width: 120, height: 6, background: 'var(--border2)', borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
               <div style={{
                 height: '100%',
-                width: `${(ITEMS.filter(i => status?.[i.key]?.done).length / ITEMS.length) * 100}%`,
+                width: `${(visibleItems.filter(i => status?.[i.key]?.done).length / visibleItems.length) * 100}%`,
                 background: allDone ? 'var(--green-t)' : criticalDone ? 'var(--accent-bg)' : 'var(--accent-bg)',
                 borderRadius: 99,
                 transition: 'width .3s ease',
@@ -162,10 +168,11 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
             </span>
           </label>
 
-          {/* Recommended section */}
+          {/* Recommended section — only when there are recommended steps for this edition */}
+          {visibleItems.some(i => !i.critical) && <>
           <div style={{ marginBottom: 8, fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Recommended</div>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-            {ITEMS.filter(i => !i.critical).map((item, idx, arr) => (
+            {visibleItems.filter(i => !i.critical).map((item, idx, arr) => (
               <SetupRow
                 key={item.key}
                 item={item}
@@ -175,6 +182,7 @@ export default function TabSetup({ user, onNavigate }: { user: SessionUser; onNa
               />
             ))}
           </div>
+          </>}
         </>
       )}
     </div>
