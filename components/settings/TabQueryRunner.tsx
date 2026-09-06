@@ -361,6 +361,15 @@ export default function TabQueryRunner() {
           {running ? <><Spinner />Running…</> : <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polygon points="2,1 10,6 2,11" fill="currentColor"/></svg>Run</>}
         </button>
 
+        {/* New query — clears the editor for a fresh start (discoverable entry point
+            for users new to Mosaic who wouldn't know to just start typing). */}
+        <button onClick={() => { setQuery(''); setResult(null); setError(null); setSaveLabel(''); setShowSave(false) }}
+          title="Start a new, blank query"
+          style={{ height: 38, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
+          New query
+        </button>
+
         {/* Saved queries button */}
         <div ref={savedPanelRef} style={{ position: 'relative', flexShrink: 0 }}>
           <button onClick={() => setShowSavedPanel(v => !v)}

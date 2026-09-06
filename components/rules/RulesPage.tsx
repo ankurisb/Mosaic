@@ -354,6 +354,23 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           )}
           {alertForm.trigger_type === 'threshold' && (
             <div style={{ marginBottom: 10 }}>
+              {/* Query FIRST: pick a saved query (authored in the Query Builder). It
+                  carries its own connection, so it replaces the source + SQL fields, and
+                  its result columns populate the column dropdown below. Choosing the
+                  query before the column matches the natural order (you can't pick a
+                  column until you know which query's columns are available). */}
+              <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
+              <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => { const v = e.target.value; setAlertForm(p => ({ ...p, saved_query_id: v, column: '' })); if (v) fetchColumns(v) }}>
+                <option value="">Select a saved query…</option>
+                {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
+              </select>
+              {savedQueries.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries yet. Create one in the Query Builder, then pick it here.</div>
+              )}
+
+              {/* Column comes AFTER the query — the dropdown lists the chosen query's
+                  actual result columns. */}
+              <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', margin: '10px 0 5px', display: 'block' }}>Condition</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8 }}>
                 {(() => {
                   const cols = alertForm.saved_query_id ? sqColumns[alertForm.saved_query_id] : undefined
@@ -363,23 +380,12 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                       {cols.map(col => <option key={col} value={col}>{col}</option>)}
                     </select>
                   ) : (
-                    <input style={MONO_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))} placeholder="column name" />
+                    <input style={MONO_A} value={alertForm.column} onChange={e => setAlertForm(p => ({ ...p, column: e.target.value }))} placeholder={alertForm.saved_query_id ? 'column name' : 'select a query first'} />
                   )
                 })()}
                 <select style={{ ...SEL_A, width: 64 }} value={alertForm.op} onChange={e => setAlertForm(p => ({ ...p, op: e.target.value }))}>{['<','<=','>','>=','=='].map(op => <option key={op} value={op}>{op}</option>)}</select>
                 <input style={{ ...INP_A, width: 80 }} type="number" value={alertForm.threshold} onChange={e => setAlertForm(p => ({ ...p, threshold: e.target.value }))} placeholder="75" />
               </div>
-              {/* Query: pick a saved query (authored in the Query Builder). It carries
-                  its own connection, so it replaces the source + SQL fields. Inline SQL
-                  is no longer accepted — legacy alerts were migrated to saved queries. */}
-              <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }}>Query</label>
-              <select style={SEL_A} value={alertForm.saved_query_id || ''} onChange={e => { const v = e.target.value; setAlertForm(p => ({ ...p, saved_query_id: v })); if (v) fetchColumns(v) }}>
-                <option value="">Select a saved query…</option>
-                {savedQueries.map(q => <option key={q.id} value={q.id}>{q.name}{q.connection_label ? ` — ${q.connection_label}` : ''}</option>)}
-              </select>
-              {savedQueries.length === 0 && (
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>No saved queries yet. Create one in the Query Builder, then pick it here.</div>
-              )}
               {/* Match mode: compare the first result row, or fire if ANY row matches
                   (e.g. 'alert if any machine is over threshold'). */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
@@ -770,28 +776,10 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 </select>
                 <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.filter((_, i) => i !== ci) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: '0 6px', flexShrink: 0, lineHeight: 1 }}>×</button>
               </div>
-              <div style={{ display: 'flex', gap: 8, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
-                {(() => {
-                  const cols = c.saved_query_id ? sqColumns[c.saved_query_id] : undefined
-                  return cols && cols.length > 0 ? (
-                    <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))}>
-                      <option value="">— select field —</option>
-                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                    </select>
-                  ) : (
-                    <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder="field name (result column to compare)" />
-                  )
-                })()}
-                <select style={{ ...SEL, width: 58, fontSize: 12 }} value={c.op} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, op: e.target.value } : x) }))}>
-                  {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
-                </select>
-                <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
-                <select style={{ ...SEL, width: 110, fontSize: 11 }} value={c.match_mode || 'first'} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, match_mode: e.target.value } : x) }))} title="Evaluate the first result row, or fire if any row matches">
-                  <option value="first">first row</option>
-                  <option value="any">any row</option>
-                </select>
-              </div>
-              <div style={{ marginTop: 6, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
+              {/* Query picker FIRST — the field/column dropdown below is populated from
+                  the chosen query's result columns, so the query must be selected first
+                  (matches the connection -> query -> column order). */}
+              <div style={{ marginBottom: 6, opacity: c.source_id ? 1 : 0.4, pointerEvents: c.source_id ? 'auto' : 'none' }}>
                 {c.source_type === 'api' ? (
                   // API condition: the selected API connection IS the query (it carries
                   // its endpoint). No free path — pick the connection above, done.
@@ -811,7 +799,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                     )
                     return (
                       <>
-                        <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => { const v = e.target.value; setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: v } : x) })); if (v) fetchColumns(v) }}>
+                        <select style={{ ...SEL, fontSize: 11, width: '100%' }} value={c.saved_query_id || ''} onChange={e => { const v = e.target.value; setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, saved_query_id: v, field: '' } : x) })); if (v) fetchColumns(v) }}>
                           <option value="">Select a saved query…</option>
                           {matches.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
                         </select>
@@ -822,6 +810,29 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                     )
                   })()
                 )}
+              </div>
+              {/* Field/operator/value row — the field dropdown lists the chosen query's
+                  columns once a query is picked above. */}
+              <div style={{ display: 'flex', gap: 8, opacity: c.saved_query_id || c.source_type === 'api' ? 1 : 0.4, pointerEvents: c.saved_query_id || c.source_type === 'api' ? 'auto' : 'none' }}>
+                {(() => {
+                  const cols = c.saved_query_id ? sqColumns[c.saved_query_id] : undefined
+                  return cols && cols.length > 0 ? (
+                    <select style={{ ...SEL, flex: 1, fontSize: 11 }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))}>
+                      <option value="">— select field —</option>
+                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                    </select>
+                  ) : (
+                    <input style={{ ...INP, flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)' }} value={c.field} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, field: e.target.value } : x) }))} placeholder={c.saved_query_id ? 'field name (result column)' : 'select a query first'} />
+                  )
+                })()}
+                <select style={{ ...SEL, width: 58, fontSize: 12 }} value={c.op} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, op: e.target.value } : x) }))}>
+                  {['<','<=','>','>=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
+                </select>
+                <input style={{ ...INP, width: 80, fontSize: 12 }} type="number" value={c.value} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, value: Number(e.target.value) } : x) }))} />
+                <select style={{ ...SEL, width: 110, fontSize: 11 }} value={c.match_mode || 'first'} onChange={e => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, match_mode: e.target.value } : x) }))} title="Evaluate the first result row, or fire if any row matches">
+                  <option value="first">first row</option>
+                  <option value="any">any row</option>
+                </select>
               </div>
             </div>
           </div>
