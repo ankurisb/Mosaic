@@ -926,6 +926,20 @@ export async function setupDatabase() {
               VALUES (${dataset}, ${days})`.catch(() => {})
   }
 
+  // Personal edition: auto-register the "Mosaic Files" local folder as a data source
+  // so users can just drop files in ~/Mosaic/files (mounted at /mosaic-files) and ask
+  // Mosaic about them — no manual data-source setup. Only when the host folder is
+  // actually mounted (MOSAIC_FILES_DIR set by the installer) and none exists yet.
+  if ((process.env.MOSAIC_EDITION || 'personal') === 'personal' && process.env.MOSAIC_FILES_DIR) {
+    try {
+      const existing = await sql`SELECT id FROM file_servers WHERE transport = 'local' AND share_path = '/mosaic-files' LIMIT 1` as unknown as { id: string }[]
+      if (!existing.length) {
+        await sql`INSERT INTO file_servers (label, transport, environment, share_path, file_types)
+                  VALUES ('Mosaic Files', 'local', 'production', '/mosaic-files', 'csv,xlsx,xls,pdf,txt,xml,json')`
+      }
+    } catch { /* file_servers may not exist on a very old schema; ignore */ }
+  }
+
     done = true
 }
 

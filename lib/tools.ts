@@ -1378,30 +1378,51 @@ async function readLocalFiles(
     throw new Error(`Access denied: the requested path is outside the permitted share (${server.label || 'file server'}).`)
   }
 
-  let entries: { name: string; mtime: Date; size: number }[] = []
+  let entries: { name: string; relPath: string; mtime: Date; size: number }[] = []
   try {
-    const dirEntries = await fs.readdir(basePath, { withFileTypes: true })
-    const stats = await Promise.all(
-      dirEntries
-        .filter(e => e.isFile() && fileTypes.some(t => e.name.toLowerCase().endsWith('.' + t)))
-        .map(async e => {
-          const stat = await fs.stat(path.join(basePath, e.name))
-          return { name: e.name, mtime: stat.mtime, size: stat.size }
-        })
-    )
-    entries = stats
+    // Recursively walk basePath so a whole tree (e.g. the ~/Mosaic/files folder
+    // with the user's subfolders) is searchable, not just the top level. Every
+    // discovered path is re-contained via withinRoot, so a symlink can't escape
+    // the granted root. Bounded depth + file count to stay responsive.
+    const MAX_DEPTH = 8
+    const MAX_FILES = Number(server.max_files) || 5000
+    const walk = async (dir: string, depth: number): Promise<void> => {
+      if (depth > MAX_DEPTH || entries.length >= MAX_FILES) return
+      let dirEntries: import('fs').Dirent[]
+      try { dirEntries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+      for (const e of dirEntries) {
+        if (entries.length >= MAX_FILES) break
+        if (e.name.startsWith('.')) continue // skip dotfiles/dirs
+        const full = path.join(dir, e.name)
+        let real = full
+        try { real = await fs.realpath(full) } catch { continue }
+        if (!withinRoot(real)) continue // containment: never leave the granted root
+        if (e.isDirectory()) {
+          await walk(full, depth + 1)
+        } else if (e.isFile() && fileTypes.some(t => e.name.toLowerCase().endsWith('.' + t))) {
+          try {
+            const stat = await fs.stat(full)
+            entries.push({ name: e.name, relPath: path.relative(basePath, full), mtime: stat.mtime, size: stat.size })
+          } catch { /* skip unreadable */ }
+        }
+      }
+    }
+    await walk(basePath, 0)
   } catch (err) {
     throw new Error(`Cannot read directory ${basePath}: ${(err as Error).message}`)
   }
 
   if (!entries.length) return { server: server.label, files: [], message: 'No matching files found' }
 
-  // Sort by mtime desc, pick best match for fileHint
+  // Sort by mtime desc, pick best match for fileHint. Match against the relative
+  // path (so a hint can reference a subfolder, e.g. "line-a/oee"), then filename.
   entries.sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
   const hint = fileHint.toLowerCase()
-  const best = entries.find(e => e.name.toLowerCase().includes(hint)) || entries[0]
+  const best = entries.find(e => e.relPath.toLowerCase().includes(hint))
+    || entries.find(e => e.name.toLowerCase().includes(hint))
+    || entries[0]
 
-  const filePath = path.join(basePath, best.name)
+  const filePath = path.join(basePath, best.relPath)
   // Contain the selected file too: realpath it and assert it's still inside the
   // granted root, so a symlink within the directory (or an odd filename) can't
   // be used to read outside the share.

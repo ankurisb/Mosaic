@@ -165,6 +165,11 @@ services:
       # MOSAIC_DATA_DIR lets an existing SQLite DB be mounted from the host
       # (e.g. an in-place upgrade). Defaults to the named volume for fresh installs.
       - ${MOSAIC_DATA_DIR:-mosaic-data}:/data
+      # Personal edition: the host ~/Mosaic/files folder is mounted read-only so
+      # Mosaic can analyse files the user drops in. The installer sets
+      # MOSAIC_FILES_DIR to that host path; other deployments default to a named
+      # volume (harmless, effectively empty), so Enterprise is unaffected.
+      - ${MOSAIC_FILES_DIR:-mosaic-files}:/mosaic-files:ro
       # /app is root-owned but the app runs as uid 1001, so Pino cannot mkdir
       # /app/logs. Mount a writable volume there.
       - mosaic-logs:/app/logs
@@ -766,6 +771,8 @@ volumes:
   caddy-config:
   mosaic-data:
   mosaic-logs:
+  # Fallback for MOSAIC_FILES_DIR when no host folder is bound (non-Personal).
+  mosaic-files:
   airbyte-db-data:
   airbyte-workspace:
   superset-db-data:
