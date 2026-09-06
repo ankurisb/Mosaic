@@ -90,7 +90,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'read_file_server',
-    description: 'Read files from a configured file server connection (SMB/SFTP/local/S3). Finds the latest matching file using a 3-step timestamp strategy: (1) filename date pattern, (2) file system modified-at, (3) parse file content for date fields. Returns parsed rows for CSV/Excel, text for PDF/XML/JSON, or base64 for images.',
+    description: 'Read the content of ONE file from a configured file server / local folder (SMB/SFTP/local/S3). Picks the single best match for file_hint (scans subfolders too). Returns parsed rows for CSV/Excel, extracted text for PDF/Word/PowerPoint/XML/JSON. To read SEVERAL files (e.g. "summarise all my files"), first call list_files to see everything available, then call this once per file using each exact filename as the file_hint. The response also includes an available_files list so you know what else is there.',
     input_schema: {
       type: 'object',
       properties: {
@@ -102,6 +102,18 @@ export const TOOLS: Anthropic.Tool[] = [
         extract:     { type: 'string', description: 'For Excel: sheet name to read, e.g. "sheet=OEE". For JSON/XML: dot-path to array, e.g. "results.items"' },
       },
       required: ['server_id', 'file_hint']
+    },
+  },
+  {
+    name: 'list_files',
+    description: 'List ALL files available on a file server / local folder connection (recursively, including subfolders), with their names, sizes and modified dates. Use this FIRST whenever the user asks about "all my files", "everything in the folder", "what files do I have", or wants a summary across multiple files — so you know the complete set before reading. Then call read_file_server once per file to read each one. Does NOT read file contents; it only lists them.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server_id: { type: 'string', description: 'File server connection ID from settings' },
+        file_type: { type: 'string', description: 'Optional: filter to one extension, e.g. "pdf". Leave blank for all configured types.' },
+      },
+      required: ['server_id']
     },
   },
   {
@@ -358,6 +370,11 @@ export async function runTool(
       const result = await readFileServer(srcId, String(input.file_hint), { ts_strategy: input.ts_strategy, extract: input.extract, max_rows: input.max_rows, file_type: input.file_type } as Record<string, unknown>)
       // Post-read: strip blocked columns from file results
       try { return await stripBlockedColumnsFromResult(result, srcId, 'file_server', role) } catch { return result }
+    }
+
+    case 'list_files': {
+      const srcId = String(input.server_id || '')
+      return await listAllFiles(srcId, input.file_type ? String(input.file_type) : undefined)
     }
 
     case 'query_prism': {
@@ -1470,6 +1487,55 @@ async function assertWithinShare(shareRoot: string, candidate: string): Promise<
     throw new Error('Access denied: the requested path is outside the permitted share.')
   }
   return candReal
+}
+
+// List ALL files on a file-server / local folder connection, recursively (subfolders
+// included), returning just names/sizes/dates — no content. Backs the list_files tool
+// so the AI can survey the whole folder before reading. Currently implemented for the
+// 'local' transport (the ~/Mosaic/files use case); other transports fall back to the
+// single-file reader's own listing.
+async function listAllFiles(serverId: string, filterExt?: string): Promise<unknown> {
+  const db = getDb()
+  const rows = await db`SELECT * FROM file_servers WHERE id = ${serverId}`
+  if (!rows.length) throw new Error(`File server "${serverId}" not found. Check Settings → File servers.`)
+  const fs = rows[0] as Record<string, unknown>
+  const configured = ((fs.file_types as string) || 'csv,xlsx,xls,pdf,txt,md,xml,json,docx,pptx').split(',').map(s => s.trim().toLowerCase())
+  const allowed = filterExt ? [filterExt.toLowerCase().replace(/^\./, '')] : configured
+
+  if ((fs.transport as string) !== 'local') {
+    return { note: 'list_files currently supports local folders; for this connection use read_file_server which returns an available_files list.' }
+  }
+
+  const { readdir, stat, realpath } = await import('fs/promises')
+  const path = await import('path')
+  const basePath = [fs.share_path, fs.sub_path].filter(Boolean).join('/') as string
+  const rootReal = await realpath(basePath).catch(() => basePath)
+  const out: { name: string; size_kb: number; modified: string }[] = []
+  const MAX_DEPTH = 8, MAX = Number(fs.max_files) || 5000
+
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > MAX_DEPTH || out.length >= MAX) return
+    let entries: import('fs').Dirent[]
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (out.length >= MAX) break
+      if (e.name.startsWith('.')) continue
+      const full = path.join(dir, e.name)
+      let real = full
+      try { real = await realpath(full) } catch { continue }
+      if (path.relative(rootReal, real).startsWith('..')) continue // containment
+      if (e.isDirectory()) { await walk(full, depth + 1); continue }
+      const ext = e.name.split('.').pop()?.toLowerCase() || ''
+      if (!allowed.includes(ext)) continue
+      try {
+        const s = await stat(full)
+        out.push({ name: path.relative(basePath, full), size_kb: Math.round(s.size / 102.4) / 10, modified: s.mtime.toISOString().slice(0, 10) })
+      } catch { /* skip */ }
+    }
+  }
+  await walk(basePath, 0)
+  out.sort((a, b) => b.modified.localeCompare(a.modified))
+  return { server: fs.label, folder: basePath, file_count: out.length, files: out }
 }
 
 async function readFileServer(
