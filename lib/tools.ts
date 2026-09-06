@@ -117,6 +117,19 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'read_file_as_images',
+    description: 'Read a PDF file as PAGE IMAGES so you can VISUALLY interpret charts, figures, diagrams and other graphics that text extraction (read_file_server) cannot parse. Use this ONLY after (a) read_file_server reported that content is embedded as images/charts, AND (b) the user has explicitly agreed to read the charts visually — always ask for that consent first, then call this. Give the same server_id + file_hint you used with read_file_server. Returns the pages as images for your vision analysis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server_id: { type: 'string', description: 'File server / local folder connection ID (same as read_file_server)' },
+        file_hint: { type: 'string', description: 'The file to read as images — same hint/filename you used with read_file_server' },
+        max_pages: { type: 'number', description: 'Max pages to render (default 12)' },
+      },
+      required: ['server_id', 'file_hint']
+    },
+  },
+  {
     name: 'query_airbyte',
     description: 'Query data from an Airbyte-synced source, check sync status, or trigger a sync job.',
     input_schema: {
@@ -375,6 +388,16 @@ export async function runTool(
     case 'list_files': {
       const srcId = String(input.server_id || '')
       return await listAllFiles(srcId, input.file_type ? String(input.file_type) : undefined)
+    }
+
+    case 'read_file_as_images': {
+      const srcId = String(input.server_id || '')
+      // Data-access rules still apply (same as reading the file's text).
+      try {
+        const accessCheck = await applyDataAccessRules(String(input.file_hint || ''), srcId, 'file_server', role, auditCtx)
+        if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
+      } catch { }
+      return await readFileAsImages(srcId, String(input.file_hint), Number(input.max_pages) || 12, auditCtx)
     }
 
     case 'query_prism': {
@@ -1494,6 +1517,77 @@ async function assertWithinShare(shareRoot: string, candidate: string): Promise<
 // so the AI can survey the whole folder before reading. Currently implemented for the
 // 'local' transport (the ~/Mosaic/files use case); other transports fall back to the
 // single-file reader's own listing.
+async function readFileAsImages(serverId: string, fileHint: string, maxPages: number, auditCtx?: unknown): Promise<unknown> {
+  const db = getDb()
+  const rows = await db`SELECT * FROM file_servers WHERE id = ${serverId}`
+  if (!rows.length) throw new Error(`File server "${serverId}" not found.`)
+  const fs = rows[0] as Record<string, unknown>
+  if ((fs.transport as string) !== 'local') {
+    return { note: 'Reading a file as images is currently supported for local folders only.' }
+  }
+  const { readdir, stat, realpath, readFile } = await import('fs/promises')
+  const path = await import('path')
+  const basePath = [fs.share_path, fs.sub_path].filter(Boolean).join('/') as string
+  const rootReal = await realpath(basePath).catch(() => basePath)
+  const matches: { rel: string; full: string; mtime: Date }[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > 8) return
+    let entries: import('fs').Dirent[]
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue
+      const full = path.join(dir, e.name)
+      let real = full
+      try { real = await realpath(full) } catch { continue }
+      if (path.relative(rootReal, real).startsWith('..')) continue
+      if (e.isDirectory()) { await walk(full, depth + 1); continue }
+      if (e.name.toLowerCase().endsWith('.pdf')) {
+        try { const s = await stat(full); matches.push({ rel: path.relative(basePath, full), full, mtime: s.mtime }) } catch { /* skip */ }
+      }
+    }
+  }
+  await walk(basePath, 0)
+  if (!matches.length) return { error: 'No PDF found matching that file. Reading as images is only for PDFs.' }
+  matches.sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+  const hint = fileHint.toLowerCase()
+  const best = matches.find(m => m.rel.toLowerCase().includes(hint)) || matches.find(m => path.basename(m.rel).toLowerCase().includes(hint)) || matches[0]
+  const buf = await readFile(best.full)
+
+  const statsUrl = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
+  let data: { ok?: boolean; images?: string[]; page_count?: number; rendered?: number; truncated?: boolean; error?: string }
+  try {
+    const form = new FormData()
+    form.append('file', new Blob([new Uint8Array(buf)]), best.rel)
+    form.append('filename', best.rel)
+    form.append('max_pages', String(maxPages))
+    const res = await fetch(`${statsUrl}/rasterize`, { method: 'POST', body: form, signal: AbortSignal.timeout(60000) })
+    if (!res.ok) return { error: `Could not render the PDF pages (rasteriser returned ${res.status}).` }
+    data = await res.json()
+  } catch (e) {
+    return { error: `Could not render the PDF pages: ${(e as Error).message}. The visual reader may be unavailable.` }
+  }
+  if (!data.ok || !data.images?.length) return { error: data.error || 'The PDF produced no page images.' }
+
+  // Audit: record that the user consented to visual (image) reading of this file.
+  try {
+    const { audit } = await import('./audit')
+    const ctx = (auditCtx || {}) as { id?: string; userId?: string; email?: string; userEmail?: string; role?: string; userRole?: string }
+    const actor = { id: ctx.id || ctx.userId || 'unknown', email: ctx.email || ctx.userEmail || 'unknown', role: ctx.role || ctx.userRole || 'user' }
+    await audit(null, actor, 'file.read_as_images', `file_server:${serverId}`, 'success', { file: best.rel, pages_rendered: data.rendered, page_count: data.page_count, consent: 'user_approved_visual_read' })
+  } catch { /* audit is best-effort */ }
+
+  const images = data.images.map(b64 => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } }))
+  return {
+    content_type: 'images',
+    file: best.rel,
+    pages_rendered: data.rendered,
+    page_count: data.page_count,
+    truncated: data.truncated,
+    note: `Rendered ${data.rendered} page(s) of ${best.rel} as images for visual analysis${data.truncated ? ` (first ${data.rendered} of ${data.page_count} pages)` : ''}. Interpret the charts and figures directly.`,
+    images,
+  }
+}
+
 async function listAllFiles(serverId: string, filterExt?: string): Promise<unknown> {
   const db = getDb()
   const rows = await db`SELECT * FROM file_servers WHERE id = ${serverId}`

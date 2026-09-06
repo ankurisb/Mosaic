@@ -67,6 +67,38 @@ async def convert(file: UploadFile = File(...), filename: str = Form(None)):
             try: os.unlink(tmp_path)
             except Exception: pass
 
+@app.post("/rasterize")
+async def rasterize(file: UploadFile = File(...), filename: str = Form(None), max_pages: int = Form(12), dpi: int = Form(120)):
+    # Rasterise a PDF's pages to PNG images (base64) so the caller can send them to a
+    # vision model — for reading charts/figures embedded as images that text extraction
+    # (MarkItDown) can't parse. On-demand only (the app gets user consent first).
+    # Bounded pages + dpi to keep payloads/latency sane.
+    import base64, time
+    name = filename or (file.filename if file else None) or "document"
+    started = time.time()
+    try:
+        import fitz  # PyMuPDF
+        data = await file.read()
+        if not data:
+            return {"ok": False, "error": "empty file", "images": []}
+        doc = fitz.open(stream=data, filetype="pdf")
+        images = []
+        zoom = max(0.5, min(dpi / 72.0, 3.0))
+        mat = fitz.Matrix(zoom, zoom)
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            images.append(base64.b64encode(pix.tobytes("png")).decode("ascii"))
+        total = doc.page_count
+        doc.close()
+        return {"ok": True, "filename": name, "images": images, "page_count": total,
+                "rendered": len(images), "truncated": total > len(images),
+                "elapsed_ms": round((time.time() - started) * 1000)}
+    except BaseException as e:
+        return {"ok": False, "filename": name, "error": str(e)[:300], "images": []}
+
+
 @app.get("/capabilities")
 def capabilities():
     # Report the analyses this sidecar actually implements. Mosaic intersects

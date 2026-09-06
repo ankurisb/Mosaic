@@ -8,4 +8,7 @@ python-multipart==0.0.9
 # MarkItDown converts documents (PDF, Word, PowerPoint, Excel, HTML, CSV) to clean,
 # token-efficient Markdown. Pinned + only the doc extras we need — NOT the heavy
 # audio/whisper/azure extras — to keep the image lean and the release build fast.
-markitdown[docx,pptx,xlsx,pdf]==0.0.1a3
+markitdown[docx,pptx,xlsx,pdf]==0.1.7
+# PyMuPDF rasterises PDF pages to PNGs for on-demand vision reading of chart/figure
+# images that text extraction can't parse. Used by /rasterize.
+PyMuPDF==1.24.9

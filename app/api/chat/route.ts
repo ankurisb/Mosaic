@@ -610,6 +610,22 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 send({ type: 'hitl_required', pending_description: r.pending_description, tool_name: r.tool_name, tool_input: r.tool_input })
                 return { type: 'tool_result' as const, tool_use_id: block.id, content: `Action requires your approval: ${r.pending_description}. Please confirm in the UI.` }
               }
+              // read_file_as_images returns page images for vision: the tool_result
+              // content must be an array of blocks (a text note + image blocks), not a
+              // JSON string, so Claude actually SEES the rendered chart pages. The
+              // images are stripped from what we send to the client (too large / already
+              // shown as a tool activity) — the client gets a compact summary.
+              if (result && typeof result === 'object' && (result as Record<string, unknown>).content_type === 'images') {
+                const r = result as { note?: string; images?: { type: string; source: unknown }[]; file?: string; pages_rendered?: number }
+                const imgBlocks = (r.images || []).slice(0, 12) as unknown as Anthropic.ImageBlockParam[]
+                const clientSummary = { content_type: 'images', file: r.file, pages_rendered: r.pages_rendered, note: r.note }
+                send({ type: 'tool_result', name: block.name, result: clientSummary })
+                finalToolCalls.push({ name: block.name, input: block.input, result: clientSummary })
+                return { type: 'tool_result' as const, tool_use_id: block.id, content: [
+                  { type: 'text' as const, text: r.note || 'Rendered PDF pages as images.' },
+                  ...imgBlocks,
+                ] }
+              }
               // Truncate first, then apply injection defense as a suffix note
               // (wrapping must NOT corrupt the JSON structure — Claude needs valid JSON
               //  to call render_chart and other structured tools)
