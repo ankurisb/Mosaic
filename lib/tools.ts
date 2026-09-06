@@ -1431,58 +1431,19 @@ async function readLocalFiles(
   if (!withinRoot(fileReal)) {
     throw new Error(`Access denied: the selected file resolves outside the permitted share (${server.label || 'file server'}).`)
   }
-  const ext = best.name.split('.').pop()?.toLowerCase() || ''
-
-  // Read content based on extension
-  if (ext === 'csv') {
-    const text = await fs.readFile(filePath, 'utf-8')
-    const lines = text.split('\n').filter(Boolean)
-    const headers = lines[0]?.split(',') || []
-    const dataRows = lines.slice(1, maxRows + 1).map(l => {
-      const vals = l.split(',')
-      return Object.fromEntries(headers.map((h, i) => [h.trim(), vals[i]?.trim()]))
-    })
-    return {
-      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
-      ts_source: tsStrategy === 'filename' ? 'filename' : 'modified_at',
-      rows: dataRows.length, columns: headers, data: dataRows.slice(0, maxRows),
-    }
-  }
-
-  if (ext === 'json') {
-    const text = await fs.readFile(filePath, 'utf-8')
-    const data = JSON.parse(text)
-    return {
-      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
-      ts_source: 'modified_at', data: Array.isArray(data) ? data.slice(0, maxRows) : data,
-    }
-  }
-
-  if (ext === 'xml') {
-    const text = await fs.readFile(filePath, 'utf-8')
-    // Return raw XML up to 4000 chars -- Claude can parse it
-    return {
-      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
-      ts_source: 'modified_at', content_type: 'xml',
-      content: text.slice(0, 4000) + (text.length > 4000 ? '...(truncated)' : ''),
-    }
-  }
-
-  if (ext === 'txt') {
-    const text = await fs.readFile(filePath, 'utf-8')
-    return {
-      server: server.label, file: best.name, timestamp: best.mtime.toISOString(),
-      ts_source: 'modified_at', content: text.slice(0, 4000),
-    }
-  }
-
-  // PDF/xlsx/jpeg -- return metadata, content requires additional parsing libraries
+  // Read + parse the selected file with the SHARED parser (parseFileContent) so the
+  // folder reader supports the same formats as chat upload — including PDF and Excel
+  // (pdf-parse / xlsx), not just CSV/TXT. Previously PDFs returned a stub ("add
+  // pdf-parse") and were effectively unreadable from a local folder.
+  const buf = await fs.readFile(filePath)
+  const parsed = await parseFileContent(buf, best.name, maxRows, undefined)
   return {
-    server: server.label, file: best.name,
-    timestamp: best.mtime.toISOString(), size_bytes: best.size,
-    ts_source: 'modified_at',
-    message: `${ext.toUpperCase()} file found. Add pdf-parse or xlsx npm package for content extraction.`,
-    available_files: entries.slice(0, 10).map(e => ({ name: e.name, mtime: e.mtime.toISOString(), size: e.size })),
+    server: server.label,
+    file: best.relPath,               // full relative path so the user sees where it came from
+    timestamp: best.mtime.toISOString(),
+    ts_source: tsStrategy === 'filename' ? 'filename' : 'modified_at',
+    ...parsed,
+    available_files: entries.slice(0, 20).map(e => ({ name: e.relPath, mtime: e.mtime.toISOString(), size: e.size })),
   }
 }
 
