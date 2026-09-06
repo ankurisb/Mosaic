@@ -321,9 +321,19 @@ export default function TabQueryRunner() {
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Query Builder</h1>
-        <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Explore any connected data source — pick a source, choose a table, and run.</p>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Query Builder</h1>
+          <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Explore any connected data source — pick a source, choose a table, and run.</p>
+        </div>
+        {/* New query — top-right entry point. Clears the editor for a fresh start
+            (discoverable for users new to Mosaic who wouldn't know to just start typing). */}
+        <button onClick={() => { setQuery(''); setResult(null); setError(null); setSaveLabel(''); setShowSave(false) }}
+          title="Start a new, blank query"
+          style={{ flexShrink: 0, height: 38, padding: '0 16px', background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
+          New query
+        </button>
       </div>
 
       {/* ── Toolbar ── */}
@@ -359,15 +369,6 @@ export default function TabQueryRunner() {
         <button onClick={runQuery} disabled={running || !selectedId || (!isApi && !query.trim())}
           style={{ height: 38, padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 500, cursor: running || !selectedId || (!isApi && !query.trim()) ? 'default' : 'pointer', opacity: running || !selectedId || (!isApi && !query.trim()) ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {running ? <><Spinner />Running…</> : <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polygon points="2,1 10,6 2,11" fill="currentColor"/></svg>Run</>}
-        </button>
-
-        {/* New query — clears the editor for a fresh start (discoverable entry point
-            for users new to Mosaic who wouldn't know to just start typing). */}
-        <button onClick={() => { setQuery(''); setResult(null); setError(null); setSaveLabel(''); setShowSave(false) }}
-          title="Start a new, blank query"
-          style={{ height: 38, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
-          New query
         </button>
 
         {/* Saved queries button */}
