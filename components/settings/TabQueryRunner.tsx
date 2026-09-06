@@ -321,19 +321,16 @@ export default function TabQueryRunner() {
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div>
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Query Builder</h1>
           <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Explore any connected data source — pick a source, choose a table, and run.</p>
         </div>
-        {/* New query — top-right entry point. Clears the editor for a fresh start
-            (discoverable for users new to Mosaic who wouldn't know to just start typing). */}
+        {/* New query — top-right, matching the '+ New alert' button style (pill,
+            accent). Clears the editor for a fresh start. */}
         <button onClick={() => { setQuery(''); setResult(null); setError(null); setSaveLabel(''); setShowSave(false) }}
           title="Start a new, blank query"
-          style={{ flexShrink: 0, height: 38, padding: '0 16px', background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
-          New query
-        </button>
+          style={{ flexShrink: 0, padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ New query</button>
       </div>
 
       {/* ── Toolbar ── */}
