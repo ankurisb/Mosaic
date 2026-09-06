@@ -4,3 +4,8 @@ numpy==1.26.4
 scipy==1.13.0
 statsmodels==0.14.2
 pandas==2.2.2
+python-multipart==0.0.9
+# MarkItDown converts documents (PDF, Word, PowerPoint, Excel, HTML, CSV) to clean,
+# token-efficient Markdown. Pinned + only the doc extras we need — NOT the heavy
+# audio/whisper/azure extras — to keep the image lean and the release build fast.
+markitdown[docx,pptx,xlsx,pdf]==0.0.1a3

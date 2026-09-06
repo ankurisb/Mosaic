@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Any, Optional
 import numpy as np
@@ -6,7 +6,17 @@ from scipy import stats
 import warnings
 warnings.filterwarnings("ignore")
 
-app = FastAPI(title="Mosaic Stats Sidecar", version="1.0.0")
+app = FastAPI(title="Mosaic Stats Sidecar", version="1.1.0")
+
+# MarkItDown is imported lazily inside /convert so a slow/failed import never blocks
+# the (fast, always-needed) statistical endpoints or the health check.
+_markitdown = None
+def _get_markitdown():
+    global _markitdown
+    if _markitdown is None:
+        from markitdown import MarkItDown
+        _markitdown = MarkItDown()
+    return _markitdown
 
 class AnalysisRequest(BaseModel):
     analysis_type: str
@@ -16,6 +26,46 @@ class AnalysisRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"ok": True, "service": "mosaic-stats"}
+
+# ── Document → Markdown conversion (MarkItDown) ──────────────
+# Converts PDF/Word/PowerPoint/Excel/HTML into clean, token-efficient Markdown —
+# crucially preserving TABLES as Markdown tables, which matters for table-heavy
+# industrial reports. The Node file reader posts a file here and falls back to its
+# own lightweight parser if this endpoint is unavailable, so file reading never
+# hard-depends on the sidecar.
+@app.post("/convert")
+async def convert(file: UploadFile = File(...), filename: str = Form(None)):
+    import tempfile, os, time
+    name = filename or (file.filename if file else None) or "document"
+    ext = os.path.splitext(name)[1] or ".bin"
+    started = time.time()
+    tmp_path = None
+    try:
+        data = await file.read()
+        if not data:
+            return {"ok": False, "filename": name, "error": "empty file", "elapsed_ms": round((time.time() - started) * 1000)}
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        md = _get_markitdown()
+        result = md.convert(tmp_path)
+        text = result.text_content or ""
+        return {
+            "ok": True,
+            "filename": name,
+            "markdown": text,
+            "chars": len(text),
+            "elapsed_ms": round((time.time() - started) * 1000),
+        }
+    except BaseException as e:
+        # Catch EVERYTHING (markitdown can raise unusual errors on corrupt files) and
+        # return a clean JSON error with HTTP 200, so the caller gets a structured
+        # "ok: false" instead of a 500. The Node reader then falls back to its own parser.
+        return {"ok": False, "filename": name, "error": str(e)[:300], "elapsed_ms": round((time.time() - started) * 1000)}
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.unlink(tmp_path)
+            except Exception: pass
 
 @app.get("/capabilities")
 def capabilities():

@@ -2049,6 +2049,33 @@ export async function extractFileText(buf: Buffer, filename: string, maxChars = 
   }
 }
 
+// Convert a document to Markdown via the stats sidecar's MarkItDown /convert endpoint.
+// Returns the markdown string, or null on ANY failure (sidecar down, timeout, error) —
+// callers then fall back to the built-in extractor. Bounded timeout so a slow sidecar
+// never stalls file reading. Used by both editions (Personal local folders + Enterprise
+// file servers).
+async function convertViaMarkItDown(buf: Buffer, filename: string): Promise<string | null> {
+  const statsUrl = process.env.STATS_SIDECAR_URL || 'http://localhost:8001'
+  try {
+    const form = new FormData()
+    form.append('file', new Blob([new Uint8Array(buf)]), filename)
+    form.append('filename', filename)
+    const res = await fetch(`${statsUrl}/convert`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(45000),
+    })
+    if (!res.ok) return null
+    const data = await res.json() as { ok?: boolean; markdown?: string }
+    if (data.ok && typeof data.markdown === 'string' && data.markdown.trim()) {
+      return data.markdown
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function parseFileContent(
   buf: Buffer,
   filename: string,
@@ -2056,6 +2083,23 @@ async function parseFileContent(
   extract?: string
 ): Promise<Record<string, unknown>> {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
+
+  // Document formats (PDF/Word/PowerPoint/HTML): prefer MarkItDown in the stats
+  // sidecar, which produces clean, token-efficient Markdown and — critically —
+  // preserves TABLES as Markdown tables (vital for table-heavy industrial reports).
+  // Falls through to the built-in extractor below if the sidecar is unavailable, so
+  // file reading NEVER hard-depends on it (matters most for Enterprise file servers).
+  // CSV/JSON/XML keep their structured parsing (more useful as data than as prose);
+  // Excel goes to the sidecar only when no specific sheet was requested.
+  const sidecarFormats = ['pdf', 'docx', 'pptx', 'html', 'htm']
+  const useSidecar = sidecarFormats.includes(ext) || (ext === 'xlsx' && !extract) || (ext === 'xls' && !extract)
+  if (useSidecar) {
+    const md = await convertViaMarkItDown(buf, filename)
+    if (md !== null) {
+      return { content_type: 'markdown', format: ext, converter: 'markitdown', content: md, size_chars: md.length }
+    }
+    // else: fall through to the built-in extractor for this ext
+  }
 
   if (ext === 'csv') {
     const text  = buf.toString('utf8')
