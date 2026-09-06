@@ -146,7 +146,7 @@ export async function POST(req: Request) {
   const [dbConns, apiConns, fileServers, prismInstances, mcpConns] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
-    sql`SELECT id, label, transport, bucket, share_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
+    sql`SELECT id, label, transport, bucket, share_path, sub_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = true ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT id, label, endpoint_url, description FROM mcp_connections WHERE enabled = true ORDER BY created_at ASC`.catch(() => []),
   ])
@@ -342,13 +342,15 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // tool failed with "not found". Mirror the dbList/apiList shape: use the
   // exact UUID, include transport + a hint of where files live + file types.
   const fileServerList = fileServers.length
-    ? '\n\n## File servers (read_file_server tool — use exact id)\n' +
+    ? '\n\n## File servers / local folders (read_file_server + list_files tools — use exact id)\n' +
+      'Each entry is a SEPARATE, independently-scoped source. When several share a base path but list different folders, they are DISTINCT folders — pick the one whose folder/label matches the topic (e.g. a question about security/compliance → the compliance folder). To answer across "all my files" first call list_files on the relevant source.\n' +
       fileServers.map((f: Record<string, unknown>) => {
         const transport = String(f.transport || '').toLowerCase()
+        const folder = f.sub_path ? `${f.share_path}/${f.sub_path}` : String(f.share_path || '?')
         const where = transport === 's3'
           ? `bucket:${f.bucket || '?'}`
           : (transport === 'sftp' || transport === 'smb' || transport === 'local')
-            ? `path:${f.share_path || '?'}`
+            ? `folder:${folder}`
             : ''
         const types = f.file_types ? ` | parses:${f.file_types}` : ''
         return `- id:"${f.id}" | "${f.label}" | ${transport} | ${where}${types}`
