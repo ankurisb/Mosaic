@@ -3,17 +3,6 @@ import { useState, useEffect } from 'react'
 import { PageTitle, PageSub, SectionLabel, Card, Badge } from './ui'
 import { UpdateModal } from '@/components/UpdateModal'
 
-const DEPS = [
-  { name: 'next',                    version: '15.3.9', ok: true },
-  { name: '@anthropic-ai/sdk',       version: '0.39.0', ok: true },
-  { name: '@neondatabase/serverless', version: '0.10.4', ok: true },
-  { name: 'bcryptjs',                version: '2.4.3',  ok: true },
-  { name: 'jose',                    version: '5.9.6',  ok: true },
-  { name: 'react',                   version: '19.1.0', ok: true },
-  { name: 'react-markdown',          version: '10.1.0', ok: true },
-  { name: 'typescript',              version: '5.7.3',  ok: true },
-]
-
 interface ChangelogRelease {
   version: string
   date: string
@@ -27,6 +16,7 @@ interface DeploymentInfo {
   appUrl: string
   nodeEnv: string
   changelog: ChangelogRelease[]
+  dependencies?: { name: string; version: string }[]
   currentVersion: string
   latestVersion: string | null
   latestReleaseUrl: string | null
@@ -110,20 +100,20 @@ export default function TabAbout() {
         </div>
       )}
 
-      <SectionLabel>Dependencies</SectionLabel>
+      {(deploy?.dependencies?.length ?? 0) > 0 && <>
+      <SectionLabel>Key dependencies</SectionLabel>
       <Card>
         <div style={{ padding: '0 18px' }}>
-          {DEPS.map((d, i) => (
-            <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < DEPS.length - 1 ? '1px solid var(--border)' : 'none' }}>
+          {(deploy!.dependencies!).map((d, i, arr) => (
+            <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{d.name}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{d.version}</span>
-                {d.ok ? <span style={{ fontSize: 12, color: 'var(--green-t)', fontWeight: 500 }}>✓ up to date</span> : <span style={{ fontSize: 12, color: 'var(--amber-t)', fontWeight: 500 }}>↑ update available</span>}
-              </div>
+              <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{d.version}</span>
             </div>
           ))}
         </div>
       </Card>
+      <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6, marginBottom: 20 }}>Installed versions in this build.</div>
+      </>}
 
       <SectionLabel>Changelog</SectionLabel>
       {(deploy?.changelog || []).map((release, ri) => {

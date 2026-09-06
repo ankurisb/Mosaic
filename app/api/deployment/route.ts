@@ -45,9 +45,18 @@ export async function GET() {
 
   // Read current version from package.json
   let currentVersion = '1.0.0'
+  // Real installed dependency versions, read from package.json at runtime (honest —
+  // no hardcoded "up to date" claim). We surface a curated set of the notable
+  // runtime deps; versions are whatever is actually pinned/installed in this build.
+  let dependencies: { name: string; version: string }[] = []
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'))
     currentVersion = pkg.version || '1.0.0'
+    const deps: Record<string, string> = { ...(pkg.dependencies || {}) }
+    const NOTABLE = ['next', 'react', '@anthropic-ai/sdk', 'better-sqlite3', '@neondatabase/serverless', 'jose', 'bcryptjs', 'react-markdown', 'typescript']
+    dependencies = NOTABLE
+      .filter(n => deps[n] || (pkg.devDependencies && pkg.devDependencies[n]))
+      .map(n => ({ name: n, version: String(deps[n] || pkg.devDependencies[n]).replace(/^[\^~]/, '') }))
   } catch { /* use fallback */ }
 
   // Check for updates via GitHub releases API
@@ -101,6 +110,7 @@ export async function GET() {
     buildDate: getBuildDate(),
     changelog,
     currentVersion,
+    dependencies,
     latestVersion,
     latestReleaseUrl,
     updateAvailable,
