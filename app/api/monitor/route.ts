@@ -316,9 +316,21 @@ export async function GET() {
   ])
   results.push(...infraResults.filter(Boolean))
 
-  const healthy = results.filter(r => r.status === 'healthy').length
-  const degraded = results.filter(r => r.status === 'degraded').length
-  const down = results.filter(r => r.status === 'down').length
+  // Edition awareness: Personal edition doesn't run the enterprise-only services
+  // (OpenMeter usage-metering, Keycloak SSO, and — until Pattern B semantic search
+  // ships — the Elasticsearch Mosaic Search Index). All are profile-gated in compose
+  // and meaningless on a single-user local install; hiding them keeps System Health
+  // from showing false "down/unknown" for services that aren't part of Personal.
+  const edition = (process.env.MOSAIC_EDITION || '').toLowerCase()
+    || ((process.env.MOSAIC_HOSTNAME || 'localhost').toLowerCase().match(/^(localhost|127\.0\.0\.1)$/) && !process.env.CADDY_TLS ? 'personal' : 'enterprise')
+  const PERSONAL_HIDDEN = new Set(['openmeter', 'keycloak', 'search'])
+  const visible = edition === 'personal'
+    ? results.filter(r => !PERSONAL_HIDDEN.has(r.id))
+    : results
 
-  return Response.json({ services: results, summary: { healthy, degraded, down, total: results.length } })
+  const healthy = visible.filter(r => r.status === 'healthy').length
+  const degraded = visible.filter(r => r.status === 'degraded').length
+  const down = visible.filter(r => r.status === 'down').length
+
+  return Response.json({ services: visible, summary: { healthy, degraded, down, total: visible.length } })
 }
