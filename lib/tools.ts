@@ -1483,7 +1483,7 @@ async function readFileServer(
 
   const fs = rows[0] as Record<string, unknown>
   const transport   = fs.transport   as string
-  const fileTypes   = ((fs.file_types as string) || 'csv,xlsx,pdf').split(',').map(s => s.trim())
+  const fileTypes   = ((fs.file_types as string) || 'csv,xlsx,xls,pdf,txt,md,xml,json,docx,pptx').split(',').map(s => s.trim())
   const maxRows     = (opts.max_rows  as number)  || (fs.max_rows   as number) || 500
   const tsStrategy  = (opts.ts_strategy as string) || (fs.ts_strategy as string) || 'auto'
   const filterExt   = opts.file_type as string | undefined

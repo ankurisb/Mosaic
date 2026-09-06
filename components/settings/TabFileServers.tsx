@@ -22,7 +22,7 @@ const EMPTY = {
   host: '', port: '', share_path: '', sub_path: '', username: '', password: '', ssh_key: '',
   bucket: '', endpoint_url: '', access_key_id: '', secret_key: '',
   tenant_id: '', client_id: '',
-  file_types: 'csv,xlsx,pdf', poll_interval_sec: '60', max_files: '20', max_rows: '500',
+  file_types: 'csv,xlsx,xls,pdf,txt,md,xml,json,docx,pptx', poll_interval_sec: '60', max_files: '20', max_rows: '500',
   filename_date_pattern: '', ts_strategy: 'auto',
 }
 
@@ -167,7 +167,7 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
 
           <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
           <Grid cols={2}>
-            <Field label="File types" hint="Comma-separated: csv, xlsx, pdf, xml, json"><input style={INP} type="text" value={form.file_types} onChange={e => f('file_types', e.target.value)} placeholder="csv,xlsx,pdf" /></Field>
+            <Field label="File types" hint="Comma-separated: csv, xlsx, pdf, docx, pptx, txt, md, xml, json"><input style={INP} type="text" value={form.file_types} onChange={e => f('file_types', e.target.value)} placeholder="csv,xlsx,pdf,docx,pptx" /></Field>
             <Field label="Max rows per file"><input style={INP} type="text" value={form.max_rows} onChange={e => f('max_rows', e.target.value)} placeholder="500" /></Field>
             <Field label="Timestamp strategy" hint="How to determine file recency">
               <select style={SEL} value={form.ts_strategy} onChange={e => f('ts_strategy', e.target.value)}>{TS_STRATS.map(s => ({ value: s, label: s })).map((o: {value:string;label:string}) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>

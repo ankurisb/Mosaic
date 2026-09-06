@@ -234,7 +234,7 @@ export async function setupDatabase() {
     secret_key_enc        TEXT,
     tenant_id             TEXT,
     client_id             TEXT,
-    file_types            TEXT NOT NULL DEFAULT 'csv,xlsx,pdf',
+    file_types            TEXT NOT NULL DEFAULT 'csv,xlsx,xls,pdf,txt,md,xml,json,docx,pptx',
     poll_interval_sec     INTEGER NOT NULL DEFAULT 60,
     max_files             INTEGER NOT NULL DEFAULT 20,
     max_rows              INTEGER NOT NULL DEFAULT 500,
@@ -935,7 +935,7 @@ export async function setupDatabase() {
       const existing = await sql`SELECT id FROM file_servers WHERE transport = 'local' AND share_path = '/mosaic-files' LIMIT 1` as unknown as { id: string }[]
       if (!existing.length) {
         await sql`INSERT INTO file_servers (label, transport, environment, share_path, file_types)
-                  VALUES ('Mosaic Files', 'local', 'production', '/mosaic-files', 'csv,xlsx,xls,pdf,txt,xml,json')`
+                  VALUES ('Mosaic Files', 'local', 'production', '/mosaic-files', 'csv,xlsx,xls,pdf,txt,md,xml,json,docx,pptx')`
       }
     } catch { /* file_servers may not exist on a very old schema; ignore */ }
   }
