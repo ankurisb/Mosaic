@@ -152,8 +152,8 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
       {/* Sidebar */}
       <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
 
-        {/* Logo */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)' }}>
+        {/* Logo — top padding clears the window edge / macOS title bar (Electron app). */}
+        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ marginBottom: 2 }}>
             <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)' }}>Mosaic</span>
           </div>

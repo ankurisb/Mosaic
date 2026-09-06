@@ -49,8 +49,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* Sidebar */}
       <div style={{ width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
-        {/* Logo */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+        {/* Logo — top padding clears the window edge / macOS title bar (Electron app). */}
+        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
           {!collapsed && <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0 }}>
             {!collapsed && (

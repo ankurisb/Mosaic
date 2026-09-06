@@ -643,8 +643,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       {/* -- Sidebar -- */}
       <div style={{ width: sidebarCollapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
 
-        {/* Logo */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+        {/* Logo — extra top padding so the wordmark clears the window's top edge /
+            macOS traffic-light title bar in the Electron desktop app. */}
+        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
           {!sidebarCollapsed && (
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, overflow: 'hidden' }}>
               <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>
