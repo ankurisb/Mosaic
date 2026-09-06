@@ -775,6 +775,13 @@ export async function POST(req: Request) {
     retentionPurged = retResults.reduce((s, r) => s + r.purged, 0)
   } catch { /* non-blocking — never fail the scheduler */ }
 
+  // Refresh Personal-edition Mosaic Files folder sources so subfolders the user adds
+  // (or removes) after boot become their own data sources without a restart.
+  try {
+    const { syncMosaicFolders } = await import('@/lib/mosaic-folders')
+    await syncMosaicFolders()
+  } catch { /* non-blocking */ }
+
   return Response.json({
     ok:              true,
     rules_checked:   rules.length,

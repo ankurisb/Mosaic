@@ -149,6 +149,9 @@ services:
       # Public origins the handshakes redirect to (each tool serves at the root
       # of its own port — see docker/caddy/Caddyfile).
       - MOSAIC_EDITION=${MOSAIC_EDITION:-personal}
+      # Signals that a host files folder is mounted at /mosaic-files, so the app
+      # auto-registers per-subfolder "Mosaic Files" data sources (Personal edition).
+      - MOSAIC_FILES_DIR=${MOSAIC_FILES_DIR:-}
       - N8N_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
       - SUPERSET_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8445/
       # CISO user provisioning (lib/ciso.ts). Unlike n8n/Superset, CISO gets a
