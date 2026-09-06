@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { PageTitle, PageSub, SectionLabel, Card, Badge } from './ui'
+import { UpdateModal } from '@/components/UpdateModal'
 
 const DEPS = [
   { name: 'next',                    version: '15.3.9', ok: true },
@@ -35,6 +36,7 @@ interface DeploymentInfo {
 
 export default function TabAbout() {
   const [deploy, setDeploy] = useState<DeploymentInfo | null>(null)
+  const [showUpdate, setShowUpdate] = useState(false)
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const toggleVersion = (v: string) => setExpandedVersions(prev => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); return n })
 
@@ -77,25 +79,21 @@ export default function TabAbout() {
         </div>
       </div>
 
-      {/* Update available banner */}
+      {/* Update available banner — opens the Mosaic-styled update modal (inline release
+          notes, edition-aware update). NO external GitHub link. */}
       {deploy?.updateAvailable && (
         <div style={{ background: 'var(--amber-bg, #fffbeb)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--amber-t, #d97706)', flexShrink: 0 }}><circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/></svg>
           <span style={{ color: 'var(--amber-t, #d97706)', fontWeight: 500, flex: 1 }}>
             Version {deploy.latestVersion} available — you are on {deploy.currentVersion}
           </span>
-          {deploy.latestReleaseUrl && (
-            <a href={deploy.latestReleaseUrl} target="_blank" rel="noreferrer"
-              style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', textDecoration: 'none', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', whiteSpace: 'nowrap' }}>
-              See what's new →
-            </a>
-          )}
-          <a href="/docs/updating"
-            style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', textDecoration: 'none', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', whiteSpace: 'nowrap' }}>
-            How to update →
-          </a>
+          <button onClick={() => setShowUpdate(true)}
+            style={{ fontSize: 12, color: 'var(--amber-t, #d97706)', background: 'none', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid rgba(245,158,11,.4)', borderRadius: 'var(--radius-pill)', padding: '3px 12px', whiteSpace: 'nowrap' }}>
+            What&rsquo;s new
+          </button>
         </div>
       )}
+      {showUpdate && <UpdateModal deploy={deploy as never} onClose={() => setShowUpdate(false)} />}
 
       {/* Deployment mode banner */}
       {deploy && (

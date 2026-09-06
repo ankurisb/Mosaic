@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '../ThemeToggle'
+import { UpdateModal } from '@/components/UpdateModal'
 import TabKeys from './TabKeys'
 import TabAuth from './TabAuth'
 import TabUsers from './TabUsers'
@@ -89,6 +90,8 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   // Edition gates enterprise-only tabs out of Personal (single-user local app):
   // Users/Auth/Audit etc. can't function on a localhost, one-person install.
   const [edition, setEdition] = useState<string>('enterprise')
+  const [showUpdate, setShowUpdate] = useState(false)
+  const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const TABS = ALL_TABS.filter(t =>
     (!t.adminOnly || user.role === 'admin') &&
     !(edition === 'personal' && t.enterpriseOnly)
@@ -107,6 +110,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (!d) return
+        setDeploy(d)
         if (d.edition) setEdition(d.edition)
         if (d.updateAvailable) setUpdate({ available: true, latest: d.latestVersion || null, url: d.latestReleaseUrl || null })
       })
@@ -143,6 +147,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+      {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
 
       {/* Sidebar */}
       <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
@@ -178,18 +183,16 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
             <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
             <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span>v{APP_VERSION}</span>
+              <span>v{deploy?.currentVersion || APP_VERSION}</span>
               {update.available && (
-                <a
-                  href={update.url || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={update.latest ? `Version ${update.latest} is available — click to view the release` : 'A new version is available'}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--blue-t)', textDecoration: 'none', fontWeight: 600 }}
+                <button
+                  onClick={() => setShowUpdate(true)}
+                  title={update.latest ? `Version ${update.latest} is available` : 'A new version is available'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--blue-t)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
                 >
                   <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--blue-t)', display: 'inline-block' }} />
                   {update.latest ? `v${update.latest} available` : 'update available'}
-                </a>
+                </button>
               )}
             </div>
           </div>
