@@ -55,9 +55,8 @@ export default function LoginPage() {
         <div style={{ padding: '32px 32px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
             <span style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--text)' }}>Mosaic</span>
-            <span style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', padding: '2px 7px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)' }}>v1.0.0</span>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--text3)' }}>Sign in to continue . ugx.ai</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)' }}>Sign in to continue · ugx.ai</p>
         </div>
 
         <div style={{ padding: '0 32px 32px' }}>
@@ -110,7 +109,7 @@ export default function LoginPage() {
         </div>
 
         <div style={{ padding: '12px 32px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)', textAlign: 'center' }}>
-          Mosaic v1.0.0 · ugx.ai
+          ugx.ai
         </div>
       </div>
     </div>

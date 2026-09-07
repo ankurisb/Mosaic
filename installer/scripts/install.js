@@ -191,8 +191,35 @@ async function install(config, rawEmit) {
     // no local-build fallback. If the pull fails, surface a clear, honest error
     // rather than attempting a build that can't succeed.
     try {
+      // Parse docker compose pull output into a CALM, stable status instead of echoing
+      // the raw firehose (which flickers/overlaps). Track layers seen and total bytes
+      // downloaded, and only push an update when the numbers actually change — so the
+      // label reads e.g. "Downloading Mosaic · 1.2 GB (14 layers)" and ticks smoothly.
+      const layers = new Set()
+      let lastBytes = 0, lastShown = 0
+      const parseSize = (s) => {
+        const m = String(s).match(/([\d.]+)\s*(B|KB|kB|MB|GB)/i)
+        if (!m) return 0
+        const n = parseFloat(m[1]); const u = m[2].toUpperCase()
+        return u === 'GB' ? n * 1e9 : u === 'MB' ? n * 1e6 : u === 'KB' ? n * 1e3 : n
+      }
+      const fmt = (b) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.round(b / 1e3)} KB`
       await run(`docker compose ${profiles} pull`, installDir, d => {
-        emit({ step: 5, total: TOTAL, pct: 55, label: `Downloading: ${d.trim().slice(0, 58)}` })
+        for (const line of String(d).split('\n')) {
+          // docker emits per-layer lines with a short hex id; track distinct layers.
+          const id = line.match(/^([0-9a-f]{12})/)
+          if (id) layers.add(id[1])
+          // sum the "downloaded / total" figures we can see (best-effort, monotonic-ish)
+          const dl = line.match(/([\d.]+\s*[KMG]?B)\s*\/\s*([\d.]+\s*[KMG]?B)/i)
+          if (dl) lastBytes = Math.max(lastBytes, parseSize(dl[1]))
+        }
+        // Only emit when the displayed MB changes by a meaningful step (calm updates).
+        if (lastBytes - lastShown > 5e6 || (layers.size && lastBytes === 0)) {
+          lastShown = lastBytes
+          const size = lastBytes > 0 ? ` · ${fmt(lastBytes)}` : ''
+          const lyr = layers.size ? ` (${layers.size} layer${layers.size > 1 ? 's' : ''})` : ''
+          emit({ step: 5, total: TOTAL, pct: 55, label: `Downloading Mosaic${size}${lyr}` })
+        }
       })
     } catch (e) {
       throw new Error(
@@ -205,7 +232,10 @@ async function install(config, rawEmit) {
 
     emit({ step: 5, total: TOTAL, pct: 70, label: 'Starting Mosaic services…' })
     await run(`docker compose ${profiles} up -d`, installDir, d => {
-      emit({ step: 5, total: TOTAL, pct: 80, label: `Starting: ${d.trim().slice(0, 58)}` })
+      // Count containers that report "Started/Running" for a calm, meaningful tick
+      // instead of echoing every raw compose line.
+      const started = (String(d).match(/Started|Running|Created/g) || []).length
+      if (started) emit({ step: 5, total: TOTAL, pct: 80, label: 'Starting Mosaic services…' })
     })
 
     // 6 — wait for readiness
