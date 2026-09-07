@@ -278,21 +278,28 @@ async function checkRequirements(config) {
     results.push({ name: 'Disk space', ok: true, detail: 'Could not check — assuming OK' })
   }
 
-  // Port availability. Mosaic is served by Caddy on 443 (https) and 80 (http
-  // redirect) — these are fixed in the compose, so we check those, not a
-  // user-chosen port. 443 is the one that matters (the app's front door).
-  const checkPort = (p) => new Promise((resolve) => {
+  // Port availability. Mosaic is served by Caddy (in Docker, which binds privileged
+  // ports fine). We must NOT test by binding 443 ourselves — the installer runs
+  // unprivileged, and binding a port < 1024 fails with EACCES on macOS/Linux even when
+  // the port is completely free, which would wrongly report "in use" for EVERY user.
+  // Instead we CONNECT: if something answers on 443, it's genuinely occupied; if the
+  // connection is refused, the port is free and Docker/Caddy will bind it.
+  const isPortFree = (p) => new Promise((resolve) => {
     const net = require('net')
-    const srv = net.createServer()
-    srv.once('error', () => resolve(false))
-    srv.once('listening', () => { srv.close(); resolve(true) })
-    srv.listen(p, '127.0.0.1')
+    const sock = new net.Socket()
+    let done = false
+    const finish = (free) => { if (done) return; done = true; sock.destroy(); resolve(free) }
+    sock.setTimeout(1500)
+    sock.once('connect', () => finish(false))          // something is listening -> occupied
+    sock.once('timeout', () => finish(true))           // no answer -> treat as free
+    sock.once('error', (e) => finish(e.code === 'ECONNREFUSED' || e.code === 'EHOSTUNREACH')) // refused -> free
+    sock.connect(p, '127.0.0.1')
   })
-  const p443 = await checkPort(443)
+  const p443 = await isPortFree(443)
   results.push({
     name: 'Port 443',
     ok: p443,
-    detail: p443 ? 'Available (https)' : 'In use — stop whatever is using 443 (another web server?)',
+    detail: p443 ? 'Available (https)' : 'In use — another web server or VPN may be on 443. Stop it, then retry.',
   })
 
   // Internet (needed to pull images)
