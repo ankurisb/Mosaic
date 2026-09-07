@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-09-07
+
+### Added
+- **Local folder analysis (Personal edition).** A `~/Mosaic/files` folder is created at install and mounted into Mosaic; drop documents (or whole subfolders) in and ask about them in chat — no data-source setup. Files are scanned recursively, and each top-level subfolder becomes its own data source, so organised folders (e.g. `production/` vs `compliance/`) are treated as separate scopes and not cross-correlated unless you ask.
+- **Rich document reading.** PDF, Word, PowerPoint and Excel are converted to clean, token-efficient Markdown via MarkItDown — crucially preserving tables as real tables (not scrambled text). Applies to local folders and Enterprise file servers alike.
+- **Visual chart reading (on request).** When a report's charts are embedded as images that text can't parse, Mosaic offers to read them visually; on your approval it renders the pages and interprets the charts (OEE breakdowns, Pareto, plan-vs-actual, etc.). Each visual read is recorded in the audit log with the consent captured.
+- **Cross-source analysis (`combine_sources`).** Mosaic can now join and correlate data across different sources by a shared key — e.g. match API production orders to database quality records by order id — using a real, deterministic SQL join (DuckDB) instead of matching rows by hand. The join engine is sandboxed: it can only see the data explicitly passed to it (no file or database access).
+- Query Builder: a **New query** button; Rules and alerts now select the query before the column, matching the natural order.
+
+### Changed
+- **Personal edition is now a coherent single-user product.** Features that assume multiple users or a shared server are hidden in Personal: user management, authentication/SSO, teams, notifications, audit trail, data retention, backup, remote support, and the enterprise-only services on System Health (usage metering, Keycloak, the search index). Enterprise is unchanged.
+- **Updates.** The in-app update prompt no longer opens an external GitHub page — release notes render inline in Mosaic's own styling. Both editions show clear, reliable guided update steps (the previous one-click auto-update, which could interrupt the app mid-restart, was removed).
+- The About screen now lists the **actual installed** dependency versions instead of a hard-coded list, and no longer implies a currency check it wasn't performing.
+
+### Fixed
+- Local file reading now reaches the user's real files (the container previously couldn't see host folders), reads PDFs/Office docs that were silently skipped before, and surfaces the complete file list for "summarise everything" requests.
+- Migrations and the folder/data-source setup run reliably at boot; edition is detected consistently across the app.
+- Various UI polish: the wordmark no longer touches the window edge, and the "create new" buttons are consistent across Query Builder, Alerts and Workflow rules.
+
 ## [1.3.2] - 2026-09-04
 
 ### Added
