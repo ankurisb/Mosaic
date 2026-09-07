@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('installer', {
   },
 
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
+  enterAppMode: () => ipcRenderer.invoke('enter-app-mode'),
   chooseDir: () => ipcRenderer.invoke('choose-dir'),
   platform: process.platform,
   homeDir: require('os').homedir(),

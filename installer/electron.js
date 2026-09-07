@@ -103,6 +103,15 @@ ipcMain.on('start-install', (event, config) => {
 
 ipcMain.handle('open-url', (_, url) => shell.openExternal(url))
 
+// "Open Mosaic" after install: switch the CURRENT Electron window into app-mode —
+// load Mosaic in-window (not the browser), so the app runs inside Electron as intended
+// (consistent with how it loads on every subsequent relaunch). Resize to the app size.
+ipcMain.handle('enter-app-mode', () => {
+  if (!win || win.isDestroyed()) return
+  try { win.setSize(1200, 820); win.center() } catch { /* ignore */ }
+  win.loadURL('https://localhost')
+})
+
 // Fire-and-forget UPDATE (Personal, in app-mode): pull the new images + re-up,
 // streaming progress to the running app's UpdateModal. Reuses the install helpers;
 // data/volumes are untouched. After a successful update the app reloads itself.
