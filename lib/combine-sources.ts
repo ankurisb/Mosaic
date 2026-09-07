@@ -6,6 +6,7 @@
 // eyeball-matching rows in its context (error-prone, doesn't scale).
 import { DuckDBInstance } from '@duckdb/node-api'
 import { promises as fs } from 'fs'
+import { randomUUID } from 'crypto'
 import os from 'os'
 import path from 'path'
 
@@ -64,7 +65,7 @@ export async function combineSources(input: CombineInput): Promise<unknown> {
       const rows = extractRows(tables[name])
       if (!rows.length) return { error: `Table "${name}" has no rows. Fetch the data first (query_database / call_api / read_file_server), then pass its rows here.` }
       if (rows.length > MAX_ROWS_PER_TABLE) return { error: `Table "${name}" has ${rows.length} rows (max ${MAX_ROWS_PER_TABLE}). Narrow the upstream query first.` }
-      const f = path.join(os.tmpdir(), `mosaic_combine_${process.pid}_${name}_${Date.now()}.json`)
+      const f = path.join(os.tmpdir(), `mosaic_combine_${randomUUID()}.json`)
       await fs.writeFile(f, JSON.stringify(rows))
       tmpFiles.push(f)
       // Load as a real table. Table name is validated above; the path is ours.
