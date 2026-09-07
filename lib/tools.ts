@@ -172,6 +172,25 @@ IMPORTANT: After running statistical analysis, present results as narrative or t
     },
   },
   {
+    name: 'combine_sources',
+    description: `Join / correlate data ACROSS different sources by running one SQL query over the results you already fetched. Use this when a question needs data from MORE THAN ONE source combined by a shared key — e.g. match SAP production orders (call_api) to plant-DB quality records (query_database) by order_id, or join a local CSV to a database table. Do NOT eyeball-match rows in your head — this does a real, correct SQL JOIN/GROUP BY in code.
+Workflow: (1) fetch each source separately (query_database / call_api / read_file_server), (2) pass each result's rows as a named table here, (3) write standard SQL over those table names. Then run_statistical_analysis on the combined rows if needed.
+Tables are the ROW ARRAYS from prior tool results. Column names in your SQL must match the fields in those rows. Full DuckDB SQL is supported (JOIN, LEFT JOIN, GROUP BY, HAVING, window functions, CASE, COALESCE).`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        tables: {
+          type: 'object',
+          description: 'Map of table_name -> the rows array from a prior tool result. e.g. {"orders": [...from call_api...], "quality": [...from query_database...]}. Names must be valid SQL identifiers.',
+          additionalProperties: true,
+        },
+        sql: { type: 'string', description: 'A single SQL SELECT over the named tables, e.g. "SELECT o.order_id, o.cycle_time_s, q.defect_count FROM orders o JOIN quality q ON o.order_id = q.order_id"' },
+        max_rows: { type: 'number', description: 'Max rows to return (default 1000)' },
+      },
+      required: ['tables', 'sql']
+    },
+  },
+  {
     name: 'render_chart',
     description: 'Render a chart inline in the chat to visualize data the user has asked about. Use this when the user asks for a chart, graph, visualization, breakdown, trend, or comparison; or when a visual summary would be more useful than a text response. Always fetch the underlying data first via call_api/query_database/etc., then summarise it into the right shape for the chart type below.',
     input_schema: {
@@ -422,6 +441,10 @@ export async function runTool(
       return queryMcpConnection(srcId, String(input.tool_name), (input.arguments as Record<string, unknown>) || {})
     }
     case 'run_statistical_analysis': return runStatisticalAnalysis(input.analysis_type as string, input.data as unknown[], input.params as Record<string,unknown> | undefined)
+    case 'combine_sources': {
+      const { combineSources } = await import('./combine-sources')
+      return combineSources({ tables: input.tables as Record<string, unknown>, sql: String(input.sql || ''), max_rows: input.max_rows as number | undefined })
+    }
     case 'render_chart': return renderChart(input)
     case 'create_alert': return createAlertTool(input, guardrailCtx)
     default: throw new Error(`Unknown tool: ${name}`)

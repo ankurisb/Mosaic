@@ -383,11 +383,13 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // conclusion came from real computation, not an eyeballed guess.
   const rigourNote = '\n\nWhen you run a statistical analysis (run_statistical_analysis) or follow an RCA workflow, state it explicitly in your answer — name the method (e.g. "linear trend regression", "process capability (Cpk)") and cite the key computed values (slope, R², p-value, Cpk, control limits, etc.). Do not present a statistical conclusion as if it were a casual observation; make clear it came from a real computation. If you did not run a formal analysis, do not imply that you did.'
 
+  const crossSourceNote = '\n\nCROSS-SOURCE QUESTIONS: when a question needs data from more than one source combined by a shared key (e.g. join SAP orders from an API with quality records from a database by order_id; or correlate a local CSV with a DB table), do NOT try to match rows in your head. Instead: (1) fetch each source separately with its own tool (query_database / call_api / read_file_server), (2) call combine_sources — pass each result\'s rows as a named table and write one SQL query (JOIN / GROUP BY etc.) over those names, (3) then run_statistical_analysis on the combined rows if the question needs correlation/regression/etc. This gives a correct, deterministic join instead of an error-prone manual match.'
+
   // Type 1 — AI output rules injection
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + aiRulesBlock
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
