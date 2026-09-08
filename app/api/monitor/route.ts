@@ -229,9 +229,9 @@ export async function GET() {
             } catch { /* try next */ }
           }
         }
-        return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: anyDegraded ? 'degraded' : 'down', latencyMs: Date.now() - start })
+        return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: anyDegraded ? 'degraded' : 'down', latencyMs: Date.now() - start, message: anyDegraded ? 'Configured but not reachable' : 'Configured but not reachable' })
       } catch {
-        return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'down', latencyMs: null })
+        return ({ id: 'airbyte', label: 'Airbyte', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured' })
       }
     
     
@@ -281,14 +281,31 @@ export async function GET() {
       
     })(),
     (async () => {
-    // Check Superset
-      const supersetUrl = process.env.SUPERSET_URL || 'http://localhost:8088'
+    // Check Superset — BYO in Personal (and BYO-or-bundled in Enterprise). Only treat
+    // it as 'down' when the user has actually configured a Superset URL; if only the
+    // compose scaffolding default exists and it's unreachable, it isn't part of this
+    // deployment -> 'not configured' (like n8n/Airbyte), not a scary 'down'.
+      let ssByo: string | null = null
+      try {
+        const rows = await sql`SELECT value_enc FROM kv_settings WHERE key = 'SUPERSET_URL'`
+        if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); ssByo = decrypt(rows[0].value_enc as string) || null }
+      } catch {}
+      const supersetUrl = ssByo || process.env.SUPERSET_URL
+      // The compose always sets SUPERSET_URL to the bundled default (superset:8088),
+      // even in Personal where Superset isn't started. Treat that default as "not
+      // configured" unless the user set a real BYO URL in settings.
+      const isBundledDefault = !ssByo && /^(https?:\/\/)?(superset|localhost|127\.0\.0\.1):8088/.test(supersetUrl || '')
+      if (!supersetUrl || isBundledDefault) {
+        return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — connect Superset in Settings → Connected tools' })
+      }
       try {
         const start = Date.now()
         const res = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(4000) })
         return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: supersetUrl })
       } catch {
-        return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null })
+        // Unreachable + only the scaffolding default => not configured for this deployment.
+        if (!ssByo) return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — connect Superset in Settings → Connected tools' })
+        return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not reachable' })
       }
     
       
