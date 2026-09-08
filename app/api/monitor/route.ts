@@ -333,14 +333,14 @@ export async function GET() {
   ])
   results.push(...infraResults.filter(Boolean))
 
-  // Edition awareness: Personal edition doesn't run the enterprise-only services
-  // (OpenMeter usage-metering, Keycloak SSO, and — until Pattern B semantic search
-  // ships — the Elasticsearch Mosaic Search Index). All are profile-gated in compose
-  // and meaningless on a single-user local install; hiding them keeps System Health
-  // from showing false "down/unknown" for services that aren't part of Personal.
+  // Edition awareness: Personal edition is a lean single-user product and doesn't run
+  // (or expose) these services — OpenMeter metering, Keycloak SSO, the Elasticsearch
+  // search index, and — since Dashboards and Rules are hidden in Personal — Superset,
+  // Airbyte and n8n too. Hiding them keeps System Health honest for Personal (no
+  // phantom 'down'/'not configured' rows for features the edition doesn't have).
   const edition = (process.env.MOSAIC_EDITION || '').toLowerCase()
     || ((process.env.MOSAIC_HOSTNAME || 'localhost').toLowerCase().match(/^(localhost|127\.0\.0\.1)$/) && !process.env.CADDY_TLS ? 'personal' : 'enterprise')
-  const PERSONAL_HIDDEN = new Set(['openmeter', 'keycloak', 'search'])
+  const PERSONAL_HIDDEN = new Set(['openmeter', 'keycloak', 'search', 'superset', 'airbyte', 'n8n'])
   const visible = edition === 'personal'
     ? results.filter(r => !PERSONAL_HIDDEN.has(r.id))
     : results
