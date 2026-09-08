@@ -9,8 +9,15 @@ export async function POST(req: NextRequest) {
   const { connection_id } = await req.json()
   if (!connection_id) return Response.json({ error: 'connection_id required' }, { status: 400 })
 
-  // Get schema (use cache or fetch fresh)
-  const schema = await getOrFetchSchema(connection_id)
+  // Get schema (use cache or fetch fresh). A connection selected immediately after it
+  // was just created can race the write, so retry once after a short delay before
+  // reporting failure — otherwise a brand-new user's first sandbox selection shows a
+  // spurious "Schema not available" that self-corrects on the next click.
+  let schema = await getOrFetchSchema(connection_id)
+  if (!schema || schema.error) {
+    await new Promise(r => setTimeout(r, 400))
+    schema = await getOrFetchSchema(connection_id)
+  }
   if (!schema || schema.error) {
     return Response.json({ error: schema?.error || 'Schema not available' }, { status: 500 })
   }
