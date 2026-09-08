@@ -73,7 +73,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg>,
             'Chats'
           )}
-          {navBtn('/dashboards',
+          {/* Dashboards is Enterprise-only (needs Superset) — hidden in Personal. */}
+          {deploy.edition !== 'personal' && navBtn('/dashboards',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg>,
             'Dashboards'
           )}
@@ -85,7 +86,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5"/></svg>,
             'Query Builder'
           )}
-          {navBtn('/rules',
+          {/* Rules/Alerts is Enterprise-only (needs notification channels) — hidden in Personal. */}
+          {deploy.edition !== 'personal' && navBtn('/rules',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/></svg>,
             'Rules'
           )}
