@@ -38,16 +38,18 @@ export async function syncMosaicFolders(): Promise<{ created: number; removed: n
     const bySubPath = new Map(existing.map(e => [e.sub_path || '', e]))
     let created = 0, removed = 0
 
-    // Root source for loose files.
+    // Root "Mosaic Files" source. ALWAYS ensure it exists in Personal — even when the
+    // folder is empty (fresh install) — so a new user immediately sees where to drop
+    // files. (Previously it was only created once loose files appeared, so a fresh
+    // install showed NO Mosaic Files source at all — the signature feature was
+    // invisible until the user both added a file and waited for a sync.)
     const rootExisting = bySubPath.get('')
-    if (hasLooseFiles && !rootExisting) {
+    if (!rootExisting) {
       await sql`INSERT INTO file_servers (label, transport, environment, share_path, sub_path, file_types)
                 VALUES (${ROOT_LABEL}, 'local', 'production', ${MOUNT}, NULL, ${DEFAULT_TYPES})`
       created++
-    } else if (!hasLooseFiles && rootExisting && subdirs.length) {
-      await sql`DELETE FROM file_servers WHERE id = ${rootExisting.id}`
-      removed++
     }
+    void hasLooseFiles
 
     // One source per subfolder.
     for (const name of subdirs) {
