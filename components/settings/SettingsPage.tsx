@@ -45,7 +45,7 @@ const ALL_TABS = [
   { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
   { id: 'analytics',     label: 'Analysis capabilities',adminOnly: true  },
   { id: 'guardrails',    label: 'Guardrails',           adminOnly: true, enterpriseOnly: true  },
-  { id: 'notifications', label: 'Notifications',        adminOnly: true, enterpriseOnly: true  },
+  { id: 'notifications', label: 'Notifications',        adminOnly: true  },
   { id: 'developer-api', label: 'Developer API',        adminOnly: true, enterpriseOnly: true  },
   { id: 'audit',         label: 'Audit trail',          adminOnly: true, enterpriseOnly: true  },
   { id: 'transparency',  label: 'AI Decision Log',      adminOnly: true, enterpriseOnly: true  },
