@@ -805,7 +805,20 @@ export async function setupDatabase() {
     updated_at  TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
 
-  // Type 2: Data access rules (per-role source/column restrictions)
+  // Metrics & definitions layer — customer-defined business terms (how THEY compute
+  // OEE, what a 'defect' is, which machines are 'Line A'). Injected into the AI context
+  // so every answer uses the plant's own definitions consistently.
+  await sql`CREATE TABLE IF NOT EXISTS metric_definitions (
+    id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'metric',
+    definition  TEXT NOT NULL DEFAULT '',
+    formula     TEXT,
+    applies_to  TEXT,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
   await sql`CREATE TABLE IF NOT EXISTS guardrail_data_access (
     id               TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
     role             TEXT NOT NULL DEFAULT 'user',

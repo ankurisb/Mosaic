@@ -476,6 +476,19 @@ export async function setupDatabasePostgres(): Promise<void> {
     updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
 
+  // Metrics & definitions layer (see migrations/013 + lib/metrics.ts)
+  await sql`CREATE TABLE IF NOT EXISTS metric_definitions (
+    id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'metric',
+    definition  TEXT NOT NULL DEFAULT '',
+    formula     TEXT,
+    applies_to  TEXT,
+    enabled     BOOLEAN NOT NULL DEFAULT true,
+    created_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at  TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS guardrail_data_access (
     id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     role             TEXT NOT NULL DEFAULT 'user',

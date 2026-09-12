@@ -389,7 +389,12 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + aiRulesBlock
+  // Business definitions (metrics/entities the customer defined) — makes the AI use
+  // the plant's own definitions of OEE/defect/Line-A etc., not generic guesses.
+  let metricsBlock = ''
+  try { const { getMetricsInjection } = await import('@/lib/metrics'); metricsBlock = await getMetricsInjection() } catch { }
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + metricsBlock + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)

@@ -13,6 +13,7 @@ import TabDataSources from './TabDataSources'
 import TabAbout from './TabAbout'
 import TabRcaWorkflows from './TabRcaWorkflows'
 import TabAnalytics from './TabAnalytics'
+import TabMetrics from './TabMetrics'
 import TabIntegrations from './TabIntegrations'
 import TabGuardrails from './TabGuardrails'
 import TabSetup from './TabSetup'
@@ -44,6 +45,7 @@ const ALL_TABS = [
   { id: 'interfaces',    label: 'Connected tools',      adminOnly: false },
   { id: 'rca-workflows', label: 'RCA workflows',        adminOnly: false },
   { id: 'analytics',     label: 'Analysis capabilities',adminOnly: true  },
+  { id: 'metrics',       label: 'Business definitions', adminOnly: true  },
   { id: 'guardrails',    label: 'Guardrails',           adminOnly: true, enterpriseOnly: true  },
   { id: 'notifications', label: 'Notifications',        adminOnly: true  },
   { id: 'developer-api', label: 'Developer API',        adminOnly: true, enterpriseOnly: true  },
@@ -74,6 +76,7 @@ function TabIcon({ id }: { id: string }) {
     case 'apis':         return <svg {...p}><rect x="1" y="4" width="12" height="6" rx="1.5"/><path d="M3.5 7h2M8.5 7h2"/></svg>
     case 'files':        return <svg {...p}><path d="M2 3h4l1.5 2H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>
     case 'analytics':    return <svg {...p}><polyline points="2,12 7,6 11,10 14,4 18,8"/><line x1="2" y1="12" x2="18" y2="12" opacity={0.3}/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>
+    case 'metrics':      return <svg {...p}><path d="M3 3v14h14"/><path d="M6 12l3-4 3 2 4-6" /></svg>
     case 'rca-workflows':return <svg {...p}><rect x="1" y="1" width="4" height="3" rx="1"/><rect x="1" y="10" width="4" height="3" rx="1"/><rect x="9" y="5.5" width="4" height="3" rx="1"/><line x1="3" y1="4" x2="3" y2="10"/><line x1="3" y1="7" x2="9" y2="7"/></svg>
     case 'notifications': return <svg {...p}><circle cx="3" cy="7" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="11" cy="11" r="1.5"/><path d="M4.5 7h2l2-4M4.5 7h2l2 4"/></svg>
     case 'guardrails':   return <svg {...p}><path d="M7 1l5 2v4c0 2.5-2 4.5-5 6C4 11.5 2 9.5 2 7V3l5-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
@@ -218,6 +221,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}
+        {tab === 'metrics' && <TabMetrics />}
           {tab === 'notifications' && <TabIntegrations user={user} />}
           {tab === 'guardrails' && <TabGuardrails user={user} />}
           {tab === 'data-retention' && <TabDataRetention user={user} />}
