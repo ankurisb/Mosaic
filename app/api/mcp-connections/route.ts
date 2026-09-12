@@ -52,6 +52,10 @@ export async function POST(req: Request) {
     const { label, endpoint_url, transport, token, description } = body
     if (!label) return Response.json({ error: 'Label is required' }, { status: 400 })
     if (!endpoint_url) return Response.json({ error: 'Endpoint URL is required' }, { status: 400 })
+    // SSRF guard at registration (defense-in-depth; call-time is also enforced).
+    const { assertUrlSafe } = await import('@/lib/ssrf-guard')
+    const safe = await assertUrlSafe(String(endpoint_url))
+    if (!safe.ok) return Response.json({ error: safe.reason }, { status: 400 })
     const tokenEnc = token ? encrypt(token) : null
     const rows = await sql`
       INSERT INTO mcp_connections (label, endpoint_url, transport, token_enc, description)
