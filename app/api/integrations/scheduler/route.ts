@@ -583,6 +583,11 @@ export async function POST(req: Request) {
 
             if (!webhookUrl) {
               errors.push(`${groupId}/n8n_webhook: no webhook URL configured`)
+            } else if (!(await (await import('@/lib/ssrf-guard')).assertUrlSafe(webhookUrl)).ok) {
+              // SSRF guard: n8n webhook URL is admin-supplied and fetched by the server.
+              errors.push(`${groupId}/n8n_webhook: webhook URL points to an internal/blocked host`)
+              await sql`INSERT INTO integration_runs (rule_id, status, message_sent, error, latency_ms)
+                        VALUES (${groupId}, 'error', ${'n8n webhook'}, ${'blocked: internal/private URL'}, 0)`.catch(() => {})
             } else {
               // Render payload template with rule variables
               const renderedPayload = renderTemplate(

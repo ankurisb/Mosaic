@@ -32,7 +32,43 @@ export interface NotifyResult {
 }
 
 // -- Main dispatcher -------------------------------------------
+// Retries transient failures (network errors, timeouts, 429/5xx) with a short
+// backoff, so a brief provider blip doesn't silently drop a plant alert. A
+// permanent failure (bad config, 4xx auth) is not retried — retrying it wastes
+// time and can't succeed. The FINAL result (after retries) is what the scheduler
+// logs, so a genuinely-failed send is still recorded as an error.
 export async function sendNotification(
+  channel: Channel,
+  message: string
+): Promise<NotifyResult> {
+  const MAX_ATTEMPTS = 3
+  let last: NotifyResult = { ok: false, error: 'not attempted', latency_ms: 0 }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    last = await sendOnce(channel, message)
+    if (last.ok) return last
+    // Only retry transient failures; give up immediately on permanent ones.
+    if (!isTransient(last.error)) return last
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 400 * attempt)) // 400ms, 800ms backoff
+    }
+  }
+  return last
+}
+
+// Decide whether a failure is worth retrying. Network/timeout/rate-limit/5xx are
+// transient; auth/config/4xx are permanent.
+function isTransient(error?: string): boolean {
+  if (!error) return false
+  const e = error.toLowerCase()
+  if (/\b(429|500|502|503|504)\b/.test(e)) return true
+  if (e.includes('timeout') || e.includes('timed out') || e.includes('etimedout')) return true
+  if (e.includes('econnreset') || e.includes('econnrefused') || e.includes('enotfound') || e.includes('network') || e.includes('socket') || e.includes('fetch failed')) return true
+  // Blocked-by-guard / bad-config are permanent — never retry.
+  if (e.includes('blocked') || e.includes('no webhook') || e.includes('missing') || e.includes('not configured') || e.includes('not installed')) return false
+  return false
+}
+
+async function sendOnce(
   channel: Channel,
   message: string
 ): Promise<NotifyResult> {
