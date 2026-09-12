@@ -4,6 +4,18 @@
 
 import { decrypt } from './encrypt'
 import { getKey }  from './keys'
+import { assertUrlSafe } from './ssrf-guard'
+
+// SSRF guard for outbound notification webhooks (Slack/Teams/generic). These
+// URLs are admin-supplied and fetched by the SERVER, so — exactly like MCP
+// endpoints — without validation they could target internal services (Mosaic's
+// own APIs, Docker services, cloud metadata). Blocks private/loopback/metadata
+// targets before any fetch.
+async function guardWebhook(url: string, start: number): Promise<NotifyResult | null> {
+  const safe = await assertUrlSafe(url)
+  if (!safe.ok) return { ok: false, error: `Webhook blocked: ${safe.reason}`, latency_ms: Date.now() - start }
+  return null
+}
 
 export interface Channel {
   id:     string
@@ -52,6 +64,9 @@ async function sendSlack(
   // webhook_url is stored encrypted by buildConfig in channels/route.ts; decrypt before use.
   const webhookUrl = decrypt(webhookUrlEnc)
 
+  const blocked = await guardWebhook(webhookUrl, start)
+  if (blocked) return blocked
+
   const res = await fetch(webhookUrl, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -72,6 +87,9 @@ async function sendTeams(
   if (!webhookUrlEnc) return { ok: false, error: 'No webhook_url configured', latency_ms: Date.now() - start }
   // webhook_url is stored encrypted by buildConfig in channels/route.ts; decrypt before use.
   const webhookUrl = decrypt(webhookUrlEnc)
+
+  const blocked = await guardWebhook(webhookUrl, start)
+  if (blocked) return blocked
 
   // Teams uses the Adaptive Card / MessageCard format
   const body = {
@@ -100,6 +118,9 @@ async function sendWebhook(
 ): Promise<NotifyResult> {
   const url = config.url as string
   if (!url) return { ok: false, error: 'No url configured', latency_ms: Date.now() - start }
+
+  const blocked = await guardWebhook(url, start)
+  if (blocked) return blocked
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   // Optional auth header e.g. {"Authorization": "Bearer <token>"}
