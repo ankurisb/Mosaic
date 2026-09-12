@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const {
     messages,
     system,
-    model = 'claude-sonnet-4-6',
+    model = 'claude-sonnet-5',
     max_tokens = 4096,
     conversation_id,
   } = body as {
@@ -58,10 +58,10 @@ export async function POST(req: Request) {
   const anthropic = new Anthropic({ apiKey })
   const MODELS: Record<string, boolean> = {
     'claude-haiku-4-5-20251001': true,
-    'claude-sonnet-4-6': true,
-    'claude-opus-4-6': true,
+    'claude-sonnet-5': true,
+    'claude-opus-5': true,
   }
-  const safeModel = MODELS[model] ? model : 'claude-sonnet-4-6'
+  const safeModel = MODELS[model] ? model : 'claude-sonnet-5'
 
   reqLog.info({ model: safeModel }, 'Chat request received')
 

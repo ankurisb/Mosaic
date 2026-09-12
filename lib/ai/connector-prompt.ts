@@ -15,7 +15,7 @@
 // valid.
 import Anthropic from '@anthropic-ai/sdk'
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-sonnet-5'
 
 const SYSTEM = `You generate Airbyte DECLARATIVE (low-code) connector manifests for REST/HTTP APIs.
 You output ONLY a single JSON object — the manifest — with no prose, no markdown, no code fences.

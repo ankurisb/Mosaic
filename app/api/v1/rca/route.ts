@@ -80,7 +80,7 @@ export async function POST(req: Request) {
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6', max_tokens: 16384,
+        model: 'claude-sonnet-5', max_tokens: 16384,
         tools: TOOLS, system: systemPrompt, messages: history,
       })
 

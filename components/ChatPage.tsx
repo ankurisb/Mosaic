@@ -253,7 +253,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const [showUpdate, setShowUpdate] = useState(false)
   useEffect(() => { fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {}) }, [])
-  const [model, setModel] = useState('claude-sonnet-4-6')
+  const [model, setModel] = useState('claude-sonnet-5')
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -1056,7 +1056,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7.5" cy="7.5" r="5.5"/><path d="M7.5 5v2.5l1.5 1.5"/></svg>
                     Model
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>
-                      {model === 'claude-haiku-4-5-20251001' ? 'Haiku' : model === 'claude-sonnet-4-6' ? 'Sonnet' : 'Opus'}
+                      {model === 'claude-haiku-4-5-20251001' ? 'Haiku' : model === 'claude-sonnet-5' ? 'Sonnet' : 'Opus'}
                     </span>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ transform: plusSubmenu === 'model' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
                   </button>
@@ -1064,8 +1064,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
                       {[
                         { value: 'claude-haiku-4-5-20251001', label: 'Haiku', desc: 'Fast & lightweight' },
-                        { value: 'claude-sonnet-4-6', label: 'Sonnet', desc: 'Balanced — recommended' },
-                        { value: 'claude-opus-4-6', label: 'Opus', desc: 'Most capable' },
+                        { value: 'claude-sonnet-5', label: 'Sonnet', desc: 'Balanced — recommended' },
+                        { value: 'claude-opus-5', label: 'Opus', desc: 'Most capable' },
                       ].map(m => (
                         <button key={m.value}
                           onClick={() => { setModel(m.value); setPlusSubmenu(null) }}

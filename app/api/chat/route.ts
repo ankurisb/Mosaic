@@ -23,11 +23,14 @@ export const runtime = 'nodejs'
 
 // Pricing per million tokens (input / output)
 const MODEL_PRICING: Record<string, { input: number; output: number; label: string }> = {
-  'claude-haiku-4-5-20251001': { input: 0.8 / 1_000_000, output: 4 / 1_000_000, label: 'claude-haiku-4-5-20251001' },
-  'claude-sonnet-4-6':         { input: 3   / 1_000_000, output: 15 / 1_000_000, label: 'claude-sonnet-4-6' },
-  'claude-opus-4-6':           { input: 15  / 1_000_000, output: 75 / 1_000_000, label: 'claude-opus-4-6' },
+  // Current self-serve Claude API models (verified Sept 2026). Pricing is $/token
+  // (input / output per 1M): Haiku 4.5 $1/$5, Sonnet 5 $2/$10, Opus 5 $5/$25.
+  // Dated Haiku ID stays pinned; Sonnet/Opus use the current major generation.
+  'claude-haiku-4-5-20251001': { input: 1  / 1_000_000, output: 5  / 1_000_000, label: 'claude-haiku-4-5-20251001' },
+  'claude-sonnet-5':           { input: 2  / 1_000_000, output: 10 / 1_000_000, label: 'claude-sonnet-5' },
+  'claude-opus-5':             { input: 5  / 1_000_000, output: 25 / 1_000_000, label: 'claude-opus-5' },
 }
-const DEFAULT_MODEL = 'claude-sonnet-4-6'
+const DEFAULT_MODEL = 'claude-sonnet-5'
 
 // Pick the RCA workflow whose purpose best fits the user's problem.
 // Primary: a fast Haiku classify call reasons over each workflow's name +

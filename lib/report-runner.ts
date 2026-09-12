@@ -82,7 +82,8 @@ async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
     ? `\n\nData (${rows.length} rows):\n${JSON.stringify(rows.slice(0, 50), null, 2)}`
     : '\n\n(No data returned from query)'
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    // Keep in step with the chat default (single source of truth for the model gen).
+    model: 'claude-sonnet-5',
     max_tokens: 600,
     messages: [{
       role: 'user',
