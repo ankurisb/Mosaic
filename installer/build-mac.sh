@@ -15,6 +15,22 @@ cp -R ../docker deploy/docker
 cp ../NETWORK.md deploy/NETWORK.md
 echo "    deploy/ refreshed: docker-compose.yml, docker/, NETWORK.md"
 
+# Private-registry pull credential. Baked into the DMG so the installer can
+# `docker login` before pulling the (now-private) GHCR images. Provide via env:
+#   REGISTRY_TOKEN=ghp_xxx REGISTRY_USER=ankurisb ./build-mac.sh
+# If REGISTRY_TOKEN is unset, no auth file is written and the installer falls back to
+# anonymous pull (dev builds). NOTE: this token is extractable from the DMG — use a
+# read:packages-only token and rotate it periodically (accepted trade-off).
+rm -f deploy/registry-auth.json
+if [ -n "${REGISTRY_TOKEN:-}" ]; then
+  printf '{"host":"%s","user":"%s","token":"%s"}' \
+    "${REGISTRY_HOST:-ghcr.io}" "${REGISTRY_USER:-ankurisb}" "${REGISTRY_TOKEN}" \
+    > deploy/registry-auth.json
+  echo "    deploy/registry-auth.json written (registry auth baked in)"
+else
+  echo "    (no REGISTRY_TOKEN — building WITHOUT registry auth; images must be public)"
+fi
+
 echo "==> Installing installer dependencies…"
 npm install
 

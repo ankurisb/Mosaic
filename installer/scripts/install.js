@@ -187,18 +187,22 @@ async function install(config, rawEmit) {
         : 'Pulling Mosaic images (first run may take a few minutes)…' })
 
     // Private-registry auth: Mosaic images are PRIVATE on GHCR. The installer carries
-    // a read-only pull credential (REGISTRY_USER / REGISTRY_TOKEN, injected at build
-    // time) and logs in before pulling. If none is provided (e.g. a dev build), we skip
-    // login and assume public/anonymous pull still works.
-    const REGISTRY = process.env.REGISTRY_HOST || 'ghcr.io'
-    const REGISTRY_USER = process.env.REGISTRY_USER || ''
-    const REGISTRY_TOKEN = process.env.REGISTRY_TOKEN || ''
-    if (REGISTRY_TOKEN) {
+    // a read-only pull credential — baked into deploy/registry-auth.json at DMG-build
+    // time (see build-mac.sh) — and logs in before pulling. Env vars override the file
+    // (handy for dev). If neither is present, we skip login and assume anonymous pull.
+    let regAuth = { host: process.env.REGISTRY_HOST || '', user: process.env.REGISTRY_USER || '', token: process.env.REGISTRY_TOKEN || '' }
+    if (!regAuth.token) {
+      try {
+        const authFile = path.join(config.resourcesDir || __dirname, 'deploy', 'registry-auth.json')
+        if (fs.existsSync(authFile)) regAuth = { ...regAuth, ...JSON.parse(fs.readFileSync(authFile, 'utf8')) }
+      } catch { /* no bundled auth — fall through to anonymous */ }
+    }
+    const REGISTRY = regAuth.host || 'ghcr.io'
+    if (regAuth.token) {
       emit({ step: 5, total: TOTAL, pct: 52, label: 'Authenticating to the Mosaic registry…' })
       try {
-        // Pass the token via stdin (--password-stdin) so it never appears in the
-        // process list / logs.
-        await run(`echo "${REGISTRY_TOKEN}" | docker login ${REGISTRY} -u "${REGISTRY_USER || 'mosaic'}" --password-stdin`, installDir, () => {})
+        // Token via --password-stdin so it never appears in the process list / logs.
+        await run(`echo "${regAuth.token}" | docker login ${REGISTRY} -u "${regAuth.user || 'mosaic'}" --password-stdin`, installDir, () => {})
       } catch (e) {
         throw new Error('Could not authenticate to the Mosaic image registry. The installer credential may be invalid or expired — contact UGX for an updated installer.')
       }
