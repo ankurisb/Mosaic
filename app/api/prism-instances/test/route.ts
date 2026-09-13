@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
 
   const body = await req.json()
   const { base_url, username, password, instance_id } = body
