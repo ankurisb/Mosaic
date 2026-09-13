@@ -72,6 +72,31 @@ function ok(columns: string[], rows: any[], extra: Record<string, any>): NextRes
   return NextResponse.json({ columns, rows, rowCount: rows.length, ...extra })
 }
 
+// Robust read-only enforcement. The old check only matched a write keyword at the
+// START of the query, so "SELECT 1; DROP TABLE users" or a leading comment/whitespace
+// bypassed it. This: strips SQL comments, rejects stacked statements (a second
+// non-empty statement after a ';'), and blocks any write/DDL keyword appearing as a
+// whole word anywhere. Returns the offending keyword, or null if the query is read-only.
+function readOnlyViolation(rawQuery: string): string | null {
+  if (!rawQuery) return null
+  // Strip -- line comments and /* */ block comments, and string literals (so a keyword
+  // inside a quoted value doesn't false-positive).
+  const stripped = rawQuery
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"]|"")*"/g, '""')
+  // Stacked statements: more than one non-empty ';'-separated statement.
+  const statements = stripped.split(';').map(s => s.trim()).filter(Boolean)
+  if (statements.length > 1) return 'multiple statements'
+  const upper = ' ' + stripped.toUpperCase().replace(/\s+/g, ' ') + ' '
+  const WRITE = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'REPLACE', 'MERGE', 'GRANT', 'REVOKE', 'ATTACH', 'PRAGMA', 'COPY', 'CALL', 'EXEC', 'EXECUTE', 'INTO OUTFILE', 'LOAD DATA']
+  for (const kw of WRITE) {
+    if (upper.includes(` ${kw} `)) return kw
+  }
+  return null
+}
+
 // ── DB query ──────────────────────────────────────────────────────────────────
 
 async function runDbQuery(db: any, connectionId: string, query: string, limit: number, startMs: number) {
@@ -79,9 +104,8 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
   const [conn] = await db`SELECT * FROM db_connections WHERE id = ${connectionId} LIMIT 1`
   if (!conn) return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
   if (conn.read_only) {
-    const u = query.toUpperCase()
-    const kw = ['INSERT ', 'UPDATE ', 'DELETE ', 'DROP ', 'TRUNCATE ', 'ALTER ', 'CREATE ', 'REPLACE '].find(k => u.startsWith(k))
-    if (kw) return NextResponse.json({ error: `Connection is read-only — ${kw.trim()} statements are blocked.` }, { status: 403 })
+    const guard = readOnlyViolation(query)
+    if (guard) return NextResponse.json({ error: `Connection is read-only — ${guard} is blocked.` }, { status: 403 })
   }
   const pwd = conn.password_enc ? decrypt(conn.password_enc) : ''
   const cs = conn.connection_string ? decrypt(conn.connection_string) : null
