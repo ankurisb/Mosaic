@@ -126,7 +126,7 @@ function ParetoR({ data, insight }: { data: Extract<RendererPayload,{type:'paret
                 <div key={r.cat} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <div style={{ fontSize: 9, fontFamily: V.mono, color: (r as any).vital ? V.red : V.text3, marginBottom: 2 }}>{cums[i]}%</div>
                   <div title={`${r.cat}: ${r.defects}`} style={{ width: '100%', height: h, background: (r as any).vital ? V.red : '#c4bfb4', borderRadius: '3px 3px 0 0', opacity: 0.85 }} />
-                  <div style={{ fontSize: 9, color: V.text3, marginTop: 4, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{r.cat.slice(0, 5)}</div>
+                  <div style={{ fontSize: 9, color: V.text3, marginTop: 4, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{r.cat.length > 8 ? r.cat.slice(0, 7) + '…' : r.cat}</div>
                 </div>
               )
             })}
