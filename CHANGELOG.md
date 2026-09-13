@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.9] - 2026-09-13
+
+### Fixed
+- **Changepoint detection now finds real shifts.** It previously reported no changepoints even for an obvious step change (e.g. a metric jumping from 10 to 50); the detection is now seeded correctly and reliably flags genuine shifts while ignoring stable noise.
+- **RCA diagrams are robust to incomplete data.** All 14 root-cause visualisations now coerce incomplete AI-produced data to a safe shape and render an empty-but-valid diagram (backed by a per-diagram error boundary), so a single incomplete diagram never disrupts the rest of an analysis.
+
 ## [1.3.8] - 2026-09-13
 
 ### Fixed
