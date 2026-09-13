@@ -108,7 +108,7 @@ automatically from the Docker environment.
 If the server has no internet access at all:
 
 1. Pull all Docker images on a machine with internet access
-2. Export them: `docker save mosaic-mosaic | gzip > mosaic.tar.gz`
+2. Export them: `docker save ghcr.io/ankurisb/mosaic | gzip > mosaic.tar.gz`
 3. Transfer and load: `docker load < mosaic.tar.gz`
 4. Remote support (Cloudflare Tunnel) will not be available — use
    `mosaic-doctor.sh` and the watchdog (`http://localhost:3099`)
