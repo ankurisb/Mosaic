@@ -299,9 +299,8 @@ async function parseAndRespond(buf: Buffer, filename: string, label: string, met
   const base = { durationMs: Date.now() - startMs, dialect: 'file', label, file: filename, modified: meta.modified }
 
   if (ext === 'csv') {
-    const lines = buf.toString('utf-8').split('\n').filter(Boolean)
-    const headers = lines[0]?.split(',').map((h: string) => h.trim().replace(/^"|"$/g, '')) ?? []
-    const rows = lines.slice(1, 501).map(line => Object.fromEntries(headers.map((h: string, i: number) => [h, line.split(',')[i]?.trim().replace(/^"|"$/g, '') ?? ''])))
+    const { parseCsv } = await import('@/lib/csv-parse')
+    const { headers, rows } = parseCsv(buf.toString('utf-8'), 500)
     return NextResponse.json({ columns: headers, rows, rowCount: rows.length, ...base })
   }
   if (ext === 'json') {

@@ -2265,12 +2265,8 @@ async function parseFileContent(
 
   if (ext === 'csv') {
     const text  = buf.toString('utf8')
-    const lines = text.split('\n').filter(l => l.trim())
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''))
-    const rows = lines.slice(1, maxRows + 1).map(line => {
-      const vals = line.split(',')
-      return Object.fromEntries(headers.map((h, i) => [h, vals[i]?.trim().replace(/^"|"$/g, '') ?? '']))
-    })
+    const { parseCsv } = await import('./csv-parse')
+    const { headers, rows } = parseCsv(text, maxRows)
     return { content_type: 'tabular', rows, row_count: rows.length, columns: headers }
   }
 
