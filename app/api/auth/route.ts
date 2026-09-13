@@ -70,6 +70,13 @@ export async function POST(req: Request) {
     }
 
     if (action === 'saveSsoConfig') {
+      // CRITICAL: SSO config is a security-sensitive setting — admin only. Without
+      // this, an unauthenticated caller could inject a malicious IdP or delete the
+      // real SSO config.
+      const adminSession = await getSession()
+      if (!adminSession || adminSession.role !== 'admin') {
+        return Response.json({ error: 'Admin only' }, { status: 403 })
+      }
       const { provider, client_id, client_secret, tenant_id, enabled, realm, server_url, discovery_url, jit_enabled } = body
       if (!provider || !client_id) return Response.json({ error: 'provider and client_id are required' }, { status: 400 })
       const isOidc = !['microsoft', 'google'].includes(provider)
@@ -96,6 +103,11 @@ export async function POST(req: Request) {
     }
 
     if (action === 'deleteSsoConfig') {
+      // Admin only (same reasoning as saveSsoConfig).
+      const adminSession = await getSession()
+      if (!adminSession || adminSession.role !== 'admin') {
+        return Response.json({ error: 'Admin only' }, { status: 403 })
+      }
       const { provider } = body
       const sql = getDb()
       await sql`DELETE FROM sso_config WHERE id=${provider}`
@@ -105,5 +117,9 @@ export async function POST(req: Request) {
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 })
-  } catch (e) { return Response.json({ error: String(e) }, { status: 500 }) }
+  } catch (e) {
+    // Don't leak internal error details (stack fragments, paths) to the client.
+    reqLog.error({ err: e }, 'Auth route error')
+    return Response.json({ error: 'Request failed' }, { status: 500 })
+  }
 }

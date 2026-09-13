@@ -105,6 +105,6 @@ export async function GET(req: Request) {
     })
   } catch (e) {
     log.error({ service: 'sso-init', err: e }, 'SSO init error')
-    return Response.json({ error: String(e) }, { status: 500 })
+    return Response.json({ error: "Request failed" }, { status: 500 })
   }
 }

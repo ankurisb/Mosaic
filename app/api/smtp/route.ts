@@ -38,5 +38,5 @@ export async function POST(req: Request) {
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 })
-  } catch (e) { return Response.json({ error: String(e) }, { status: 500 }) }
+  } catch (e) { return Response.json({ error: "Request failed" }, { status: 500 }) }
 }
