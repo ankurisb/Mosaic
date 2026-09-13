@@ -6,13 +6,14 @@ import { decrypt } from './encrypt'
 import { getKey }  from './keys'
 import { assertUrlSafe } from './ssrf-guard'
 
-// SSRF guard for outbound notification webhooks (Slack/Teams/generic). These
-// URLs are admin-supplied and fetched by the SERVER, so — exactly like MCP
-// endpoints — without validation they could target internal services (Mosaic's
-// own APIs, Docker services, cloud metadata). Blocks private/loopback/metadata
-// targets before any fetch.
+// SSRF guard for outbound notification webhooks (Slack/Teams/generic). These URLs
+// are admin-supplied and fetched by the SERVER. We use LAN mode: an on-prem plant's
+// own alerting endpoint or an internal Teams/Slack proxy legitimately lives on the
+// private LAN, so private ranges are allowed — but loopback (Mosaic's own APIs) and
+// cloud metadata (169.254.169.254) stay blocked, since those are the real attack
+// targets. Public webhooks (hooks.slack.com, webhook.office.com) work as before.
 async function guardWebhook(url: string, start: number): Promise<NotifyResult | null> {
-  const safe = await assertUrlSafe(url)
+  const safe = await assertUrlSafe(url, 'lan')
   if (!safe.ok) return { ok: false, error: `Webhook blocked: ${safe.reason}`, latency_ms: Date.now() - start }
   return null
 }
