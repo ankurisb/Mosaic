@@ -584,29 +584,39 @@ def changepoint_detection(data, params):
     if n < 8:
         raise ValueError("Need at least 8 data points for changepoint detection")
 
-    # CUSUM method
     mean = np.mean(values)
     std = np.std(values, ddof=1)
     if std == 0:
-        return {"changepoints": [], "message": "No variation in data"}
+        return {"changepoints": [], "changepoint_count": 0, "message": "No variation in data",
+                "overall_mean": round(float(mean), 4), "overall_std": 0.0, "n": n, "most_significant": None}
 
-    normalized = (values - mean) / std
+    # CUSUM over a robustly-normalised series, but seed the reference from the FIRST
+    # segment (first third) rather than the global median — otherwise a large step
+    # inflates the global centre/scale so much that neither regime looks anomalous
+    # (the old bug: a clean 10->50 step found 0 changepoints). Using an early-window
+    # baseline makes a genuine shift accumulate strongly on the CUSUM.
+    baseline = values[: max(3, n // 3)]
+    ref = float(np.median(baseline))
+    bmad = float(np.median(np.abs(baseline - ref)) * 1.4826)
+    # Fall back to a small fraction of the overall spread when the baseline is flat
+    # (a perfectly constant first segment has MAD 0).
+    scale = bmad if bmad > 1e-9 else (float(np.std(values, ddof=1)) * 0.25 or 1.0)
+    normalized = (values - ref) / scale
+
     cusum_pos = np.zeros(n)
     cusum_neg = np.zeros(n)
-    k = float(params.get("sensitivity", 0.5))
+    k = float(params.get("sensitivity", 0.5))   # drift allowance (in robust-sigma)
+    threshold = float(params.get("threshold", 5.0))  # decision interval
 
+    changepoints = []
     for i in range(1, n):
         cusum_pos[i] = max(0, cusum_pos[i-1] + normalized[i] - k)
         cusum_neg[i] = max(0, cusum_neg[i-1] - normalized[i] - k)
-
-    threshold = 4.0
-    changepoints = []
-    for i in range(1, n):
         if cusum_pos[i] > threshold or cusum_neg[i] > threshold:
             direction = "upward" if cusum_pos[i] > threshold else "downward"
             if not changepoints or i - changepoints[-1]["index"] > 3:
-                before_mean = float(np.mean(values[max(0,i-5):i]))
-                after_mean = float(np.mean(values[i:min(n,i+5)]))
+                before_mean = float(np.mean(values[max(0, i-5):i]))
+                after_mean = float(np.mean(values[i:min(n, i+5)]))
                 changepoints.append({
                     "index": i,
                     "label": labels[i] if i < len(labels) else str(i),
@@ -615,6 +625,10 @@ def changepoint_detection(data, params):
                     "before_mean": round(before_mean, 4),
                     "after_mean": round(after_mean, 4),
                 })
+            # Reset the CUSUMs after flagging so a single shift isn't re-counted every
+            # subsequent point (the accumulator stays above threshold otherwise).
+            cusum_pos[i] = 0.0
+            cusum_neg[i] = 0.0
 
     return {
         "changepoints": changepoints,
