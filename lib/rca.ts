@@ -69,11 +69,44 @@ export function parseRcaOutput(raw: string): { text: string; rca: RcaBlock | nul
   try {
     const rca = JSON.parse(match[1].trim()) as RcaBlock
     const text = raw.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
+    // Drop renderers the AI emitted as a type placeholder but never populated (empty
+    // or missing the primary data array). Rendering an empty fishbone/5-whys/CAP shell
+    // looks broken to the user — better to omit it. Keeps only renderers with real
+    // content, so the analysis always looks complete rather than half-empty.
+    if (rca && Array.isArray(rca.renderers)) {
+      rca.renderers = rca.renderers.filter(r => hasRenderableData(r))
+      if (!rca.renderers.length) return { text, rca: null }
+    }
     return { text, rca }
   } catch {
     // Strip the tag even if JSON fails -- don't show raw JSON to user
     const text = raw.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
     return { text, rca: null }
+  }
+}
+
+// The primary content array (or key field) each renderer needs to be worth showing.
+// A renderer whose primary array is missing/empty is a placeholder the AI didn't fill.
+function hasRenderableData(r: RcaRendererItem): boolean {
+  const d = (r as { data?: Record<string, unknown> }).data
+  if (!d || typeof d !== 'object') return false
+  const nonEmpty = (v: unknown) => Array.isArray(v) && v.length > 0
+  switch (r.type) {
+    case 'pareto':
+    case 'breakdown':
+    case 'subcause':
+    case 'fmea':      return nonEmpty(d.rows)
+    case 'fishbone':  return nonEmpty(d.bones)
+    case 'five_whys': return nonEmpty(d.chain)
+    case 'cap':       return nonEmpty(d.actions)
+    case 'spc':       return nonEmpty(d.subgroups)
+    case 'fault_tree':
+    case 'timeline':  return nonEmpty(d.events)
+    case '8d':        return nonEmpty(d.items)
+    case 'trend':     return nonEmpty(d.series) && nonEmpty(d.labels)
+    case 'scatter':   return nonEmpty(d.points)
+    case 'comparison':return nonEmpty(d.metrics)
+    default:          return true
   }
 }
 
@@ -138,6 +171,7 @@ fmea         { title, rows:[{mode,effect,cause,S:1-10,O:1-10,D:1-10,controls,act
 comparison   { title, cols:["Batch A","Batch B",...], metrics:[{name,vals:[...strings],delta:[null|number,...],good_direction:"up"|"down"|null}] }
 
 ### Rules
+- CRITICAL: only include a renderer if you FULLY populate its data in the same block. Never emit a renderer with an empty or partial data object — an empty fishbone/five_whys/cap renders as a broken, empty diagram. If you can't fully fill a diagram's data, omit that renderer entirely. Prefer 2 complete diagrams over 5 half-empty ones.
 - Always include an "insight" string -- one plain-English sentence per renderer
 - never fabricate data -- query connected sources first
 - cap always comes last if included
