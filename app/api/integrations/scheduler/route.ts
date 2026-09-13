@@ -53,12 +53,20 @@ export async function POST(req: Request) {
     let   valueSnap:  unknown = null
 
     try {
-      const condition = r.condition as Record<string, unknown>
+      // condition is stored JSON-encoded. SQLite returns it as a STRING (Postgres
+      // JSONB auto-parses), so parse defensively — otherwise condition.operator/
+      // column/value are all undefined and threshold alerts SILENTLY never fire.
+      const condition: Record<string, unknown> = typeof r.condition === 'string'
+        ? (() => { try { return JSON.parse(r.condition as string) } catch { return {} } })()
+        : (r.condition as Record<string, unknown>) || {}
       const channel   = {
         id:     ruleId,
         name:   r.channel_name as string,
         type:   r.channel_type as string,
-        config: r.channel_config as Record<string, unknown>,
+        // channel_config is JSON too — parse if SQLite handed back a string.
+        config: (typeof r.channel_config === 'string'
+          ? (() => { try { return JSON.parse(r.channel_config as string) } catch { return {} } })()
+          : r.channel_config) as Record<string, unknown>,
       }
 
       // Step 3a: if this alert references a saved query, resolve it to SQL +
@@ -223,8 +231,10 @@ export async function POST(req: Request) {
     .catch(() => {})
 
     // -- Update rule timestamps ----------------------------------
-    const condition    = r.condition as Record<string, unknown>
-    const intervalSec  = Number(condition?.interval_sec || 300)
+    const condition2: Record<string, unknown> = typeof r.condition === 'string'
+      ? (() => { try { return JSON.parse(r.condition as string) } catch { return {} } })()
+      : (r.condition as Record<string, unknown>) || {}
+    const intervalSec  = Number(condition2?.interval_sec || 300)
     const nextRun      = r.trigger_type === 'schedule'
       ? new Date(Date.now() + intervalSec * 1000).toISOString()
       : new Date(Date.now() + 60_000).toISOString() // threshold/rca: recheck in 1 min
