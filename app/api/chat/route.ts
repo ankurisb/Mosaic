@@ -88,6 +88,16 @@ export async function POST(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
 
+  // Feature gate: chat is a licensed (AI) feature. When unlicensed past grace, refuse
+  // with a clear message — login/settings still work so the admin sees the reason.
+  try {
+    const { getLicenseStateAsync, isLicensedAsync } = await import('@/lib/license')
+    if (!(await isLicensedAsync())) {
+      const st = await getLicenseStateAsync()
+      return Response.json({ error: st.message || 'Mosaic is not licensed. Contact UGX to restore access.', unlicensed: true, reason: st.reason }, { status: 402 })
+    }
+  } catch { /* if the gate itself errors, do not block (fail-open on gate error) */ }
+
   const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
   reqLog.info('Chat request received')
   const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments } = await req.json()

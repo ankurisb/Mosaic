@@ -45,6 +45,16 @@ export async function register() {
     const { runDataMigrations } = await import('@/lib/migrate-data')
     await runDataMigrations(getDb())
     log.info({ service: 'instrumentation' }, 'Data migrations ensured at startup')
+
+    // Start the license checker (phone-home + grace). Never throws — licensing must
+    // not prevent the app from booting; the gate itself decides feature access.
+    try {
+      const { startLicenseChecker } = await import('@/lib/license')
+      await startLicenseChecker()
+      log.info({ service: 'instrumentation' }, 'License checker started')
+    } catch (e) {
+      log.warn({ service: 'instrumentation', err: e }, 'License checker failed to start (continuing)')
+    }
   } catch (err) {
     // A migration failure means the schema is not in a known-good state. Fail LOUD
     // rather than serve requests against a broken/partial schema — a crash at boot

@@ -111,6 +111,14 @@ export async function GET() {
     changelog,
     currentVersion,
     dependencies,
+    license: await (async () => {
+      // Surface a compact license status for the UI gate/banner (no key material).
+      try {
+        const { getLicenseStateAsync } = await import('@/lib/license')
+        const s = await getLicenseStateAsync()
+        return { status: s.status, message: s.message, seats_ok: s.seats_ok, seat_limit: s.seat_limit, active_seats: s.active_seats, expires_at: s.expires_at }
+      } catch { return { status: 'unconfigured' } }
+    })(),
     latestVersion,
     latestReleaseUrl,
     updateAvailable,
