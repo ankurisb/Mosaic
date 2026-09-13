@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-09-13
+
+### Fixed
+- **CSV data corruption.** The CSV reader used naive comma-splitting, so any quoted field containing a comma — very common in industrial data (descriptions, downtime reasons, part names like "High-speed, precision lathe") — was split at the internal comma, truncating the field and shifting every column after it, silently producing wrong data. Replaced with a proper RFC-4180 parser that also handles escaped quotes, quoted newlines, and auto-detects comma / semicolon / tab delimiters (for European exports and historians).
+
 ## [1.3.6] - 2026-09-13
 
 ### Fixed
