@@ -186,6 +186,24 @@ async function install(config, rawEmit) {
         ? 'Pulling Enterprise images (first run downloads several GB)…'
         : 'Pulling Mosaic images (first run may take a few minutes)…' })
 
+    // Private-registry auth: Mosaic images are PRIVATE on GHCR. The installer carries
+    // a read-only pull credential (REGISTRY_USER / REGISTRY_TOKEN, injected at build
+    // time) and logs in before pulling. If none is provided (e.g. a dev build), we skip
+    // login and assume public/anonymous pull still works.
+    const REGISTRY = process.env.REGISTRY_HOST || 'ghcr.io'
+    const REGISTRY_USER = process.env.REGISTRY_USER || ''
+    const REGISTRY_TOKEN = process.env.REGISTRY_TOKEN || ''
+    if (REGISTRY_TOKEN) {
+      emit({ step: 5, total: TOTAL, pct: 52, label: 'Authenticating to the Mosaic registry…' })
+      try {
+        // Pass the token via stdin (--password-stdin) so it never appears in the
+        // process list / logs.
+        await run(`echo "${REGISTRY_TOKEN}" | docker login ${REGISTRY} -u "${REGISTRY_USER || 'mosaic'}" --password-stdin`, installDir, () => {})
+      } catch (e) {
+        throw new Error('Could not authenticate to the Mosaic image registry. The installer credential may be invalid or expired — contact UGX for an updated installer.')
+      }
+    }
+
     // Pull the published images, then start. This installer ships only the
     // compose file (not the source tree), so it is strictly pull-based — there is
     // no local-build fallback. If the pull fails, surface a clear, honest error
