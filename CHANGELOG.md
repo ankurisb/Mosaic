@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.8] - 2026-09-13
+
+### Fixed
+- **RCA analysis no longer crashes the page.** A root-cause-analysis response whose diagram data was incomplete (e.g. a fishbone with a missing branch list) threw an uncaught error that blanked the whole chat with an "Application error" screen. Each RCA visualisation is now wrapped in an error boundary, so a single malformed diagram degrades to a small "couldn't be displayed" notice while the rest of the analysis — charts, insights, tables — renders normally. The fishbone renderer also handles incomplete data gracefully.
+
 ## [1.3.7] - 2026-09-13
 
 ### Fixed
