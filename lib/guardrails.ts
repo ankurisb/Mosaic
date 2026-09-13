@@ -126,16 +126,24 @@ export async function applyDataAccessRules(
     const upper = sql_query.toUpperCase().trim()
 
     for (const row of rows as Record<string, unknown>[]) {
-      // Check allowed tables whitelist
+      // Check allowed tables whitelist. Extract the ACTUAL tables referenced in
+      // FROM/JOIN clauses (not a naive substring match, which a query could satisfy
+      // by merely mentioning an allowed name in a string literal or a JOIN to a
+      // non-allowed table). Every referenced table must be in the allowlist.
       const allowedTables: string[] = jsonCol<string[]>(row.allowed_tables, [])
       if (allowedTables.length > 0) {
-        const mentionsAllowed = allowedTables.some(t => upper.includes(t.toUpperCase()))
-        if (!mentionsAllowed) {
+        const referenced = extractReferencedTables(sql_query)
+        const allowedLower = new Set(allowedTables.map(t => t.toLowerCase()))
+        // If we couldn't parse any table (unusual query shape), fail closed.
+        const violation = referenced.length === 0
+          ? true
+          : referenced.some(t => !allowedLower.has(t.toLowerCase()))
+        if (violation) {
           const reason = `Access denied: your role (${role}) may only query: ${allowedTables.join(', ')}`
           if (auditCtx) {
             audit(null, toActor(auditCtx), AUDIT.GUARDRAIL_BLOCK, `source:${sourceId}`, 'failure', {
               guardrail_type: 'data_access', rule: 'allowed_tables',
-              role, sourceId, sourceType, blocked_reason: reason,
+              role, sourceId, sourceType, blocked_reason: reason, referenced_tables: referenced,
               conversationId: auditCtx.conversationId,
             })
           }
@@ -169,6 +177,29 @@ export async function applyDataAccessRules(
 
     return { allowed: true }
   } catch { return { allowed: true } }
+}
+
+// Extract table names referenced in FROM and JOIN clauses of a SQL query, so the
+// allowed-tables whitelist checks ACTUAL tables (incl. those pulled in via JOIN or
+// subquery) rather than a naive substring match. Strips comments + string literals
+// first so a table name inside a quoted value isn't mistaken for a reference.
+function extractReferencedTables(query: string): string[] {
+  const cleaned = query
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"]|"")*"/g, '""')
+  const tables = new Set<string>()
+  // Match FROM <table> and JOIN <table>, capturing an optionally schema-qualified,
+  // optionally-quoted identifier.
+  const re = /\b(?:FROM|JOIN)\s+([`[]?[a-zA-Z_][\w$]*[`\]]?(?:\.[`[]?[a-zA-Z_][\w$]*[`\]]?)?)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(cleaned)) !== null) {
+    const raw = m[1].replace(/[`[\]"]/g, '')
+    const name = raw.includes('.') ? raw.split('.').pop()! : raw
+    if (name) tables.add(name)
+  }
+  return [...tables]
 }
 
 function injectWhereClause(query: string, filter: string): string {
