@@ -208,8 +208,24 @@ const BONE_COL: Record<string, { stroke: string; light: string }> = {
 }
 const DEFAULT_COL = { stroke: '#6b6760', light: '#f5f5f3' }
 function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fishbone'}>['data']; insight?: string }) {
-  const top = data.bones.filter((_, i) => i % 2 === 0).slice(0, 3)
-  const bot = data.bones.filter((_, i) => i % 2 === 1).slice(0, 3)
+  // Guard: the AI occasionally emits a fishbone block without a well-formed
+  // bones array (or with the causes shape off). Without this, data.bones.filter
+  // threw and — via the crash below being uncaught — white-screened the whole app.
+  const bones = Array.isArray(data?.bones)
+    ? data.bones.filter(b => b && typeof b.name === 'string').map(b => ({ ...b, causes: Array.isArray(b.causes) ? b.causes : [] }))
+    : []
+  if (!bones.length) {
+    return (
+      <Wrap>
+        <RTitle num="" label="Ishikawa / Fishbone -- 5M1E" />
+        <Card><div style={{ padding: 14, fontSize: 12, color: V.text3 }}>Fishbone data was incomplete for this analysis.</div></Card>
+        {insight && <Insight text={insight} />}
+      </Wrap>
+    )
+  }
+  const top = bones.filter((_, i) => i % 2 === 0).slice(0, 3)
+  const bot = bones.filter((_, i) => i % 2 === 1).slice(0, 3)
+  const problem = String(data?.problem ?? '')
   const xPos = [155, 435, 695]
   return (
     <Wrap>
@@ -219,9 +235,9 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
           <line x1="55" y1="190" x2="810" y2="190" stroke="#b0aca4" strokeWidth="2.5" />
           <polygon points="810,190 797,183 797,197" fill="#b0aca4" />
           <rect x="816" y="163" width="60" height="54" rx="7" fill="#fdf0ee" stroke="#f5c4be" strokeWidth="1.5" />
-          <text x="846" y="187" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fontWeight="600" fill="#c0392b">{data.problem.slice(0,14)}</text>
-          <text x="846" y="200" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{data.problem.slice(14,28)}</text>
-          <text x="846" y="212" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{data.problem.slice(28,42)}</text>
+          <text x="846" y="187" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fontWeight="600" fill="#c0392b">{problem.slice(0,14)}</text>
+          <text x="846" y="200" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{problem.slice(14,28)}</text>
+          <text x="846" y="212" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{problem.slice(28,42)}</text>
           {top.map((bone, bi) => {
             const x = xPos[bi], col = BONE_COL[bone.name] ?? DEFAULT_COL
             return (
@@ -676,6 +692,27 @@ const RENDERER_MAP: Record<string, React.ComponentType<{ data: any; insight?: st
 
 // -- DEFAULT EXPORT --------------------------------------------------------
 
+// Error boundary so a single malformed renderer payload from the AI can NEVER
+// white-screen the whole chat page. Each renderer is wrapped individually, so one
+// bad block degrades to a small notice while the rest of the analysis still shows.
+class RendererBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  constructor(props: { children: React.ReactNode }) { super(props); this.state = { failed: false } }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(err: unknown) { try { console.error('RCA renderer failed:', err) } catch {} }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div style={{ borderTop: `1px solid ${V.border}`, background: V.bg, padding: '14px 0 6px', marginTop: 12 }}>
+          <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: V.radius, padding: 14, fontSize: 12, color: V.text3 }}>
+            This part of the analysis couldn&rsquo;t be displayed (unexpected data shape). The rest of the response is unaffected.
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export default function RcaRenderer({ block }: { block: RcaBlock }) {
   if (!block?.renderers?.length) return null
   return (
@@ -683,7 +720,11 @@ export default function RcaRenderer({ block }: { block: RcaBlock }) {
       {block.renderers.map((r: any, i) => {
         const Component = RENDERER_MAP[r.type]
         if (!Component) return null
-        return <Component key={i} data={(r as RendererPayload & { insight?: string }).data} insight={r.insight} />
+        return (
+          <RendererBoundary key={i}>
+            <Component data={(r as RendererPayload & { insight?: string }).data} insight={r.insight} />
+          </RendererBoundary>
+        )
       })}
     </div>
   )
