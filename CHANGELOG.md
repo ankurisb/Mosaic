@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-09-13
+
+### Security
+This release is a focused security-hardening pass. Several server-side request-forgery
+(SSRF) and authorization issues were found by adversarial testing and fixed:
+
+- **Critical — SSO configuration could be changed without authentication.** The
+  save/delete SSO-config actions had no auth check, so an unauthenticated caller could
+  inject a malicious identity provider or delete the real SSO config. Both now require
+  an administrator.
+- **Unauthenticated SSRF in the OpenAPI-spec fetcher** (used by the API-connector
+  wizard) — it fetched any URL server-side with no auth or validation. Now admin-only,
+  with private/loopback/metadata targets blocked, redirects not followed, and a response
+  size cap.
+- **SSRF hardening** across the Prism connection test (blocks loopback/cloud-metadata
+  while still allowing on-prem plant LAN devices) and the n8n webhook path.
+- **Query Runner read-only enforcement** is now bypass-resistant: stacked statements
+  (`SELECT …; DROP …`), comment/whitespace-prefixed writes, and `ATTACH` are all blocked
+  on read-only connections.
+- **Data-access allowed-tables guardrail** now parses the actual `FROM`/`JOIN` tables
+  instead of a substring match, so a `JOIN`/`UNION`/CTE to a non-allowed table can no
+  longer slip through.
+- Report download is path-contained; the Prism connection test is admin-only; internal
+  error details are no longer leaked in a few error responses. Removed stray
+  experimental files that shouldn't have shipped.
+
+### Fixed
+- The last hard-coded `v1.0.0` version strings (user menu and setup page) now show the
+  real version.
+
 ## [1.3.4] - 2026-09-13
 
 ### Added
