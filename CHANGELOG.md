@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-09-13
+
+### Fixed
+This release fixes real functional bugs found by end-to-end feature testing (correctness,
+not just security):
+
+- **Alerts now fire on Personal installs.** Threshold alerts silently never fired on
+  SQLite (Personal edition) — the alert condition is stored as JSON, which SQLite returns
+  as a string, so every condition field read as undefined and the alert logged "skipped"
+  with no error. Setting "alert me when scrap > 5%" would produce nothing, ever. Both the
+  simple alerts and the Rules-module rule groups are fixed; verified end-to-end (alert
+  fires and the notification is delivered with the correct computed value).
+- **Statistical analyses no longer crash on degenerate data.** Analysing values with zero
+  variance (all identical), empty data, or a single point returned NaN/Inf which crashed
+  the analysis with an opaque 500. They now return a clear message (e.g. "zero variance —
+  no test statistic defined") instead. Normal analyses are unchanged and numerically
+  correct.
+- **On-prem internal webhooks work.** The webhook security guard now allows a plant's own
+  LAN alerting endpoints (while still blocking loopback and cloud metadata), so
+  notifications to internal receivers are delivered.
+
 ## [1.3.5] - 2026-09-13
 
 ### Security
