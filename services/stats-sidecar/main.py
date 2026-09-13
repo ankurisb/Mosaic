@@ -114,11 +114,36 @@ def analyse(req: AnalysisRequest):
         if not fn:
             raise HTTPException(400, f"Unknown analysis type: {req.analysis_type}. Available: {list(HANDLERS.keys())}")
         result = fn(req.data, req.params or {})
+        # Sanitise NaN/Inf before returning — degenerate inputs (zero variance /
+        # identical values, empty or single-point data) legitimately produce nan/inf
+        # (e.g. f_oneway on constant groups, linregress on one point). FastAPI's strict
+        # JSON serialiser rejects those with a 500 that the try/except below can't catch,
+        # so we replace them with null here and surface a clear note instead of crashing.
+        result = _sanitise(result)
         return {"analysis_type": req.analysis_type, "ok": True, "result": result}
     except HTTPException:
         raise
     except Exception as e:
         return {"analysis_type": req.analysis_type, "ok": False, "error": str(e), "result": {}}
+
+def _sanitise(obj):
+    # Recursively replace NaN/Inf floats with None so the result is valid JSON.
+    import math
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitise(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitise(v) for v in obj]
+    # numpy scalar floats
+    try:
+        import numpy as _np
+        if isinstance(obj, _np.floating):
+            f = float(obj)
+            return None if (f != f or f in (float('inf'), float('-inf'))) else f
+    except Exception:
+        pass
+    return obj
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -250,6 +275,8 @@ def process_capability(data, params):
 def trend(data, params):
     values = to_float_array(data)
     n = len(values)
+    if n < 2:
+        raise ValueError("Need at least 2 data points to compute a trend")
     x = np.arange(n)
     slope, intercept, r, p, se = stats.linregress(x, values)
     threshold = params.get("threshold")
@@ -496,6 +523,21 @@ def hypothesis_test(data, params):
     alpha = float(params.get("alpha", 0.05))
     groups = [np.array([float(v) for v in g]) for g in data]
     n_groups = len(groups)
+    if n_groups < 2:
+        raise ValueError("Need at least 2 groups to compare")
+    if any(len(g) < 2 for g in groups):
+        raise ValueError("Each group needs at least 2 observations")
+    # All-constant groups make the F/t statistic undefined; report clearly rather
+    # than returning nan.
+    if all(float(np.std(g)) == 0 for g in groups):
+        means = [round(float(np.mean(g)), 4) for g in groups]
+        return {
+            "test_used": "n/a", "statistic": None, "p_value": None, "significant": False,
+            "alpha": alpha,
+            "group_stats": [{"label": group_labels[i], "mean": means[i], "std": 0.0, "n": len(g)} for i, g in enumerate(groups)],
+            "conclusion": "Every value within each group is identical (zero variance), so no test statistic is defined. "
+                          + ("Group means are equal." if len(set(means)) == 1 else f"Group means differ ({means}) but the test can't be computed without variation."),
+        }
 
     group_stats = [
         {"label": group_labels[i], "mean": round(float(np.mean(g)), 4),
