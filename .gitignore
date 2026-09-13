@@ -60,3 +60,4 @@ Thumbs.db
 
 backups/
 installer/deploy/registry-auth.json
+docs/SERVICE_CREDENTIALS.md

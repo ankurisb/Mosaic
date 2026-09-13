@@ -42,7 +42,14 @@ export interface SsrfCheck { ok: boolean; reason?: string }
 // Validate an outbound URL before the server fetches it. Rejects non-http(s)
 // schemes, obviously-internal hostnames, and hostnames that RESOLVE to a
 // private/metadata IP. Returns { ok } or { ok:false, reason }.
-export async function assertUrlSafe(rawUrl: string): Promise<SsrfCheck> {
+//
+// mode:
+//  'strict' (default) — block ALL private/loopback/link-local/metadata. Use for URLs
+//     that should only ever point at public services (MCP servers, webhooks, spec URLs).
+//  'lan' — allow private LAN ranges (10/8, 172.16/12, 192.168/16) because the target is
+//     legitimately on the plant network (Prism/IIoT devices), but STILL block loopback
+//     (Mosaic's own APIs) and cloud metadata (169.254.169.254) — the dangerous targets.
+export async function assertUrlSafe(rawUrl: string, mode: 'strict' | 'lan' = 'strict'): Promise<SsrfCheck> {
   let u: URL
   try { u = new URL(rawUrl) } catch { return { ok: false, reason: 'Invalid URL.' } }
 
@@ -52,27 +59,48 @@ export async function assertUrlSafe(rawUrl: string): Promise<SsrfCheck> {
 
   const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '') // strip IPv6 brackets
 
-  // Fast-path obvious internal names.
-  const BLOCKED_NAMES = new Set(['localhost', 'localhost.localdomain', 'metadata.google.internal', 'metadata'])
-  if (BLOCKED_NAMES.has(host) || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) {
-    return { ok: false, reason: 'Endpoint points to an internal/loopback host, which is not allowed.' }
+  // Loopback + metadata are ALWAYS blocked, even in 'lan' mode (Mosaic's own APIs and
+  // cloud metadata are the actual attack targets).
+  const alwaysBlockedNames = new Set(['localhost', 'localhost.localdomain', 'metadata.google.internal', 'metadata'])
+  if (alwaysBlockedNames.has(host) || host.endsWith('.localhost')) {
+    return { ok: false, reason: 'Endpoint points to a loopback host, which is not allowed.' }
+  }
+
+  const checkIp = (ip: string): SsrfCheck => {
+    // loopback + metadata: blocked in both modes
+    if (net.isIPv4(ip)) {
+      const [a, b] = ip.split('.').map(Number)
+      if (a === 127) return { ok: false, reason: 'loopback IP not allowed.' }
+      if (a === 169 && b === 254) return { ok: false, reason: 'link-local / cloud-metadata IP not allowed.' }
+      if (a === 0) return { ok: false, reason: 'invalid IP.' }
+      if (mode === 'lan') return { ok: true } // private LAN allowed for on-prem devices
+    }
+    if (net.isIPv6(ip)) {
+      const low = ip.toLowerCase()
+      if (low === '::1') return { ok: false, reason: 'loopback IP not allowed.' }
+      if (low.startsWith('fe80')) return { ok: false, reason: 'link-local IP not allowed.' }
+      if (mode === 'lan') return { ok: true }
+    }
+    // strict mode (or public-only): fall through to the full private-range check
+    return ipIsBlocked(ip) ? { ok: false, reason: 'private, loopback, or metadata IP not allowed.' } : { ok: true }
+  }
+
+  // Non-loopback internal name suffixes: block in strict, allow in lan (plant hostnames).
+  if (mode === 'strict' && (alwaysBlockedNames.has(host) || host.endsWith('.internal') || host.endsWith('.local'))) {
+    return { ok: false, reason: 'Endpoint points to an internal host, which is not allowed.' }
   }
 
   // If host is already a literal IP, check it directly.
-  if (net.isIP(host)) {
-    if (ipIsBlocked(host)) return { ok: false, reason: 'Endpoint points to a private, loopback, or metadata IP, which is not allowed.' }
-    return { ok: true }
-  }
+  if (net.isIP(host)) return checkIp(host)
 
-  // Otherwise resolve the DNS name and block if ANY resolved address is internal
-  // (defeats DNS names that deliberately point at internal IPs).
+  // Otherwise resolve the DNS name and block if ANY resolved address is disallowed
+  // (defeats DNS names that deliberately point at internal/metadata IPs).
   try {
     const addrs = await lookup(host, { all: true })
     if (!addrs.length) return { ok: false, reason: 'Endpoint hostname did not resolve.' }
     for (const a of addrs) {
-      if (ipIsBlocked(a.address)) {
-        return { ok: false, reason: 'Endpoint hostname resolves to a private, loopback, or metadata IP, which is not allowed.' }
-      }
+      const r = checkIp(a.address)
+      if (!r.ok) return { ok: false, reason: `Endpoint hostname resolves to a ${r.reason}` }
     }
     return { ok: true }
   } catch {

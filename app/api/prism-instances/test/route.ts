@@ -38,6 +38,13 @@ export async function POST(req: Request) {
   if (!testUser) return Response.json({ ok: false, message: 'Username is required' })
   if (!testPass) return Response.json({ ok: false, message: 'Password is required' })
 
+  // SSRF guard (LAN mode): Prism/IIoT devices legitimately live on the plant LAN, so
+  // private ranges are allowed — but loopback (Mosaic's own APIs) and cloud metadata
+  // are still blocked, since credentials get POSTed to this URL by getPrismToken.
+  const { assertUrlSafe } = await import('@/lib/ssrf-guard')
+  const safe = await assertUrlSafe(testBase, 'lan')
+  if (!safe.ok) return Response.json({ ok: false, message: `Blocked: ${safe.reason}` })
+
   // Attempt login
   const tokenResult = await getPrismToken(
     `test-${Date.now()}`,
