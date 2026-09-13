@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.10] - 2026-09-14
+
+### Fixed
+- **RCA diagrams look clean, not messy.** Root-cause analyses now render complete, legible diagrams: the fishbone keeps cause labels short so branches no longer overlap or run off the edge, empty/unpopulated diagrams are omitted entirely (no more blank fishbone/5-whys/CAP shells), and category labels are sized to fit. The AI is also instructed to keep diagram labels terse and only include a diagram when it can fully populate it.
+
 ## [1.3.9] - 2026-09-13
 
 ### Fixed
