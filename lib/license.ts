@@ -37,6 +37,12 @@ export interface LicenseState {
 // In-memory cache of the current state (refreshed on the timer / boot).
 let current: LicenseState = { status: 'unconfigured' }
 let timer: ReturnType<typeof setInterval> | null = null
+// Short-lived per-instance memo of the DB cache read, so the gate doesn't hit the DB
+// on every single request but still picks up cache changes (revoke/reactivate) written
+// by the boot-checker instance within a few seconds.
+let cacheMemo: { state: LicenseState; at: number } | null = null
+const CACHE_MEMO_MS = 5000
+let refreshInFlight = false // prevents overlapping on-demand refreshes
 
 // A stable machine fingerprint (best-effort, non-identifying) for seat/usage
 // correlation on the server. Derived from hostname + platform; not a hard binding.
@@ -164,29 +170,43 @@ export function getLicenseState(): LicenseState {
   return current
 }
 
-// Async state read that also consults the persisted cache — used by request handlers
-// (API routes / the gate), which may run in a DIFFERENT module instance than the boot
-// checker in instrumentation.ts, so the in-memory `current` there can be stale/empty.
-// Reads the cache the checker writes on every refresh, giving a consistent view.
+// Async state read for request handlers. The DB cache (written by the boot-checker's
+// periodic refresh) is the SHARED SOURCE OF TRUTH across Next's separate module
+// instances — so the gate reads THAT, not a per-instance in-memory `current` (which
+// goes stale in the instance that isn't running the timer). Memoized 5s so we don't
+// hit the DB on every request while still honouring a revoke/reactivate within seconds.
 export async function getLicenseStateAsync(): Promise<LicenseState> {
-  // If this instance already has a definitive state, use it.
-  if (current.status !== 'unconfigured') return current
-  // Not configured → open.
   if (!LICENSE_SERVER_URL || !LICENSE_KEY) return { status: 'unconfigured' }
 
-  // Configured, but THIS module instance hasn't run the checker (Next can load
-  // instrumentation and route handlers in separate module contexts). Read the cache
-  // the boot checker persists; if it's missing/stale, do a fresh check inline so the
-  // gate always has an authoritative answer regardless of which instance we're in.
+  // Fresh-enough memo?
+  if (cacheMemo && Date.now() - cacheMemo.at < CACHE_MEMO_MS) return cacheMemo.state
+
   const cached = await readCache()
-  if (cached && (cached.status === 'licensed' || cached.status === 'unlicensed')) {
-    // Freshen in the background so subsequent calls are current, but answer now.
-    if (!current || current.status === 'unconfigured') { refresh().catch(() => {}) }
-    return cached
+  if (cached && (cached.status === 'licensed' || cached.status === 'unlicensed' || cached.status === 'grace')) {
+    // Re-derive grace expiry against wall clock (a cached 'grace' may have lapsed).
+    let state = cached
+    if (cached.status === 'grace' && cached.grace_until && Date.now() >= new Date(cached.grace_until).getTime()) {
+      state = { status: 'unlicensed', reason: 'grace_expired', message: 'License could not be verified within the grace period. Reconnect or contact UGX.' }
+    }
+    cacheMemo = { state, at: Date.now() }
+    // On-demand refresh: if the cache is older than the check interval, kick off a
+    // background re-validate. This is more reliable than a bare setInterval in Next's
+    // runtime (timers can be dropped), and a live app gets requests regularly, so the
+    // cache stays fresh — a revoke/expiry is honoured within ~one check interval.
+    const age = Date.now() - new Date(cached.last_checked || 0).getTime()
+    if (age > CHECK_INTERVAL_MS && !refreshInFlight) {
+      refreshInFlight = true
+      refresh().finally(() => { refreshInFlight = false; cacheMemo = null })
+    }
+    ensureTimer()
+    return state
   }
-  // No usable cache — check inline (bounded by the phone-home timeout).
+
+  // No usable cache yet → do one inline check so the gate has an answer.
   try {
     const fresh = await refresh()
+    cacheMemo = { state: fresh, at: Date.now() }
+    ensureTimer()
     return fresh
   } catch {
     return { status: 'grace', reason: 'warming_up', message: 'Verifying license…' }
@@ -204,13 +224,17 @@ export function isLicensed(): boolean {
   return current.status === 'licensed' || current.status === 'grace' || current.status === 'unconfigured'
 }
 
+// Ensure the periodic refresh timer exists in the current module instance. Idempotent.
+function ensureTimer(): void {
+  if (timer || !LICENSE_SERVER_URL || !LICENSE_KEY) return
+  timer = setInterval(() => { refresh().catch(() => {}) }, CHECK_INTERVAL_MS)
+  timer.unref?.()
+}
+
 // Start the periodic checker (called from instrumentation at boot). Runs one check
 // immediately, then every CHECK_INTERVAL_MS. Never throws — licensing must not crash
 // the app.
 export async function startLicenseChecker(): Promise<void> {
   try { await refresh() } catch { /* keep going */ }
-  if (!timer) {
-    timer = setInterval(() => { refresh().catch(() => {}) }, CHECK_INTERVAL_MS)
-    timer.unref?.()
-  }
+  ensureTimer()
 }
