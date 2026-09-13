@@ -212,7 +212,16 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
   // bones array (or with the causes shape off). Without this, data.bones.filter
   // threw and — via the crash below being uncaught — white-screened the whole app.
   const bones = Array.isArray(data?.bones)
-    ? data.bones.filter(b => b && typeof b.name === 'string').map(b => ({ ...b, causes: Array.isArray(b.causes) ? b.causes : [] }))
+    ? data.bones.filter(b => b && typeof b.name === 'string').map(b => ({
+        ...b,
+        // Truncate cause labels hard so they don't overflow/overlap on the diagonal
+        // bones. The bone spacing only fits ~18 chars at 9.5px; anything longer collides
+        // with the adjacent category. Belt-and-braces with the prompt rule (2-3 words).
+        causes: (Array.isArray(b.causes) ? b.causes : []).map((c: string) => {
+          const s = String(c).trim()
+          return s.length > 20 ? s.slice(0, 18).trimEnd() + '…' : s
+        }).slice(0, 3),
+      }))
     : []
   if (!bones.length) {
     return (

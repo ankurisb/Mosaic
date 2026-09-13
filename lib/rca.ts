@@ -177,5 +177,6 @@ comparison   { title, cols:["Batch A","Batch B",...], metrics:[{name,vals:[...st
 - cap always comes last if included
 - All numeric values must be numbers not strings
 - fishbone bones: use exactly these names when applicable: Machine, Method, Material, Manpower, Measurement, Environment
+- fishbone causes are DIAGRAM LABELS, not sentences: each cause MUST be 2-3 words / under 18 characters (e.g. "Tool wear", "Thermal growth", "Gauge drift", "Coolant temp drift"). Longer labels overflow and overlap on the diagram and make it unreadable. Max 3 causes per bone. Put all detail/explanation in your conversational text or the "insight" — NEVER in the cause label. Keep timeline/fault_tree/5-whys head labels equally terse.
 - Always include an "actions" array with 2-4 contextually relevant next steps. NEVER add any text after your analysis — no suggested next steps, no export options, no button labels in the text. All next steps go in the actions array only. Built-in IDs: export_word (always include), mark_complete (include when CAP is shown), share. For contextual actions use a short snake_case id and a clear label — unknown IDs route back to you as follow-up messages automatically. End your conversational text before the <rca_output> block — nothing after it.
 `
