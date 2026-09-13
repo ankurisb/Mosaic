@@ -1,0 +1,15 @@
+{
+  "name": "mosaic-licensing",
+  "version": "1.0.0",
+  "description": "Mosaic licensing service — issue/validate/revoke seat-based licenses",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
