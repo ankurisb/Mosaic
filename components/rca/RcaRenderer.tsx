@@ -713,6 +713,31 @@ class RendererBoundary extends React.Component<{ children: React.ReactNode }, { 
   }
 }
 
+// Coerce a renderer payload's expected array/field shape to safe defaults BEFORE it
+// reaches the renderer, so a missing/mis-typed field from the AI shows an empty-but-
+// valid diagram instead of throwing into the error boundary. Belt-and-braces with the
+// boundary below (which still catches anything this misses).
+function normalizeRcaData(type: string, data: any): any {
+  const arr = (v: any) => (Array.isArray(v) ? v : [])
+  const d = data && typeof data === 'object' ? { ...data } : {}
+  switch (type) {
+    case 'pareto':     return { ...d, rows: arr(d.rows), total: Number(d.total) || arr(d.rows).reduce((s: number, r: any) => s + (Number(r?.defects) || 0), 0) || 1 }
+    case 'breakdown':  return { ...d, rows: arr(d.rows) }
+    case 'subcause':   return { ...d, rows: arr(d.rows), bone: String(d.bone ?? ''), total: Number(d.total) || 1 }
+    case 'five_whys':  return { ...d, chain: arr(d.chain), drilling: String(d.drilling ?? '') }
+    case 'cap':        return { ...d, actions: arr(d.actions), root: String(d.root ?? '') }
+    case 'spc':        return { ...d, subgroups: arr(d.subgroups), violations: arr(d.violations), ucl: Number(d.ucl) || 0, lcl: Number(d.lcl) || 0, uwl: Number(d.uwl) || 0, lwl: Number(d.lwl) || 0, nominal: Number(d.nominal) || 0, title: String(d.title ?? '') }
+    case 'fault_tree': return { ...d, events: arr(d.events), top: String(d.top ?? '') }
+    case '8d':         return { ...d, items: arr(d.items), problem: String(d.problem ?? ''), opened: String(d.opened ?? '') }
+    case 'trend':      return { ...d, series: arr(d.series).map((s: any) => ({ ...s, points: arr(s?.points) })), labels: arr(d.labels), title: String(d.title ?? '') }
+    case 'scatter':    return { ...d, points: arr(d.points), r: Number(d.r) || 0, r2: Number(d.r2) || 0, xLabel: String(d.xLabel ?? ''), yLabel: String(d.yLabel ?? ''), title: String(d.title ?? '') }
+    case 'timeline':   return { ...d, events: arr(d.events), title: String(d.title ?? '') }
+    case 'fmea':       return { ...d, rows: arr(d.rows), title: String(d.title ?? '') }
+    case 'comparison': return { ...d, cols: arr(d.cols), metrics: arr(d.metrics).map((m: any) => ({ ...m, vals: arr(m?.vals), delta: arr(m?.delta) })), title: String(d.title ?? '') }
+    default:           return d
+  }
+}
+
 export default function RcaRenderer({ block }: { block: RcaBlock }) {
   if (!block?.renderers?.length) return null
   return (
@@ -720,9 +745,10 @@ export default function RcaRenderer({ block }: { block: RcaBlock }) {
       {block.renderers.map((r: any, i) => {
         const Component = RENDERER_MAP[r.type]
         if (!Component) return null
+        const safeData = normalizeRcaData(r.type, (r as RendererPayload & { insight?: string }).data)
         return (
           <RendererBoundary key={i}>
-            <Component data={(r as RendererPayload & { insight?: string }).data} insight={r.insight} />
+            <Component data={safeData} insight={r.insight} />
           </RendererBoundary>
         )
       })}
