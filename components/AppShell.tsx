@@ -144,7 +144,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
                     </button>
                   ))}
                   <div style={{ padding: '7px 10px', borderTop: '1px solid var(--border)', marginTop: 4, fontSize: 10, color: 'var(--text4)' }}>
-                    Mosaic v1.0.0 · ugx.ai
+                    Mosaic{deploy?.currentVersion ? ` v${deploy.currentVersion}` : ''} · ugx.ai
                   </div>
                 </div>
               </>

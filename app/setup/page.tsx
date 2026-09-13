@@ -87,7 +87,7 @@ export default function SetupPage() {
         </div>
 
         <div style={{ padding: '12px 32px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)', textAlign: 'center' }}>
-          Mosaic v1.0.0 · ugx.ai
+          ugx.ai
         </div>
       </div>
     </div>
