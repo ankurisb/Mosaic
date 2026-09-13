@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-13
+
+### Added
+- **Business definitions.** Define how *your* plant computes its metrics and what your terms mean — OEE, first-pass yield, what counts as a defect, which machines make up "Line A." Mosaic uses these exact definitions in every analysis, so answers reflect your standards, not generic assumptions.
+- **Licensing & entitlements (foundation).** Mosaic can now validate a license against a licensing service, with seat-based limits, expiry, offline grace, and a remote kill switch. Disabled by default (no license configured → runs as before), so existing installs are unaffected until you issue keys.
+
+### Changed
+- **Current Claude models.** The model picker now offers Claude Sonnet 5 (default), Opus 5, and Haiku 4.5 — the current generation, at lower cost than before. (The picker already existed; the versions were a generation behind.)
+- **Private image distribution.** The installer authenticates to a private image registry before pulling, so the compiled app is no longer anonymously downloadable.
+- **Personal edition** keeps Dashboards and Rules (both work), with the notification-channel settings they need made available.
+
+### Fixed
+- **Security:** closed server-side request-forgery (SSRF) vectors in the MCP connector and in Slack/Teams/webhook/n8n notifications — a crafted URL can no longer reach internal services or cloud metadata. Bounded MCP response sizes and treat MCP output as untrusted data.
+- **Reliability:** notifications now retry transient delivery failures (a brief Slack/email blip no longer drops an alert).
+- **First-run experience (installer):** fixed a false "Port 443 in use" preflight error, made "Open Mosaic" load in the app window (not a browser), and calmed the download progress display.
+- **Fresh install:** the "Mosaic Files" data source now appears immediately on a clean Personal install; System Health shows unconfigured BYO services as "not configured" rather than a misleading "down"; the login page no longer shows a stale hard-coded version.
+- Query Builder retries schema loading once to avoid a race right after creating a data source.
+
 ## [1.3.3] - 2026-09-07
 
 ### Added
