@@ -259,11 +259,17 @@ export async function POST(req: Request) {
   for (const grp of groups) {
     const g          = grp as Record<string, unknown>
     const groupId    = g.id as string
-    const trigger    = g.trigger    as Record<string, unknown>
-    const conditions = g.conditions as Record<string, unknown>[]
-    const controls   = g.controls   as Record<string, unknown>
-    const actions    = g.actions    as Record<string, unknown>[]
-    const recipients = g.recipients as Record<string, unknown>[]
+    // JSON columns come back as STRINGS on SQLite (Postgres JSONB auto-parses), so
+    // parse defensively — otherwise trigger/conditions/controls/actions/recipients are
+    // strings and the whole rule-group evaluation silently no-ops on Personal installs.
+    const _pj = <T,>(v: unknown, fallback: T): T => typeof v === 'string'
+      ? (() => { try { return JSON.parse(v) as T } catch { return fallback } })()
+      : ((v as T) ?? fallback)
+    const trigger    = _pj<Record<string, unknown>>(g.trigger, {})
+    const conditions = _pj<Record<string, unknown>[]>(g.conditions, [])
+    const controls   = _pj<Record<string, unknown>>(g.controls, {})
+    const actions    = _pj<Record<string, unknown>[]>(g.actions, [])
+    const recipients = _pj<Record<string, unknown>[]>(g.recipients, [])
     const logic      = (g.logic as string) || 'OR'
     const startTime  = Date.now()
 
