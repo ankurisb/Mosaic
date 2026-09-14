@@ -424,28 +424,40 @@ function SpcR({ data, insight }: { data: Extract<RendererPayload,{type:'spc'}>['
 
 // -- R8: FAULT TREE --------------------------------------------------------
 function FaultTreeR({ data, insight }: { data: Extract<RendererPayload,{type:'fault_tree'}>['data']; insight?: string }) {
+  // Render as an INDENTED HIERARCHY using the dotted event id (1 → 1.1 → 1.1.1),
+  // which the AI already provides. The old flat 3-column grid destroyed the tree
+  // structure — a fault tree's whole point is the logical hierarchy, so a sub-cause
+  // must sit UNDER its parent, not beside it as a peer. Depth = number of dot segments.
+  const events = Array.isArray(data.events) ? data.events : []
+  const depthOf = (id: string) => Math.max(0, String(id ?? '').split('.').length - 1)
+  const probColor = (p: number) => p >= 60 ? V.red : p >= 30 ? V.amber : V.text3
   return (
     <Wrap>
       <RTitle num="" label="Fault tree analysis" sub={`Top event: ${data.top}`} />
-      <Card style={{ padding: 16 }}>
+      <Card style={{ padding: '14px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-          <div style={{ background: V.redBg, border: `1.5px solid rgba(220,38,38,.25)`, borderRadius: V.radius, padding: '9px 18px', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: V.red }}>{data.top}</div>
+          <div style={{ background: V.redBg, border: `1.5px solid rgba(220,38,38,.25)`, borderRadius: V.radius, padding: '8px 16px', textAlign: 'center', maxWidth: 420 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: V.red, lineHeight: 1.4 }}>{data.top}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-          <div style={{ background: V.bg3, border: `1px solid ${V.border2}`, borderRadius: 6, padding: '3px 12px', fontSize: 10, fontWeight: 600, color: V.text3 }}>OR gate -- any single event sufficient</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {events.map((ev, i) => {
+            const d = depthOf(ev.id)
+            return (
+              <div key={ev.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: d * 26 }}>
+                {/* connector glyph shows nesting */}
+                {d > 0 && <span style={{ color: V.text4, fontFamily: V.mono, fontSize: 12, flexShrink: 0 }}>└</span>}
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: ev.root ? V.amberBg : V.surface, border: `1px solid ${ev.root ? 'rgba(217,119,6,.3)' : V.border}`, borderRadius: V.radiusSm, padding: '7px 11px' }}>
+                  <span style={{ fontFamily: V.mono, fontSize: 10, color: V.text4, flexShrink: 0, minWidth: 34 }}>{ev.id}</span>
+                  <span style={{ fontSize: 12, fontWeight: ev.root ? 700 : 500, color: ev.root ? V.amberT : V.text, flex: 1, lineHeight: 1.4 }}>{ev.label}</span>
+                  {ev.root && <span style={{ fontSize: 9, fontWeight: 700, color: V.amberT, background: V.amberBg, padding: '1px 6px', borderRadius: 3, flexShrink: 0 }}>ROOT</span>}
+                  <span style={{ fontFamily: V.mono, fontSize: 13, fontWeight: 700, color: probColor(Number(ev.prob) || 0), minWidth: 42, textAlign: 'right', flexShrink: 0 }}>{ev.prob}%</span>
+                </div>
+              </div>
+            )
+          })}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(data.events.length, 3)}, 1fr)`, gap: 8 }}>
-          {data.events.map(ev => (
-            <div key={ev.id} style={{ background: ev.root ? V.amberBg : V.bg, border: `1.5px solid ${ev.root ? 'rgba(217,119,6,.3)' : V.border}`, borderRadius: V.radius, padding: '10px 12px', textAlign: 'center' }}>
-              <div style={{ fontSize: 11, fontWeight: ev.root ? 700 : 500, color: ev.root ? V.amber : V.text, marginBottom: 5, lineHeight: 1.4 }}>{ev.label}</div>
-              <div style={{ fontFamily: V.mono, fontSize: 16, fontWeight: 700, color: ev.root ? V.amber : V.blue }}>{ev.prob}%</div>
-              <div style={{ fontSize: 9, color: V.text3, marginTop: 2 }}>failure probability</div>
-              {ev.root && <div style={{ marginTop: 5, fontSize: 9, fontWeight: 700, color: V.amberT, background: V.amberBg, padding: '1px 6px', borderRadius: 3, display: 'inline-block' }}>ROOT</div>}
-            </div>
-          ))}
-        </div>
+        <div style={{ marginTop: 10, fontSize: 10, color: V.text3 }}>% = estimated failure-path contribution · indentation shows the causal hierarchy</div>
       </Card>
       {insight && <Insight text={insight} />}
 </Wrap>
