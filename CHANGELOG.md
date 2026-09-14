@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.11] - 2026-09-14
+
+### Added
+- **Process capability chart.** Root-cause analyses can now show a Cp/Cpk capability histogram of measured values against the spec limits (LSL/USL/target/mean), with a capability rating — core for CNC/moulding dimensional conformance. (Mosaic already computed Cpk; now it can show it.)
+- **OEE loss waterfall.** A cascade from ideal 100% down through availability, performance and quality losses to the achieved OEE, colour-coded by loss type — the standard "where is my OEE going" visual.
+
+### Fixed
+- **Fault tree** now renders as a proper indented hierarchy (cause → sub-cause → root) instead of a flat grid that misrepresented the structure.
+- **Batch comparison** change indicators are now aligned to the correct column.
+- All 14 existing root-cause diagrams re-verified end-to-end with real data.
+
 ## [1.3.10] - 2026-09-14
 
 ### Fixed
