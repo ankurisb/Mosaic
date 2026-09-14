@@ -20,7 +20,7 @@ interface DataSource {
 }
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; narration?: string; startedAt?: number }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number }
 interface Conv { id: string; title: string; messages: Message[] }
 
 const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = []
@@ -384,7 +384,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 role: m.role as 'user' | 'assistant',
                 content: m.content,
                 tools: Array.isArray(m.tool_calls) ? m.tool_calls : (m.tool_calls ? JSON.parse(String(m.tool_calls)) : []),
-                ...(m.rca_block ? { rca: m.rca_block as import('@/lib/rca').RcaBlock, actions: (m.rca_block as import('@/lib/rca').RcaBlock).actions } : {}),
+                ...(m.rca_block ? { rca: m.rca_block as import('@/lib/rca').RcaBlock, actions: (m.rca_block as import('@/lib/rca').RcaBlock).actions, suggestedViews: (m.rca_block as import('@/lib/rca').RcaBlock).suggested_views } : {}),
               })) }
             : c
           ))
@@ -492,6 +492,23 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     send(action.label)
   }
 
+  // Data-aware "next best view" chip: re-runs the analysis scoped to produce ONLY
+  // the chosen renderer, using the data already established in this conversation.
+  // Because the model only suggested views it can fully populate (see the
+  // suggested_views rules), the follow-up reliably renders a populated diagram.
+  function handleView(renderer: string, label: string) {
+    const viewNames: Record<string, string> = {
+      pareto: 'Pareto chart', breakdown: '6M breakdown', subcause: 'sub-cause breakdown',
+      fishbone: 'fishbone (Ishikawa) diagram', five_whys: '5 Whys', cap: 'corrective action plan',
+      spc: 'SPC control chart', fault_tree: 'fault tree', '8d': '8D report',
+      trend: 'trend chart', scatter: 'correlation scatter', timeline: 'event timeline',
+      fmea: 'FMEA', comparison: 'comparison table', capability: 'process capability (Cpk) analysis',
+      oee_waterfall: 'OEE loss waterfall',
+    }
+    const name = viewNames[renderer] || label
+    send(`Render a ${name} for the analysis above, using the data already established in this conversation. Output only that structured view.`)
+  }
+
     async function send(text: string) {
     if (!text.trim() || streaming) return
     let cid = activeId
@@ -585,7 +602,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         const last = msgs[msgs.length - 1]
         if (last?.role === 'assistant' && last.content) {
           const { text, rca } = parseRcaOutput(last.content)
-          msgs[msgs.length - 1] = { ...last, content: text, ...(rca ? { rca, actions: rca.actions } : {}) }
+          msgs[msgs.length - 1] = { ...last, content: text, ...(rca ? { rca, actions: rca.actions, suggestedViews: rca.suggested_views } : {}) }
         }
         return { ...c, messages: msgs }
       }))
@@ -864,6 +881,23 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                       </div>
                       {msg.rca && <RcaRenderer block={msg.rca} />}
                     </>
+                  )}
+
+                  {/* Data-aware "next best view" chips — offer a structured view the
+                      model has the data to populate, on one tap. Distinct styling
+                      (accent tint + chart icon) from the generic follow-up actions. */}
+                  {msg.role === 'assistant' && i === active.messages.length - 1 && !streaming && msg.content && msg.suggestedViews && msg.suggestedViews.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                      {msg.suggestedViews.slice(0, 2).map(v => (
+                        <button key={v.renderer} onClick={() => handleView(v.renderer, v.label)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 13px', border: '1px solid var(--blue-t)', borderRadius: 'var(--radius-pill)', background: 'var(--blue-bg, #eff6ff)', fontSize: 12, color: 'var(--blue-t)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', transition: 'opacity .12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.82')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}>
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 13h12M4 13V8M8 13V4M12 13V6"/></svg>
+                          {v.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
 
                   {/* Follow-up suggestions + RCA action buttons */}

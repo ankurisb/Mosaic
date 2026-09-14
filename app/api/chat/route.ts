@@ -6,7 +6,7 @@ import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
-import { isRcaQuery, RCA_SYSTEM_PROMPT } from '@/lib/rca'
+import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
 import { writeTransparencyLog } from '@/lib/transparency'
 import {
@@ -300,12 +300,19 @@ You have access to live databases and APIs listed below. When a user asks about 
 Communicate naturally. Lead with the answer. Match response length to question complexity. Use formatting only when it helps. Never use filler phrases like "Certainly!", "Great question!", or "Of course!". Never start a response with "I" as the first word.`
   )
 
-  // Inject RCA protocol when query is about root cause analysis
+  // Inject RCA protocol. The COMPACT catalog (RCA_CATALOG) is always present so the
+  // model always knows the structured views exist and can reach for them by judgement
+  // — no keyword gate. The FULL schemas (RCA_SYSTEM_PROMPT) are injected whenever the
+  // model might actually produce one: a keyword match OR any data sources are connected
+  // (structured views are only usable on data-grounded answers). Workflow templates
+  // still refine renderer selection when a keyword-matched problem maps to one.
   const lastUserContent = (messages[messages.length - 1] as { role: string; content: string } | undefined)?.content || ''
   let rcaAddition = ''
   let matchedWorkflow: Record<string, unknown> | null = null
+  const keywordRca = isRcaQuery(lastUserContent)
+  const injectFullSchemas = keywordRca || hasSources
 
-  if (isRcaQuery(lastUserContent)) {
+  if (keywordRca) {
     // Match a specific workflow template from DB. We use a fast Haiku classify
     // call to pick the workflow whose PURPOSE best fits the user's problem
     // (semantic), rather than raw keyword overlap which missed problems phrased
@@ -323,14 +330,15 @@ Communicate naturally. Lead with the answer. Match response length to question c
         matchedWorkflow = await matchWorkflowSemantic(lastUserContent, workflows)
       }
     } catch { /* no workflows table yet -- fall through to generic */ }
+  }
 
-    if (matchedWorkflow) {
-      // Build a workflow-specific prompt from the matched template
-      const steps = (matchedWorkflow.data_steps as Array<{n:number;source_label:string;query_hint:string;required:boolean}>) || []
-      const renderers = (matchedWorkflow.renderers as Array<{type:string;label:string;required:boolean;order:number}>) || []
-      const stepList = steps.map(s => `  ${s.n}. [${s.source_label}] ${s.query_hint}${s.required ? ' (required)' : ' (if available)'}`).join('\n')
-      const rendererList = renderers.sort((a,b) => a.order - b.order).map(r => `  ${r.label}${r.required ? ' *' : ''}`).join('\n')
-      rcaAddition = RCA_SYSTEM_PROMPT + `
+  if (matchedWorkflow) {
+    // Build a workflow-specific prompt from the matched template
+    const steps = (matchedWorkflow.data_steps as Array<{n:number;source_label:string;query_hint:string;required:boolean}>) || []
+    const renderers = (matchedWorkflow.renderers as Array<{type:string;label:string;required:boolean;order:number}>) || []
+    const stepList = steps.map(s => `  ${s.n}. [${s.source_label}] ${s.query_hint}${s.required ? ' (required)' : ' (if available)'}`).join('\n')
+    const rendererList = renderers.sort((a,b) => a.order - b.order).map(r => `  ${r.label}${r.required ? ' *' : ''}`).join('\n')
+    rcaAddition = RCA_SYSTEM_PROMPT + `
 
 ## Active workflow template: "${matchedWorkflow.name}"
 Problem type: ${matchedWorkflow.problem_type}
@@ -343,11 +351,14 @@ ${rendererList}
 
 Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.output_config as string) || '{}').title; } catch { return null; } })() || 'RCA . {problem} . {date}'}
 `
-    } else {
-      // Generic RCA -- no matched template
-      rcaAddition = RCA_SYSTEM_PROMPT
-    }
+  } else if (injectFullSchemas) {
+    // No matched workflow, but the model may still produce a structured view —
+    // give it the full schemas so any renderer it chooses is correctly shaped.
+    rcaAddition = RCA_SYSTEM_PROMPT
   }
+  // Always-on compact catalog goes first so the model is aware even when full
+  // schemas aren't injected (e.g. no sources + no keyword — rare).
+  rcaAddition = RCA_CATALOG + rcaAddition
 
   // Bug 4.11: file servers were never injected into the system prompt, so
   // when the user said "read from Plant Files (S3)" the model invented a

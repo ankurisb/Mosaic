@@ -42,7 +42,11 @@ export type RendererPayload =
 
 export type RcaRendererItem = RendererPayload & { insight?: string }
 export interface RcaAction { id: string; label: string }
-export interface RcaBlock { renderers: RcaRendererItem[]; actions?: RcaAction[] }
+// A data-aware "next best view" suggestion. The model emits these ONLY when it
+// already holds the data to fully populate that renderer, so tapping the chip
+// reliably produces a populated view. `renderer` is the RendererPayload type.
+export interface SuggestedView { label: string; renderer: string }
+export interface RcaBlock { renderers: RcaRendererItem[]; actions?: RcaAction[]; suggested_views?: SuggestedView[] }
 
 // -- Known action IDs (have real handlers in the UI) -----------------------
 // All other action IDs are routed back to Claude as a follow-up message
@@ -67,28 +71,102 @@ export function isRcaQuery(text: string): boolean {
   return RCA_KEYWORDS.some(kw => lower.includes(kw))
 }
 
+// -- Always-on structured-view catalog -------------------------------------
+// Injected into EVERY chat (small — one line per renderer). This removes the
+// keyword-gate problem: the model always KNOWS these structured manufacturing
+// views exist, so it can reach for them by judgement (like any tool) instead of
+// only when the user happens to type a magic keyword. The FULL schemas
+// (RCA_SYSTEM_PROMPT) are still injected only when the model is actually doing
+// structured analysis, to keep the everyday prompt small.
+//
+// Deliberately CONSERVATIVE: the instruction tells the model to use these only
+// for genuine data-grounded manufacturing analysis, not casual questions — and
+// the parser drops any renderer it can't fully populate, so a marginal choice
+// degrades to prose rather than an empty diagram.
+export const RCA_CATALOG = `
+
+## Structured analysis views (manufacturing / quality / operations)
+Beyond simple charts (render_chart: bar/line/pie/kpi/table), you can render rich,
+domain-specific analysis views by appending an <rca_output> JSON block. Use these
+ONLY when the user's question is a genuine operational/quality investigation AND you
+have fetched real data that fully populates the view — never for casual or conceptual
+questions, and never with invented data. Available views:
+- pareto / breakdown / subcause — defect concentration (which causes dominate)
+- fishbone — 6M cause categories for a quality problem
+- five_whys — iterative root-cause drill-down
+- fault_tree — hierarchical failure-path analysis
+- spc — statistical process control chart (in/out of control)
+- capability — Cp/Cpk histogram vs spec limits (is the process capable)
+- oee_waterfall — OEE loss cascade (availability/performance/quality losses)
+- trend / scatter — time trend / correlation of two variables
+- timeline — event sequence reconstruction
+- fmea — failure mode & effects (risk / RPN)
+- 8d — formal structured investigation report
+- comparison — batch / shift / period comparison table
+- cap — corrective action plan
+
+When one of these genuinely fits and your data supports it, produce the full
+<rca_output> block (exact schemas will be provided). If a structured view does NOT
+clearly fit, just answer normally in prose — do not force one.
+`
+
+
 // -- Parse <rca_output> block from raw assistant text ---------------------
 
 export function parseRcaOutput(raw: string): { text: string; rca: RcaBlock | null } {
   const match = raw.match(/<rca_output>([\s\S]*?)<\/rca_output>/)
   if (!match) return { text: raw, rca: null }
+  const text = raw.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
   try {
     const rca = JSON.parse(match[1].trim()) as RcaBlock
-    const text = raw.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
     // Drop renderers the AI emitted as a type placeholder but never populated (empty
     // or missing the primary data array). Rendering an empty fishbone/5-whys/CAP shell
     // looks broken to the user — better to omit it. Keeps only renderers with real
     // content, so the analysis always looks complete rather than half-empty.
     if (rca && Array.isArray(rca.renderers)) {
       rca.renderers = rca.renderers.filter(r => hasRenderableData(r))
-      if (!rca.renderers.length) return { text, rca: null }
+    } else if (rca) {
+      rca.renderers = []
+    }
+    // Sanitise data-aware "next best view" suggestions: keep only valid, known
+    // renderer types, never suggest a view already rendered in this response, and
+    // hard-cap at 2 so the chips stay a helpful nudge rather than noise.
+    if (rca && Array.isArray(rca.suggested_views)) {
+      const rendered = new Set((rca.renderers || []).map(r => r.type))
+      const seen = new Set<string>()
+      rca.suggested_views = rca.suggested_views
+        .filter(s => s && typeof s.renderer === 'string' && VALID_RENDERER_TYPES.has(s.renderer))
+        .filter(s => !rendered.has(s.renderer))
+        .filter(s => { if (seen.has(s.renderer)) return false; seen.add(s.renderer); return true })
+        .map(s => ({ renderer: s.renderer, label: String(s.label || '').slice(0, 40) || defaultViewLabel(s.renderer) }))
+        .slice(0, 2)
+    }
+    // Nothing renderable AND nothing to suggest → treat as plain prose.
+    if ((!rca.renderers || !rca.renderers.length) && (!rca.suggested_views || !rca.suggested_views.length)) {
+      return { text, rca: null }
     }
     return { text, rca }
   } catch {
     // Strip the tag even if JSON fails -- don't show raw JSON to user
-    const text = raw.replace(/<rca_output>[\s\S]*?<\/rca_output>/, '').trim()
     return { text, rca: null }
   }
+}
+
+const VALID_RENDERER_TYPES = new Set([
+  'pareto','breakdown','subcause','fishbone','five_whys','cap','spc','fault_tree',
+  '8d','trend','scatter','timeline','fmea','comparison','capability','oee_waterfall',
+])
+
+function defaultViewLabel(type: string): string {
+  const labels: Record<string, string> = {
+    pareto: 'View as Pareto', breakdown: 'View 6M breakdown', subcause: 'Drill into sub-causes',
+    fishbone: 'View as fishbone', five_whys: 'Run 5 Whys', cap: 'Build action plan',
+    spc: 'View SPC chart', fault_tree: 'View fault tree', '8d': 'Open 8D report',
+    trend: 'View trend', scatter: 'View correlation', timeline: 'View timeline',
+    fmea: 'Run FMEA', comparison: 'Compare', capability: 'View Cpk analysis',
+    oee_waterfall: 'View OEE waterfall',
+  }
+  return labels[type] || 'View analysis'
 }
 
 // The primary content array (or key field) each renderer needs to be worth showing.
@@ -159,6 +237,9 @@ When the user asks about root causes, defects, failures, downtime, quality issue
     { "id": "export_word", "label": "Export as Word doc" },
     { "id": "export_pdf", "label": "Export as PDF report" },
     { "id": "overlay_spc", "label": "Overlay on SPC chart" }
+  ],
+  "suggested_views": [
+    { "renderer": "fishbone", "label": "View as fishbone" }
   ]
 }
 </rca_output>
@@ -191,4 +272,13 @@ oee_waterfall{ title, oee, availability, performance, quality, benchmark?, losse
 - fishbone bones: use exactly these names when applicable: Machine, Method, Material, Manpower, Measurement, Environment
 - fishbone causes are DIAGRAM LABELS, not sentences: each cause MUST be 2-3 words / under 18 characters (e.g. "Tool wear", "Thermal growth", "Gauge drift", "Coolant temp drift"). Longer labels overflow and overlap on the diagram and make it unreadable. Max 3 causes per bone. Put all detail/explanation in your conversational text or the "insight" — NEVER in the cause label. Keep timeline/fault_tree/5-whys head labels equally terse.
 - Always include an "actions" array with 2-4 contextually relevant next steps. NEVER add any text after your analysis — no suggested next steps, no export options, no button labels in the text. All next steps go in the actions array only. Built-in IDs: export_word (always include), mark_complete (include when CAP is shown), share. For contextual actions use a short snake_case id and a clear label — unknown IDs route back to you as follow-up messages automatically. End your conversational text before the <rca_output> block — nothing after it.
+
+### Data-aware "next best view" suggestions (suggested_views)
+When you answer a DATA-GROUNDED operational/quality question in prose (you queried real data or ran an analysis) but did NOT render a structured view, you MAY suggest 1-2 views the user could open on one tap. STRICT rules:
+- ONLY suggest a view if you ALREADY HAVE, in this conversation, the exact data needed to FULLY populate it. If tapping it would require more data you don't have, do NOT suggest it. Never suggest a view you couldn't immediately produce populated.
+- Only on data-grounded answers. Never suggest views on casual, conceptual, or non-manufacturing questions.
+- Max 2. Never suggest a view you already rendered in this same response.
+- Emit them in the suggested_views array inside <rca_output> (you can send an <rca_output> block with ONLY suggested_views and an empty renderers array — that's valid for a prose answer). Use short labels ("View as fishbone", "View Cpk analysis").
+- When in doubt, omit — a missing suggestion is fine; a suggestion that opens an empty view is not.
+- Do NOT mention these suggestions in your prose text; they render as chips automatically.
 `
