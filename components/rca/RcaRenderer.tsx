@@ -700,6 +700,118 @@ function ComparisonR({ data, insight }: { data: Extract<RendererPayload,{type:'c
   )
 }
 
+// -- R15: PROCESS CAPABILITY (Cpk histogram vs spec limits) ----------------
+function CapabilityR({ data, insight }: { data: Extract<RendererPayload,{type:'capability'}>['data']; insight?: string }) {
+  const bins = Array.isArray(data.bins) ? data.bins.filter(b => b && Number.isFinite(Number(b.x))) : []
+  const lsl = Number(data.lsl), usl = Number(data.usl)
+  const mean = Number(data.mean), std = Number(data.std)
+  const cpk = Number(data.cpk), cp = Number(data.cp)
+  const target = data.target != null ? Number(data.target) : (lsl + usl) / 2
+  // rating from cpk if not supplied
+  const rating = data.rating || (cpk >= 1.67 ? 'Excellent' : cpk >= 1.33 ? 'Capable' : cpk >= 1.0 ? 'Marginal' : 'Not capable')
+  const ratingColor = cpk >= 1.33 ? V.green : cpk >= 1.0 ? V.amber : V.red
+  const W = 680, H = 170, pL = 30, pR = 14, pT = 10, pB = 26
+  const cW = W - pL - pR, cH = H - pT - pB
+  const xsAll = [...bins.map(b => Number(b.x)), lsl, usl, mean].filter(Number.isFinite)
+  const minX = Math.min(...xsAll), maxX = Math.max(...xsAll)
+  const span = (maxX - minX) || 1
+  const sx = (v: number) => pL + ((v - minX) / span) * cW
+  const maxCount = Math.max(1, ...bins.map(b => Number(b.count) || 0))
+  const barW = bins.length > 1 ? (cW / bins.length) * 0.82 : 20
+  return (
+    <Wrap>
+      <RTitle num="" label="Process capability" sub={data.title} />
+      <KpiGrid items={[
+        { label: 'Cp', value: Number.isFinite(cp) ? cp.toFixed(2) : '—' },
+        { label: 'Cpk', value: Number.isFinite(cpk) ? cpk.toFixed(2) : '—', sub: rating },
+        { label: 'Mean', value: Number.isFinite(mean) ? mean.toFixed(3) : '—' },
+        { label: 'Std dev', value: Number.isFinite(std) ? std.toFixed(4) : '—' },
+      ]} />
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: V.radiusPill, background: cpk >= 1.33 ? V.greenBg : cpk >= 1.0 ? V.amberBg : V.redBg, border: `1px solid ${ratingColor}33`, color: ratingColor, fontSize: 11, fontWeight: 600, marginBottom: 10 }}>
+        {rating} — Cpk {Number.isFinite(cpk) ? cpk.toFixed(2) : '—'} {cpk >= 1.33 ? '(meets 1.33 target)' : '(below 1.33 target)'}
+      </div>
+      <Card>
+        <div style={{ padding: '12px 14px 8px' }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
+            {/* histogram bars */}
+            {bins.map((b, i) => {
+              const cx = sx(Number(b.x))
+              const h = Math.max(1, ((Number(b.count) || 0) / maxCount) * cH)
+              const inSpec = Number(b.x) >= lsl && Number(b.x) <= usl
+              return <rect key={i} x={cx - barW / 2} y={pT + cH - h} width={barW} height={h} fill={inSpec ? V.blue : V.red} opacity="0.55" rx="1" />
+            })}
+            {/* spec limit lines */}
+            {[{ v: lsl, c: V.red, lbl: 'LSL' }, { v: usl, c: V.red, lbl: 'USL' }, { v: target, c: '#b0aca4', lbl: 'Target' }, { v: mean, c: V.blue, lbl: 'Mean' }].filter(l => Number.isFinite(l.v)).map(l => (
+              <g key={l.lbl}>
+                <line x1={sx(l.v)} y1={pT} x2={sx(l.v)} y2={pT + cH} stroke={l.c} strokeWidth={l.lbl === 'Mean' || l.lbl === 'Target' ? 1 : 1.5} strokeDasharray={l.lbl === 'Mean' ? '2,2' : l.lbl === 'Target' ? '4,3' : undefined} opacity="0.8" />
+                <text x={sx(l.v)} y={pT + cH + 14} textAnchor="middle" fontFamily="monospace" fontSize="8" fill={l.c}>{l.lbl}</text>
+              </g>
+            ))}
+          </svg>
+        </div>
+      </Card>
+      {insight && <Insight text={insight} />}
+</Wrap>
+  )
+}
+
+// -- R16: OEE WATERFALL (loss cascade) -------------------------------------
+function OeeWaterfallR({ data, insight }: { data: Extract<RendererPayload,{type:'oee_waterfall'}>['data']; insight?: string }) {
+  const losses = Array.isArray(data.losses) ? data.losses.filter(l => l && Number.isFinite(Number(l.pct))) : []
+  const kindColor: Record<string, string> = { availability: V.blue, performance: V.amber, quality: V.purple }
+  const av = Number(data.availability), pf = Number(data.performance), q = Number(data.quality), oee = Number(data.oee)
+  const bench = data.benchmark != null ? Number(data.benchmark) : 85
+  // Build the waterfall steps: start at 100, subtract each loss, end at OEE.
+  let running = 100
+  const steps = losses.map(l => { const from = running; running -= Number(l.pct) || 0; return { ...l, from, to: running } })
+  return (
+    <Wrap>
+      <RTitle num="" label="OEE loss waterfall" sub={data.title} />
+      <KpiGrid items={[
+        { label: 'OEE', value: Number.isFinite(oee) ? `${oee.toFixed(1)}%` : '—', sub: oee >= bench ? 'world-class' : `vs ${bench}% target` },
+        { label: 'Availability', value: Number.isFinite(av) ? `${av.toFixed(1)}%` : '—' },
+        { label: 'Performance', value: Number.isFinite(pf) ? `${pf.toFixed(1)}%` : '—' },
+        { label: 'Quality', value: Number.isFinite(q) ? `${q.toFixed(1)}%` : '—' },
+      ]} />
+      <Card>
+        <div style={{ padding: '14px 16px 10px' }}>
+          {/* horizontal waterfall: each row is a step from 'from' down to 'to' */}
+          {[{ name: 'Ideal (planned)', from: 100, to: 100, kind: 'start' as const },
+            ...steps,
+            { name: 'OEE achieved', from: oee, to: oee, kind: 'end' as const }].map((s, i) => {
+            const isEndpoint = s.kind === 'start' || s.kind === 'end'
+            const barColor = s.kind === 'end' ? V.green : s.kind === 'start' ? V.text3 : (kindColor[(s as { kind: string }).kind] || V.text3)
+            const left = Math.min(s.from, s.to), width = Math.max(0.8, Math.abs(s.from - s.to)) || (isEndpoint ? 0 : 0.8)
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div style={{ width: 130, fontSize: 11, color: isEndpoint ? V.text : V.text2, fontWeight: isEndpoint ? 600 : 400, textAlign: 'right', flexShrink: 0, lineHeight: 1.3 }}>{s.name}</div>
+                <div style={{ flex: 1, position: 'relative', height: 20, background: V.bg3, borderRadius: 3 }}>
+                  {isEndpoint ? (
+                    <div style={{ position: 'absolute', left: 0, width: `${s.to}%`, height: '100%', background: barColor, opacity: s.kind === 'end' ? 0.85 : 0.5, borderRadius: 3 }} />
+                  ) : (
+                    <div style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, height: '100%', background: barColor, opacity: 0.7, borderRadius: 2 }} />
+                  )}
+                </div>
+                <div style={{ width: 54, fontFamily: V.mono, fontSize: 11, fontWeight: 600, color: s.kind === 'end' ? V.green : isEndpoint ? V.text3 : V.red, textAlign: 'right', flexShrink: 0 }}>
+                  {isEndpoint ? `${Number(s.to).toFixed(0)}%` : `−${(Number((s as { pct?: number }).pct) || 0).toFixed(1)}`}
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+            {[['availability', 'Availability loss'], ['performance', 'Performance loss'], ['quality', 'Quality loss']].map(([k, l]) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: V.text2 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: kindColor[k] }} />{l}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+      {insight && <Insight text={insight} />}
+</Wrap>
+  )
+}
+
 // -- MASTER RENDERER MAP ---------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -718,6 +830,8 @@ const RENDERER_MAP: Record<string, React.ComponentType<{ data: any; insight?: st
   timeline:    TimelineR,
   fmea:        FmeaR,
   comparison:  ComparisonR,
+  capability:  CapabilityR,
+  oee_waterfall: OeeWaterfallR,
 }
 
 // -- DEFAULT EXPORT --------------------------------------------------------
@@ -764,6 +878,8 @@ function normalizeRcaData(type: string, data: any): any {
     case 'timeline':   return { ...d, events: arr(d.events), title: String(d.title ?? '') }
     case 'fmea':       return { ...d, rows: arr(d.rows), title: String(d.title ?? '') }
     case 'comparison': return { ...d, cols: arr(d.cols), metrics: arr(d.metrics).map((m: any) => ({ ...m, vals: arr(m?.vals), delta: arr(m?.delta) })), title: String(d.title ?? '') }
+    case 'capability': return { ...d, bins: arr(d.bins), title: String(d.title ?? ''), lsl: Number(d.lsl) || 0, usl: Number(d.usl) || 0, mean: Number(d.mean) || 0, std: Number(d.std) || 0, cp: Number(d.cp) || 0, cpk: Number(d.cpk) || 0 }
+    case 'oee_waterfall': return { ...d, losses: arr(d.losses), title: String(d.title ?? ''), oee: Number(d.oee) || 0, availability: Number(d.availability) || 0, performance: Number(d.performance) || 0, quality: Number(d.quality) || 0 }
     default:           return d
   }
 }

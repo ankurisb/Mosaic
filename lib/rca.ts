@@ -17,6 +17,8 @@ export interface ScatterPoint     { x: number; y: number }
 export interface TimelineEvent    { time: string; type: 'normal'|'alarm'|'action'|'root'; label: string; detail: string; badge?: 'alarm'|'action'|'root' }
 export interface FmeaRow          { mode: string; effect: string; cause: string; S: number; O: number; D: number; controls: string; action: string; who: string; due: string }
 export interface ComparisonMetric { name: string; vals: string[]; delta: (number|null)[]; good_direction: 'up'|'down'|null }
+export interface CapHistBin       { x: number; count: number }
+export interface OeeLoss          { name: string; pct: number; kind: 'availability'|'performance'|'quality' }
 
 // -- Renderer payload union ------------------------------------------------
 
@@ -35,6 +37,8 @@ export type RendererPayload =
   | { type: 'timeline';   data: { title: string; events: TimelineEvent[] } }
   | { type: 'fmea';       data: { title: string; rows: FmeaRow[] } }
   | { type: 'comparison'; data: { title: string; cols: string[]; metrics: ComparisonMetric[] } }
+  | { type: 'capability'; data: { title: string; lsl: number; usl: number; target?: number; mean: number; std: number; cp: number; cpk: number; bins: CapHistBin[]; rating?: string } }
+  | { type: 'oee_waterfall'; data: { title: string; oee: number; availability: number; performance: number; quality: number; losses: OeeLoss[]; benchmark?: number } }
 
 export type RcaRendererItem = RendererPayload & { insight?: string }
 export interface RcaAction { id: string; label: string }
@@ -54,6 +58,8 @@ const RCA_KEYWORDS = [
   'fmea','8d','spc','control chart','out of control',
   'oee drop','breakdown analysis','failure analysis',
   'scrap','rework','near miss','incident','bearing failure',
+  'capability','cpk','cp k','process capable','meeting spec','out of spec',
+  'oee','oee breakdown','oee loss','availability','performance loss',
 ]
 
 export function isRcaQuery(text: string): boolean {
@@ -106,6 +112,8 @@ function hasRenderableData(r: RcaRendererItem): boolean {
     case 'trend':     return nonEmpty(d.series) && nonEmpty(d.labels)
     case 'scatter':   return nonEmpty(d.points)
     case 'comparison':return nonEmpty(d.metrics)
+    case 'capability':return nonEmpty(d.bins)
+    case 'oee_waterfall': return nonEmpty(d.losses)
     default:          return true
   }
 }
@@ -129,6 +137,8 @@ When the user asks about root causes, defects, failures, downtime, quality issue
 - "Compare batches / periods"  comparison
 - "Risk assessment"  fmea
 - "Formal investigation report"  8d
+- "Is the process capable / Cpk / meeting spec?"  capability
+- "OEE breakdown / where are the losses / OEE drop"  oee_waterfall
 
 **Step 3 -- Write your analysis** as normal conversational text. Do NOT include any suggested next steps, action items, or options for the user to choose from in your text — these go exclusively in the actions array inside <rca_output>. End your text with a summary sentence only.
 
@@ -169,6 +179,8 @@ scatter      { title, xLabel, yLabel, r:0.82, r2:0.67, points:[{x,y}], tolerance
 timeline     { title, events:[{time:"HH:MM",type:"normal"|"alarm"|"action"|"root",label,detail,badge?:"alarm"|"action"|"root"}] }
 fmea         { title, rows:[{mode,effect,cause,S:1-10,O:1-10,D:1-10,controls,action,who,due}] }
 comparison   { title, cols:["Batch A","Batch B",...], metrics:[{name,vals:[...strings],delta:[null|number,...],good_direction:"up"|"down"|null}] }
+capability   { title, lsl, usl, target?, mean, std, cp, cpk, rating?, bins:[{x:binCentre, count}] }  // process-capability histogram vs spec limits. Compute cp/cpk from mean/std/lsl/usl. bins: 8-12 histogram bins across the data range.
+oee_waterfall{ title, oee, availability, performance, quality, benchmark?, losses:[{name, pct, kind:"availability"|"performance"|"quality"}] }  // OEE loss cascade. availability/performance/quality/oee are 0-100. losses sum with oee to ~100; pct is the % lost to each factor.
 
 ### Rules
 - CRITICAL: only include a renderer if you FULLY populate its data in the same block. Never emit a renderer with an empty or partial data object — an empty fishbone/five_whys/cap renders as a broken, empty diagram. If you can't fully fill a diagram's data, omit that renderer entirely. Prefer 2 complete diagrams over 5 half-empty ones.
