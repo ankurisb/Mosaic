@@ -132,7 +132,7 @@ export function parseRcaOutput(raw: string): { text: string; rca: RcaBlock | nul
     // renderer types, never suggest a view already rendered in this response, and
     // hard-cap at 2 so the chips stay a helpful nudge rather than noise.
     if (rca && Array.isArray(rca.suggested_views)) {
-      const rendered = new Set((rca.renderers || []).map(r => r.type))
+      const rendered = new Set<string>((rca.renderers || []).map(r => r.type as string))
       const seen = new Set<string>()
       rca.suggested_views = rca.suggested_views
         .filter(s => s && typeof s.renderer === 'string' && VALID_RENDERER_TYPES.has(s.renderer))
