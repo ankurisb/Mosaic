@@ -663,17 +663,25 @@ function ComparisonR({ data, insight }: { data: Extract<RendererPayload,{type:'c
               <Th ch="Metric" />
               {data.cols.map((c, i) => <Th key={c} ch={c} />)}
             </tr></thead>
-            <tbody>{data.metrics.map(m => (
+            <tbody>{data.metrics.map(m => {
+              // The delta array aligns deltas to columns 1..N (one per comparison against
+              // the previous column, so N-1 values for N columns). The AI sometimes emits
+              // N values (a leading null/0 for column 0) — normalise so delta[colIndex-1]
+              // is always the change into that column, regardless of which convention.
+              const vals = Array.isArray(m.vals) ? m.vals : []
+              const rawDelta = Array.isArray(m.delta) ? m.delta : []
+              const deltas = rawDelta.length >= vals.length ? rawDelta.slice(1) : rawDelta
+              return (
               <tr key={m.name}>
                 <Td><span style={{ fontWeight: 600, fontSize: 12 }}>{m.name}</span></Td>
-                {m.vals.map((v, i) => {
-                  const delta = i > 0 ? m.delta[i - 1] : null
-                  const bad  = delta !== null && ((m.good_direction === 'down' && delta > 0) || (m.good_direction === 'up' && delta < 0))
-                  const good = delta !== null && ((m.good_direction === 'down' && delta < 0) || (m.good_direction === 'up' && delta > 0))
+                {vals.map((v, i) => {
+                  const delta = i > 0 ? (deltas[i - 1] ?? null) : null
+                  const bad  = delta !== null && delta !== undefined && ((m.good_direction === 'down' && delta > 0) || (m.good_direction === 'up' && delta < 0))
+                  const good = delta !== null && delta !== undefined && ((m.good_direction === 'down' && delta < 0) || (m.good_direction === 'up' && delta > 0))
                   return (
                     <Td key={i}>
                       <span style={{ fontFamily: V.mono, fontSize: 12, fontWeight: 600 }}>{v}</span>
-                      {delta !== null && (
+                      {delta !== null && delta !== undefined && (
                         <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: bad ? V.redBg : good ? V.greenBg : V.bg3, color: bad ? V.red : good ? V.green : V.text3 }}>
                           {delta > 0 ? '+' : ''}{delta}
                         </span>
@@ -682,7 +690,8 @@ function ComparisonR({ data, insight }: { data: Extract<RendererPayload,{type:'c
                   )
                 })}
               </tr>
-            ))}</tbody>
+              )
+            })}</tbody>
           </Tbl>
         </Card>
       </div>
