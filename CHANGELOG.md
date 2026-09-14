@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.12] - 2026-09-14
+
+### Changed
+- **Structured analysis views no longer need magic keywords.** Mosaic now decides for itself when a question is a genuine operational/quality investigation and produces the right structured view (fishbone, Pareto, SPC, Cpk, OEE waterfall, etc.) — you no longer have to say "root cause" or "fishbone" to get one. It stays conservative: casual, conceptual, or non-data questions get a plain answer, not a forced diagram.
+
+### Added
+- **"Next best view" suggestions.** When an answer is data-grounded but shown as prose, Mosaic can offer one or two one-tap chips ("View as fishbone", "View Cpk analysis") to open the matching structured view. It only suggests a view it already has the data to fully populate, so tapping always produces a complete diagram — never an empty one.
+
 ## [1.3.11] - 2026-09-14
 
 ### Added
