@@ -122,24 +122,28 @@ export function parseRcaOutput(raw: string): { text: string; rca: RcaBlock | nul
     // Drop renderers the AI emitted as a type placeholder but never populated (empty
     // or missing the primary data array). Rendering an empty fishbone/5-whys/CAP shell
     // looks broken to the user — better to omit it. Keeps only renderers with real
-    // content, so the analysis always looks complete rather than half-empty.
+    // content, so the analysis always looks complete rather than half-empty. Also
+    // filter out non-object/null entries so one bad element can't discard the block.
     if (rca && Array.isArray(rca.renderers)) {
-      rca.renderers = rca.renderers.filter(r => hasRenderableData(r))
+      rca.renderers = rca.renderers.filter(r => r && typeof r === 'object' && hasRenderableData(r))
     } else if (rca) {
       rca.renderers = []
     }
     // Sanitise data-aware "next best view" suggestions: keep only valid, known
     // renderer types, never suggest a view already rendered in this response, and
-    // hard-cap at 2 so the chips stay a helpful nudge rather than noise.
+    // hard-cap at 2 so the chips stay a helpful nudge rather than noise. A non-array
+    // (or absent) suggested_views is coerced away so the client never .slice()s a string.
     if (rca && Array.isArray(rca.suggested_views)) {
       const rendered = new Set<string>((rca.renderers || []).map(r => r.type as string))
       const seen = new Set<string>()
       rca.suggested_views = rca.suggested_views
-        .filter(s => s && typeof s.renderer === 'string' && VALID_RENDERER_TYPES.has(s.renderer))
+        .filter(s => s && typeof s === 'object' && typeof s.renderer === 'string' && VALID_RENDERER_TYPES.has(s.renderer))
         .filter(s => !rendered.has(s.renderer))
         .filter(s => { if (seen.has(s.renderer)) return false; seen.add(s.renderer); return true })
         .map(s => ({ renderer: s.renderer, label: String(s.label || '').slice(0, 40) || defaultViewLabel(s.renderer) }))
         .slice(0, 2)
+    } else if (rca) {
+      rca.suggested_views = []
     }
     // Nothing renderable AND nothing to suggest → treat as plain prose.
     if ((!rca.renderers || !rca.renderers.length) && (!rca.suggested_views || !rca.suggested_views.length)) {
