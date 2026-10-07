@@ -43,6 +43,21 @@ CUSTOMER_VOLUMES=(
 # Volumes PRESERVED across reset — TLS certs + backup status only (no customer data).
 PRESERVE_VOLUMES=( caddy-data caddy-config ciso-caddy-data backup-status )
 
+# ---- edition / DB-backend detection -----------------------------------------
+# Works for BOTH editions. Personal = SQLite in the mosaic-data volume (default).
+# Enterprise = same bundled SQLite UNLESS the operator set DATABASE_URL to an
+# external Postgres (e.g. RDS), in which case the Mosaic data lives OUTSIDE these
+# volumes and the seed/verify run over Postgres instead of SQLite. We detect the
+# live value from the running container so the reset adapts rather than assuming.
+detect_backend() {
+  DB_URL="$(docker exec mosaic sh -c 'printf %s "${DATABASE_URL:-}"' 2>/dev/null || true)"
+  EDITION_LIVE="$(docker exec mosaic sh -c 'printf %s "${MOSAIC_EDITION:-personal}"' 2>/dev/null || echo personal)"
+  case "$DB_URL" in
+    postgres://*|postgresql://*) DB_BACKEND="postgres" ;;
+    *)                           DB_BACKEND="sqlite" ;;
+  esac
+}
+
 # ---- arg parsing ------------------------------------------------------------
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,7 +82,18 @@ PROFILES="${MOSAIC_PROFILES:-}"
 PROFILE_ARGS=""
 for p in $PROFILES; do PROFILE_ARGS="$PROFILE_ARGS --profile $p"; done
 
+detect_backend
 say "Mosaic trial reset — project '$PROJECT' at $INSTALL_DIR"
+echo "  Edition: ${EDITION_LIVE:-personal}   DB backend: ${DB_BACKEND:-sqlite}"
+if [ "${DB_BACKEND}" = "postgres" ]; then
+  echo ""
+  warn "This instance uses an EXTERNAL Postgres (DATABASE_URL=postgres://…)."
+  warn "Mosaic's data then lives OUTSIDE the local volumes, so destroying volumes"
+  warn "ALONE will NOT clean it. The reset will instead TRUNCATE the Postgres"
+  warn "schema via the app's own connection. External Postgres is an Enterprise"
+  warn "production pattern, not the trial-reuse pattern — confirm this is intended."
+  echo ""
+fi
 echo "  This will PERMANENTLY DESTROY all current-customer data:"
 echo "    Mosaic DB + credentials, uploaded files, Airbyte sources,"
 echo "    Superset dashboards, n8n flows, SSO users, metering."
@@ -98,9 +124,20 @@ else
 fi
 
 # ---- 2 & 3. tear down + destroy customer volumes ----------------------------
-say "Stopping containers"
-docker compose $PROFILE_ARGS down --remove-orphans >/dev/null 2>&1 || true
-ok "containers stopped"
+# Stop EVERY container in the project, across ALL profiles — a service left
+# running (e.g. keycloak, in a profile the caller didn't pass) would hold its
+# volume open and the wipe would silently leak that customer's data. We enable
+# all known profiles for the down, then hard-stop any stragglers by compose label.
+say "Stopping ALL project containers (every profile)"
+ALL_PROFILES="--profile bundled --profile metering --profile ciso --profile dev"
+docker compose $ALL_PROFILES down --remove-orphans >/dev/null 2>&1 || true
+# belt-and-braces: force-remove anything still labelled for this compose project
+stragglers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT}" 2>/dev/null)"
+if [ -n "$stragglers" ]; then
+  warn "force-stopping stragglers that survived compose down"
+  docker rm -f $stragglers >/dev/null 2>&1 || true
+fi
+ok "all containers stopped"
 
 say "Destroying customer-data volumes"
 for v in "${CUSTOMER_VOLUMES[@]}"; do
@@ -116,9 +153,25 @@ for v in "${PRESERVE_VOLUMES[@]}"; do
 done
 
 # ---- 4. bring it back up -----------------------------------------------------
-say "Starting fresh instance"
-docker compose $PROFILE_ARGS up -d >/dev/null 2>&1
-ok "containers started"
+# Start CORE first (always pullable) so the app is guaranteed to come back even
+# if an OPTIONAL profile image is unavailable upstream. Then best-effort start the
+# requested profile services with a timeout, so a broken optional image can never
+# hang the whole reset (it logs a warning and the trial is still usable).
+say "Starting core services"
+docker compose up -d mosaic mosaic-caddy mosaic-stats mosaic-watchdog mosaic-backup >/dev/null 2>&1
+ok "core started"
+if [ -n "$PROFILE_ARGS" ]; then
+  say "Starting profile services (best-effort)"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 300 docker compose $PROFILE_ARGS up -d >/dev/null 2>&1 \
+      && ok "profile services started" \
+      || warn "some profile services did not start (optional image may be unavailable) — core trial is unaffected"
+  else
+    docker compose $PROFILE_ARGS up -d >/dev/null 2>&1 \
+      && ok "profile services started" \
+      || warn "some profile services did not start — core trial is unaffected"
+  fi
+fi
 
 say "Waiting for first boot"
 for i in $(seq 1 60); do
