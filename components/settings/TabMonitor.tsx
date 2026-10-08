@@ -54,6 +54,32 @@ export default function TabMonitor() {
   const logEndRef = useRef<HTMLDivElement>(null)
   const logBoxRef = useRef<HTMLDivElement>(null)
 
+  // Client-side browser-reachability of each tool's PUBLIC url. The server probe
+  // only proves a tool is up internally; this probes from the viewer's browser to
+  // catch "healthy server-side but the port isn't open to me" — the exact gap that
+  // makes a tool 'won't open'. We use a no-cors fetch with a short timeout: a
+  // resolved promise means the port answered (reachable); a thrown/timeout means
+  // the browser could not reach it. Keyed by service id -> 'ok' | 'unreachable'.
+  const [reach, setReach] = useState<Record<string, 'ok' | 'unreachable'>>({})
+  const probeReachability = useCallback(async (services: Svc[]) => {
+    const targets = services.filter(s => s.publicUrl)
+    const out: Record<string, 'ok' | 'unreachable'> = {}
+    await Promise.all(targets.map(async (s) => {
+      try {
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 4000)
+        // no-cors: we can't read the response, but a successful network round-trip
+        // (vs a connection error) tells us the port is reachable from this browser.
+        await fetch(s.publicUrl as string, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' })
+        clearTimeout(t)
+        out[s.id] = 'ok'
+      } catch {
+        out[s.id] = 'unreachable'
+      }
+    }))
+    setReach(out)
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -61,11 +87,15 @@ export default function TabMonitor() {
         fetch('/api/monitor'),
         fetch('/api/backup'),
       ])
-      if (monRes.ok) { setData(await monRes.json()); setLast(new Date().toLocaleTimeString()) }
+      if (monRes.ok) {
+        const d = await monRes.json() as Data
+        setData(d); setLast(new Date().toLocaleTimeString())
+        probeReachability(d.services)
+      }
       if (bakRes.ok) { setBackup(await bakRes.json()) }
     }
     finally { setLoading(false) }
-  }, [])
+  }, [probeReachability])
 
   const loadLogs = useCallback(async () => {
     setLogsLoading(true)
@@ -176,6 +206,14 @@ export default function TabMonitor() {
                         )}
                       </div>
                       {s.message && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.message}</div>}
+                      {reach[s.id] === 'unreachable' && (
+                        // Healthy on the server, but THIS browser can't reach the
+                        // public port — the tool will fail to open for users here.
+                        <div style={{ fontSize: 11, color: 'var(--amber-t)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>⚠</span>
+                          <span>Running, but not reachable from your browser — open inbound port {(s.publicUrl || '').match(/:(\d+)/)?.[1] || '?'} on the server.</span>
+                        </div>
+                      )}
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 500, color: s.status === 'healthy' ? 'var(--green-t)' : s.status === 'degraded' ? 'var(--amber-t)' : 'var(--red-t)' }}>{s.status}</span>
                     <div style={{ textAlign: 'right', minWidth: 54 }}>

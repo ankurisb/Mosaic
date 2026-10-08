@@ -3,7 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } = require('
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-const { install, checkRequirements, update } = require('./scripts/install')
+const { install, checkRequirements, verifyDeployment, update } = require('./scripts/install')
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0) }
 
@@ -94,11 +94,29 @@ ipcMain.on('start-install', (event, config) => {
   setImmediate(async () => {
     try {
       const result = await install({ ...config, resourcesDir: RESOURCES_DIR }, emit)
+      // Level 2: after a successful install, verify the deployment as a browser
+      // would experience it (hostname, tool ports reachable, Mosaic answers over
+      // HTTPS) and attach the results so the UI can surface any config/port fixes.
+      if (result && result.ok !== false) {
+        try {
+          emit({ step: 'verify', label: 'Verifying deployment…' })
+          result.verification = await verifyDeployment({ ...config, resourcesDir: RESOURCES_DIR })
+        } catch (e) {
+          result.verification = [{ name: 'Verification', ok: false, detail: `Could not run post-install checks: ${e.message}` }]
+        }
+      }
       if (win && !win.isDestroyed()) win.webContents.send('install-done', result)
     } catch (err) {
       if (win && !win.isDestroyed()) win.webContents.send('install-done', { ok: false, error: err.message })
     }
   })
+})
+
+// Allow the UI to re-run the post-install verification on demand (e.g. a
+// "re-check" button after the operator opens a firewall port or fixes DNS).
+ipcMain.handle('verify-deployment', async (_, config) => {
+  try { return await verifyDeployment({ ...(config || {}), resourcesDir: RESOURCES_DIR }) }
+  catch (e) { return [{ name: 'Verification', ok: false, detail: e.message }] }
 })
 
 ipcMain.handle('open-url', (_, url) => shell.openExternal(url))

@@ -3,6 +3,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('installer', {
   checkRequirements: (config) => ipcRenderer.invoke('check-requirements', config),
+  // Post-install deployment verification (hostname / port reachability / HTTPS).
+  // Runs automatically after install (results on the install-done payload); this
+  // lets the UI re-run it on demand after the operator fixes DNS / opens a port.
+  verifyDeployment: (config) => ipcRenderer.invoke('verify-deployment', config),
 
   // Fire-and-forget install — progress via onProgress, result via onDone
   startInstall: (config) => ipcRenderer.send('start-install', config),
