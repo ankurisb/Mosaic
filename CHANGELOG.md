@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.14] - 2026-10-09
+
+### Fixed
+- **Superset opens via single sign-on on real-domain deployments.** The SSO handshake only recognised the bundled Superset at `localhost:8445`, so on a real hostname (e.g. `https://<host>:8445/`) it skipped the auto-login and bounced users to Superset's own login form (which fails over the proxy even with the right password). Now any `:8445` host is recognised — open Superset from Mosaic and you land in it already authenticated.
+- **Tool links resolve to the deployment's real hostname.** `MOSAIC_HOSTNAME` (and `CADDY_TLS`) are now passed into the app container, not just used to build the `*_PUBLIC_URL` strings. Without them, the v1.3.13 server-side URL logic fell back to `localhost` — so "Open Airbyte" opened `http://localhost:8000` and edition detection could misfire on a server box.
+
 ## [1.3.13] - 2026-10-08
 
 ### Fixed
