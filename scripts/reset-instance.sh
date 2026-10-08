@@ -193,6 +193,29 @@ for i in $(seq 1 60); do
   [ "$i" -eq 60 ] && warn "app did not reach healthy in 180s (code=$code)"
 done
 
+# ---- 4b. reset bundled abctl Airbyte (separate k8s cluster) ------------------
+# The bundled Airbyte runs via abctl in its OWN kind k8s cluster, outside this
+# compose project — so the volume wipe above does NOT touch it. Without this, a
+# prior customer's Airbyte sources, connections, custom connector-builder
+# projects and SOURCE CREDENTIALS would survive. Primary mode is the fast,
+# proven in-place truncate; --airbyte-nuke selects the full teardown deep-clean.
+# SAFETY: wiping Airbyte destroys real work on a DEV machine. Only auto-run on a
+# designated TRIAL host (touch ~/.mosaic-trial-host to mark the AWS box), or when
+# explicitly forced with RESET_AIRBYTE=1. Everywhere else it is skipped with a note.
+AIRBYTE_OK=0
+if [ -f "$HOME/.mosaic-trial-host" ] || [ "${RESET_AIRBYTE:-0}" = "1" ]; then AIRBYTE_OK=1; fi
+if [ "$AIRBYTE_OK" = "1" ] && [ "${SKIP_AIRBYTE:-0}" != "1" ] && command -v abctl >/dev/null 2>&1 \
+   && kubectl --kubeconfig "${KUBECONFIG:-$HOME/.airbyte/abctl/abctl.kubeconfig}" get ns airbyte-abctl >/dev/null 2>&1; then
+  say "Resetting bundled Airbyte (abctl, mode=${AIRBYTE_MODE:-db})"
+  bash "$INSTALL_DIR/scripts/reset-airbyte.sh" --mode "${AIRBYTE_MODE:-db}" 2>&1 | sed 's/^/  /' \
+    || warn "Airbyte reset reported issues — check it before handing to a customer"
+elif [ "$AIRBYTE_OK" != "1" ]; then
+  warn "Airbyte reset NOT run — this is not marked a trial host."
+  warn "On the AWS trial box: 'touch ~/.mosaic-trial-host' (once) or run with RESET_AIRBYTE=1."
+else
+  warn "bundled Airbyte (abctl) not detected on this host — skipping"
+fi
+
 # ---- 5. reseed sandbox + fresh admin ----------------------------------------
 say "Seeding sandbox + fresh admin login"
 docker cp "$INSTALL_DIR/scripts/reset-seed.cjs" mosaic:/tmp/reset-seed.cjs 2>/dev/null \
