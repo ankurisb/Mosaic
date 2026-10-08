@@ -22,7 +22,13 @@ export const runtime = 'nodejs'
 // does the server-side cookie relay work; a BYO external Superset is a different
 // origin, so we send the user to its own URL instead.
 function isBundled(url: string): boolean {
-  return /(^https?:\/\/(localhost|127\.0\.0\.1):8445)|superset:8088|\/superset\/?$/i.test(url)
+  // Bundled Superset is whatever Caddy serves on port 8445 — for ANY host, not
+  // just localhost. Matching only localhost/127.0.0.1 here meant a real-domain
+  // Enterprise box (SUPERSET_PUBLIC_URL=https://<host>:8445/) was mistaken for a
+  // bring-your-own Superset: the same-origin cookie handshake was skipped and
+  // users were bounced to Superset's own login (which then fails over the proxy).
+  // Match :8445 on any host, the internal superset:8088, or a /superset subpath.
+  return /:8445(?:\/|$)|superset:8088|\/superset\/?$/i.test(url)
 }
 
 export async function GET() {
