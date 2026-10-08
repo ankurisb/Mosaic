@@ -127,7 +127,11 @@ export default function TabMonitor() {
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
         <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="var(--text3)" strokeWidth="1.4"><circle cx="6.5" cy="6.5" r="5.5"/><path d="M4 6.5l1.5 1.5L9 5"/></svg>
         <span style={{ fontSize: 12, color: 'var(--text2)' }}>If Mosaic won't load, open the</span>
-        <a href="http://localhost:3099" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue-t)', fontWeight: 500 }}>System Watchdog</a>
+        {/* Point at the CURRENT host's watchdog port, not hardcoded localhost —
+            on a remote/hosted box localhost would resolve to the viewer's own
+            machine. The watchdog listens on :3099 of the box; works as long as
+            that port is reachable (open it in the host firewall/SG for remote use). */}
+        <a href={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3099`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue-t)', fontWeight: 500 }}>System Watchdog</a>
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>— works independently on port 3099</span>
       </div>
       {data && (

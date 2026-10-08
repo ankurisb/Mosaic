@@ -94,10 +94,26 @@ say(){ printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok(){  printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn(){ printf '  \033[33m!\033[0m %s\n' "$*"; }
 
-# Which compose profiles are active? Reset whatever is actually deployed.
-PROFILES="${MOSAIC_PROFILES:-}"
+# Which compose profiles are active? Reset must bring back exactly what was
+# running — otherwise 'down' (which stops ALL profiles) plus a core-only 'up'
+# silently leaves Superset/Keycloak/n8n/ES down after a reset. When the caller
+# doesn't pin MOSAIC_PROFILES, DETECT the active profiles from the running
+# containers BEFORE teardown, so the post-reset stack matches the pre-reset one.
+detect_profiles() {
+  local running; running="$(docker compose ps --services 2>/dev/null)"
+  local p=""
+  # bundled: superset / keycloak / n8n / elasticsearch
+  echo "$running" | grep -qE '^(superset|keycloak|n8n|elasticsearch)$' && p="$p bundled"
+  # metering: any openmeter-*
+  echo "$running" | grep -qE 'openmeter' && p="$p metering"
+  # ciso: ciso-*
+  echo "$running" | grep -qE '^ciso' && p="$p ciso"
+  echo "$p" | xargs
+}
+PROFILES="${MOSAIC_PROFILES:-$(detect_profiles)}"
 PROFILE_ARGS=""
 for p in $PROFILES; do PROFILE_ARGS="$PROFILE_ARGS --profile $p"; done
+[ -n "$PROFILES" ] && echo "  detected active profiles to restore: $PROFILES"
 
 detect_backend
 say "Mosaic trial reset — project '$PROJECT' at $INSTALL_DIR"
