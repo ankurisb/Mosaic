@@ -54,8 +54,15 @@ export async function GET() {
     return Response.json({ error: 'Superset is unavailable' }, { status: 502 })
   }
 
+  // Relay the Superset session cookie to the browser. pickSession() returns only
+  // `session=value` (Superset's own Path/Secure/SameSite are stripped), so we MUST
+  // re-add Path=/ — without it the browser scopes the cookie to this request's
+  // directory (/api/authz/) and never sends it to Superset's own paths, leaving the
+  // user staring at Superset's login despite a valid server-side session. Secure +
+  // SameSite=Lax are safe here (same-site, cross-port) and required over HTTPS.
+  const relayCookie = `${cookie}; Path=/; Secure; SameSite=Lax`
   const headers = new Headers()
-  headers.append('Set-Cookie', cookie)
+  headers.append('Set-Cookie', relayCookie)
   headers.set('Location', publicUrl)
   return new Response(null, { status: 302, headers })
 }

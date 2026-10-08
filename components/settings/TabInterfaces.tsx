@@ -62,8 +62,23 @@ export default function TabInterfaces() {
       .then(d => {
         const inst = (d?.instances || []).find((i: { active?: number }) => i.active) || d?.instances?.[0]
         if (!inst) { setAirbytePortalUrl(null); return }
-        // Cloud API host -> the Cloud web app; otherwise the instance's own URL.
-        setAirbytePortalUrl(/(^|\.)airbyte\.com/i.test(inst.url) ? 'https://cloud.airbyte.com' : inst.url)
+        // The stored URL is what the Mosaic SERVER uses to reach Airbyte, which for
+        // a bundled abctl instance is an internal host (host.docker.internal /
+        // localhost / airbyte-proxy) the BROWSER cannot reach. Rewrite such internal
+        // hosts to the current browser host on Airbyte's port so the portal opens.
+        let portal: string
+        if (/(^|\.)airbyte\.com/i.test(inst.url)) {
+          portal = 'https://cloud.airbyte.com'
+        } else if (/host\.docker\.internal|localhost|127\.0\.0\.1|airbyte-proxy|airbyte-abctl/i.test(inst.url)) {
+          // bundled/internal -> reach it on the current host at Airbyte's port
+          const m = inst.url.match(/:(\d+)/)
+          const port = m ? m[1] : '8000'
+          const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+          portal = `http://${host}:${port}`
+        } else {
+          portal = inst.url // genuine BYO external URL the browser can reach
+        }
+        setAirbytePortalUrl(portal)
       })
       .catch(() => setAirbytePortalUrl(null))
   }, [])
