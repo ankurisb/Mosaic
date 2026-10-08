@@ -62,6 +62,12 @@ export default function TabInterfaces() {
       .then(d => {
         const inst = (d?.instances || []).find((i: { active?: number }) => i.active) || d?.instances?.[0]
         if (!inst) { setAirbytePortalUrl(null); return }
+        // Prefer the browser-facing URL resolved server-side (/api/airbyte list
+        // now returns `browserUrl`), which maps a bundled abctl instance to its
+        // Caddy TLS front door (…:8446) so Airbyte's Secure cookie is kept on a
+        // real domain. Fall back to the legacy client-side derivation below for
+        // older backends that don't return browserUrl yet.
+        if (inst.browserUrl) { setAirbytePortalUrl(inst.browserUrl); return }
         // The stored URL is what the Mosaic SERVER uses to reach Airbyte, which for
         // a bundled abctl instance is an internal host (host.docker.internal /
         // localhost / airbyte-proxy) the BROWSER cannot reach. Rewrite such internal

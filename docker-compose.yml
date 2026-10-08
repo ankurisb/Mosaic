@@ -159,6 +159,14 @@ services:
       - MOSAIC_LICENSE_PUBLIC_KEY=${MOSAIC_LICENSE_PUBLIC_KEY:-}
       - N8N_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
       - SUPERSET_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8445/
+      # Airbyte's browser-facing origin. OPTIONAL override — leave empty and the
+      # app derives it from the host: a real hostname → https://<host>:8446/
+      # (Airbyte fronted by Caddy TLS, see docker/caddy/Caddyfile), localhost →
+      # http://localhost:8000 (a secure context, so Airbyte's Secure session
+      # cookie is accepted there). Why it matters: on a real domain over plain
+      # http://<host>:8000 the browser DROPS that Secure cookie and login fails
+      # with "credentials correct, but the server failed to set a cookie".
+      - AIRBYTE_PUBLIC_URL=${AIRBYTE_PUBLIC_URL:-}
       # CISO user provisioning (lib/ciso.ts). Unlike n8n/Superset, CISO gets a
       # real account per user so compliance actions are attributed individually.
       - CISO_API_URL=${CISO_API_URL:-http://ciso-backend:8000}
@@ -763,6 +771,15 @@ services:
       # (subpath hosting collides with their root-relative asset/API paths).
       - "8444:8444"
       - "8445:8445"
+      # Airbyte's TLS front door. Airbyte runs under abctl (a local kind cluster)
+      # on the HOST's :8000, not as a compose service; this port lets Caddy
+      # terminate TLS for it (reverse_proxy host.docker.internal:8000) so the
+      # browser keeps Airbyte's Secure session cookie. Reaching the host needs
+      # the extra_hosts entry below (mosaic-caddy is not on the mosaic service's
+      # network settings, so it has no host.docker.internal without it).
+      - "8446:8446"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-localhost}
       # Unset -> Caddy's internal CA (on-prem / localhost). Set to an email

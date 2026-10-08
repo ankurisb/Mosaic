@@ -100,3 +100,21 @@ https://{$MOSAIC_HOSTNAME:localhost}:8445 {
 
 	reverse_proxy superset:8088
 }
+
+# ── Airbyte (abctl kind cluster on the host, fronted with TLS) ───
+# Airbyte runs under abctl in a local kind cluster, published on the HOST's
+# :8000 (it is NOT a compose service). We terminate TLS here and reverse-proxy
+# to it via the host gateway. Why this is required: Airbyte's auth sets a
+# `Secure` session cookie, which a browser on plain http://…:8000 silently
+# drops — login then fails with "credentials correct, but the server failed to
+# set a cookie (deployed over HTTP)". Serving it over https makes the browser
+# keep the cookie. No forward_auth/handshake here: Airbyte Community has its own
+# login (creds surfaced to the operator), so unlike n8n/Superset there is no
+# Mosaic SSO handshake to run. Reaching host.docker.internal requires the
+# matching extra_hosts entry on the mosaic-caddy service in docker-compose.yml.
+https://{$MOSAIC_HOSTNAME:localhost}:8446 {
+	tls {$CADDY_TLS:internal}
+	reverse_proxy host.docker.internal:8000 {
+		header_up X-Forwarded-Proto https
+	}
+}

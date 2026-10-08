@@ -20,7 +20,8 @@ source range to your users' network as appropriate.
 | 80  | HTTP → Let's Encrypt | Required for a real cert | Only needed while issuing/renewing TLS; also redirects to 443. |
 | 8444 | n8n Automation | Required if using n8n | Served at the real hostname; gated by Mosaic login. |
 | 8445 | Superset Analytics | Required if using Superset | Served at the real hostname; gated by Mosaic login. |
-| 8000 | Airbyte (bundled abctl) | Required if using bundled Airbyte | Airbyte's own portal; authenticates with Airbyte's own credentials. |
+| 8446 | Airbyte (HTTPS, via Caddy) | Required if using bundled Airbyte | Airbyte's portal over TLS — the browser-facing URL. Caddy fronts the abctl instance so the browser keeps Airbyte's Secure login cookie (on plain http it's dropped and login fails). Authenticates with Airbyte's own credentials. |
+| 8000 | Airbyte (abctl, direct HTTP) | Internal only | Airbyte's raw port on the host. Only the Caddy container needs it (via the host gateway) to serve 8446; browsers use 8446 instead. Safe to keep closed to the internet. |
 | 3099 | System Watchdog | Optional | Break-glass health page; works even when Mosaic is down. Keep restricted. |
 
 > **Critical config:** set `MOSAIC_HOSTNAME` in `.env` to the name/IP users type

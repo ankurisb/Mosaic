@@ -269,7 +269,27 @@ export async function GET(req: Request) {
   // ── List instances
   if (action === 'list') {
     const rows = await sql`SELECT id, label, url, username, workspace_id, active, last_synced, created_at FROM airbyte_instances ORDER BY created_at ASC`
-    return Response.json({ instances: rows })
+    // Attach a browser-facing URL per instance. The stored `url` is what the
+    // Mosaic SERVER uses to reach Airbyte — for a bundled abctl instance that's an
+    // internal host (host.docker.internal:8000) the BROWSER can't reach, and on a
+    // real domain plain http://<host>:8000 makes the browser drop Airbyte's Secure
+    // session cookie (login then fails). Resolve the right browser origin here,
+    // server-side, where runtime env is available: a bundled instance → its Caddy
+    // TLS front door (…:8446) on a real host, or http://localhost:8000 locally
+    // (a secure context). AIRBYTE_PUBLIC_URL overrides. Cloud/BYO pass through.
+    const hostName = process.env.MOSAIC_HOSTNAME || 'localhost'
+    const isLocal  = /^(localhost|127\.0\.0\.1)$/.test(hostName)
+    const bundledBrowserUrl = process.env.AIRBYTE_PUBLIC_URL
+      || (isLocal ? `http://${hostName}:8000` : `https://${hostName}:8446/`)
+    const withBrowserUrl = (rows as any[]).map(r => {
+      const u = String(r.url || '')
+      let browserUrl: string
+      if (/(^|\.)airbyte\.com/i.test(u)) browserUrl = 'https://cloud.airbyte.com'
+      else if (/host\.docker\.internal|localhost|127\.0\.0\.1|airbyte-proxy|airbyte-abctl/i.test(u)) browserUrl = bundledBrowserUrl
+      else browserUrl = u // genuine BYO external URL the browser can reach
+      return { ...r, browserUrl }
+    })
+    return Response.json({ instances: withBrowserUrl })
   }
 
   // All other actions need an instance id

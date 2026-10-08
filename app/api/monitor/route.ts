@@ -360,7 +360,12 @@ export async function GET() {
   const PUBLIC_URLS: Record<string, string> = {
     superset: process.env.SUPERSET_PUBLIC_URL || `https://${hostName}:8445/`,
     n8n:      process.env.N8N_PUBLIC_URL      || `https://${hostName}:8444/`,
-    airbyte:  `http://${hostName}:8000`,
+    // Airbyte (abctl) on a real domain must be reached over its Caddy TLS front
+    // door (…:8446) — plain http://<host>:8000 makes the browser drop Airbyte's
+    // Secure session cookie so login fails. localhost stays on :8000 (a secure
+    // context, so the Secure cookie is accepted and no Caddy cert warning).
+    airbyte:  process.env.AIRBYTE_PUBLIC_URL
+      || (/^(localhost|127\.0\.0\.1)$/.test(hostName) ? `http://${hostName}:8000` : `https://${hostName}:8446/`),
   }
   for (const r of visible) {
     if (PUBLIC_URLS[r.id] && (r.status === 'healthy' || r.status === 'degraded')) {
