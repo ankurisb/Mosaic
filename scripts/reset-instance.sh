@@ -258,6 +258,28 @@ login_code="$(curl -sk $_resolve -o /dev/null -w '%{http_code}' -X POST "$_login
 if [ "$login_code" = "200" ]; then ok "login OK (HTTP 200) — instance is demo-ready"
 else warn "login returned HTTP $login_code — investigate before handing to a customer"; fi
 
+# ---- 7. re-register bundled Airbyte (AFTER verify, so verify sees a clean 0)
+# so the reset box is immediately demo-ready
+# The reset wiped the airbyte_instances row (customer data). On a trial host with
+# abctl present, fetch its OAuth creds and re-point Mosaic at the clean Airbyte,
+# so no manual re-registration is needed before handing the box to a customer.
+if [ "$AIRBYTE_OK" = "1" ] && command -v abctl >/dev/null 2>&1; then
+  say "Re-registering bundled Airbyte in Mosaic"
+  _ab_creds="$(abctl local credentials 2>/dev/null | sed -r 's/\x1b\[[0-9;]*m//g')"
+  _ab_cid="$(printf '%s\n' "$_ab_creds" | grep -i 'client-id' | awk '{print $NF}')"
+  _ab_sec="$(printf '%s\n' "$_ab_creds" | grep -i 'client-secret' | awk '{print $NF}')"
+  _ab_url="${AIRBYTE_MOSAIC_URL:-http://host.docker.internal:8000}"
+  if [ -n "$_ab_cid" ] && [ -n "$_ab_sec" ]; then
+    docker cp "$INSTALL_DIR/scripts/reset-register-airbyte.cjs" mosaic:/tmp/reset-reg-ab.cjs 2>/dev/null \
+      || docker cp "$(dirname "$0")/reset-register-airbyte.cjs" mosaic:/tmp/reset-reg-ab.cjs 2>/dev/null || true
+    docker exec -e AB_URL="$_ab_url" -e AB_CLIENT_ID="$_ab_cid" -e AB_CLIENT_SECRET="$_ab_sec" \
+      mosaic node /tmp/reset-reg-ab.cjs 2>&1 | sed 's/^/  /' || warn "Airbyte re-registration reported issues"
+    docker exec mosaic sh -c 'rm -f /tmp/reset-reg-ab.cjs' 2>/dev/null || true
+  else
+    warn "could not read abctl credentials — register Airbyte manually in Settings"
+  fi
+fi
+
 say "RESET COMPLETE"
 echo "  URL:   https://${MOSAIC_HOST}"
 echo "  Admin: $ADMIN_EMAIL / $ADMIN_PASS"
