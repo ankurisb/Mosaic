@@ -1,10 +1,33 @@
 # Mosaic — Network Requirements
 
-This document lists all outbound connections Mosaic and its services make.
-Share this with your IT or network security team before deployment.
+This document lists the inbound ports Mosaic needs, and all outbound
+connections it and its services make. Share it with your IT or network
+security team before deployment.
 
-**Key point: Mosaic requires no inbound ports.** All connections are
-outbound-only from the server running Mosaic.
+## Inbound ports (users' browsers → the Mosaic server)
+
+**Personal edition (desktop):** no inbound ports — you browse Mosaic locally
+on the same machine.
+
+**Enterprise edition (server):** users reach Mosaic *and its bundled tools*
+over these inbound ports. If a browser can't reach them, the matching tool
+launch fails (e.g. "Superset won't open" / shows its own login). Restrict the
+source range to your users' network as appropriate.
+
+| Port | Service | Required? | Notes |
+|---|---|---|---|
+| 443 | Mosaic (HTTPS, via Caddy) | **Required** | The main app. |
+| 80  | HTTP → Let's Encrypt | Required for a real cert | Only needed while issuing/renewing TLS; also redirects to 443. |
+| 8444 | n8n Automation | Required if using n8n | Served at the real hostname; gated by Mosaic login. |
+| 8445 | Superset Analytics | Required if using Superset | Served at the real hostname; gated by Mosaic login. |
+| 8000 | Airbyte (bundled abctl) | Required if using bundled Airbyte | Airbyte's own portal; authenticates with Airbyte's own credentials. |
+| 3099 | System Watchdog | Optional | Break-glass health page; works even when Mosaic is down. Keep restricted. |
+
+> **Critical config:** set `MOSAIC_HOSTNAME` in `.env` to the name/IP users type
+> in their browser. All the tool URLs above derive from it; leaving it as
+> `localhost` only works when browsing from the server itself. The installer
+> writes this for you (auto-detecting the server IP for Enterprise), but confirm
+> it matches how your users actually reach the box.
 
 ---
 
