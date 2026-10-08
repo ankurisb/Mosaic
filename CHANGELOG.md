@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.13] - 2026-10-08
+
+### Fixed
+- **Airbyte login over HTTPS.** Bundled Airbyte is now served through Caddy over TLS (port 8446) instead of plain `http://<host>:8000`. On a real domain the browser was dropping Airbyte's `Secure` session cookie, so login failed with "credentials correct, but the server failed to set a cookie." Opening Airbyte from Mosaic now lands you straight in the workspace. (Local/`localhost` installs are unchanged.)
+- **Embedded Superset opens without a second login.** The Superset single-sign-on hand-off now sets its session cookie with the correct path, so the dashboard loads instead of bouncing to Superset's own login.
+- **System Health reports bundled Superset correctly.** In Enterprise it now probes the bundled Superset directly instead of showing "unknown".
+- **Tool links use the deployment's real hostname.** Superset, n8n, Airbyte and the watchdog link now derive from `MOSAIC_HOSTNAME` rather than `localhost`, so they open correctly from any machine, not just the server.
+
+### Added
+- **API Keys page tells bundled from unset.** n8n, Superset and CISO running on their built-in (bundled) defaults now show a **"bundled"** badge with the value in use — instead of a misleading "not set" — so you can see at a glance what's already wired up versus what genuinely needs a value (e.g. the n8n API key).
+- **Post-install verification.** The installer now runs a reachability check after install and the System Health page probes each tool from the browser's side, naming the exact port to open if one isn't reachable — catching the "healthy server-side but won't open" gap.
+
+### Changed
+- **Documented Enterprise inbound ports** (canonical `docs/NETWORK.md`), including Airbyte's new HTTPS port 8446; port 8000 is now internal-only.
+- **Trial-box reset tooling** for single-tenant trial reuse: edition-aware reset that stops all profiles, honours `MOSAIC_HOSTNAME`, and re-registers the bundled Airbyte so a box is demo-ready between prospects.
+
 ## [1.3.12] - 2026-09-14
 
 ### Changed
