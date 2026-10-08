@@ -351,9 +351,26 @@ export async function GET() {
     ? results.filter(r => !PERSONAL_HIDDEN.has(r.id))
     : results
 
+  // Level-3 reachability: the probes above hit INTERNAL URLs (superset:8088 etc),
+  // which proves the service is up server-side but NOT that a user's browser can
+  // reach it at its public URL — the exact gap where a tool shows 'healthy' yet
+  // 'won't open'. Attach the browser-facing publicUrl for each bundled tool so the
+  // System Health UI can link correctly AND client-side probe real reachability.
+  const hostName = process.env.MOSAIC_HOSTNAME || 'localhost'
+  const PUBLIC_URLS: Record<string, string> = {
+    superset: process.env.SUPERSET_PUBLIC_URL || `https://${hostName}:8445/`,
+    n8n:      process.env.N8N_PUBLIC_URL      || `https://${hostName}:8444/`,
+    airbyte:  `http://${hostName}:8000`,
+  }
+  for (const r of visible) {
+    if (PUBLIC_URLS[r.id] && (r.status === 'healthy' || r.status === 'degraded')) {
+      (r as Record<string, unknown>).publicUrl = PUBLIC_URLS[r.id]
+    }
+  }
+
   const healthy = visible.filter(r => r.status === 'healthy').length
   const degraded = visible.filter(r => r.status === 'degraded').length
   const down = visible.filter(r => r.status === 'down').length
 
-  return Response.json({ services: visible, summary: { healthy, degraded, down, total: visible.length } })
+  return Response.json({ services: visible, summary: { healthy, degraded, down, total: visible.length }, hostName })
 }

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle, PageSub, Btn, StatusDot, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
 
-interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string; url?: string }
+interface Svc { id: string; label: string; category: string; status: string; latencyMs: number | null; message?: string; url?: string; publicUrl?: string }
 interface Data { services: Svc[]; summary: { healthy: number; degraded: number; down: number; total: number } }
 
 interface LogEntry {
@@ -166,8 +166,11 @@ export default function TabMonitor() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {s.label}
-                        {s.url && (
-                          <a href={s.url} target="_blank" rel="noopener noreferrer"
+                        {(s.publicUrl || s.url) && (
+                          // Prefer the browser-reachable publicUrl (e.g. the real
+                          // hostname:8445 for Superset) over the server-internal url
+                          // (superset:8088) which a browser can't open.
+                          <a href={s.publicUrl || s.url} target="_blank" rel="noopener noreferrer"
                             style={{ fontSize: 11, color: 'var(--text3)', textDecoration: 'none', opacity: .7, lineHeight: 1 }}
                             title={`Open ${s.label}`}>↗</a>
                         )}

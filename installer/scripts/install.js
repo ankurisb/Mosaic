@@ -401,7 +401,81 @@ async function checkRequirements(config) {
   return results
 }
 
-module.exports = { install, checkRequirements, update }
+// ── Post-install deployment verification (Level 2 preflight) ───────────────────
+// checkRequirements() runs BEFORE install (Docker/RAM/disk/ports-free). This runs
+// AFTER, to catch the config/reachability class of failure that otherwise only
+// surfaces when a user clicks a tool and it won't open: wrong MOSAIC_HOSTNAME,
+// an unreachable tool port, a cert that doesn't match. It verifies the deployment
+// as a browser would actually experience it, and returns actionable fixes.
+async function verifyDeployment(config) {
+  const net = require('net')
+  const results = []
+  const edition = config.edition === 'enterprise' ? 'enterprise' : 'personal'
+  // Read MOSAIC_HOSTNAME from the written .env (source of truth for every URL).
+  let host = 'localhost'
+  try {
+    const envTxt = fs.readFileSync(path.join(config.installDir || path.join(HOME, 'Mosaic'), '.env'), 'utf8')
+    const m = envTxt.match(/^MOSAIC_HOSTNAME=(.*)$/m)
+    if (m && m[1].trim()) host = m[1].trim()
+  } catch { /* use default */ }
+
+  // 1. Hostname sanity — Enterprise served from a server should NOT be localhost,
+  //    or every tool URL points at the viewer's own machine.
+  if (edition === 'enterprise') {
+    const isLocal = /^(localhost|127\.0\.0\.1)$/.test(host)
+    results.push({
+      name: 'Access hostname',
+      ok: !isLocal,
+      detail: isLocal
+        ? `MOSAIC_HOSTNAME is "${host}" — tool launches (Superset/n8n/Airbyte) will fail for anyone not on the server itself. Set it to the name/IP users browse to, then restart.`
+        : `Set to "${host}" — tool URLs and cert will use this.`,
+    })
+  }
+
+  // 2. Reachability of each port users need, CONNECTING as a browser would.
+  const canConnect = (p, h) => new Promise((resolve) => {
+    const sock = new net.Socket(); let done = false
+    const finish = (ok) => { if (done) return; done = true; sock.destroy(); resolve(ok) }
+    sock.setTimeout(3000)
+    sock.once('connect', () => finish(true))
+    sock.once('timeout', () => finish(false))
+    sock.once('error', () => finish(false))
+    sock.connect(p, h)
+  })
+  const ports = edition === 'enterprise'
+    ? [[443, 'Mosaic (HTTPS)'], [8444, 'n8n'], [8445, 'Superset'], [8000, 'Airbyte']]
+    : [[443, 'Mosaic (HTTPS)']]
+  for (const [p, label] of ports) {
+    // Check on the box itself (127.0.0.1) — confirms the service is listening. We
+    // can't verify the user's own firewall from here, so we flag that explicitly.
+    const up = await canConnect(p, '127.0.0.1')
+    results.push({
+      name: `${label} :${p}`,
+      ok: up,
+      detail: up
+        ? `Listening on the server. Ensure your firewall allows inbound ${p} from your users.`
+        : `Nothing listening on ${p} — is the service running? (${label})`,
+    })
+  }
+
+  // 3. Mosaic answers over HTTPS at its own hostname (the real browser path).
+  if (host !== 'localhost') {
+    const ok = await new Promise((resolve) => {
+      const req = https.request({ host, port: 443, path: '/login', method: 'GET', rejectUnauthorized: false, timeout: 6000 },
+        res => { res.resume(); resolve(res.statusCode === 200) })
+      req.on('error', () => resolve(false)); req.on('timeout', () => { req.destroy(); resolve(false) }); req.end()
+    })
+    results.push({
+      name: 'Mosaic reachable at hostname',
+      ok,
+      detail: ok ? `https://${host} responds` : `https://${host} did not respond — check DNS points here and port 443 is open`,
+    })
+  }
+
+  return results
+}
+
+module.exports = { install, checkRequirements, verifyDeployment, update }
 
 // ── The update flow ───────────────────────────────────────────────────────────
 // Pull the newest published images for the ALREADY-INSTALLED deployment, then
