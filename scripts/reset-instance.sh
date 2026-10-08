@@ -43,6 +43,23 @@ CUSTOMER_VOLUMES=(
 # Volumes PRESERVED across reset — TLS certs + backup status only (no customer data).
 PRESERVE_VOLUMES=( caddy-data caddy-config ciso-caddy-data backup-status )
 
+# Health check must hit the configured hostname, not plain localhost: when Caddy
+# is bound to a real MOSAIC_HOSTNAME with a real cert, https://localhost returns
+# nothing (no matching site), so a localhost probe would always fail and stall
+# the reset. Resolve the real hostname to loopback so SNI/cert match locally.
+MOSAIC_HOST="${MOSAIC_HOSTNAME:-localhost}"
+if [ -f "$INSTALL_DIR/.env" ]; then
+  _h="$(grep -E '^MOSAIC_HOSTNAME=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2)"
+  [ -n "$_h" ] && MOSAIC_HOST="$_h"
+fi
+health_code() {
+  if [ "$MOSAIC_HOST" = "localhost" ]; then
+    curl -sk -o /dev/null -w '%{http_code}' --max-time 8 https://localhost/login 2>/dev/null || echo 000
+  else
+    curl -sk -o /dev/null -w '%{http_code}' --max-time 8 --resolve "${MOSAIC_HOST}:443:127.0.0.1" "https://${MOSAIC_HOST}/login" 2>/dev/null || echo 000
+  fi
+}
+
 # ---- edition / DB-backend detection -----------------------------------------
 # Works for BOTH editions. Personal = SQLite in the mosaic-data volume (default).
 # Enterprise = same bundled SQLite UNLESS the operator set DATABASE_URL to an
@@ -175,7 +192,7 @@ fi
 
 say "Waiting for first boot"
 for i in $(seq 1 60); do
-  code="$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/login 2>/dev/null || echo 000)"
+  code="$(health_code)"
   [ "$code" = "200" ] && break
   sleep 3
 done
@@ -187,7 +204,7 @@ say "Fixing fresh-volume log permissions + restarting app"
 docker exec -u root mosaic sh -c 'mkdir -p /app/logs && chmod -R 777 /app/logs && chown -R 1000:1000 /app/logs' 2>/dev/null || true
 docker restart mosaic >/dev/null 2>&1 || true
 for i in $(seq 1 60); do
-  code="$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/login 2>/dev/null || echo 000)"
+  code="$(health_code)"
   [ "$code" = "200" ] && { ok "app healthy (HTTP 200)"; break; }
   sleep 3
   [ "$i" -eq 60 ] && warn "app did not reach healthy in 180s (code=$code)"
@@ -233,13 +250,15 @@ docker exec mosaic sh -c 'rm -f /tmp/reset-verify.cjs' 2>/dev/null || true
 
 # live login smoke-test — proves the seeded admin can actually authenticate
 say "Login smoke-test (seeded admin must authenticate)"
-login_code="$(curl -sk -o /dev/null -w '%{http_code}' -X POST https://localhost/api/auth \
+_login_url="https://${MOSAIC_HOST}/api/auth"; _resolve=""
+[ "$MOSAIC_HOST" != "localhost" ] && _resolve="--resolve ${MOSAIC_HOST}:443:127.0.0.1"
+login_code="$(curl -sk $_resolve -o /dev/null -w '%{http_code}' -X POST "$_login_url" \
   -H 'Content-Type: application/json' \
   -d "{\"action\":\"signin\",\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASS\"}" 2>/dev/null || echo 000)"
 if [ "$login_code" = "200" ]; then ok "login OK (HTTP 200) — instance is demo-ready"
 else warn "login returned HTTP $login_code — investigate before handing to a customer"; fi
 
 say "RESET COMPLETE"
-echo "  URL:   https://localhost"
+echo "  URL:   https://${MOSAIC_HOST}"
 echo "  Admin: $ADMIN_EMAIL / $ADMIN_PASS"
 echo "  Share these with the next customer; have them change the password on first login."
