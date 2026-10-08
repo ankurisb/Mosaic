@@ -157,6 +157,16 @@ services:
       - LICENSE_KEY=${LICENSE_KEY:-}
       - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}
       - MOSAIC_LICENSE_PUBLIC_KEY=${MOSAIC_LICENSE_PUBLIC_KEY:-}
+      # The app container itself needs MOSAIC_HOSTNAME + CADDY_TLS at runtime:
+      # edition detection (/api/deployment, /api/monitor) and deriving tool URLs
+      # like Airbyte's browser-facing origin (/api/airbyte browserUrl). Compose
+      # interpolates these into the *_PUBLIC_URL literals below but does NOT
+      # otherwise pass them into this container, so without them the app falls
+      # back to localhost (Airbyte "Open" opened http://localhost:8000). CADDY_TLS
+      # defaults EMPTY here (not 'internal' like the caddy service) so a
+      # localhost/personal install is still detected as personal.
+      - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-localhost}
+      - CADDY_TLS=${CADDY_TLS:-}
       - N8N_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8444/
       - SUPERSET_PUBLIC_URL=https://${MOSAIC_HOSTNAME:-localhost}:8445/
       # Airbyte's browser-facing origin. OPTIONAL override — leave empty and the
