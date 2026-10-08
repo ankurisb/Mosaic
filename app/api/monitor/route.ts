@@ -291,11 +291,15 @@ export async function GET() {
         if (rows.length) { const { decrypt } = await import('@/lib/encrypt'); ssByo = decrypt(rows[0].value_enc as string) || null }
       } catch {}
       const supersetUrl = ssByo || process.env.SUPERSET_URL
-      // The compose always sets SUPERSET_URL to the bundled default (superset:8088),
-      // even in Personal where Superset isn't started. Treat that default as "not
-      // configured" unless the user set a real BYO URL in settings.
+      // Enterprise BUNDLES Superset (compose starts it at superset:8088); Personal
+      // does not. The bundled default URL therefore means "really running" in
+      // Enterprise but "scaffolding only" in Personal — so probe it in Enterprise
+      // rather than assuming it's absent. Only short-circuit to "not configured"
+      // for the bundled default in Personal (no BYO URL, Superset not started).
+      const ssEdition = (process.env.MOSAIC_EDITION || '').toLowerCase()
+        || (((process.env.MOSAIC_HOSTNAME || 'localhost').match(/^(localhost|127\.0\.0\.1)$/) && !process.env.CADDY_TLS) ? 'personal' : 'enterprise')
       const isBundledDefault = !ssByo && /^(https?:\/\/)?(superset|localhost|127\.0\.0\.1):8088/.test(supersetUrl || '')
-      if (!supersetUrl || isBundledDefault) {
+      if (!supersetUrl || (isBundledDefault && ssEdition === 'personal')) {
         return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — connect Superset in Settings → Connected tools' })
       }
       try {
@@ -303,8 +307,10 @@ export async function GET() {
         const res = await fetch(`${supersetUrl}/health`, { signal: AbortSignal.timeout(4000) })
         return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: res.ok ? 'healthy' : 'degraded', latencyMs: Date.now() - start, url: supersetUrl })
       } catch {
-        // Unreachable + only the scaffolding default => not configured for this deployment.
-        if (!ssByo) return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — connect Superset in Settings → Connected tools' })
+        // Unreachable: in Enterprise the bundled Superset should be up, so a failure
+        // is a real 'down'. In Personal with only the scaffolding default, it's just
+        // not part of the deployment -> 'not configured'.
+        if (!ssByo && ssEdition === 'personal') return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'unknown', latencyMs: null, message: 'Not configured — connect Superset in Settings → Connected tools' })
         return ({ id: 'superset', label: 'Superset Analytics', category: 'infrastructure', status: 'down', latencyMs: null, message: 'Not reachable' })
       }
     
