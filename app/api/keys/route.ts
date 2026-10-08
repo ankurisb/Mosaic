@@ -72,7 +72,12 @@ export async function GET() {
   }
   const rows = allRows
 
-  const result: Record<string, { configured: boolean; preview: string; value?: string }> = {}
+  // `source` tells the UI WHERE a value comes from so it can distinguish a
+  // bundled compose default ('env') from a deliberate UI/BYO override ('kv') from
+  // genuinely nothing ('none') — otherwise bundled services misleadingly read as
+  // "not set". `configured` keeps its existing meaning (a real user/BYO value):
+  // bundled defaults stay configured:false but now carry source:'env'.
+  const result: Record<string, { configured: boolean; source: 'kv' | 'env' | 'none'; preview: string; value?: string }> = {}
 
   // Non-secret keys whose plain value the UI legitimately needs (e.g. to know
   // which provider is selected so it can show the right fields). These are not
@@ -94,27 +99,35 @@ export async function GET() {
     'CISO_API_URL', 'CISO_SUPERUSER_EMAIL', 'CISO_SUPERUSER_PASSWORD',
   ])
 
-  // Seed from env vars first (lowest priority — kv_settings overrides below).
-  // Scaffolding keys are skipped here: only a genuine kv_settings value (loop
-  // below) marks them configured.
+  const mask = (v: string) => v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***'
+
+  // Seed from env (lowest priority — kv_settings overrides below). A scaffolding
+  // key's env value is a BUNDLED compose default, not a user-set credential: mark
+  // it source:'env' and surface its preview/value so the UI can show "bundled"
+  // instead of a misleading "not set", but keep configured:false (it isn't a
+  // user/BYO override). A non-scaffolding env value IS a real configured secret.
   KNOWN_KEYS.forEach(k => {
-    if (process.env[k] && !SCAFFOLDING_KEYS.has(k)) {
-      const v = process.env[k] as string
-      result[k] = { configured: true, preview: v.length > 8 ? v.slice(0, 4) + '...' + v.slice(-4) : '***',
-        ...(PLAIN_KEYS.has(k) ? { value: v } : {}) }
+    const v = process.env[k]
+    if (v) {
+      result[k] = {
+        configured: !SCAFFOLDING_KEYS.has(k),
+        source: 'env',
+        preview: mask(v),
+        ...(PLAIN_KEYS.has(k) ? { value: v } : {}),
+      }
     } else {
-      result[k] = { configured: false, preview: '' }
+      result[k] = { configured: false, source: 'none', preview: '' }
     }
   })
-  // kv_settings values take precedence (more recently set)
+  // kv_settings values take precedence — a deliberate UI/BYO override.
   for (const row of rows as { key: string; value_enc: string }[]) {
     try {
       const plain = decrypt(row.value_enc)
-      result[row.key] = { configured: true,
-        preview: plain.length > 8 ? plain.slice(0, 4) + '...' + plain.slice(-4) : '***',
+      result[row.key] = { configured: true, source: 'kv', preview: mask(plain),
         ...(PLAIN_KEYS.has(row.key) ? { value: plain } : {}) }
     } catch {
-      result[row.key] = { configured: false, preview: '' }
+      // A stored override that won't decrypt: keep whatever env seeding produced
+      // rather than blanking a working bundled default to a false "not set".
     }
   }
   return Response.json({ keys: result })

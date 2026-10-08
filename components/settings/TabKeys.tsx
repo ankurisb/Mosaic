@@ -122,7 +122,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
 // handshake and behaved inconsistently depending on existing tool cookies).
 
 export default function TabKeys({ user }: { user: SessionUser }) {
-  const [keys,    setKeys]    = useState<Record<string, { configured: boolean; preview: string; value?: string }>>({})
+  const [keys,    setKeys]    = useState<Record<string, { configured: boolean; source?: 'kv' | 'env' | 'none'; preview: string; value?: string }>>({})
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<string | null>(null)
   const [vals,    setVals]    = useState<Record<string, string>>({})
@@ -157,7 +157,7 @@ export default function TabKeys({ user }: { user: SessionUser }) {
         // without waiting for a refetch. The server only returns value for
         // non-secret keys, so mirror that: keep it only for the dropdown.
         const savedVal = vals[key]
-        setKeys(p => ({ ...p, [key]: { configured: true, preview: savedVal.slice(0,4) + '...', ...(KEY_META[key]?.options ? { value: savedVal } : {}) } }))
+        setKeys(p => ({ ...p, [key]: { configured: true, source: 'kv', preview: savedVal.slice(0,4) + '...', ...(KEY_META[key]?.options ? { value: savedVal } : {}) } }))
         setVals(p => ({ ...p, [key]: '' }))
         setEditing(null)
         setToast('Saved')
@@ -172,8 +172,11 @@ export default function TabKeys({ user }: { user: SessionUser }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', key }),
     })
-    setKeys(p => ({ ...p, [key]: { configured: false, preview: '' } }))
+    setKeys(p => ({ ...p, [key]: { configured: false, source: 'none', preview: '' } }))
     setToast('Removed')
+    // Re-fetch so a removed override correctly falls back to showing the bundled
+    // default ('bundled') rather than a stale 'not set'.
+    await load()
   }
 
   if (user.role !== 'admin') return (
@@ -222,10 +225,15 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                             {meta.label}
                             {status?.configured
                               ? <Badge label="configured" color="green" />
-                              : <Badge label="not set" color="amber" />}
+                              : status?.source === 'env'
+                                ? <Badge label="bundled" color="blue" />
+                                : <Badge label="not set" color="amber" />}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: isEditing ? 10 : 0 }}>{meta.hint}</div>
-                          {status?.configured && !isEditing && (
+                          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: isEditing ? 10 : 0 }}>
+                            {meta.hint}
+                            {status?.source === 'env' && !status?.configured && ' · using the bundled default'}
+                          </div>
+                          {(status?.configured || status?.source === 'env') && !isEditing && status?.preview && (
                             <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{status.preview}</div>
                           )}
                           {isEditing && (
@@ -268,7 +276,7 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                         {!isEditing && (
                           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                             <Btn size="sm" onClick={() => { setEditing(key); setVals(p => ({ ...p, [key]: meta.options ? meta.options[0] : '' })) }}>
-                              {status?.configured ? 'Update' : 'Set'}
+                              {status?.configured ? 'Update' : status?.source === 'env' ? 'Override' : 'Set'}
                             </Btn>
                             {status?.configured && (
                               <Btn size="sm" variant="danger" onClick={() => remove(key)}>Remove</Btn>
