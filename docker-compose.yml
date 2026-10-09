@@ -132,7 +132,12 @@ services:
       - STATS_SIDECAR_URL=http://mosaic-stats:8001
       # Tunnel manager (internal Docker network URL — remote support sessions)
       - TUNNEL_MANAGER_URL=http://mosaic-tunnel:3100
-      - NEXT_PUBLIC_APP_URL=http://localhost:3001
+      # Browser-facing base URL of Mosaic. Used server-side for the SSO OAuth
+      # redirect URI (${APP_URL}/api/auth/callback/<provider>) and for links in
+      # welcome/invite emails. MUST be the real external URL on a server box, or
+      # those dead-end at localhost: the installer writes https://<MOSAIC_HOSTNAME>
+      # here for Enterprise. Defaults to localhost:3001 for local/Personal.
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
       - AIRBYTE_USER=airbyte
       - AIRBYTE_PASSWORD=${AIRBYTE_PASSWORD:-password}
       # SMTP (optional)
