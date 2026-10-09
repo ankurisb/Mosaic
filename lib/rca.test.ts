@@ -66,7 +66,7 @@ describe('isRcaQuery', () => {
 
 const VALID_RCA_BLOCK = JSON.stringify({
   renderers: [
-    { type: 'pareto', insight: 'Top 3 causes account for 80% of defects', data: { rows: [], total: 100 } }
+    { type: 'pareto', insight: 'Top 3 causes account for 80% of defects', data: { rows: [{ cat: 'Misalignment', defects: 80, vital: true }, { cat: 'Wear', defects: 20, vital: false }], total: 100 } }
   ],
   actions: [
     { id: 'export_word', label: 'Export as Word doc' }
