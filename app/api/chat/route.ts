@@ -576,7 +576,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             ...(forceSynthesis ? { tool_choice: { type: 'none' as const } } : {}),
           })
           let text = '', stopReason = ''
-          const toolBlocks: Anthropic.ToolUseBlock[] = []
+          const toolBlocks: Anthropic.ToolUseBlockParam[] = []
           let activeTool: { id: string; name: string; json: string } | null = null
           // isToolTurn: true when this API call is not the final one (has tool use)
           // We don't know this until message_delta, so we buffer text and decide after
@@ -592,7 +592,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 activeTool.json += evt.delta.partial_json
               }
             } else if (evt.type === 'content_block_stop' && activeTool) {
-              const block: Anthropic.ToolUseBlock = { type: 'tool_use', id: activeTool.id, name: activeTool.name, input: JSON.parse(activeTool.json || '{}') }
+              const block: Anthropic.ToolUseBlockParam = { type: 'tool_use', id: activeTool.id, name: activeTool.name, input: JSON.parse(activeTool.json || '{}') }
               toolBlocks.push(block)
               send({ type: 'tool_start', name: block.name, input: block.input })
               activeTool = null

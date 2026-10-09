@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.133.0",
     "@duckdb/node-api": "^1.5.5-r.4",
     "@neondatabase/serverless": "^0.10.4",
     "@sparticuz/chromium": "^147.0.0",
