@@ -108,12 +108,31 @@ https://{$MOSAIC_HOSTNAME:localhost}:8445 {
 # `Secure` session cookie, which a browser on plain http://…:8000 silently
 # drops — login then fails with "credentials correct, but the server failed to
 # set a cookie (deployed over HTTP)". Serving it over https makes the browser
-# keep the cookie. No forward_auth/handshake here: Airbyte Community has its own
-# login (creds surfaced to the operator), so unlike n8n/Superset there is no
-# Mosaic SSO handshake to run. Reaching host.docker.internal requires the
+# keep the cookie. A forward_auth gate (below) requires a Mosaic session to REACH
+# Airbyte, but there is NO SSO handshake: Airbyte Community can't federate, so it
+# still shows its own login after the gate (creds surfaced to the operator),
+# unlike the seamless n8n/Superset handshake. Reaching host.docker.internal needs the
 # matching extra_hosts entry on the mosaic-caddy service in docker-compose.yml.
 https://{$MOSAIC_HOSTNAME:localhost}:8446 {
 	tls {$CADDY_TLS:internal}
+
+	# Security gate: require a Mosaic session + 'airbyte' surface access before
+	# Airbyte is reachable. Airbyte Community has no SSO federation, so there is NO
+	# login handshake here (unlike n8n/Superset) — Airbyte still shows its own login
+	# after the gate, but a visitor with no Mosaic session never reaches it.
+	# Navigations without a Mosaic session go to Mosaic login (clean UX); forward_auth
+	# then hard-gates EVERY request (incl. XHR/assets) via RBAC on the airbyte surface.
+	@needs_mosaic {
+		not header Cookie *claude_session=*
+		header Sec-Fetch-Mode navigate
+	}
+	redir @needs_mosaic https://{$MOSAIC_HOSTNAME:localhost}/login 302
+
+	forward_auth mosaic:3001 {
+		uri /api/authz/surface?name=airbyte
+		copy_headers X-Mosaic-User X-Mosaic-Role
+	}
+
 	reverse_proxy host.docker.internal:8000 {
 		header_up X-Forwarded-Proto https
 	}

@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.15] - 2026-10-09
+
+### Added
+- **Airbyte is gated behind Mosaic login.** Airbyte's port now requires a valid Mosaic session (and the `airbyte` surface grant) before it can be reached: a visitor with no session is redirected to Mosaic login instead of seeing Airbyte's own login page, and every request is authorised against Mosaic (forward_auth / RBAC). This closes the previously public Airbyte login page while keeping the port reachable from any device. Airbyte Community can't do SSO federation, so you still sign in to Airbyte itself after the gate — the gate controls *who can reach it*, not the sign-in.
+
 ## [1.3.14] - 2026-10-09
 
 ### Fixed
