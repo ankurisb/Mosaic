@@ -105,9 +105,17 @@ export default function TabInterfaces() {
   // desktop, which uses Mosaic's own built-in dashboards), /api/health reports it
   // 'unconfigured' — hide the row entirely rather than show a dead Analytics tool,
   // so the desktop edition carries no Superset reference. Same pattern as CISO.
+  // Airbyte ("Data Pipelines") is admin-only here. Unlike n8n/Superset it has no
+  // per-user SSO handshake (Airbyte Community can't federate), and both of its
+  // entry points are admin-gated — the raw portal link (showPortal requires
+  // isAdmin) and the Data Sources settings tab (adminOnly) — so a non-admin's
+  // "Open" would dead-end. Hide the row for non-admins rather than present a dead
+  // link; pipeline setup is an admin task. (Revisit if a non-admin pipelines view
+  // is added.)
   const accessible = SURFACES.filter(s => (surfaces || []).includes(s))
     .filter(s => !(s === 'ciso' && !cisoConfigured))
     .filter(s => !(s === 'superset' && health.superset === 'unconfigured'))
+    .filter(s => !(s === 'airbyte' && !isAdmin))
 
   return (
     <div className="fade-in">

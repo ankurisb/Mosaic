@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.16] - 2026-10-09
+
+### Fixed
+- **Welcome emails and Google SSO now use the real URL.** `NEXT_PUBLIC_APP_URL` was hardcoded to `http://localhost:3001`, so invite/welcome emails linked to localhost and the SSO OAuth redirect URI was wrong (Google sign-in would fail on a real domain with a redirect-URI mismatch). It's now derived from the hostname (`https://<host>` for a real deployment).
+- **Data Pipelines (Airbyte) is hidden for non-admin users.** It showed an "Open" that dead-ended for regular users: Airbyte Community has no per-user SSO, and both its entry points (the raw portal and the Data Sources settings tab) are admin-only. The Connected Tools row is now admin-only, matching how Airbyte is actually administered. n8n and Superset are unaffected — they open via SSO for any granted user.
+
 ## [1.3.15] - 2026-10-09
 
 ### Added
