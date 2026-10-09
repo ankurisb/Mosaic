@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.17] - 2026-10-09
+
+### Changed
+- **Prompt caching enabled on the chat path.** The system prompt and tool definitions — identical across every turn of an agentic query's tool-use loop — are now marked cacheable. After the first call, that large prefix is read from cache at ~10% of the input price instead of being re-sent and re-processed each turn. On multi-step queries (which re-send a compounding context) this cuts input cost and latency substantially; usage now populates the Cache Tokens column. Cost accounting already priced cache reads/writes correctly (0.1× / 1.25×), so reported costs reflect the savings automatically.
+
 ## [1.3.16] - 2026-10-09
 
 ### Fixed

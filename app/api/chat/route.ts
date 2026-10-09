@@ -543,6 +543,18 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         const TOOL_CALL_BUDGET = 20
         let toolCallsUsed = 0
         let forceSynthesis = false
+        // Prompt caching: the tools block and the system prompt are identical
+        // across every iteration of this agentic loop (synthesisNudge aside) and
+        // largely across queries, so mark them cacheable. After the first call,
+        // the cached prefix is read at ~10% of input price instead of re-sending
+        // the whole system+tools each turn — the big win on multi-call queries
+        // (and a latency win, since the cached prefix isn't reprocessed). Cache
+        // read/write accounting and pricing are already handled below (0.1x /
+        // 1.25x). A cache_control on the last tool caches the tools block; one on
+        // the system block caches system too.
+        const cachedTools = TOOLS.map((t, idx) =>
+          idx === TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t
+        )
         while (true) {
           // When the budget is exhausted or the previous turn ran out of tokens
           // mid-synthesis, force a final no-tools turn with a synthesis nudge
@@ -554,8 +566,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           const resp = await anthropic.messages.create({
             model,
             max_tokens: 16384,
-            system: fullSystem + synthesisNudge,
-            tools: TOOLS,
+            system: [
+              { type: 'text' as const, text: fullSystem, cache_control: { type: 'ephemeral' as const } },
+              ...(synthesisNudge ? [{ type: 'text' as const, text: synthesisNudge }] : []),
+            ],
+            tools: cachedTools,
             messages: history,
             stream: true,
             ...(forceSynthesis ? { tool_choice: { type: 'none' as const } } : {}),
