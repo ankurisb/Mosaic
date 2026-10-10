@@ -6,6 +6,7 @@ import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
+import { resolveModelId, getModelPricing, getFastModelId } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
 import { writeTransparencyLog } from '@/lib/transparency'
@@ -21,16 +22,9 @@ import {
 export const runtime = 'nodejs'
 // Note: Anthropic client is instantiated per-request using getKey() below
 
-// Pricing per million tokens (input / output)
-const MODEL_PRICING: Record<string, { input: number; output: number; label: string }> = {
-  // Current self-serve Claude API models (verified Sept 2026). Pricing is $/token
-  // (input / output per 1M): Haiku 4.5 $1/$5, Sonnet 5 $2/$10, Opus 5 $5/$25.
-  // Dated Haiku ID stays pinned; Sonnet/Opus use the current major generation.
-  'claude-haiku-4-5-20251001': { input: 1  / 1_000_000, output: 5  / 1_000_000, label: 'claude-haiku-4-5-20251001' },
-  'claude-sonnet-5':           { input: 2  / 1_000_000, output: 10 / 1_000_000, label: 'claude-sonnet-5' },
-  'claude-opus-5':             { input: 5  / 1_000_000, output: 25 / 1_000_000, label: 'claude-opus-5' },
-}
-const DEFAULT_MODEL = 'claude-sonnet-5'
+// Model availability + pricing resolve dynamically via lib/models.ts: the available
+// list is fetched live from the Anthropic API (nothing hardcoded — new models appear
+// automatically), and pricing is per-model override → tier default → fallback.
 
 // ── SDK 0.133 feature flags ───────────────────────────────────────────────────
 // These leverage capabilities unlocked by the SDK upgrade. Anything that changes
@@ -90,7 +84,7 @@ async function matchWorkflowSemantic(
 
     const anthropic = new Anthropic({ apiKey })
     const resp = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: await getFastModelId(),
       max_tokens: 16,
       system: `You match a user's manufacturing problem to the single most relevant investigation workflow from a numbered list. Consider each workflow's purpose, not just literal word overlap. Reply with ONLY the number of the best-fitting workflow, or "none" if no workflow is a reasonable fit. No other text.`,
       messages: [{ role: 'user', content: `Workflows:\n${catalog}\n\nProblem: "${problem}"\n\nBest workflow number (or "none"):` }],
@@ -136,9 +130,10 @@ export async function POST(req: Request) {
   // Audit chat start now that we have the body
   audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHAT_START, `conversation:${conversation_id || 'new'}`, 'success', { model: requestedModel || 'default' })
 
-  // Validate model -- fall back to default if unrecognised
-  const model = MODEL_PRICING[requestedModel] ? requestedModel : DEFAULT_MODEL
-  const pricing = MODEL_PRICING[model]
+  // Validate model against the live model list -- fall back to the resolved default
+  // if the requested id isn't currently available. Pricing is resolved dynamically.
+  const model = await resolveModelId(requestedModel)
+  const pricing = await getModelPricing(model)
 
   // -- Conversation persistence -----------------------------------------------
   // Upsert the conversation row so we have a stable DB id for this session.

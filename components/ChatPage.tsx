@@ -253,7 +253,17 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; latestReleaseUrl?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const [showUpdate, setShowUpdate] = useState(false)
   useEffect(() => { fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {}) }, [])
-  const [model, setModel] = useState('claude-sonnet-5')
+  // Model list is fetched live from /api/models (sourced from the Anthropic API) —
+  // no hardcoded options, so new models appear automatically. `model` starts empty
+  // and is set to the resolved default once loaded; the server also validates it.
+  const [model, setModel] = useState('')
+  const [availableModels, setAvailableModels] = useState<{ id: string; label: string }[]>([])
+  useEffect(() => {
+    fetch('/api/models').then(r => r.json()).then(d => {
+      if (Array.isArray(d.models)) setAvailableModels(d.models)
+      setModel(cur => cur || d.default || (d.models?.[0]?.id ?? ''))
+    }).catch(() => {})
+  }, [])
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -1090,29 +1100,28 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7.5" cy="7.5" r="5.5"/><path d="M7.5 5v2.5l1.5 1.5"/></svg>
                     Model
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>
-                      {model === 'claude-haiku-4-5-20251001' ? 'Haiku' : model === 'claude-sonnet-5' ? 'Sonnet' : 'Opus'}
+                      {(availableModels.find(m => m.id === model)?.label || model || 'Model').replace(/^Claude\s+/, '')}
                     </span>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ transform: plusSubmenu === 'model' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
                   </button>
                   {plusSubmenu === 'model' && (
                     <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
-                      {[
-                        { value: 'claude-haiku-4-5-20251001', label: 'Haiku', desc: 'Fast & lightweight' },
-                        { value: 'claude-sonnet-5', label: 'Sonnet', desc: 'Balanced — recommended' },
-                        { value: 'claude-opus-5', label: 'Opus', desc: 'Most capable' },
-                      ].map(m => (
-                        <button key={m.value}
-                          onClick={() => { setModel(m.value); setPlusSubmenu(null) }}
+                      {availableModels.map(m => (
+                        <button key={m.id}
+                          onClick={() => { setModel(m.id); setPlusSubmenu(null) }}
                           style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
                           onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === m.value ? 600 : 400 }}>{m.label}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text4)' }}>{m.desc}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === m.id ? 600 : 400 }}>{m.label.replace(/^Claude\s+/, '')}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.id}</div>
                           </div>
-                          {model === m.value && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                          {model === m.id && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
                         </button>
                       ))}
+                      {availableModels.length === 0 && (
+                        <div style={{ padding: '8px 14px 8px 38px', fontSize: 11, color: 'var(--text4)' }}>Loading models…</div>
+                      )}
                     </div>
                   )}
                 </div>

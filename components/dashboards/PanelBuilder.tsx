@@ -110,7 +110,7 @@ export default function PanelBuilder({
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: prompt }],
-          model: 'claude-haiku-4-5-20251001',
+          // No hardcoded model — the chat API resolves the current default.
         }),
       })
       // Read SSE stream for text events

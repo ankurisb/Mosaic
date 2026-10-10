@@ -14,8 +14,7 @@
 // DpathExtractor field_path, request_parameters) so first drafts are usually
 // valid.
 import Anthropic from '@anthropic-ai/sdk'
-
-const MODEL = 'claude-sonnet-5'
+import { getDefaultModelId } from '@/lib/models'
 
 const SYSTEM = `You generate Airbyte DECLARATIVE (low-code) connector manifests for REST/HTTP APIs.
 You output ONLY a single JSON object — the manifest — with no prose, no markdown, no code fences.
@@ -115,7 +114,7 @@ export async function generateManifest(description: string, sample?: string): Pr
       `\nGenerate the declarative manifest JSON.`,
     ].join('')
     const msg = await client.messages.create({
-      model: MODEL,
+      model: await getDefaultModelId(),
       max_tokens: 2000,
       system: SYSTEM,
       messages: [{ role: 'user', content: user }],
@@ -154,7 +153,7 @@ export async function refineManifest(params: {
       `\nReturn a corrected manifest JSON that fixes the problem.`,
     ]
     const msg = await client.messages.create({
-      model: MODEL,
+      model: await getDefaultModelId(),
       max_tokens: 2000,
       system: SYSTEM,
       messages: [{ role: 'user', content: parts.join('') }],

@@ -1,5 +1,6 @@
 import { validateDevApiKey, logDevApiUsage } from '@/lib/dev-api-auth'
 import { getKey } from '@/lib/keys'
+import { resolveModelId } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
   const {
     messages,
     system,
-    model = 'claude-sonnet-5',
+    model,
     max_tokens = 4096,
     conversation_id,
   } = body as {
@@ -56,12 +57,8 @@ export async function POST(req: Request) {
   const defaultSystem = `You are Mosaic, an industrial AI assistant. Answer directly and accurately.${dbList}${apiList}`
 
   const anthropic = new Anthropic({ apiKey })
-  const MODELS: Record<string, boolean> = {
-    'claude-haiku-4-5-20251001': true,
-    'claude-sonnet-5': true,
-    'claude-opus-5': true,
-  }
-  const safeModel = MODELS[model] ? model : 'claude-sonnet-5'
+  // Validate against the live model list (lib/models) — no hardcoded allow-list.
+  const safeModel = await resolveModelId(model)
 
   reqLog.info({ model: safeModel }, 'Chat request received')
 

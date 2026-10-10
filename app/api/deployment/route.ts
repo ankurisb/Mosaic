@@ -100,9 +100,13 @@ export async function GET() {
     edition = (isLocalHost && !process.env.CADDY_TLS) ? 'personal' : 'enterprise'
   }
 
+  let defaultModel = ''
+  try { const { getDefaultModelId } = await import('@/lib/models'); defaultModel = await getDefaultModelId() } catch { /* leave blank */ }
+
   return Response.json({
     mode: isVercel ? 'vercel' : 'self-hosted',
     edition,
+    defaultModel,
     scheduler: isVercel ? 'Vercel Cron' : 'Built-in',
     database: isSqlite ? 'SQLite (local)' : isNeon ? 'Neon Postgres (cloud)' : 'Postgres',
     appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',

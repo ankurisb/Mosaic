@@ -1,5 +1,6 @@
 import { validateDevApiKey, logDevApiUsage } from '@/lib/dev-api-auth'
 import { getKey } from '@/lib/keys'
+import { getDefaultModelId } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-5', max_tokens: 16384,
+        model: await getDefaultModelId(), max_tokens: 16384,
         tools: TOOLS, system: systemPrompt, messages: history,
       })
 

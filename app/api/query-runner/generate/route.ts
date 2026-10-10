@@ -11,6 +11,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
+import { getFastModelId } from '@/lib/models'
 import { getOrFetchSchema } from '@/lib/tools'
 import { log } from '@/lib/logger'
 import Anthropic from '@anthropic-ai/sdk'
@@ -145,7 +146,7 @@ export async function POST(req: Request) {
     const resp = await anthropic.messages.create({
       // Haiku: this is a short, well-constrained translation task, and the
       // Query Builder is interactive so latency matters more than depth.
-      model: 'claude-haiku-4-5-20251001',
+      model: await getFastModelId(),
       max_tokens: 1000,
       system: buildSystemPrompt(conn.dialect, schemaText),
       messages: [{ role: 'user', content: question.trim() }],

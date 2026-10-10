@@ -8,6 +8,7 @@ import { renderHtmlToPdf, htmlShell } from './pdf-renderer'
 import Anthropic            from '@anthropic-ai/sdk'
 import { runMessageBatch }  from './anthropic-batch'
 import type { BatchCapableClient } from './anthropic-batch'
+import { getDefaultModelId } from './models'
 import { writeFile, mkdir } from 'fs/promises'
 import { join }             from 'path'
 
@@ -80,13 +81,13 @@ async function executeSection(section: ReportSection): Promise<{ rows: Row[]; er
 
 // Single source of truth for the narrative request shape, so the synchronous
 // path and the Phase 8 batch path produce identical prompts/output.
-function narrativeParams(prompt: string, rows: Row[]) {
+function narrativeParams(prompt: string, rows: Row[], model: string) {
   const dataStr = rows.length > 0
     ? `\n\nData (${rows.length} rows):\n${JSON.stringify(rows.slice(0, 50), null, 2)}`
     : '\n\n(No data returned from query)'
   return {
-    // Keep in step with the chat default (single source of truth for the model gen).
-    model: 'claude-sonnet-5',
+    // Model resolved dynamically (lib/models) — not hardcoded.
+    model,
     max_tokens: 600,
     messages: [{
       role: 'user' as const,
@@ -97,7 +98,7 @@ function narrativeParams(prompt: string, rows: Row[]) {
 
 async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
   const client = new Anthropic()
-  const msg = await client.messages.create(narrativeParams(prompt, rows))
+  const msg = await client.messages.create(narrativeParams(prompt, rows, await getDefaultModelId()))
   return (msg.content[0] as { text: string }).text || ''
 }
 
@@ -115,7 +116,8 @@ async function precomputeNarrativesViaBatch(
   const executed = await Promise.all(
     aiSections.map(async (s) => ({ s, rows: (await executeSection(s)).rows })),
   )
-  const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows) }))
+  const model = await getDefaultModelId()
+  const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows, model) }))
   const client = new Anthropic() as unknown as BatchCapableClient
   const results = await runMessageBatch(client, requests, { pollMs: 4000, timeoutMs: 5 * 60_000 })
   return new Map(executed.map(({ s, rows }) => [s.id, { rows, text: results.get(s.id)?.text ?? '' }]))
