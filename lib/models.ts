@@ -81,6 +81,42 @@ export async function getFastModelId(): Promise<string> {
   return getDefaultModelId()
 }
 
+/** The most capable model id (newest Opus), for escalating the hardest queries. */
+export async function getTopModelId(): Promise<string> {
+  const models = await getAvailableModels()
+  const opus = models.find(m => /opus/i.test(m.id))
+  if (opus) return opus.id
+  return getDefaultModelId()
+}
+
+// Escalation of the very hardest RCA queries to the top (Opus) tier. OFF by
+// default so Auto never silently raises cost; RCA still always gets the default
+// model (today's behaviour) regardless of this flag.
+const AUTO_ESCALATE = process.env.AUTO_MODEL_ESCALATE === '1'
+
+/**
+ * Auto model routing — pick a model by query shape when the user hasn't chosen one.
+ *
+ * SAFE BY CONSTRUCTION: an RCA query (or anything not clearly trivial) always gets
+ * the DEFAULT model — identical to today's behaviour — or, only with AUTO_MODEL_ESCALATE
+ * on, the top tier for the heaviest RCAs. The ONLY downgrade is clearly-trivial
+ * small-talk (greetings/acknowledgements) → the fast model. When unsure it returns
+ * the default, so a real query can never be silently answered by a weaker model.
+ */
+export async function pickAutoModel(text: string, opts: { isRca?: boolean } = {}): Promise<string> {
+  if (opts.isRca) {
+    if (AUTO_ESCALATE && /\b(deep[- ]dive|full (rca|investigation|analysis)|comprehensive|end[- ]to[- ]end|everything)\b/i.test(text)) {
+      return getTopModelId()
+    }
+    return getDefaultModelId()   // RCA floor — never below today's default
+  }
+  const t = (text || '').trim()
+  const smalltalk = t.length <= 80 &&
+    /^(hi|hey+|hello|yo|thanks|thank you|thx|ta|ok|okay|k|cool|nice|great|cheers|got it|good (morning|afternoon|evening))\b[\s!.?]*$/i.test(t)
+  if (smalltalk) return getFastModelId()
+  return getDefaultModelId()
+}
+
 /** True if the requested id is a currently-available model. */
 export async function isModelAvailable(id: string): Promise<boolean> {
   if (!id) return false

@@ -261,8 +261,11 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     fetch('/api/models').then(r => r.json()).then(d => {
       if (Array.isArray(d.models)) setAvailableModels(d.models)
-      setModel(cur => cur || d.default || (d.models?.[0]?.id ?? ''))
-    }).catch(() => {})
+      // Default to Auto: Mosaic picks the model by query shape (RCA/substantive →
+      // the strong default-or-stronger; trivial small-talk → fast). Users can still
+      // pin a specific model.
+      setModel(cur => cur || 'auto')
+    }).catch(() => { setModel(cur => cur || 'auto') })
   }, [])
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -1100,12 +1103,23 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7.5" cy="7.5" r="5.5"/><path d="M7.5 5v2.5l1.5 1.5"/></svg>
                     Model
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text4)' }}>
-                      {(availableModels.find(m => m.id === model)?.label || model || 'Model').replace(/^Claude\s+/, '')}
+                      {model === 'auto' ? 'Auto' : (availableModels.find(m => m.id === model)?.label || model || 'Model').replace(/^Claude\s+/, '')}
                     </span>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ transform: plusSubmenu === 'model' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
                   </button>
                   {plusSubmenu === 'model' && (
                     <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                      <button key="auto"
+                        onClick={() => { setModel('auto'); setPlusSubmenu(null) }}
+                        style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === 'auto' ? 600 : 400 }}>Auto</div>
+                          <div style={{ fontSize: 11, color: 'var(--text4)' }}>Optimal model per query — RCA stays on the strong model</div>
+                        </div>
+                        {model === 'auto' && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                      </button>
                       {availableModels.map(m => (
                         <button key={m.id}
                           onClick={() => { setModel(m.id); setPlusSubmenu(null) }}

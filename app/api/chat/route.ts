@@ -6,7 +6,7 @@ import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
-import { resolveModelId, getModelPricing, getFastModelId } from '@/lib/models'
+import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
 import { writeTransparencyLog } from '@/lib/transparency'
@@ -130,10 +130,8 @@ export async function POST(req: Request) {
   // Audit chat start now that we have the body
   audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CHAT_START, `conversation:${conversation_id || 'new'}`, 'success', { model: requestedModel || 'default' })
 
-  // Validate model against the live model list -- fall back to the resolved default
-  // if the requested id isn't currently available. Pricing is resolved dynamically.
-  const model = await resolveModelId(requestedModel)
-  const pricing = await getModelPricing(model)
+  // NOTE: model + pricing are resolved a bit later (once we know whether this is an
+  // RCA query), so Auto routing can keep RCA on the default-or-stronger model.
 
   // -- Conversation persistence -----------------------------------------------
   // Upsert the conversation row so we have a stable DB id for this session.
@@ -330,6 +328,16 @@ Communicate naturally. Lead with the answer. Match response length to question c
   let matchedWorkflow: Record<string, unknown> | null = null
   const keywordRca = isRcaQuery(lastUserContent)
   const injectFullSchemas = keywordRca || hasSources
+
+  // Resolve the model now that we know the query shape. An explicit pick is honoured;
+  // 'auto' (or no pick) routes by query shape via pickAutoModel — which keeps RCA and
+  // any substantive query on the default-or-stronger model (identical to today) and
+  // only drops clearly-trivial small-talk to the fast model. Pricing follows the
+  // resolved model. requestedModel of '' / undefined / 'auto' all mean Auto.
+  const model = (!requestedModel || requestedModel === 'auto')
+    ? await pickAutoModel(lastUserContent, { isRca: keywordRca })
+    : await resolveModelId(requestedModel)
+  const pricing = await getModelPricing(model)
 
   if (keywordRca) {
     // Match a specific workflow template from DB. We use a fast Haiku classify
