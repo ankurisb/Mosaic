@@ -32,6 +32,25 @@ const MODEL_PRICING: Record<string, { input: number; output: number; label: stri
 }
 const DEFAULT_MODEL = 'claude-sonnet-5'
 
+// ── SDK 0.133 feature flags ───────────────────────────────────────────────────
+// These leverage capabilities unlocked by the SDK upgrade. Anything that changes
+// request/response SHAPE is OFF by default and gated behind an env flag, so the
+// upgrade itself ships with ZERO behaviour change; each is enabled per-deployment
+// only after a live verification pass. (Parallel tool use is NOT gated — the
+// agentic loop already executes multiple tool_use blocks concurrently via
+// Promise.all; we only add a prompt nudge so the model actually batches them.)
+//
+// Strict tool use (Phase 4): constrains the model's tool inputs to exactly match
+// each tool's input_schema. Requires every tool schema to be strict-compatible, so
+// it stays gated until verified against the live API with the real TOOLS set.
+const STRICT_TOOLS = process.env.ANTHROPIC_STRICT_TOOLS === '1'
+// Extended thinking on RCA turns (Phase 6): gives the model a private reasoning
+// budget before answering an RCA query. When tools are used, thinking blocks MUST
+// be echoed back in history unmodified (handled in the loop below). budget_tokens
+// must be ≥1024 and < max_tokens (16384 here).
+const RCA_THINKING = process.env.ANTHROPIC_RCA_THINKING === '1'
+const RCA_THINKING_BUDGET = Math.max(1024, Math.min(Number(process.env.ANTHROPIC_RCA_THINKING_BUDGET || 4096), 12000))
+
 // Pick the RCA workflow whose purpose best fits the user's problem.
 // Primary: a fast Haiku classify call reasons over each workflow's name +
 // description + problem_type + keywords and returns the best match (or none).
@@ -409,6 +428,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
 
   const crossSourceNote = '\n\nCROSS-SOURCE QUESTIONS: when a question needs data from more than one source combined by a shared key (e.g. join SAP orders from an API with quality records from a database by order_id; or correlate a local CSV with a DB table), do NOT try to match rows in your head. Instead: (1) fetch each source separately with its own tool (query_database / call_api / read_file_server), (2) call combine_sources — pass each result\'s rows as a named table and write one SQL query (JOIN / GROUP BY etc.) over those names, (3) then run_statistical_analysis on the combined rows if the question needs correlation/regression/etc. This gives a correct, deterministic join instead of an error-prone manual match.'
 
+  // Parallel tool use (Phase 5): the agentic loop already executes multiple
+  // tool_use blocks from one turn concurrently (Promise.all below), so the only
+  // thing missing was encouraging the model to actually emit them together.
+  const parallelNote = '\n\nPARALLEL DATA FETCHES: when you need several INDEPENDENT pieces of data (e.g. three different machines, or a database query plus an unrelated API call), request them in the SAME turn as multiple tool calls rather than one-by-one — they run concurrently and the answer returns faster. Only do them in separate turns when one call\'s input genuinely depends on another call\'s result.'
+
   // Type 1 — AI output rules injection
   let aiRulesBlock = ''
   try { aiRulesBlock = await getAiRulesInjection() } catch { }
@@ -418,7 +442,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let metricsBlock = ''
   try { const { getMetricsInjection } = await import('@/lib/metrics'); metricsBlock = await getMetricsInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + metricsBlock + aiRulesBlock
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
@@ -552,9 +576,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         // read/write accounting and pricing are already handled below (0.1x /
         // 1.25x). A cache_control on the last tool caches the tools block; one on
         // the system block caches system too.
-        const cachedTools = TOOLS.map((t, idx) =>
-          idx === TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t
-        )
+        const cachedTools = TOOLS.map((t, idx) => {
+          // Phase 4 (gated): mark tools strict so inputs exactly match their schema.
+          const base = STRICT_TOOLS ? ({ ...t, strict: true } as typeof t) : t
+          return idx === TOOLS.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
+        })
         while (true) {
           // When the budget is exhausted or the previous turn ran out of tokens
           // mid-synthesis, force a final no-tools turn with a synthesis nudge
@@ -574,28 +600,51 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             messages: history,
             stream: true,
             ...(forceSynthesis ? { tool_choice: { type: 'none' as const } } : {}),
+            // Phase 6 (gated): extended thinking on RCA turns. Never combined with
+            // a forced tool_choice (thinking requires auto tool choice), and the
+            // budget is < max_tokens. Resulting thinking blocks are captured below
+            // and echoed back in history unmodified (required with tool use).
+            ...(RCA_THINKING && keywordRca && !forceSynthesis
+              ? { thinking: { type: 'enabled' as const, budget_tokens: RCA_THINKING_BUDGET } }
+              : {}),
           })
           let text = '', stopReason = ''
           const toolBlocks: Anthropic.ToolUseBlockParam[] = []
+          // Phase 6: thinking blocks produced this turn (stays empty unless
+          // RCA_THINKING is on). When tools are used these MUST be echoed back in
+          // the assistant history message, unmodified and before other blocks.
+          const thinkingBlocks: (Anthropic.ThinkingBlockParam | Anthropic.RedactedThinkingBlockParam)[] = []
           let activeTool: { id: string; name: string; json: string } | null = null
+          let activeThinking: { thinking: string; signature: string } | null = null
           // isToolTurn: true when this API call is not the final one (has tool use)
           // We don't know this until message_delta, so we buffer text and decide after
           const textChunks: string[] = []
           for await (const evt of resp) {
             if (evt.type === 'content_block_start' && evt.content_block.type === 'tool_use') {
               activeTool = { id: evt.content_block.id, name: evt.content_block.name, json: '' }
+            } else if (evt.type === 'content_block_start' && evt.content_block.type === 'thinking') {
+              activeThinking = { thinking: '', signature: '' }
+            } else if (evt.type === 'content_block_start' && evt.content_block.type === 'redacted_thinking') {
+              thinkingBlocks.push({ type: 'redacted_thinking', data: evt.content_block.data })
             } else if (evt.type === 'content_block_delta') {
               if (evt.delta.type === 'text_delta') {
                 text += evt.delta.text
                 textChunks.push(evt.delta.text)
               } else if (evt.delta.type === 'input_json_delta' && activeTool) {
                 activeTool.json += evt.delta.partial_json
+              } else if (evt.delta.type === 'thinking_delta' && activeThinking) {
+                activeThinking.thinking += evt.delta.thinking
+              } else if (evt.delta.type === 'signature_delta' && activeThinking) {
+                activeThinking.signature += evt.delta.signature
               }
             } else if (evt.type === 'content_block_stop' && activeTool) {
               const block: Anthropic.ToolUseBlockParam = { type: 'tool_use', id: activeTool.id, name: activeTool.name, input: JSON.parse(activeTool.json || '{}') }
               toolBlocks.push(block)
               send({ type: 'tool_start', name: block.name, input: block.input })
               activeTool = null
+            } else if (evt.type === 'content_block_stop' && activeThinking) {
+              thinkingBlocks.push({ type: 'thinking', thinking: activeThinking.thinking, signature: activeThinking.signature })
+              activeThinking = null
             } else if (evt.type === 'message_delta') {
               stopReason = evt.delta.stop_reason || ''
               if (evt.usage) totalOutput += evt.usage.output_tokens
@@ -692,7 +741,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
               return { type: 'tool_result' as const, tool_use_id: block.id, content: 'Error: ' + msg }
             }
           }))
-          history = [...history, { role: 'assistant', content: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks] }, { role: 'user', content: toolResults }]
+          history = [...history, { role: 'assistant', content: [...thinkingBlocks, ...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks] }, { role: 'user', content: toolResults }]
         }
         // Persist assistant message + update conversation timestamp
         let rcaBlock: unknown = null
