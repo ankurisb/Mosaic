@@ -10,6 +10,10 @@
 //   - basic             (Authorization: Basic <base64(user:pass)>)
 //   - oauth2_client     (mints access tokens via refresh_token or
 //                        client_credentials grant; configurable header prefix)
+//   - session_token     (generic username/password login endpoint that returns
+//                        a token in its JSON body; configurable login URL, body
+//                        shape, token JSON-path and header — covers APIs like
+//                        Terralayr: POST creds -> {access_token} -> Bearer)
 //   - custom_headers    (arbitrary headers JSON, no further interpretation)
 //
 // OAuth2 grant flows handled inside getOAuth2AccessToken:
@@ -22,7 +26,7 @@ import { getDb, nowExpr } from '@/lib/db'
 
 // -- Types -------------------------------------------------------
 
-export type AuthType = 'bearer' | 'api_key_header' | 'basic' | 'oauth2_client' | 'custom_headers' | 'prism'
+export type AuthType = 'bearer' | 'api_key_header' | 'basic' | 'oauth2_client' | 'session_token' | 'custom_headers' | 'prism'
 
 export interface BearerAuth { token: string }
 export interface ApiKeyHeaderAuth { header: string; key: string }
@@ -34,11 +38,32 @@ export interface OAuth2ClientAuth {
   refresh_token?: string
   header_prefix?: string
 }
+/**
+ * Generic login-endpoint auth: POST credentials to a login URL, read a token
+ * out of the JSON response, and send it on every request. Everything about the
+ * shape is configurable so one auth type covers the long tail of bespoke login
+ * flows. Only `login_url`, `username` and `password` are required; the rest
+ * default to the most common conventions.
+ */
+export interface SessionTokenAuth {
+  login_url: string              // absolute, or relative to the service base_url
+  username: string
+  password: string
+  username_field?: string        // body key for the username (default 'username')
+  password_field?: string        // body key for the password (default 'password')
+  login_body_format?: 'json' | 'form' // default 'json'
+  login_body_extra?: string      // JSON object string merged into the login body (e.g. {"grant_type":"password"})
+  token_path?: string            // dot-path to the token in the response (default 'access_token')
+  token_header?: string          // header to set the token on (default 'Authorization')
+  token_prefix?: string          // value prefix (default 'Bearer'; '' for a bare token)
+  expiry_path?: string           // dot-path to a lifetime-in-seconds field, if the API returns one
+  token_ttl_seconds?: string     // fallback lifetime when no expiry is discoverable (default 3600)
+}
 export type CustomHeadersAuth = Record<string, string>
 
 // Loose union -- auth_config blobs are user-provided JSON; runtime checks
 // inside applyAuth narrow per auth_type.
-export type AuthConfig = Partial<BearerAuth & ApiKeyHeaderAuth & BasicAuth & OAuth2ClientAuth> & Record<string, string | undefined>
+export type AuthConfig = Partial<BearerAuth & ApiKeyHeaderAuth & BasicAuth & OAuth2ClientAuth & SessionTokenAuth> & Record<string, string | undefined>
 
 // -- Parsing -----------------------------------------------------
 
@@ -127,6 +152,124 @@ export async function getOAuth2AccessToken(
     log.error({ service: 'api-auth', err: e }, `OAuth2 token fetch error (service=${serviceId}):`)
     return { ok: false, error }
   }
+}
+
+// -- Generic session-token (login endpoint) auth ----------------
+// POST credentials to a login URL, read the token out of the JSON body at a
+// configurable path, cache it until it expires, and re-login when it does.
+// No refresh-token dance (that's oauth2_client / prism) — login APIs of this
+// shape are cheap to re-hit, so expiry just triggers a fresh login.
+
+const sessionTokenCache = new Map<string, { token: string; expiresAt: number }>()
+
+/** Read a nested value by dot-path (e.g. "data.access_token"); undefined if absent. */
+function getByPath(obj: unknown, path: string): unknown {
+  if (!path) return undefined
+  return path.split('.').reduce<unknown>(
+    (acc, k) => (acc && typeof acc === 'object') ? (acc as Record<string, unknown>)[k] : undefined,
+    obj,
+  )
+}
+
+export type SessionTokenResult =
+  | { ok: true; token: string; header: string; prefix: string }
+  | { ok: false; error: string }
+
+export async function getSessionToken(
+  serviceId: string,
+  baseUrl: string | undefined,
+  authConfig: AuthConfig,
+): Promise<SessionTokenResult> {
+  const header = authConfig.token_header || 'Authorization'
+  const prefix = authConfig.token_prefix ?? 'Bearer'
+  const now = Date.now()
+
+  const cached = sessionTokenCache.get(serviceId)
+  if (cached && cached.expiresAt > now + 60_000) {
+    return { ok: true, token: cached.token, header, prefix }
+  }
+
+  if (!authConfig.login_url) return { ok: false, error: 'session_token auth requires login_url' }
+  const { username, password } = authConfig
+  if (!username || !password) return { ok: false, error: 'session_token auth requires username and password' }
+
+  // Resolve a relative login_url against the service base URL.
+  let loginUrl = authConfig.login_url
+  if (!/^https?:\/\//i.test(loginUrl)) {
+    const base = (baseUrl || '').replace(/\/$/, '')
+    if (!base) return { ok: false, error: 'session_token login_url is relative but no base_url is set' }
+    loginUrl = base + (loginUrl.startsWith('/') ? loginUrl : '/' + loginUrl)
+  }
+
+  const userField = authConfig.username_field || 'username'
+  const passField = authConfig.password_field || 'password'
+  let extra: Record<string, unknown> = {}
+  if (authConfig.login_body_extra) {
+    try { extra = JSON.parse(authConfig.login_body_extra) as Record<string, unknown> } catch {}
+  }
+  const bodyObj: Record<string, unknown> = { ...extra, [userField]: username, [passField]: password }
+  const format = authConfig.login_body_format === 'form' ? 'form' : 'json'
+
+  try {
+    const res = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': format === 'form' ? 'application/x-www-form-urlencoded' : 'application/json',
+        Accept: 'application/json',
+      },
+      body: format === 'form'
+        ? new URLSearchParams(bodyObj as Record<string, string>).toString()
+        : JSON.stringify(bodyObj),
+      signal: AbortSignal.timeout(10000),
+    })
+    const bodyText = await res.text()
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`
+      try {
+        const j = JSON.parse(bodyText)
+        msg = j.message || j.error_description || j.error || j.errorCode || msg
+      } catch { if (bodyText) msg = `${msg}: ${bodyText.slice(0, 200)}` }
+      sessionTokenCache.delete(serviceId)
+      return { ok: false, error: `Login failed: ${msg}` }
+    }
+
+    let data: unknown
+    try { data = JSON.parse(bodyText) } catch { return { ok: false, error: 'Login response was not JSON' } }
+
+    const tokenPath = authConfig.token_path || 'access_token'
+    const token = getByPath(data, tokenPath)
+    if (typeof token !== 'string' || !token) {
+      return { ok: false, error: `No token found at path "${tokenPath}" in the login response` }
+    }
+
+    // Expiry precedence: an explicit lifetime field -> the JWT's own exp -> a
+    // configured fallback TTL -> 1 hour.
+    let expiresAt: number
+    const expVal = authConfig.expiry_path ? getByPath(data, authConfig.expiry_path) : undefined
+    if (typeof expVal === 'number' && expVal > 0) expiresAt = now + expVal * 1000
+    else if (typeof expVal === 'string' && /^\d+$/.test(expVal)) expiresAt = now + Number(expVal) * 1000
+    else {
+      const jwtExp = jwtExpiry(token)
+      if (jwtExp) expiresAt = jwtExp
+      else {
+        const ttl = authConfig.token_ttl_seconds && /^\d+$/.test(authConfig.token_ttl_seconds)
+          ? Number(authConfig.token_ttl_seconds) : 3600
+        expiresAt = now + ttl * 1000
+      }
+    }
+
+    sessionTokenCache.set(serviceId, { token, expiresAt })
+    return { ok: true, token, header, prefix }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Network error contacting login endpoint'
+    log.error({ service: 'api-auth', err: e }, `session_token login error (service=${serviceId}):`)
+    return { ok: false, error }
+  }
+}
+
+/** Invalidate a cached session token — call after a 401 so the next call re-logs in. */
+export function invalidateSessionToken(serviceId: string): void {
+  sessionTokenCache.delete(serviceId)
 }
 
 // -- Prism IoT platform JWT auth --------------------------------
@@ -352,6 +495,18 @@ export async function applyAuth(
     void recordAuthStatus(serviceId, true, null)
     const prefix = authConfig.header_prefix || 'Bearer'
     headers['Authorization'] = `${prefix} ${result.token}`
+    return { ok: true }
+  }
+
+  if (authType === 'session_token') {
+    const result = await getSessionToken(serviceId, baseUrl || authConfig.base_url, authConfig)
+    if (!result.ok) {
+      const err = (result as { ok: false; error: string }).error
+      void recordAuthStatus(serviceId, false, err)
+      return { ok: false, error: err }
+    }
+    void recordAuthStatus(serviceId, true, null)
+    headers[result.header] = result.prefix ? `${result.prefix} ${result.token}` : result.token
     return { ok: true }
   }
 
