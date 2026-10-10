@@ -49,7 +49,12 @@ const STRICT_TOOLS = process.env.ANTHROPIC_STRICT_TOOLS === '1'
 // be echoed back in history unmodified (handled in the loop below). budget_tokens
 // must be ≥1024 and < max_tokens (16384 here).
 const RCA_THINKING = process.env.ANTHROPIC_RCA_THINKING === '1'
-const RCA_THINKING_BUDGET = Math.max(1024, Math.min(Number(process.env.ANTHROPIC_RCA_THINKING_BUDGET || 4096), 12000))
+// Current-gen models (sonnet-5 / opus-5) use ADAPTIVE thinking + output_config.effort,
+// not the legacy { type:'enabled', budget_tokens } form (which they now 400 on).
+const RCA_THINKING_EFFORT = ((): 'low' | 'medium' | 'high' | 'xhigh' | 'max' => {
+  const v = process.env.ANTHROPIC_RCA_THINKING_EFFORT || ''
+  return (['low', 'medium', 'high', 'xhigh', 'max'] as const).includes(v as never) ? (v as 'low') : 'high'
+})()
 
 // Pick the RCA workflow whose purpose best fits the user's problem.
 // Primary: a fast Haiku classify call reasons over each workflow's name +
@@ -581,7 +586,10 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         // the system block caches system too.
         const cachedTools = TOOLS.map((t, idx) => {
           // Phase 4 (gated): mark tools strict so inputs exactly match their schema.
-          const base = STRICT_TOOLS ? ({ ...t, strict: true } as typeof t) : t
+          // Strict requires the schema to explicitly set additionalProperties:false.
+          const base = STRICT_TOOLS
+            ? ({ ...t, strict: true, input_schema: { ...t.input_schema, additionalProperties: false } } as typeof t)
+            : t
           return idx === TOOLS.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
         })
         while (true) {
@@ -608,7 +616,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             // budget is < max_tokens. Resulting thinking blocks are captured below
             // and echoed back in history unmodified (required with tool use).
             ...(RCA_THINKING && keywordRca && !forceSynthesis
-              ? { thinking: { type: 'enabled' as const, budget_tokens: RCA_THINKING_BUDGET } }
+              ? { thinking: { type: 'adaptive' as const }, output_config: { effort: RCA_THINKING_EFFORT } }
               : {}),
           })
           let text = '', stopReason = ''
