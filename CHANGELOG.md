@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.22] - 2026-10-10
+
+### Added
+- **AI-assisted API source builder (“✨ Add with AI”).** A new conversational way to connect any live API under Settings → API connections, alongside the existing Import Postman / Import OpenAPI / SAP / manual paths (which remain as seeds). Describe the API in plain English, attach text docs (docs, OpenAPI, Postman, a sample response) or pull a docs URL, and Mosaic drafts a connection, **probes it live against the real source**, refines against what actually came back, collects credentials in masked fields, and registers it — immediately callable from chats and RCAs. Registration reuses the existing `api_services`/`api_connections` registry, so AI-built sources behave identically to hand-built ones (Try / Edit / Delete). Admin-only; the live probe is SSRF-guarded (LAN mode: on-prem APIs allowed, loopback/cloud-metadata blocked).
+- **`session_token` auth type.** Generic username/password-login→token auth for APIs that authenticate via a login endpoint returning a token in its JSON body (e.g. a POST of credentials → `{access_token}` used as a Bearer). Fully configurable (login URL, body shape, token JSON-path, header/prefix, expiry) so one type covers the long tail of bespoke login flows; tokens are cached and re-minted on expiry. Covered by unit and real-HTTP integration tests.
+
+### Fixed
+- **Postman import error handling.** `parsePostmanCollection` referenced an unimported `log` in a client component, so a malformed collection threw `log is not defined` in the browser (masking the real parse error); now uses `console.error`.
+
 ## [1.3.21] - 2026-10-10
 
 ### Changed
