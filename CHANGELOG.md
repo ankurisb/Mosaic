@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.20] - 2026-10-10
+
+### Changed
+- **Anthropic SDK upgraded 0.39 → 0.133.** Runtime streaming verified against the live API (the chat path uses the stable raw-iterator event protocol). Enables the features below.
+- **Model list is now dynamic — nothing hardcoded.** Available models are fetched live from the Anthropic API (`client.models.list`, active only, newest-first) via `lib/models.ts`, exposed through `GET /api/models`, and shown in the chat picker. New models (e.g. Fable 5.1, Opus/Sonnet/Haiku 5.5) appear automatically with no code change. The default model and all internal model choices (RCA classify, query generation, report narratives, connector generation) now resolve dynamically rather than from hardcoded ids. Per-token pricing resolves as per-model override (`MODEL_PRICING_OVERRIDES`, $/MTok) → tier default by family → fallback, so cost accounting covers every model.
+- **Auto model routing (new picker default).** "Auto" selects the model by query shape: an RCA or any substantive query always gets the default-or-stronger model (identical to today — RCA is never downgraded), while only clearly-trivial small-talk drops to the fast model. Optional `AUTO_MODEL_ESCALATE=1` sends the heaviest RCAs to the top (Opus) tier. Users can still pin a specific model.
+
+### Added (gated OFF by default — enable per-deployment after a live check)
+- **Strict tool use** (`ANTHROPIC_STRICT_TOOLS=1`), **extended thinking on RCA turns** (`ANTHROPIC_RCA_THINKING=1`, adaptive + effort), **citations for document attachments** (`ANTHROPIC_CITATIONS=1`), and **Message Batches for scheduled report narratives** (`REPORTS_USE_BATCHES=1`). All five SDK-0.133 features were verified end-to-end against the live API; they stay off by default so the upgrade ships with zero behaviour change until each is turned on.
+- **Parallel tool use**: the agentic loop already runs tool calls concurrently; a prompt nudge now encourages the model to batch independent fetches into one turn.
+
 ## [1.3.19] - 2026-10-10
 
 ### Fixed
