@@ -116,6 +116,22 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder: strin
   SUPERSET_ADMIN_PASSWORD: { label: 'Superset service password',hint: 'Paired with the service user · stored encrypted',                                    placeholder: 'Stored encrypted', secret: true },
 }
 
+// Credentials that the bundled deployment bakes itself (docker-compose sets the
+// SAME env var on both the running container and the Mosaic app). While a service
+// runs in BUNDLED mode — its URL is the compose default, not a bring-your-own
+// override — these are managed by Mosaic; letting an admin "configure" them here
+// would only desync Mosaic's auth from the bundled container and break the
+// integration, so we present them as managed rather than editable. The moment the
+// admin points the service at their OWN instance (overrides the URL below), the
+// service is BYO and these become editable again so they can authenticate to it.
+// `urlKey` is the field whose source decides bundled vs BYO for the service.
+const BUNDLE_MANAGED: Record<string, { urlKey: string; service: string }> = {
+  SUPERSET_ADMIN_USER:     { urlKey: 'SUPERSET_URL', service: 'Superset' },
+  SUPERSET_ADMIN_PASSWORD: { urlKey: 'SUPERSET_URL', service: 'Superset' },
+  CISO_SUPERUSER_EMAIL:    { urlKey: 'CISO_API_URL', service: 'CISO Assistant' },
+  CISO_SUPERUSER_PASSWORD: { urlKey: 'CISO_API_URL', service: 'CISO Assistant' },
+}
+
 // Tool launch links live in the "Connected tools" tab (TabInterfaces), which
 // routes through the no-login handshake and is gated by surface access. This
 // tab is for configuration only — no direct launch links (they bypassed the
@@ -217,26 +233,40 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                   if (!meta) return null
                   const status = keys[key]
                   const isEditing = editing === key
+                  const bm = BUNDLE_MANAGED[key]
+                  // Bundled mode = the service's URL is still the compose default
+                  // (source 'env'). 'none' (service absent, e.g. Personal edition)
+                  // or 'kv' (admin pointed it at their own instance) are NOT managed,
+                  // so the credential stays editable where it actually matters.
+                  const managed = !!bm && keys[bm.urlKey]?.source === 'env'
+                  // A stray UI override left on a managed credential (source 'kv'
+                  // while the service is bundled) is the desync we want to undo —
+                  // offer a one-click reset back to the bundled value.
+                  const strayOverride = managed && status?.source === 'kv'
                   return (
                     <div key={key} style={{ padding: '14px 18px', borderBottom: i < visibleKeys.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
                             {meta.label}
-                            {status?.configured
-                              ? <Badge label="configured" color="green" />
-                              : status?.source === 'env'
-                                ? <Badge label="bundled" color="blue" />
-                                : <Badge label="not set" color="amber" />}
+                            {managed
+                              ? <Badge label="managed" color="blue" />
+                              : status?.configured
+                                ? <Badge label="configured" color="green" />
+                                : status?.source === 'env'
+                                  ? <Badge label="bundled" color="blue" />
+                                  : <Badge label="not set" color="amber" />}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: isEditing ? 10 : 0 }}>
                             {meta.hint}
-                            {status?.source === 'env' && !status?.configured && ' · using the bundled default'}
+                            {managed
+                              ? ` · managed by Mosaic for the bundled ${bm!.service}. To use your own ${bm!.service}, set its URL above.`
+                              : (status?.source === 'env' && !status?.configured && ' · using the bundled default')}
                           </div>
                           {(status?.configured || status?.source === 'env') && !isEditing && status?.preview && (
                             <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{status.preview}</div>
                           )}
-                          {isEditing && (
+                          {isEditing && !managed && (
                             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                               {meta.options ? (
                                 <select
@@ -274,14 +304,24 @@ export default function TabKeys({ user }: { user: SessionUser }) {
                           )}
                         </div>
                         {!isEditing && (
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                            <Btn size="sm" onClick={() => { setEditing(key); setVals(p => ({ ...p, [key]: meta.options ? meta.options[0] : '' })) }}>
-                              {status?.configured ? 'Update' : status?.source === 'env' ? 'Override' : 'Set'}
-                            </Btn>
-                            {status?.configured && (
-                              <Btn size="sm" variant="danger" onClick={() => remove(key)}>Remove</Btn>
-                            )}
-                          </div>
+                          managed ? (
+                            // Bundled, Mosaic-managed credential: no configure option.
+                            // Only offer a reset if a stray override is desyncing it.
+                            strayOverride ? (
+                              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                <Btn size="sm" variant="danger" onClick={() => remove(key)}>Reset to bundled</Btn>
+                              </div>
+                            ) : null
+                          ) : (
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              <Btn size="sm" onClick={() => { setEditing(key); setVals(p => ({ ...p, [key]: meta.options ? meta.options[0] : '' })) }}>
+                                {status?.configured ? 'Update' : status?.source === 'env' ? 'Override' : 'Set'}
+                              </Btn>
+                              {status?.configured && (
+                                <Btn size="sm" variant="danger" onClick={() => remove(key)}>Remove</Btn>
+                              )}
+                            </div>
+                          )
                         )}
                       </div>
                       {meta.n8nSetup && (isEditing || status?.configured) && (

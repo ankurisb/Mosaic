@@ -3,26 +3,36 @@
 // Works even when Mosaic itself is completely down
 'use strict'
 const http = require('http')
+const https = require('https')
+const fs = require('fs')
+const path = require('path')
 const { execSync } = require('child_process')
 
-const PORT = 3099
-const VERSION = '1.0.0'
+const PORT = Number(process.env.PORT || 3099)          // HTTPS when a cert is available, else HTTP
+const HTTP_PORT = Number(process.env.HTTP_PORT || 3098) // always-plain-HTTP port for localhost scripts/health checks
+const HOSTNAME = process.env.MOSAIC_HOSTNAME || ''      // set on hosted boxes; drives cert lookup
+const CADDY_DATA = process.env.CADDY_DATA_DIR || '/caddy-data' // caddy data volume, mounted read-only
+const VERSION = '1.1.0'
 
 // ── Service definitions ────────────────────────────────────────
+// `gated: true` marks an edition- or add-on-gated service. When such a service
+// is simply not deployed (container missing), that is expected on editions that
+// don't include it — shown as "Not deployed", never counted as an issue. If a
+// gated service IS deployed but crashed/unhealthy, it still flags normally.
 const CORE_SERVICES = [
   { name: 'mosaic',              label: 'Mosaic',             port: 3001 },
   { name: 'superset',            label: 'Superset Analytics', port: 8088 },
-  { name: 'ciso-backend',        label: 'CISO Assistant',     port: null },
-  { name: 'ciso-caddy',          label: 'CISO Proxy',         port: 8443 },
+  { name: 'ciso-backend',        label: 'CISO Assistant',     port: null, gated: true },
+  { name: 'ciso-caddy',          label: 'CISO Proxy',         port: 8443, gated: true },
   { name: 'mosaic-elasticsearch',label: 'Elasticsearch',      port: null },
 ]
 const INFRA_SERVICES = [
   { name: 'superset-db',                label: 'Superset DB' },
   { name: 'superset-redis',             label: 'Redis' },
-  { name: 'mosaic-openmeter',           label: 'OpenMeter' },
-  { name: 'mosaic-openmeter-postgres',  label: 'OpenMeter DB' },
-  { name: 'mosaic-openmeter-redpanda',  label: 'Redpanda' },
-  { name: 'mosaic-openmeter-clickhouse',label: 'ClickHouse' },
+  { name: 'mosaic-openmeter',           label: 'OpenMeter',    gated: true },
+  { name: 'mosaic-openmeter-postgres',  label: 'OpenMeter DB', gated: true },
+  { name: 'mosaic-openmeter-redpanda',  label: 'Redpanda',     gated: true },
+  { name: 'mosaic-openmeter-clickhouse',label: 'ClickHouse',   gated: true },
 ]
 const OPTIONAL_SERVICES = [
   { name: 'mosaic-stats', label: 'Stats Sidecar' },
@@ -75,8 +85,16 @@ function diskInfo() {
 function memInfo() {
   try {
     if (process.platform === 'linux') {
-      const out = execSync("awk '/MemAvailable/ {print $2} /MemTotal/ {print $2}' /proc/meminfo", { timeout: 2000 }).toString().trim()
-      const [avail, total] = out.split('\n').map(Number)
+      // Read values by name — do NOT rely on awk output order. /proc/meminfo
+      // lists MemTotal before MemAvailable, so an order-based parse swaps them
+      // and produces "free > total".
+      const raw = require('fs').readFileSync('/proc/meminfo', 'utf8')
+      const field = (key) => {
+        const m = raw.match(new RegExp('^' + key + ':\\s+(\\d+)', 'm'))
+        return m ? Number(m[1]) : null
+      }
+      const total = field('MemTotal'), avail = field('MemAvailable')
+      if (total == null || avail == null) return null
       return { freeMB: Math.round(avail / 1024), totalMB: Math.round(total / 1024) }
     }
     return null
@@ -144,14 +162,20 @@ function buildSnapshot() {
 
   for (const svc of [...CORE_SERVICES, ...INFRA_SERVICES, ...OPTIONAL_SERVICES]) {
     const { state, health, exit } = getContainerStatus(svc.name)
-    const level = getStatusLevel(state, health)
-    const statusLabel = getStatusLabel(state, health)
-    const errors = (state === 'running') ? dockerLogs(svc.name) : []
-    const fix = suggestFix(svc.name, state, health, errors)
     const optional = OPTIONAL_SERVICES.some(o => o.name === svc.name)
-    const isIssue = !optional && (level === 'error')
+    const gated = svc.gated === true
+    const notDeployed = (state === 'missing')
+    let level = getStatusLevel(state, health)
+    let statusLabel = getStatusLabel(state, health)
+    // An add-on / edition-gated service that simply isn't deployed is expected
+    // on editions that don't include it — show it neutrally, never as a failure.
+    // (If it IS deployed but exited/unhealthy, it falls through and flags normally.)
+    if ((gated || optional) && notDeployed) { level = 'disabled'; statusLabel = 'Not deployed' }
+    const errors = (state === 'running') ? dockerLogs(svc.name) : []
+    const fix = (level === 'disabled') ? null : suggestFix(svc.name, state, health, errors)
+    const isIssue = (level === 'error') && !optional
     if (isIssue) issues++
-    services.push({ ...svc, state, health, exit, level, statusLabel, errors, fix, optional })
+    services.push({ ...svc, state, health, exit, level, statusLabel, errors, fix, optional, gated })
   }
 
   return { ts, services, issues, disk: diskInfo(), mem: memInfo() }
@@ -166,7 +190,7 @@ function renderHTML(snap) {
   const optRows   = services.filter(s => OPTIONAL_SERVICES.some(c => c.name === s.name))
 
   function statusDot(level) {
-    const colors = { healthy: '#16a34a', running: '#2563eb', warning: '#d97706', error: '#dc2626' }
+    const colors = { healthy: '#16a34a', running: '#2563eb', warning: '#d97706', error: '#dc2626', disabled: '#c4c4c4' }
     return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colors[level] || '#8a8a8a'};flex-shrink:0;margin-top:1px"></span>`
   }
 
@@ -176,6 +200,7 @@ function renderHTML(snap) {
       running: 'background:#eff6ff;color:#2563eb;border:1px solid rgba(37,99,235,.2)',
       warning: 'background:#fffbeb;color:#d97706;border:1px solid rgba(217,119,6,.2)',
       error:   'background:#fef2f2;color:#dc2626;border:1px solid rgba(220,38,38,.2)',
+      disabled:'background:#fafafa;color:#9a9a9a;border:1px solid rgba(0,0,0,.08)',
     }
     const s = styles[level] || 'background:#f5f5f5;color:#8a8a8a;border:1px solid rgba(0,0,0,.08)'
     return `<span style="${s};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap">${label}</span>`
@@ -369,12 +394,13 @@ function renderHealthPage(snap) {
   const ok = issues === 0
 
   const rows = services.map(svc => {
-    const levelColors = { healthy: '#16a34a', running: '#2563eb', warning: '#d97706', error: '#dc2626' }
+    const levelColors = { healthy: '#16a34a', running: '#2563eb', warning: '#d97706', error: '#dc2626', disabled: '#c4c4c4' }
     const badgeStyles = {
       healthy: 'background:#f0fdf4;color:#16a34a;border:1px solid rgba(22,163,74,.2)',
       running: 'background:#eff6ff;color:#2563eb;border:1px solid rgba(37,99,235,.2)',
       warning: 'background:#fffbeb;color:#d97706;border:1px solid rgba(217,119,6,.2)',
       error:   'background:#fef2f2;color:#dc2626;border:1px solid rgba(220,38,38,.2)',
+      disabled:'background:#fafafa;color:#9a9a9a;border:1px solid rgba(0,0,0,.08)',
     }
     const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${levelColors[svc.level] || '#8a8a8a'};margin-right:8px"></span>`
     const badge = `<span style="${badgeStyles[svc.level] || 'background:#f5f5f5;color:#8a8a8a;border:1px solid rgba(0,0,0,.08)'};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">${svc.statusLabel}</span>`
@@ -493,8 +519,8 @@ function renderBundle() {
   return lines.join('\n')
 }
 
-// ── HTTP server ────────────────────────────────────────────────
-const server = http.createServer((req, res) => {
+// ── Request handler ────────────────────────────────────────────
+const handler = (req, res) => {
   if (req.url === '/health.json') {
     // Machine-readable JSON for monitoring tools
     const snap = getSnapshot()
@@ -524,15 +550,63 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(renderHTML(snap))
   }
-})
+}
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Mosaic Watchdog v${VERSION} running on http://0.0.0.0:${PORT}`)
-  console.log(`UI:      http://localhost:${PORT}`)
-  console.log(`Health:  http://localhost:${PORT}/health`)
-  console.log(`Bundle:  http://localhost:${PORT}/bundle`)
-  console.log(`Network: http://localhost:${PORT}/network`)
-})
+// ── TLS cert discovery (reuses Caddy's cert; independent of Caddy running) ──
+// Caddy stores certs at <data>/caddy/certificates/<ca-dir>/<host>/<host>.{crt,key}.
+// We only need the files on disk, so this works even when Caddy is down.
+function findCertPair(root, host) {
+  if (!host) return null
+  const base = path.join(root, 'caddy', 'certificates')
+  let found = null
+  ;(function walk(dir, depth) {
+    if (found || depth > 4) return
+    const crt = path.join(dir, host + '.crt')
+    const key = path.join(dir, host + '.key')
+    try { if (fs.existsSync(crt) && fs.existsSync(key)) { found = { crt, key }; return } } catch {}
+    let entries = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1)
+  })(base, 0)
+  return found
+}
+
+function loadTLS() {
+  const pair = findCertPair(CADDY_DATA, HOSTNAME)
+  if (!pair) return null
+  try { return { cert: fs.readFileSync(pair.crt), key: fs.readFileSync(pair.key), paths: pair } }
+  catch { return null }
+}
+
+// ── Start servers ──────────────────────────────────────────────
+const tls = loadTLS()
+if (tls) {
+  // Public, browser-facing HTTPS on the main port. Browsers that auto-upgrade
+  // http->https (HTTPS-First) now succeed instead of hitting a dead TLS port.
+  const secure = https.createServer({ cert: tls.cert, key: tls.key }, handler)
+  secure.on('error', (e) => console.error('[https] error:', e.message))
+  secure.listen(PORT, '0.0.0.0', () => {
+    console.log(`Mosaic Watchdog v${VERSION} running on https://0.0.0.0:${PORT} (TLS for ${HOSTNAME})`)
+  })
+  // Plain HTTP on a secondary port for localhost scripts / container health checks.
+  http.createServer(handler).listen(HTTP_PORT, '0.0.0.0', () => {
+    console.log(`Plain HTTP on http://0.0.0.0:${HTTP_PORT} (scripts / health checks)`)
+  }).on('error', (e) => console.error('[http] error:', e.message))
+  // Hot-reload the cert when Caddy renews it — no restart, no downtime.
+  const reload = () => {
+    const t = loadTLS()
+    if (t) { try { secure.setSecureContext({ cert: t.cert, key: t.key }); console.log('[tls] certificate reloaded') } catch (e) { console.error('[tls] reload failed:', e.message) } }
+  }
+  try { fs.watch(path.dirname(tls.paths.crt), { persistent: false }, () => setTimeout(reload, 2000)) } catch {}
+  setInterval(reload, 6 * 60 * 60 * 1000)
+} else {
+  // No cert (localhost / non-TLS installs): serve plain HTTP on the main port,
+  // exactly as before.
+  http.createServer(handler).listen(PORT, '0.0.0.0', () => {
+    console.log(`Mosaic Watchdog v${VERSION} running on http://0.0.0.0:${PORT}`)
+  }).on('error', (e) => console.error('[http] error:', e.message))
+}
+console.log(`Routes:  /  /health  /health.json  /bundle  /network`)
 
 process.on('SIGTERM', () => process.exit(0))
 process.on('SIGINT',  () => process.exit(0))

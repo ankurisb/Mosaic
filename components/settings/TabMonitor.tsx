@@ -161,7 +161,7 @@ export default function TabMonitor() {
             on a remote/hosted box localhost would resolve to the viewer's own
             machine. The watchdog listens on :3099 of the box; works as long as
             that port is reachable (open it in the host firewall/SG for remote use). */}
-        <a href={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3099`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue-t)', fontWeight: 500 }}>System Watchdog</a>
+        <a href={`//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3099`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue-t)', fontWeight: 500 }}>System Watchdog</a>
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>— works independently on port 3099</span>
       </div>
       {data && (

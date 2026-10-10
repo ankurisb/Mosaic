@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.19] - 2026-10-10
+
+### Fixed
+- **API Keys: bundled services no longer offer pointless credential configuration.** For a service that runs in *bundled* mode (its URL is the compose default, not a bring-your-own override), the admin user/password are baked by docker-compose and shared with the running container — "configuring" them in the UI could only desync Mosaic's auth from the bundled container and break the integration. Those fields (Superset service user/password, CISO admin email/password) now show as **managed by Mosaic** with no Set/Override. The moment an admin points a service at their own instance (sets its URL), the credentials become editable again for that BYO instance. A stray override left on a managed credential offers a one-click **Reset to bundled**. (n8n's API key is generated inside n8n and is never bundle-baked, so it stays user-configurable as before.)
+- **About tab: corrected inaccurate/irrelevant deployment details.** Mosaic ships as an on-premises Docker stack, but the About panel described a Vercel/serverless vs "Self-hosted (Node.js)" split that never applies (the Vercel path is dead code on-prem) and labelled a non-SQLite database "Cloud · auto-scaling". Platform now reads **On-premises (Docker)**, a server database reads **Server database**, the scheduler sub-text is always the built-in Node timer, and the deployment banner reflects on-premises — no more Vercel-mode branching.
+
+## [1.3.18] - 2026-10-10
+
+### Fixed
+- **System Watchdog opens in the browser on hosted boxes.** The watchdog on `:3099` served plain HTTP only. Because the main site is HTTPS, browsers with HTTPS-First upgrade `http://host:3099` to `https://host:3099`, which had no TLS listener — so the page "wouldn't open" even though the service was healthy (curl saw HTTP 200). The watchdog now serves **HTTPS on :3099** using Caddy's existing certificate (read-only from the `caddy-data` volume; it needs only the cert files on disk, so it still works while Caddy is down) and hot-reloads the cert on renewal. Plain HTTP moves to an internal `:3098` for localhost scripts and health checks. Localhost / non-TLS installs (no `MOSAIC_HOSTNAME`) fall back to plain HTTP on `:3099` exactly as before. The in-app "System Watchdog" link is now protocol-relative so it inherits HTTPS on a real deployment.
+- **Watchdog no longer cries wolf over edition-gated services.** Components not included on an edition (CISO, the OpenMeter metering stack) were counted as failures when their containers were simply absent, showing a false "6 issues detected" on a healthy trial box. Edition-/add-on-gated services that aren't deployed now render neutrally as "Not deployed" and are never counted as issues; if such a service *is* deployed but crashes, it still flags normally. Required core services (Mosaic, Superset, Elasticsearch, Superset DB, Redis) are unchanged.
+- **Watchdog memory reading corrected.** The "Available memory" card parsed `/proc/meminfo` by awk output order, which lists `MemTotal` before `MemAvailable`, so the two were swapped (showing e.g. "31557 MB free of 21950 MB total"). Values are now read by field name.
+
 ## [1.3.17] - 2026-10-09
 
 ### Changed

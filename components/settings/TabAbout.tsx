@@ -35,8 +35,6 @@ export default function TabAbout() {
     fetch('/api/deployment').then(r => r.json()).then(setDeploy).catch(() => {})
   }, [])
 
-  const isVercel = deploy?.mode === 'vercel'
-
   return (
     <div className="fade-in">
       <PageTitle>About</PageTitle>
@@ -53,11 +51,11 @@ export default function TabAbout() {
 
         <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
           {[
-            { label: 'Platform',       value: deploy ? (isVercel ? 'Vercel (serverless)' : 'Self-hosted (Node.js)') : '—', sub: deploy ? (isVercel ? 'Serverless functions' : deploy.appUrl) : 'Loading...', icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="12" height="9" rx="1.5"/><path d="M4 13h6M7 11v2"/></svg> },
+            { label: 'Platform',       value: deploy ? 'On-premises (Docker)' : '—', sub: deploy ? deploy.appUrl : 'Loading...', icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="12" height="9" rx="1.5"/><path d="M4 13h6M7 11v2"/></svg> },
             { label: 'Default AI model', value: deploy?.defaultModel || '—', sub: 'Anthropic · streaming',                                                                                                               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M5 7l2 2 2-3"/></svg> },
-            { label: 'Database',       value: deploy?.database || '—', sub: deploy ? (deploy.database.includes('SQLite') ? 'Local file · zero-config' : 'Cloud · auto-scaling') : 'Loading...',               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg> },
+            { label: 'Database',       value: deploy?.database || '—', sub: deploy ? (deploy.database.includes('SQLite') ? 'Local file · zero-config' : 'Server database') : 'Loading...',               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><ellipse cx="7" cy="4" rx="5" ry="2"/><path d="M2 4v6c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M2 7c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg> },
             { label: 'Authentication', value: 'JWT + bcrypt', sub: '7-day sessions',                                                                                                                           icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg> },
-            { label: 'Scheduler',      value: deploy ? (deploy.scheduler + ' · every 60s') : '—', sub: deploy ? (isVercel ? 'vercel.json crons' : 'Built-in Node timer') : 'Loading...',                     icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/></svg> },
+            { label: 'Scheduler',      value: deploy ? (deploy.scheduler + ' · every 60s') : '—', sub: deploy ? 'Built-in Node timer' : 'Loading...',                     icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/></svg> },
             { label: 'Environment',    value: deploy?.nodeEnv || '—', sub: deploy ? (deploy.nodeEnv === 'production' ? 'Production build' : 'Development mode') : 'Loading...',                               icon: <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h6M2 10h8"/></svg> },
           ].map((item, i, arr) => (
             <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: 'var(--surface)' }}>
@@ -86,17 +84,14 @@ export default function TabAbout() {
       )}
       {showUpdate && <UpdateModal deploy={deploy as never} onClose={() => setShowUpdate(false)} />}
 
-      {/* Deployment mode banner */}
+      {/* Deployment banner — Mosaic ships as an on-premises Docker stack. */}
       {deploy && (
-        <div style={{ background: isVercel ? 'var(--blue-bg)' : 'var(--green-bg)', border: `1px solid ${isVercel ? 'rgba(0,112,243,.2)' : 'rgba(22,163,74,.2)'}`, borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: isVercel ? 'var(--blue-t)' : 'var(--green-t)', flexShrink: 0 }}>
-            {isVercel
-              ? <><path d="M8 1l7 14H1L8 1z"/></>
-              : <><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 7h6M5 10h4"/></>
-            }
+        <div style={{ background: 'var(--green-bg)', border: '1px solid rgba(22,163,74,.2)', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--green-t)', flexShrink: 0 }}>
+            <rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 7h6M5 10h4"/>
           </svg>
-          <span style={{ color: isVercel ? 'var(--blue-t)' : 'var(--green-t)', fontWeight: 500 }}>
-            {isVercel ? 'Vercel Cloud deployment' : 'Self-hosted deployment'} · Scheduler running every minute
+          <span style={{ color: 'var(--green-t)', fontWeight: 500 }}>
+            On-premises deployment · Scheduler running every minute
           </span>
         </div>
       )}

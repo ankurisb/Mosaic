@@ -46,11 +46,19 @@ services:
       dockerfile: Dockerfile
     container_name: mosaic-watchdog
     restart: unless-stopped
+    environment:
+      # When set (hosted boxes), the watchdog serves HTTPS on :3099 using Caddy's
+      # existing certificate, so browsers that force HTTPS (HTTPS-First) can open
+      # it. Unset (localhost installs) falls back to plain HTTP on :3099. It reads
+      # only the cert files on disk, so it works even while Caddy itself is down.
+      - MOSAIC_HOSTNAME=${MOSAIC_HOSTNAME:-}
     ports:
       - "3099:3099"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./NETWORK.md:/mosaic/NETWORK.md:ro
+      # Read-only view of Caddy's cert store for the HTTPS listener above.
+      - caddy-data:/caddy-data:ro
     networks:
       - mosaic-net
 
