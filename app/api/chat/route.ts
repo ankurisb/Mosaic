@@ -556,6 +556,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         if (convId) send({ type: 'conv_id', id: convId })
         // Track full assistant response for persistence
         let finalText = ''
+        // Phase 7: citations emitted by the model for citable document attachments
+        // (empty unless ANTHROPIC_CITATIONS is on and a document was attached).
+        const allCitations: unknown[] = []
         const finalToolCalls: Array<{ name: string; input: unknown; result?: unknown }> = []
         // Bug 5: tool-call budget + forced synthesis to make RCA queries finish.
         // Without these, RCA workflows ran ~25 tool calls and then the stream cut
@@ -636,6 +639,8 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 activeThinking.thinking += evt.delta.thinking
               } else if (evt.delta.type === 'signature_delta' && activeThinking) {
                 activeThinking.signature += evt.delta.signature
+              } else if (evt.delta.type === 'citations_delta') {
+                allCitations.push(evt.delta.citation)
               }
             } else if (evt.type === 'content_block_stop' && activeTool) {
               const block: Anthropic.ToolUseBlockParam = { type: 'tool_use', id: activeTool.id, name: activeTool.name, input: JSON.parse(activeTool.json || '{}') }
@@ -868,6 +873,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           isRca:          !!rcaBlock,
         }).catch(() => {})
 
+        // Phase 7: surface any document citations the model produced. Harmless
+        // when empty; the client can render these once citation UI lands.
+        if (allCitations.length) send({ type: 'citations', citations: allCitations })
         send({ type: 'done' })
         reqLog.info({ model, inputTokens: totalInput, outputTokens: totalOutput, toolCalls: toolCallsUsed }, 'Chat request completed')
       } catch (err) {

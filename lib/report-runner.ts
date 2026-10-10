@@ -6,6 +6,8 @@ import { getDb }            from './db'
 import { nowExpr } from '@/lib/db'
 import { renderHtmlToPdf, htmlShell } from './pdf-renderer'
 import Anthropic            from '@anthropic-ai/sdk'
+import { runMessageBatch }  from './anthropic-batch'
+import type { BatchCapableClient } from './anthropic-batch'
 import { writeFile, mkdir } from 'fs/promises'
 import { join }             from 'path'
 
@@ -76,21 +78,47 @@ async function executeSection(section: ReportSection): Promise<{ rows: Row[]; er
 
 // ── AI narrative ──────────────────────────────────────────────────────────────
 
-async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
-  const client = new Anthropic()
+// Single source of truth for the narrative request shape, so the synchronous
+// path and the Phase 8 batch path produce identical prompts/output.
+function narrativeParams(prompt: string, rows: Row[]) {
   const dataStr = rows.length > 0
     ? `\n\nData (${rows.length} rows):\n${JSON.stringify(rows.slice(0, 50), null, 2)}`
     : '\n\n(No data returned from query)'
-  const msg = await client.messages.create({
+  return {
     // Keep in step with the chat default (single source of truth for the model gen).
     model: 'claude-sonnet-5',
     max_tokens: 600,
     messages: [{
-      role: 'user',
+      role: 'user' as const,
       content: `${prompt}${dataStr}\n\nRespond with a concise, professional narrative in plain text (no markdown headers, no bullet points). 2–4 paragraphs maximum.`,
     }],
-  })
+  }
+}
+
+async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
+  const client = new Anthropic()
+  const msg = await client.messages.create(narrativeParams(prompt, rows))
   return (msg.content[0] as { text: string }).text || ''
+}
+
+// Phase 8 (gated by REPORTS_USE_BATCHES): generate several narratives in one
+// Message Batch (~50% cheaper) for offline/scheduled report runs. Returns
+// id -> { rows, text }; text is '' when that request errored so the caller can
+// fall back to a synchronous call reusing the already-fetched rows. On any batch
+// failure/timeout it throws, and runReport falls back to the per-section path.
+const REPORTS_USE_BATCHES = process.env.REPORTS_USE_BATCHES === '1'
+
+async function precomputeNarrativesViaBatch(
+  aiSections: ReportSection[],
+): Promise<Map<string, { rows: Row[]; text: string }>> {
+  // Fetch each section's data once (reused on fallback — never queried twice).
+  const executed = await Promise.all(
+    aiSections.map(async (s) => ({ s, rows: (await executeSection(s)).rows })),
+  )
+  const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows) }))
+  const client = new Anthropic() as unknown as BatchCapableClient
+  const results = await runMessageBatch(client, requests, { pollMs: 4000, timeoutMs: 5 * 60_000 })
+  return new Map(executed.map(({ s, rows }) => [s.id, { rows, text: results.get(s.id)?.text ?? '' }]))
 }
 
 // ── HTML renderers ────────────────────────────────────────────────────────────
@@ -139,10 +167,23 @@ function renderNarrativeHtml(text: string): string {
     .map(p => `<p style="margin:0 0 10px 0;line-height:1.65">${p}</p>`).join('')
 }
 
-async function renderSectionHtml(section: ReportSection): Promise<string> {
+async function renderSectionHtml(
+  section: ReportSection,
+  precomputed?: Map<string, { rows: Row[]; text: string }>,
+): Promise<string> {
   const title = section.title ? `<div class="section-title">${section.title}</div>` : ''
   if (section.type === 'text') {
     return `<div class="section">${title}<div style="line-height:1.65">${section.content}</div></div>`
+  }
+  // Phase 8 batch path: this narrative (and its data) was precomputed in one
+  // Message Batch — render without re-querying or a second model call. An empty
+  // text means that batch request errored, so fall back to a synchronous call
+  // reusing the already-fetched rows (never re-queries the source).
+  if (section.type === 'ai_narrative' && precomputed?.has(section.id)) {
+    const pc = precomputed.get(section.id)!
+    const text = pc.text || (section.ai_prompt ? await generateNarrative(section.ai_prompt, pc.rows) : `${pc.rows.length} rows returned.`)
+    const basisN = section.width === 'half' ? 'calc(50% - 8px)' : section.width === 'third' ? 'calc(33.333% - 11px)' : '100%'
+    return `<div class="section" style="flex:1 1 ${basisN};max-width:${basisN};box-sizing:border-box">${title}${renderNarrativeHtml(text)}</div>`
   }
   const { rows, error } = await executeSection(section)
   if (error) {
@@ -215,7 +256,19 @@ export async function runReport(
   const instanceId = String((instance as Record<string, unknown>).id)
 
   try {
-    const sectionHtmls = await Promise.all(sections.map(renderSectionHtml))
+    // Phase 8 (gated): when enabled and the report has ≥2 AI narratives, generate
+    // them together in one Message Batch (~50% cheaper). Any failure/timeout leaves
+    // `precomputed` undefined and every section falls back to the normal per-section
+    // synchronous path, so report output is unchanged either way.
+    let precomputed: Map<string, { rows: Row[]; text: string }> | undefined
+    if (REPORTS_USE_BATCHES) {
+      const aiSecs = sections.filter(s => s.type === 'ai_narrative' && s.ai_prompt)
+      if (aiSecs.length >= 2) {
+        try { precomputed = await precomputeNarrativesViaBatch(aiSecs) }
+        catch { precomputed = undefined }
+      }
+    }
+    const sectionHtmls = await Promise.all(sections.map(s => renderSectionHtml(s, precomputed)))
 
     const coverHtml = `
       <div class="section" style="border-left:4px solid #2563eb;padding-left:20px;margin-bottom:28px">

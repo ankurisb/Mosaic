@@ -25,6 +25,15 @@ export interface IncomingAttachment {
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 const MAX_DOC_CHARS = 12000  // cap extracted text per document to bound tokens
 
+// Phase 7 (gated by ANTHROPIC_CITATIONS): when on, extracted document text is sent
+// as a native `document` content block with citations enabled, so the model can
+// cite the exact source passage. We keep our proven text extraction (cheaper and
+// lower-risk than shipping raw PDF bytes) and just wrap it in a citable document.
+// OFF by default → documents are inlined as plain text blocks exactly as before.
+// Note: making citations user-visible also needs the chat stream to collect them
+// (done) AND the chat UI to render them (follow-up) — verify live before enabling.
+const CITATIONS_ENABLED = process.env.ANTHROPIC_CITATIONS === '1'
+
 function extFromName(name: string): string {
   return (name.split('.').pop() || '').toLowerCase()
 }
@@ -59,7 +68,16 @@ export async function buildUserContent(
       const buf = Buffer.from(att.data, 'base64')
       const extracted = await extractFileText(buf, att.name, MAX_DOC_CHARS)
       const label = `[Attached file: ${att.name}]`
-      if (extracted && extracted.trim()) {
+      if (extracted && extracted.trim() && CITATIONS_ENABLED) {
+        // Citable document block (gated): same extracted text, wrapped so the
+        // model can cite the source passage.
+        blocks.push({
+          type: 'document',
+          title: att.name,
+          source: { type: 'text', media_type: 'text/plain', data: extracted },
+          citations: { enabled: true },
+        })
+      } else if (extracted && extracted.trim()) {
         blocks.push({ type: 'text', text: `${label}\n${extracted}` })
       } else {
         blocks.push({ type: 'text', text: `${label}\n(No extractable text — the file may be empty, image-only, or an unsupported format.)` })
