@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.21] - 2026-10-10
+
+### Changed
+- **Model picker grouped by tier.** The chat model dropdown now groups the live model list into Opus / Sonnet / Haiku / Fable sections (newest version first within each) with section headers, instead of one long flat list — mirroring how Claude's own picker is organised. "Auto" stays pinned at the top. Grouping is derived entirely from `GET /api/models`, so new models and tiers slot into the correct group automatically with no hardcoding.
+
 ## [1.3.20] - 2026-10-10
 
 ### Changed
