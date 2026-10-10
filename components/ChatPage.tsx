@@ -1,7 +1,7 @@
 'use client'
 import React from 'react'
 import ChartArtifact from '@/components/ChartArtifact'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
@@ -267,6 +267,42 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       setModel(cur => cur || 'auto')
     }).catch(() => { setModel(cur => cur || 'auto') })
   }, [])
+  // Group the live model list by tier (Opus / Sonnet / Haiku / Fable) with the
+  // newest version first inside each tier — mirrors how Claude's own picker is
+  // organised, instead of one long flat list. Derived entirely from the API list
+  // so new models/tiers slot in automatically.
+  const TIER_ORDER = ['opus', 'sonnet', 'haiku', 'fable']
+  const TIER_LABEL: Record<string, string> = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', fable: 'Fable' }
+  const modelGroups = useMemo(() => {
+    const verKey = (id: string, tier: string) => {
+      // Numeric parts after the tier (e.g. claude-opus-4-8 → [4,8]; dated → trailing date adds ordering)
+      const rest = id.replace(/^claude-/, '').replace(new RegExp('^' + tier + '-?'), '')
+      const nums = (rest.match(/\d+/g) || []).map(Number)
+      return nums
+    }
+    const cmpVer = (a: number[], b: number[]) => {
+      for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const d = (b[i] ?? -1) - (a[i] ?? -1)
+        if (d) return d
+      }
+      return 0
+    }
+    const groups: { key: string; label: string; models: { id: string; label: string }[] }[] = []
+    const byTier: Record<string, { id: string; label: string }[]> = {}
+    const other: { id: string; label: string }[] = []
+    for (const m of availableModels) {
+      const tier = TIER_ORDER.find(t => m.id.includes('-' + t + '-') || m.id.includes('-' + t))
+      if (tier) (byTier[tier] ||= []).push(m)
+      else other.push(m)
+    }
+    for (const t of TIER_ORDER) {
+      if (!byTier[t]?.length) continue
+      byTier[t].sort((a, b) => cmpVer(verKey(a.id, t), verKey(b.id, t)))
+      groups.push({ key: t, label: TIER_LABEL[t] || t, models: byTier[t] })
+    }
+    if (other.length) groups.push({ key: 'other', label: 'Other', models: other })
+    return groups
+  }, [availableModels])
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -1120,18 +1156,23 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                         </div>
                         {model === 'auto' && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
                       </button>
-                      {availableModels.map(m => (
-                        <button key={m.id}
-                          onClick={() => { setModel(m.id); setPlusSubmenu(null) }}
-                          style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === m.id ? 600 : 400 }}>{m.label.replace(/^Claude\s+/, '')}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.id}</div>
-                          </div>
-                          {model === m.id && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
-                        </button>
+                      {modelGroups.map(g => (
+                        <div key={g.key}>
+                          <div style={{ padding: '8px 14px 3px 38px', fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text4)' }}>{g.label}</div>
+                          {g.models.map(m => (
+                            <button key={m.id}
+                              onClick={() => { setModel(m.id); setPlusSubmenu(null) }}
+                              style={{ width: '100%', padding: '7px 14px 7px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: model === m.id ? 600 : 400 }}>{m.label.replace(/^Claude\s+/, '')}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.id}</div>
+                              </div>
+                              {model === m.id && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                            </button>
+                          ))}
+                        </div>
                       ))}
                       {availableModels.length === 0 && (
                         <div style={{ padding: '8px 14px 8px 38px', fontSize: 11, color: 'var(--text4)' }}>Loading models…</div>
