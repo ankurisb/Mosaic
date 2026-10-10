@@ -546,7 +546,7 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
       connections,
     }
   } catch (e) {
-    log.error({ service: 'settings_TabAPIs', err: e }, 'DB setup error')
+    console.error('[settings_TabAPIs] Postman parse error', e)
     return null
   }
 }
