@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
+import ApiBuilder from './ApiBuilder'
 
 interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null }
 interface ApiConn { id: string; service_id: string; label: string; description: string; base_path: string; pagination_style: string }
@@ -555,6 +556,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [connections, setConnections] = useState<ApiConn[]>([])
   const [loading, setLoading] = useState(true)
   const [showSvcForm, setShowSvcForm] = useState(false)
+  const [showBuilder, setShowBuilder] = useState(false)
   const [svcForm, setSvcForm] = useState<Record<string, string>>(SVC_EMPTY)
   const [editingSvc, setEditingSvc] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -939,7 +941,8 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             <Btn onClick={() => { setShowPostmanZone(s => !s); setShowOpenApiZone(false); setImportError('') }}> Import Postman</Btn>
             <Btn onClick={() => { setShowOpenApiZone(s => !s); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') }}> Import OpenAPI</Btn>
             <Btn onClick={() => { setShowSapForm(s => !s); setSapError('') }} style={{ background: 'var(--bg)', border: '1px solid rgba(0,112,243,0.3)', color: '#0070f3' }}> SAP S/4HANA</Btn>
-            <Btn variant="primary" onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add service</Btn>
+            <Btn onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add manually</Btn>
+            <Btn variant="primary" onClick={() => { setShowBuilder(b => !b); setError('') }}>✨ Add with AI</Btn>
           </div>
         )}
       </div>
@@ -947,6 +950,16 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
 
       {error && <Alert variant="error">{error}</Alert>}
+
+      {/* -- AI builder -- */}
+      {user.role === 'admin' && showBuilder && (
+        <div style={{ margin: '12px 0 20px' }}>
+          <ApiBuilder
+            onClose={() => setShowBuilder(false)}
+            onRegistered={() => { setShowBuilder(false); load() }}
+          />
+        </div>
+      )}
 
       {/* -- Postman import drop zone -- */}
       {user.role === 'admin' && showPostmanZone && !importPreview && (
