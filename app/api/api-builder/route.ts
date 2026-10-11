@@ -10,9 +10,11 @@
 // exist, so this route is only the LLM brain + the docs fetch.
 import { getSession } from '@/lib/auth'
 import { generateApiCandidate, refineApiCandidate } from '@/lib/ai/api-builder-prompt'
+import { runApiAgent } from '@/lib/ai/api-agent'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
 
 export const runtime = 'nodejs'
+export const maxDuration = 300
 
 export async function POST(req: Request) {
   const session = await getSession()
@@ -45,6 +47,24 @@ export async function POST(req: Request) {
       const r = await generateApiCandidate(String(description), combined || undefined)
       if (!r.ok) return Response.json({ error: r.reason, fetched }, { status: 502 })
       return Response.json({ ok: true, candidate: r.candidate, fetched })
+    }
+
+    if (action === 'agent_build') {
+      // Agentic path: the model investigates the API itself (discover spec, log
+      // in and read the real token path, probe), returning a working candidate
+      // + a transcript. Credentials are injected server-side.
+      const { description, materials, credentials } = body
+      if (!description || !String(description).trim()) {
+        return Response.json({ error: 'description required' }, { status: 400 })
+      }
+      // Fold any URLs in the description into materials (same as generate).
+      const urls = extractUrls(String(description))
+      let fetchedText = ''; let fetched: FetchedDoc[] = []
+      if (urls.length) { const g = await gatherMaterials(urls); fetchedText = g.text; fetched = g.fetched }
+      const combined = [materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n')
+      const creds = (credentials && typeof credentials === 'object') ? credentials as Record<string, string> : undefined
+      const r = await runApiAgent({ description: String(description), materials: combined || undefined, credentials: creds })
+      return Response.json({ ok: r.ok, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, fetched })
     }
 
     if (action === 'refine') {
