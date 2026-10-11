@@ -94,10 +94,15 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
   }
 
   async function generate() {
-    setBusy('Drafting the connection…'); setError(null)
+    setBusy('Reading your links & drafting the connection…'); setError(null)
     try {
       const r = await fetch('/api/api-builder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate', description, materials: materials || undefined }) })
       const d = await r.json()
+      // The server auto-fetches any URLs in the description; surface what it pulled.
+      if (Array.isArray(d.fetched) && d.fetched.length) {
+        setAttachments(a => [...a, ...d.fetched.map((f: { url: string; ok: boolean; bytes?: number; note?: string }) =>
+          f.ok ? `${f.url} — read` : `${f.url} — couldn’t read (${f.note || 'failed'})`)])
+      }
       if (!d.ok) { setError(d.error || 'Generation failed'); setBusy(null); return }
       applyCandidate(d.candidate)
       setStep('review')
@@ -255,7 +260,7 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
               </div>
             )}
             <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>
-              You can also paste docs straight into the description. Secrets are collected later in masked fields — don’t paste passwords here.
+              Paste doc links straight into the description — Mosaic reads them automatically (including an llms.txt index). Secrets are collected later in masked fields — don’t paste passwords here.
             </div>
           </div>
 
