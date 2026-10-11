@@ -273,95 +273,119 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
 
       {/* Step 2 — Review / probe / refine */}
       {step === 'review' && candidate && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {candidate.message && <Alert variant="info">{candidate.message}</Alert>}
+        <>
+          <style>{COCKPIT_CSS}</style>
+          {candidate.message && <div style={{ marginBottom: 12 }}><Alert variant="info">{candidate.message}</Alert></div>}
+          <div className="apib-stage">
 
-          {/* What it drafted */}
-          <div style={card}>
-            <SectionLabel>Connection</SectionLabel>
-            <KV k="Name" v={service.label} />
-            <KV k="Base URL" v={service.base_url} mono />
-            <KV k="Auth" v={service.auth_type} />
-            {service.auth_config?.login_url && <KV k="Login" v={service.auth_config.login_url} mono />}
-            {connections.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <SectionLabel>Endpoints ({connections.length})</SectionLabel>
-                {connections.map((c, i) => (
-                  <div key={i} style={{ fontSize: 12, color: 'var(--text2)', padding: '3px 0' }}>
-                    <span style={{ fontWeight: 500 }}>{c.label}</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}> · {c.base_path || '/'}</span>
-                    {c.pagination_data_path && <span style={{ color: 'var(--text4)' }}> · records at {c.pagination_data_path}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Missing config / secrets */}
-          {missing.length > 0 && (
-            <div style={card}>
-              <SectionLabel>Credentials & details needed</SectionLabel>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
-                {missing.map(m => (
-                  <Field key={m.field} label={m.label || m.field}>
-                    <input type={m.secret ? 'password' : 'text'} autoComplete="off"
-                      value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
-                      placeholder={m.secret ? '••••••••' : ''} style={INP} />
-                  </Field>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Live probe */}
-          <div style={card}>
-            <SectionLabel>Test it live</SectionLabel>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-              {connections.length > 1 && (
-                <select value={probeConnIdx} onChange={e => setProbeConnIdx(Number(e.target.value))} style={{ ...INP, width: 'auto' }}>
-                  {connections.map((c, i) => <option key={i} value={i}>{c.label || `Endpoint ${i + 1}`}</option>)}
-                </select>
-              )}
-              <select value={probeMethod} onChange={e => setProbeMethod(e.target.value)} style={{ ...INP, width: 'auto' }}>
-                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
-              </select>
-              <input value={probePath} onChange={e => setProbePath(e.target.value)} placeholder="/path?query"
-                style={{ ...INP, flex: 1, minWidth: 180, fontFamily: 'var(--font-mono)' }} />
-              <Btn variant="primary" size="sm" onClick={runProbe} disabled={!!busy || unfilledSecrets.length > 0}>Probe</Btn>
-            </div>
-            {unfilledSecrets.length > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Fill the credentials above to probe.</div>
-            )}
-            {busy === 'Probing the live source…' && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />Calling the source…</div>}
-            {probe && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: probe.ok ? 'var(--green, #16a34a)' : 'var(--red, #dc2626)' }}>
-                  {probe.ok ? `✓ ${probe.status} OK` : `✗ ${probe.status ? `HTTP ${probe.status}` : 'Failed'}`}
-                  {typeof probe.latencyMs === 'number' && <span style={{ color: 'var(--text4)', fontWeight: 400 }}> · {probe.latencyMs}ms</span>}
+            {/* ── Draft (reference) ── */}
+            <section className="apib-pane">
+              <div className="apib-head"><span>Draft</span>{service.auth_type && <span style={badge}>{service.auth_type}</span>}</div>
+              <div className="apib-scroll">
+                <div>
+                  <SectionLabel>Connection</SectionLabel>
+                  <KV k="Name" v={service.label} />
+                  <KV k="Base URL" v={service.base_url} mono />
+                  <KV k="Auth" v={service.auth_type} />
+                  {service.auth_config?.login_url && <KV k="Login" v={service.auth_config.login_url} mono />}
                 </div>
-                {probe.error && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{probe.error}</div>}
-                {probe.body !== undefined && (
-                  <pre style={pre}>{safePreview(probe.body)}</pre>
+                {connections.length > 0 && (
+                  <div>
+                    <SectionLabel>Endpoints ({connections.length})</SectionLabel>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                      {connections.map((c, i) => (
+                        <button key={i} type="button"
+                          onClick={() => { setProbeConnIdx(i); setProbePath(i === (candidate.probe?.connection_index ?? 0) ? (candidate.probe?.path || '') : '') }}
+                          style={{ ...epBtn, ...(probeConnIdx === i ? epBtnSel : null) }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{c.label || `Endpoint ${i + 1}`}</span>
+                          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>{c.base_path || '/'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {missing.length > 0 && (
+                  <div>
+                    <SectionLabel>Credentials &amp; details needed</SectionLabel>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                      {missing.map(m => (
+                        <Field key={m.field} label={m.label || m.field}>
+                          <input type={m.secret ? 'password' : 'text'} autoComplete="off"
+                            value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
+                            placeholder={m.secret ? '••••••••' : ''} style={INP} />
+                        </Field>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <SectionLabel>Records path</SectionLabel>
+                  <div style={{ marginTop: 6 }}><span style={badge}>{connections[probeConnIdx]?.pagination_data_path || 'root array'}</span></div>
+                </div>
+              </div>
+            </section>
+
+            {/* ── Cockpit: probe bar + persistent result ── */}
+            <section className="apib-pane">
+              <div className="apib-head">
+                <span>Test &amp; result</span>
+                {probe && typeof probe.latencyMs === 'number' && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text4)', textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{probe.latencyMs}ms</span>}
+              </div>
+              <div className="apib-probebar">
+                {connections.length > 1 && (
+                  <select value={probeConnIdx} onChange={e => setProbeConnIdx(Number(e.target.value))} style={{ ...INP, width: 'auto' }}>
+                    {connections.map((c, i) => <option key={i} value={i}>{c.label || `Endpoint ${i + 1}`}</option>)}
+                  </select>
+                )}
+                <select value={probeMethod} onChange={e => setProbeMethod(e.target.value)} style={{ ...INP, width: 'auto' }}>
+                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
+                </select>
+                <input value={probePath} onChange={e => setProbePath(e.target.value)} placeholder="/path?query"
+                  style={{ ...INP, flex: 1, minWidth: 110, fontFamily: 'var(--font-mono)' }} />
+                <Btn variant="primary" size="sm" onClick={runProbe} disabled={!!busy || unfilledSecrets.length > 0}>Probe</Btn>
+              </div>
+              <div className="apib-result">
+                {busy === 'Probing the live source…' && <div style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />Calling the source…</div>}
+                {!probe && busy !== 'Probing the live source…' && (
+                  <div style={{ fontSize: 12.5, color: 'var(--text4)', lineHeight: 1.5 }}>
+                    {unfilledSecrets.length > 0
+                      ? 'Fill the credentials on the left, then Probe.'
+                      : <>Hit <strong>Probe</strong> to call the live endpoint. The response stays here while you refine.</>}
+                  </div>
+                )}
+                {probe && (
+                  <>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: probe.ok ? 'var(--green-t, #16a34a)' : 'var(--red-t, #dc2626)' }}>
+                      {probe.ok ? `✓ ${probe.status} OK` : `✗ ${probe.status ? `HTTP ${probe.status}` : 'Failed'}`}
+                    </div>
+                    {probe.url && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)', wordBreak: 'break-all' }}>{probeMethod} {probe.url}</div>}
+                    {probe.error && <div style={{ fontSize: 12, color: 'var(--text2)' }}>{probe.error}</div>}
+                    {probe.body !== undefined && <pre style={pre}>{safePreview(probe.body)}</pre>}
+                  </>
                 )}
               </div>
-            )}
-          </div>
+            </section>
 
-          {/* Refine */}
-          <div style={card}>
-            <SectionLabel>Not right? Tell Mosaic what to fix</SectionLabel>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              placeholder="e.g. the records are under data.results, not the top level — or auth should post to /login not /authenticate"
-              style={{ ...INP, resize: 'vertical', fontFamily: 'inherit', marginTop: 6 }} />
-            <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Btn onClick={refine} disabled={!!busy}>Refine</Btn>
-              <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok}>Register source</Btn>
-              <Btn onClick={() => { setStep('describe') }} size="sm">Back</Btn>
-              {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Register unlocks once a probe succeeds.</span>}
-              {busy && busy !== 'Probing the live source…' && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}
-            </div>
+            {/* ── Refine (right, always visible) ── */}
+            <section className="apib-pane">
+              <div className="apib-head"><span>Refine</span></div>
+              <div className="apib-refinebody">
+                <label style={{ fontSize: 11.5, color: 'var(--text2)' }}>Tell Mosaic what to fix</label>
+                <textarea value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="e.g. the records are under data.results, not the top level — or auth should post to /login not /authenticate"
+                  style={{ ...INP, flex: 1, minHeight: 110, resize: 'none', fontFamily: 'inherit' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Btn onClick={refine} disabled={!!busy} style={{ width: '100%' }}>Refine</Btn>
+                  <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok} style={{ width: '100%' }}>Register source</Btn>
+                  {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Register unlocks once a probe succeeds.</span>}
+                  {busy && busy !== 'Probing the live source…' && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}
+                  <Btn size="sm" onClick={() => setStep('describe')} style={{ width: '100%' }}>Back to describe</Btn>
+                </div>
+              </div>
+            </section>
+
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -394,3 +418,19 @@ function KV({ k, v, mono }: { k: string; v?: string | null; mono?: boolean }) {
 const card: React.CSSProperties = { background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius, 10px)', padding: '16px 18px' }
 const chip: React.CSSProperties = { fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 10px' }
 const pre: React.CSSProperties = { marginTop: 8, padding: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)', overflow: 'auto', maxHeight: 280, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
+const badge: React.CSSProperties = { fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 999, padding: '2px 9px', textTransform: 'none', letterSpacing: 0, fontWeight: 500 }
+const epBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px', fontFamily: 'inherit' }
+const epBtnSel: React.CSSProperties = { borderColor: '#615cf5', background: 'rgba(97,92,245,0.09)' }
+// Cockpit: three panes (Draft · Test&result · Refine) that fill one screen —
+// each pane scrolls internally so the page never scrolls to iterate. Stacks on
+// narrow widths.
+const COCKPIT_CSS = `
+.apib-stage{display:grid;grid-template-columns:minmax(220px,22%) minmax(0,1fr) minmax(280px,27%);gap:12px;height:min(72vh,720px);}
+.apib-pane{background:var(--bg);border:1px solid var(--border2);border-radius:10px;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+.apib-head{padding:10px 14px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);}
+.apib-scroll{overflow:auto;padding:14px;display:flex;flex-direction:column;gap:16px;}
+.apib-probebar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border2);flex-shrink:0;flex-wrap:wrap;}
+.apib-result{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.apib-refinebody{flex:1;min-height:0;padding:14px;display:flex;flex-direction:column;gap:10px;}
+@media (max-width:1024px){.apib-stage{grid-template-columns:1fr;height:auto;}.apib-pane{min-height:300px;}}
+`
