@@ -101,8 +101,13 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/${{ matrix.dockerfile }}
           push: true
-          # Multi-arch so both Apple Silicon and Intel/AMD hosts can pull natively.
-          platforms: linux/amd64,linux/arm64
+          # amd64 only: deployment targets are x86_64 (the AWS box is Intel), and
+          # building linux/arm64 under QEMU emulation on GitHub-hosted runners is
+          # extremely slow — it repeatedly blew past the job timeout and cancelled
+          # releases. amd64-only builds natively in a few minutes. If an arm64 host
+          # ever needs images, add linux/arm64 back here, ideally on a native arm
+          # runner (e.g. ubuntu-24.04-arm) rather than emulation.
+          platforms: linux/amd64
           tags: |
             ${{ steps.img.outputs.name }}:${{ steps.ver.outputs.version }}
             ${{ steps.img.outputs.name }}:latest
