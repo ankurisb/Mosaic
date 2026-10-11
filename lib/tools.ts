@@ -1345,12 +1345,16 @@ async function callApi(connectionId: string, method: string, path: string, body?
   const db = getDb()
   const connRows = await db`
     SELECT c.*, s.base_url, s.auth_type, s.auth_config, s.default_headers,
-           s.api_version, s.version_header, s.request_timeout_ms
+           s.api_version, s.version_header, s.request_timeout_ms,
+           COALESCE(s.status,'published') AS service_status
     FROM api_connections c
     JOIN api_services s ON s.id = c.service_id
     WHERE c.id = ${connectionId}`
   if (!connRows.length) throw new Error(`API connection "${connectionId}" not found.`)
   const conn = connRows[0] as Record<string, unknown>
+  // Draft sources are not live — refuse even if an id leaks through (defence in depth;
+  // the chat tool list already excludes drafts).
+  if (conn.service_status === 'draft') throw new Error(`API source for "${connectionId}" is a draft — publish it before using it in chat.`)
   const base = (conn.base_url as string).replace(/\/$/, '')
   const basePath = ((conn.base_path as string) || '').replace(/\/$/, '')
 

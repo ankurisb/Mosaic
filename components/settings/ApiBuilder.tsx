@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { INP, Btn, Field, Alert, Spinner } from './ui'
 
 // Conversational AI builder for a Type-2 live API source. Describe the API
@@ -8,7 +8,18 @@ import { INP, Btn, Field, Alert, Spinner } from './ui'
 // back, and register it — the same experience as iterating in a chat.
 //
 // Backend: /api/api-builder (generate|refine|fetch_docs), /api/test-api
-// (candidate-mode live probe), /api/services (createService + createConnection).
+// (candidate-mode live probe), /api/services (saveApiSource for draft/publish,
+// getServiceConfig to resume a draft).
+
+// Credential fields per auth type — used to split a resumed draft's auth_config
+// into prefilled credential inputs (the structural fields stay in auth_config).
+const CRED_FIELDS: Record<string, { field: string; label: string; secret: boolean }[]> = {
+  bearer: [{ field: 'token', label: 'Bearer token', secret: true }],
+  api_key_header: [{ field: 'key', label: 'API key', secret: true }],
+  basic: [{ field: 'username', label: 'Username', secret: false }, { field: 'password', label: 'Password', secret: true }],
+  oauth2_client: [{ field: 'client_id', label: 'Client ID', secret: false }, { field: 'client_secret', label: 'Client secret', secret: true }, { field: 'refresh_token', label: 'Refresh token', secret: true }],
+  session_token: [{ field: 'username', label: 'Username', secret: false }, { field: 'password', label: 'Password', secret: true }],
+}
 
 interface MissingField { field: string; label?: string; secret?: boolean }
 interface ConnDraft {
@@ -33,7 +44,7 @@ interface ProbeResult { ok: boolean; status: number; latencyMs?: number; url?: s
 
 const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'yaml', 'yml', 'csv', 'har']
 
-export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => void; onRegistered: () => void }) {
+export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resumeDraftId }: { onClose: () => void; onRegistered: () => void; onDraftSaved?: () => void; resumeDraftId?: string }) {
   const [step, setStep] = useState<'describe' | 'review'>('describe')
   const [description, setDescription] = useState('')
   const [docsUrl, setDocsUrl] = useState('')
@@ -49,6 +60,8 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [registered, setRegistered] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+  const [draftServiceId, setDraftServiceId] = useState<string | null>(resumeDraftId || null)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -63,6 +76,49 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
     [service.auth_config, secrets],
   )
   const unfilledSecrets = missing.filter(m => m.secret && !pruneEmpty(secrets)[m.field])
+
+  // Resume a saved draft: load its config, pull the credentials out of auth_config
+  // into the (prefilled) credential fields, rebuild the candidate, and open review.
+  useEffect(() => {
+    if (!resumeDraftId) return
+    let cancelled = false
+    ;(async () => {
+      setBusy('Loading draft…'); setError(null)
+      try {
+        const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getServiceConfig', id: resumeDraftId }) })
+        const d = await r.json()
+        if (cancelled) return
+        if (!d.service) { setError(d.error || 'Could not load draft'); setBusy(null); return }
+        const authType = String(d.service.auth_type || 'bearer')
+        const authConfig: Record<string, string> = { ...(d.service.auth_config || {}) }
+        const secretVals: Record<string, string> = {}
+        const missingList: MissingField[] = []
+        for (const cf of (CRED_FIELDS[authType] || [])) {
+          missingList.push(cf)
+          const v = authConfig[cf.field]
+          if (v !== undefined && v !== null && v !== '') { secretVals[cf.field] = String(v); delete authConfig[cf.field] }
+        }
+        const conns: ConnDraft[] = (d.connections || []).map((c: Record<string, unknown>) => ({
+          label: c.label as string, description: c.description as string, base_path: c.base_path as string,
+          pagination_style: c.pagination_style as string, pagination_limit_param: c.pagination_limit_param as string,
+          pagination_cursor_param: c.pagination_cursor_param as string, pagination_data_path: (c.pagination_data_path as string) ?? null,
+        }))
+        setSecrets(secretVals)
+        applyCandidate({
+          service: { label: d.service.label, base_url: d.service.base_url, auth_type: authType, auth_config: authConfig, default_headers: d.service.default_headers || {}, api_version: d.service.api_version, version_header: d.service.version_header },
+          connections: conns,
+          probe: { connection_index: 0, method: 'GET', path: conns[0]?.base_path ? '' : '/' },
+          missing: missingList,
+          message: 'Resumed draft — credentials filled in. Probe to pick up where you left off.',
+          ready_to_probe: true,
+        })
+        setStep('review')
+      } catch { if (!cancelled) setError('Could not load draft') }
+      if (!cancelled) setBusy(null)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeDraftId])
 
   async function addFiles(files: FileList | null) {
     if (!files) return
@@ -163,14 +219,16 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
     setBusy(null)
   }
 
-  async function register() {
-    if (!candidate) return
-    setBusy('Registering the source…'); setError(null)
-    try {
-      const svcRes = await fetch('/api/services', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'createService',
+  // Upsert the whole source (service + connections) with a lifecycle status.
+  // Reuses the draft's id so re-saving/publishing updates in place, not a dup.
+  async function persist(status: 'draft' | 'published'): Promise<string | null> {
+    const r = await fetch('/api/services', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'saveApiSource',
+        id: draftServiceId || undefined,
+        status,
+        service: {
           label: service.label || 'API source',
           base_url: service.base_url,
           auth_type: service.auth_type || 'bearer',
@@ -178,29 +236,30 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
           default_headers: service.default_headers || {},
           api_version: service.api_version || null,
           version_header: service.version_header || null,
-        }),
-      })
-      const svc = await svcRes.json()
-      if (!svc.id) { setError(svc.error || 'Could not create service'); setBusy(null); return }
-      for (const c of connections) {
-        await fetch('/api/services', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'createConnection',
-            service_id: svc.id,
-            label: c.label || 'Endpoint',
-            description: c.description || null,
-            base_path: c.base_path || null,
-            pagination_style: c.pagination_style || 'none',
-            pagination_limit_param: c.pagination_limit_param || 'limit',
-            pagination_cursor_param: c.pagination_cursor_param || 'cursor',
-            pagination_data_path: c.pagination_data_path || null,
-          }),
-        })
-      }
-      setRegistered(service.label || 'API source')
-    } catch { setError('Registration failed') }
+        },
+        connections,
+      }),
+    })
+    const d = await r.json()
+    if (!d.id) { setError(d.error || 'Save failed'); return null }
+    setDraftServiceId(d.id)
+    return d.id
+  }
+
+  async function saveDraft() {
+    if (!candidate) return
+    setBusy('Saving draft…'); setError(null); setInfo(null)
+    const id = await persist('draft')
     setBusy(null)
+    if (id) { setInfo('Saved as draft — it’s in your API connections list, marked Draft. It won’t be used in chat until you publish.'); onDraftSaved?.() }
+  }
+
+  async function register() {
+    if (!candidate) return
+    setBusy('Publishing…'); setError(null); setInfo(null)
+    const id = await persist('published')
+    setBusy(null)
+    if (id) setRegistered(service.label || 'API source')
   }
 
   // ── Registered confirmation ──────────────────────────────────────────────
@@ -231,6 +290,7 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
       </div>
 
       {error && <div style={{ marginBottom: 12 }}><Alert variant="error">{error}</Alert></div>}
+      {info && <div style={{ marginBottom: 12 }}><Alert variant="success">{info}</Alert></div>}
 
       {/* Step 1 — Describe */}
       {step === 'describe' && (
@@ -376,8 +436,10 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
                   style={{ ...INP, flex: 1, minHeight: 110, resize: 'none', fontFamily: 'inherit' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <Btn onClick={refine} disabled={!!busy} style={{ width: '100%' }}>Refine</Btn>
-                  <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok} style={{ width: '100%' }}>Register source</Btn>
-                  {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Register unlocks once a probe succeeds.</span>}
+                  <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok} style={{ width: '100%' }}>Publish source</Btn>
+                  {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Publish unlocks once a probe succeeds.</span>}
+                  <Btn onClick={saveDraft} disabled={!!busy} style={{ width: '100%' }}>Save as draft</Btn>
+                  <span style={{ fontSize: 11, color: 'var(--text4)' }}>A draft stays off chat until you publish.</span>
                   {busy && busy !== 'Probing the live source…' && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}
                   <Btn size="sm" onClick={() => setStep('describe')} style={{ width: '100%' }}>Back to describe</Btn>
                 </div>
