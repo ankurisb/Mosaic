@@ -62,6 +62,9 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   const [registered, setRegistered] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [draftServiceId, setDraftServiceId] = useState<string | null>(resumeDraftId || null)
+  const [agentUser, setAgentUser] = useState('')
+  const [agentPass, setAgentPass] = useState('')
+  const [transcript, setTranscript] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -163,6 +166,41 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
       applyCandidate(d.candidate)
       setStep('review')
     } catch { setError('Generation failed') }
+    setBusy(null)
+  }
+
+  // Agentic build: Mosaic investigates the API itself (discovers the spec, logs
+  // in and reads the real token path, probes) and lands a working, already-probed
+  // candidate in the cockpit — the heavy lifting done for you.
+  async function buildWithAgent() {
+    setBusy('Mosaic is investigating the API…'); setError(null); setInfo(null); setTranscript([])
+    try {
+      const credentials: Record<string, string> = {}
+      if (agentUser.trim()) credentials.username = agentUser.trim()
+      if (agentPass) credentials.password = agentPass
+      const r = await fetch('/api/api-builder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'agent_build', description, materials: materials || undefined, credentials: Object.keys(credentials).length ? credentials : undefined }),
+      })
+      const d = await r.json()
+      if (Array.isArray(d.fetched) && d.fetched.length) {
+        setAttachments(a => [...a, ...d.fetched.map((f: { url: string; ok: boolean; note?: string }) => f.ok ? `${f.url} — read` : `${f.url} — couldn’t read (${f.note || 'failed'})`)])
+      }
+      setTranscript(Array.isArray(d.transcript) ? d.transcript : [])
+      if (d.candidate) {
+        const authType = String((d.candidate.service || {}).auth_type || 'bearer')
+        const secretVals: Record<string, string> = {}
+        const missingList: MissingField[] = []
+        for (const cf of (CRED_FIELDS[authType] || [])) { missingList.push(cf); if (credentials[cf.field]) secretVals[cf.field] = credentials[cf.field] }
+        setSecrets(secretVals)
+        applyCandidate({ ...d.candidate, missing: (d.candidate.missing && d.candidate.missing.length) ? d.candidate.missing : missingList })
+        if (d.probe) setProbe(d.probe as ProbeResult)   // seed the agent's successful probe
+        setStep('review')
+        if (!d.ok) setError(d.reason || 'Mosaic couldn’t fully verify the connection — review and probe below.')
+      } else {
+        setError(d.reason || d.error || 'Mosaic couldn’t build the connection. See what it tried below, then try Quick draft.')
+      }
+    } catch { setError('Agent build failed') }
     setBusy(null)
   }
 
@@ -320,14 +358,36 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
               </div>
             )}
             <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>
-              Paste doc links straight into the description — Mosaic reads them automatically (including an llms.txt index). Secrets are collected later in masked fields — don’t paste passwords here.
+              Paste doc links straight into the description — Mosaic reads them automatically (including an llms.txt index).
             </div>
           </div>
 
-          <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn variant="primary" onClick={generate} disabled={!description.trim() || !!busy}>Draft connection</Btn>
+          <div style={{ marginTop: 14 }}>
+            <Field label="Credentials (optional)" hint="Give Mosaic the login so it can sign in, read where the token really is, and verify endpoints itself — the agentic path. Stored encrypted on publish.">
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input value={agentUser} onChange={e => setAgentUser(e.target.value)} placeholder="username / email" autoComplete="off" style={{ ...INP, flex: 1, minWidth: 160 }} />
+                <input value={agentPass} onChange={e => setAgentPass(e.target.value)} placeholder="password" type="password" autoComplete="off" style={{ ...INP, flex: 1, minWidth: 160 }} />
+              </div>
+            </Field>
+          </div>
+
+          <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn variant="primary" onClick={buildWithAgent} disabled={!description.trim() || !!busy}>Build it with AI</Btn>
+            <Btn onClick={generate} disabled={!description.trim() || !!busy}>Quick draft</Btn>
             {busy && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 8 }}>
+            <strong>Build it with AI</strong> investigates the API end-to-end (finds the spec, logs in, probes) and lands a verified connection. <strong>Quick draft</strong> just drafts one for you to probe.
+          </div>
+
+          {transcript.length > 0 && (
+            <div style={{ ...card, marginTop: 14, background: 'var(--bg3)' }}>
+              <SectionLabel>What Mosaic did</SectionLabel>
+              <ol style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {transcript.map((t, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.45 }}>{t}</li>)}
+              </ol>
+            </div>
+          )}
         </div>
       )}
 
@@ -336,6 +396,14 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
         <>
           <style>{COCKPIT_CSS}</style>
           {candidate.message && <div style={{ marginBottom: 12 }}><Alert variant="info">{candidate.message}</Alert></div>}
+          {transcript.length > 0 && (
+            <details style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text3)' }}>What Mosaic did ({transcript.length} steps)</summary>
+              <ol style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {transcript.map((t, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.45 }}>{t}</li>)}
+              </ol>
+            </details>
+          )}
           <div className="apib-stage">
 
             {/* ── Draft (reference) ── */}
