@@ -170,6 +170,9 @@ export async function setupDatabase() {
   await sql`ALTER TABLE api_services ADD COLUMN auth_status     TEXT DEFAULT 'unknown'`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
   await sql`ALTER TABLE api_services ADD COLUMN last_auth_error TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
   await sql`ALTER TABLE api_services ADD COLUMN last_auth_check INTEGER`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  // Lifecycle: 'published' (live, usable by chat) or 'draft' (saved mid-build, hidden from chat).
+  // Existing rows default to 'published' so nothing changes on upgrade.
+  await sql`ALTER TABLE api_services ADD COLUMN status TEXT DEFAULT 'published'`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
 
   await sql`CREATE TABLE IF NOT EXISTS api_connections (
     id                      TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

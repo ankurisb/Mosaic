@@ -5,7 +5,7 @@ import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
 import ApiBuilder from './ApiBuilder'
 
-interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null }
+interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null; status?: string }
 interface ApiConn { id: string; service_id: string; label: string; description: string; base_path: string; pagination_style: string }
 
 interface TryItState {
@@ -557,6 +557,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true)
   const [showSvcForm, setShowSvcForm] = useState(false)
   const [showBuilder, setShowBuilder] = useState(false)
+  const [resumeDraftId, setResumeDraftId] = useState<string | null>(null)
   const [svcForm, setSvcForm] = useState<Record<string, string>>(SVC_EMPTY)
   const [editingSvc, setEditingSvc] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -942,7 +943,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             <Btn onClick={() => { setShowOpenApiZone(s => !s); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') }}> Import OpenAPI</Btn>
             <Btn onClick={() => { setShowSapForm(s => !s); setSapError('') }} style={{ background: 'var(--bg)', border: '1px solid rgba(0,112,243,0.3)', color: '#0070f3' }}> SAP S/4HANA</Btn>
             <Btn onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add manually</Btn>
-            <Btn variant="primary" onClick={() => { setShowBuilder(b => !b); setError('') }}>✨ Add with AI</Btn>
+            <Btn variant="primary" onClick={() => { setResumeDraftId(null); setShowBuilder(b => !b); setError('') }}>✨ Add with AI</Btn>
           </div>
         )}
       </div>
@@ -955,8 +956,11 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       {user.role === 'admin' && showBuilder && (
         <div style={{ margin: '12px 0 20px' }}>
           <ApiBuilder
-            onClose={() => setShowBuilder(false)}
-            onRegistered={() => { setShowBuilder(false); load() }}
+            key={resumeDraftId || 'new'}
+            resumeDraftId={resumeDraftId || undefined}
+            onClose={() => { setShowBuilder(false); setResumeDraftId(null) }}
+            onRegistered={() => { setShowBuilder(false); setResumeDraftId(null); load() }}
+            onDraftSaved={() => load()}
           />
         </div>
       )}
@@ -1640,10 +1644,13 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', cursor: 'pointer' }} onClick={() => toggle(svc.id)}>
                 <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-sm)', background: p?.color || (svc.label.startsWith('SAP') ? '#0070f3' : 'var(--bg4)'), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: svc.label.startsWith('SAP') ? 9 : 12, fontWeight: 700, flexShrink: 0 }}>{svc.label.startsWith('SAP') ? 'SAP' : svc.label.slice(0, 2).toUpperCase()}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{svc.label} <Badge label={svc.environment} color={envColor(svc.environment)} />{svc.auth_status === 'broken' && (<span title={String(svc.last_auth_error || 'Authentication failed')} style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 500, background: 'var(--danger-bg, #fee2e2)', color: 'var(--danger, #b91c1c)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />Auth broken</span>)}{svc.auth_status === 'ok' && (<span title="Last auth check succeeded" style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--success, #15803d)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} /></span>)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{svc.label} <Badge label={svc.environment} color={envColor(svc.environment)} />{svc.status === 'draft' && (<span title="Saved mid-build — not used in chat until published" style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: 'rgba(184,134,11,.14)', color: 'var(--warn, #b8860b)' }}>Draft</span>)}{svc.auth_status === 'broken' && (<span title={String(svc.last_auth_error || 'Authentication failed')} style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 500, background: 'var(--danger-bg, #fee2e2)', color: 'var(--danger, #b91c1c)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />Auth broken</span>)}{svc.auth_status === 'ok' && (<span title="Last auth check succeeded" style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--success, #15803d)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} /></span>)}</div>
                   <div style={{ fontSize: 12, color: 'var(--text3)' }}>{svc.base_url} . {svc.auth_type} . {svcConns.length} connection{svcConns.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                  {user.role === 'admin' && svc.status === 'draft' && (
+                    <Btn size="sm" variant="primary" onClick={() => { setResumeDraftId(svc.id); setShowBuilder(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Resume</Btn>
+                  )}
                   <Btn size="sm" onClick={() => { openTryIt(svc, null) }}> Try</Btn>
                   {user.role === 'admin' && <>
                     <Btn size="sm" onClick={() => { const s = svc as unknown as Record<string,unknown>; setSvcForm({ ...SVC_EMPTY, label: String(s.label||''), base_url: String(s.base_url||''), environment: String(s.environment||'production'), auth_type: String(s.auth_type||'bearer'), rate_limit_rpm: String(s.rate_limit_rpm||''), request_timeout_ms: String(s.request_timeout_ms||30000), retry_count: String(s.retry_count||3) }); setEditingSvc(svc.id); setShowSvcForm(true); window.scrollTo({top:0,behavior:'smooth'}) }}>Edit</Btn>

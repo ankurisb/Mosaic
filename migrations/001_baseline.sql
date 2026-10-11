@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS api_services (
   auth_status        TEXT DEFAULT 'unknown',
   last_auth_error    TEXT,
   last_auth_check    INTEGER,
+  status             TEXT DEFAULT 'published',
   created_at         TEXT DEFAULT (datetime('now'))
 );
 

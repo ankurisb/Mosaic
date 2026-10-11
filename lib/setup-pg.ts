@@ -120,8 +120,11 @@ export async function setupDatabasePostgres(): Promise<void> {
     auth_status         TEXT DEFAULT 'unknown',
     last_auth_error     TEXT,
     last_auth_check     BIGINT,
+    status              TEXT DEFAULT 'published',
     created_at          TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
+  // Lifecycle status for existing deployments ('published' live / 'draft' hidden from chat).
+  await sql`ALTER TABLE api_services ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'published'`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS api_connections (
     id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
