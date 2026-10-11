@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.23] - 2026-10-11
+
+### Changed
+- **AI API builder — cockpit layout.** The review step is now a one-screen, three-column layout: Draft (connection, endpoints, credentials) · Test & result (probe bar pinned on top, the live response persists in the middle) · Refine ("tell Mosaic what to fix" + Refine/Register, pinned on the right). You probe, read the result, and refine side by side without scrolling. Panes scroll internally and stack on narrow screens.
+- **AI API builder — reads doc links automatically.** "Draft connection" now auto-fetches any URLs in the description (SSRF-guarded, public web only; redirects followed; HTML reduced to text), and expands an `llms.txt` index once to a few of its listed same-host pages — so pasting a docs link (or its llms.txt) just works, with no manual copy/paste step. The builder shows which pages it read.
+- Genericised the builder's illustrative examples (placeholder, generator prompt) — no vendor-specific names.
+
 ## [1.3.22] - 2026-10-10
 
 ### Added
