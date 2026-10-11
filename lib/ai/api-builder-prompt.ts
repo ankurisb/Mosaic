@@ -21,7 +21,7 @@ const SYSTEM = `You configure a live REST/HTTP API as a data source for Mosaic. 
 You output ONLY a single JSON object (no prose, no markdown, no code fences) with this shape:
 {
   "service": {
-    "label": "<short human name, e.g. 'Terralayr'>",
+    "label": "<short human name, e.g. 'Orders API'>",
     "base_url": "https://api.host.com",            // scheme + host (+ stable prefix), NO trailing slash
     "auth_type": "bearer | api_key_header | basic | oauth2_client | session_token | custom_headers",
     "auth_config": { /* fields for the chosen auth_type — see below */ },
@@ -41,7 +41,7 @@ You output ONLY a single JSON object (no prose, no markdown, no code fences) wit
     }
   ],
   "probe": { "connection_index": 0, "method": "GET", "path": "/" },   // a cheap first call that proves auth + shape
-  "missing": [ { "field": "password", "label": "Terralayr password", "secret": true } ],  // config the user must still supply
+  "missing": [ { "field": "password", "label": "API password", "secret": true } ],  // config the user must still supply
   "message": "<one or two sentences: what you concluded and what (if anything) you need from the user>",
   "ready_to_probe": true
 }

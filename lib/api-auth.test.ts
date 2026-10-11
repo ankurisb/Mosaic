@@ -23,13 +23,13 @@ describe('getSessionToken', () => {
       return { body: { access_token: 'tok-123' } }
     })
     const cfg: AuthConfig = {
-      login_url: 'https://api.trlyr.com/auth/public/authenticate',
+      login_url: 'https://api.example.com/auth/login',
       username: 'u@x.com', password: 'secret',
     }
-    const r = await getSessionToken('svc-json', 'https://api.trlyr.com', cfg)
+    const r = await getSessionToken('svc-json', 'https://api.example.com', cfg)
     expect(r.ok).toBe(true)
     if (r.ok) { expect(r.token).toBe('tok-123'); expect(r.header).toBe('Authorization'); expect(r.prefix).toBe('Bearer') }
-    expect(seenUrl).toBe('https://api.trlyr.com/auth/public/authenticate')
+    expect(seenUrl).toBe('https://api.example.com/auth/login')
     expect(seenBody).toEqual({ username: 'u@x.com', password: 'secret' })
   })
 

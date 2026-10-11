@@ -232,7 +232,7 @@ export default function ApiBuilder({ onClose, onRegistered }: { onClose: () => v
         <div style={card}>
           <Field label="What API do you want to connect?" hint="Base URL, what it returns, how auth works — whatever you know.">
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5}
-              placeholder="e.g. Terralayr — base https://api.trlyr.com. Auth is a username/password login at /auth/public/authenticate that returns an access_token used as a Bearer. I want auctions, revenue and asset monitoring."
+              placeholder="e.g. a REST API at https://api.example.com. Auth is a username/password login at /auth/login that returns an access_token used as a Bearer. I want the orders, invoices and usage endpoints."
               style={{ ...INP, resize: 'vertical', fontFamily: 'inherit' }} />
           </Field>
 

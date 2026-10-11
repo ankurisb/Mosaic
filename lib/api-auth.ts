@@ -12,8 +12,8 @@
 //                        client_credentials grant; configurable header prefix)
 //   - session_token     (generic username/password login endpoint that returns
 //                        a token in its JSON body; configurable login URL, body
-//                        shape, token JSON-path and header — covers APIs like
-//                        Terralayr: POST creds -> {access_token} -> Bearer)
+//                        shape, token JSON-path and header — e.g. POST creds ->
+//                        {access_token} -> Bearer on every request)
 //   - custom_headers    (arbitrary headers JSON, no further interpretation)
 //
 // OAuth2 grant flows handled inside getOAuth2AccessToken:

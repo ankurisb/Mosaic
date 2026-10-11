@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { applyAuth, invalidateSessionToken, type AuthConfig } from './api-auth'
 
 // End-to-end exercise of the session_token flow against a REAL local HTTP
-// server that mimics a Terralayr-shaped API: POST a JSON login, get back an
+// server that mimics a login-based API: POST a JSON login, get back an
 // access_token, then require `Authorization: Bearer <token>` on data calls.
 // This is the same path the candidate probe (/api/test-api) and the live
 // call_api tool run, minus the route's SSRF guard (route-level, not here).
