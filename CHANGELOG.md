@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.25] - 2026-10-12
+
+### Added
+- **Agentic API builder.** "Build it with AI" now investigates the API end-to-end instead of guessing from one prompt: it discovers the OpenAPI/Swagger spec at common locations, reads the auth scheme and login endpoint, **logs in for real and inspects the raw response to find where the token actually lives** (e.g. `tokens.access`, not an assumed `access_token`), then probes a cheap endpoint to confirm the whole chain — iterating until it works. It lands a verified, already-probed connection in the cockpit with a transcript of what it did. Optional credentials in the describe step let it self-drive; "Quick draft" keeps the one-shot path. Credentials are injected server-side and never appear in a model prompt or the candidate.
+- Shared, SSRF-guarded probe lib (`runCandidateProbe` + `inspectLogin`) and an OpenAPI/Swagger summariser so large specs fit the agent's context.
+
 ## [1.3.24] - 2026-10-11
 
 ### Added
