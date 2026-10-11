@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.24] - 2026-10-11
+
+### Added
+- **API sources — draft vs published.** A custom API source can now be saved mid-build as a **draft** and resumed later (handy when testing a tricky API takes a while). In the AI builder cockpit: **Save as draft** (always available) and **Publish** (unlocks once a probe succeeds). Drafts appear in the API connections list with a **Draft** badge and a **Resume** action that reopens the cockpit with credentials pre-filled, ready to probe where you left off.
+
+### Changed
+- **Chat uses only published API connections.** The chat tool list now filters to published sources, and `call_api` refuses a draft as defence-in-depth. (Previously chat could use any configured connection, tested or not — this closes that gap.) Existing connections default to published, so nothing changes on upgrade.
+
 ## [1.3.23] - 2026-10-11
 
 ### Changed
