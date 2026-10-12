@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.40] - 2026-10-12
+
+### Fixed
+- **Chat source picker was missing Prism, file servers, and MCP servers.** The picker only loaded databases, API connections, and Airbyte, so a newly added Prism instance (or file server / MCP server) never appeared and couldn't be selected. It now loads all source types.
+
+### Changed
+- **Source picker is organised by category with search.** Instead of one long flat list (which got unwieldy with dozens of API connection groups), sources are grouped into collapsible categories — Databases, APIs, File servers, Prism, Airbyte, MCP — each with a count. Large categories start collapsed, small ones expanded, and a search box at the top filters across all sources (by name, service, or host). API connections show their parent service inline. Pinning no longer closes the menu, so several sources can be selected in one go.
+
 ## [1.3.39] - 2026-10-12
 
 ### Added

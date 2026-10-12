@@ -14,10 +14,20 @@ import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
 import type { RcaBlock, RcaAction } from '@/lib/rca'
 
 interface DataSource {
-  id: string; label: string; type: 'db' | 'api' | 'airbyte'
+  id: string; label: string; type: 'db' | 'api' | 'airbyte' | 'prism' | 'file_server' | 'mcp'
   dialect?: string; host?: string; database_name?: string
   service_label?: string; base_path?: string
 }
+
+// Category grouping for the source picker.
+const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
+  { key: 'db', label: 'Databases' },
+  { key: 'api', label: 'APIs' },
+  { key: 'file_server', label: 'File servers' },
+  { key: 'prism', label: 'Prism' },
+  { key: 'airbyte', label: 'Airbyte' },
+  { key: 'mcp', label: 'MCP servers' },
+]
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
 interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number }
@@ -313,6 +323,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [convSearch, setConvSearch] = useState('')
   const [plusOpen, setPlusOpen] = useState(false)
   const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
+  const [srcSearch, setSrcSearch] = useState('')
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -360,14 +372,20 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   // Load available data sources for chips + @ mention
   const loadSources = useCallback(async () => {
     try {
-      const [dbRes, apiRes, abRes] = await Promise.all([
+      const [dbRes, apiRes, abRes, prismRes, fileRes, mcpRes] = await Promise.all([
         fetch('/api/connections'),
         fetch('/api/services'),
         fetch('/api/airbyte?action=list'),
+        fetch('/api/prism-instances'),
+        fetch('/api/file-servers'),
+        fetch('/api/mcp-connections'),
       ])
-      const dbData = await dbRes.json()
-      const apiData = await apiRes.json()
-      const abData = await abRes.json()
+      const dbData = await dbRes.json().catch(() => ({}))
+      const apiData = await apiRes.json().catch(() => ({}))
+      const abData = await abRes.json().catch(() => ({}))
+      const prismData = await prismRes.json().catch(() => ({}))
+      const fileData = await fileRes.json().catch(() => ({}))
+      const mcpData = await mcpRes.json().catch(() => ({}))
 
       // Direct DB connections
       const dbs: DataSource[] = (dbData.connections || []).map((c: Record<string,unknown>) => ({
@@ -392,11 +410,42 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         host: String(inst.url || ''), database_name: String(inst.workspace_id || ''),
       }))
 
-      setDataSources([...dbs, ...apis, ...airbytes])
+      // Prism IoT instances
+      const prisms: DataSource[] = (prismData.instances || []).map((p: Record<string,unknown>) => ({
+        id: String(p.id), label: String(p.label || 'Prism'), type: 'prism' as const,
+        host: String(p.base_url || ''), database_name: String(p.environment || ''),
+      }))
+
+      // File servers / local folders
+      const files: DataSource[] = (fileData.file_servers || []).map((f: Record<string,unknown>) => ({
+        id: String(f.id), label: String(f.label || 'File server'), type: 'file_server' as const,
+        host: String(f.host || f.transport || ''), dialect: String(f.transport || ''),
+      }))
+
+      // MCP servers
+      const mcps: DataSource[] = (mcpData.mcp_connections || []).map((m: Record<string,unknown>) => ({
+        id: String(m.id), label: String(m.label || 'MCP server'), type: 'mcp' as const,
+        host: String(m.endpoint_url || ''),
+      }))
+
+      setDataSources([...dbs, ...apis, ...files, ...prisms, ...airbytes, ...mcps])
     } catch {}
   }, [])
 
   useEffect(() => { loadSources() }, [loadSources])
+  // Default the picker's categories open when small, collapsed when large (so a
+  // 40-endpoint API service doesn't flood the list). Runs once sources arrive.
+  const catsInit = useRef(false)
+  useEffect(() => {
+    if (catsInit.current || dataSources.length === 0) return
+    catsInit.current = true
+    const open = new Set<string>()
+    for (const c of SOURCE_CATEGORIES) {
+      const n = dataSources.filter(s => s.type === c.key).length
+      if (n > 0 && n <= 8) open.add(c.key)
+    }
+    setOpenCats(open)
+  }, [dataSources])
 
   // Load conversations from DB on mount
   useEffect(() => {
@@ -688,6 +737,15 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     )
     if (src.type === 'api') return (
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="3" width="10" height="6" rx="1.5"/><path d="M3 6h2M7 6h2"/></svg>
+    )
+    if (src.type === 'file_server') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M1 3.5l1-1.5h3l1 1.5h4V10H1z"/></svg>
+    )
+    if (src.type === 'prism') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"><path d="M6 1L1 10h10z"/></svg>
+    )
+    if (src.type === 'mcp') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="6" cy="3" r="1.5"/><circle cx="2.5" cy="9" r="1.5"/><circle cx="9.5" cy="9" r="1.5"/><path d="M6 4.5v2M5 7.5L3.5 8M7 7.5L8.5 8"/></svg>
     )
     const d = (src.dialect || '').toLowerCase()
     if (d === 'influxdb') return (
@@ -1057,27 +1115,67 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     Data sources
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginLeft: 'auto', transform: plusSubmenu === 'sources' ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><path d="M3 2l4 3-4 3"/></svg>
                   </button>
-                  {plusSubmenu === 'sources' && (
-                    <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', maxHeight: 200, overflowY: 'auto' }}>
-                      {dataSources.length === 0
-                        ? <div style={{ padding: '8px 14px 8px 38px', fontSize: 12, color: 'var(--text4)' }}>No sources connected yet</div>
-                        : dataSources.map(src => {
-                          const isPinned = !!pinnedSources.find(s => s.id === src.id)
-                          return (
-                            <button key={src.id}
-                              onClick={() => { isPinned ? removePinned(src.id) : setPinnedSources(p => [...p, src]); setPlusOpen(false); setPlusSubmenu(null) }}
-                              style={{ width: '100%', padding: '8px 14px 8px 38px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', fontSize: 12, color: 'var(--text)' }}
-                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                              {sourceIcon(src)}
-                              <span style={{ flex: 1 }}>{src.label}</span>
-                              {isPinned && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
-                            </button>
-                          )
-                        })
-                      }
-                    </div>
-                  )}
+                  {plusSubmenu === 'sources' && (() => {
+                    const q = srcSearch.trim().toLowerCase()
+                    const matches = (s: DataSource) => !q || s.label.toLowerCase().includes(q) || (s.service_label || '').toLowerCase().includes(q) || (s.host || '').toLowerCase().includes(q)
+                    const cats = SOURCE_CATEGORIES
+                      .map(c => ({ ...c, items: dataSources.filter(s => s.type === c.key && matches(s)) }))
+                      .filter(c => c.items.length > 0)
+                    const searching = q.length > 0
+                    const toggleCat = (k: string) => setOpenCats(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
+                    const total = dataSources.length
+                    return (
+                      <div style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                        {/* search */}
+                        <div style={{ padding: '8px 12px 8px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text4)', flexShrink: 0 }}><circle cx="5" cy="5" r="3.5"/><path d="M8 8l2.5 2.5"/></svg>
+                            <input value={srcSearch} onChange={e => setSrcSearch(e.target.value)} placeholder={`Search ${total} sources…`} autoFocus
+                              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text)', fontSize: 12.5, fontFamily: 'inherit' }} />
+                            {srcSearch && <button onClick={() => setSrcSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>}
+                          </div>
+                        </div>
+                        <div style={{ maxHeight: 280, overflowY: 'auto', paddingBottom: 4 }}>
+                          {total === 0 && <div style={{ padding: '8px 14px 8px 38px', fontSize: 12, color: 'var(--text4)' }}>No sources connected yet</div>}
+                          {total > 0 && cats.length === 0 && <div style={{ padding: '8px 14px 8px 38px', fontSize: 12, color: 'var(--text4)' }}>No sources match &ldquo;{srcSearch}&rdquo;</div>}
+                          {cats.map(cat => {
+                            const open = searching || openCats.has(cat.key)
+                            const pinnedInCat = cat.items.filter(s => pinnedSources.find(p => p.id === s.id)).length
+                            return (
+                              <div key={cat.key}>
+                                <button onClick={() => toggleCat(cat.key)}
+                                  style={{ width: '100%', padding: '7px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'inherit' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ color: 'var(--text4)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}><path d="M3 2l4 3-4 3"/></svg>
+                                  <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{cat.label}</span>
+                                  <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>{cat.items.length}</span>
+                                  {pinnedInCat > 0 && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--green)', fontWeight: 600 }}>{pinnedInCat} active</span>}
+                                </button>
+                                {open && cat.items.map(src => {
+                                  const isPinned = !!pinnedSources.find(s => s.id === src.id)
+                                  return (
+                                    <button key={src.id}
+                                      onClick={() => { isPinned ? removePinned(src.id) : setPinnedSources(p => [...p, src]) }}
+                                      style={{ width: '100%', padding: '7px 14px 7px 32px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', fontSize: 12, color: 'var(--text)' }}
+                                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                                      onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                      {sourceIcon(src)}
+                                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {src.label}
+                                        {src.type === 'api' && src.service_label && <span style={{ color: 'var(--text4)', marginLeft: 6, fontSize: 11 }}>· {src.service_label}</span>}
+                                      </span>
+                                      {isPinned && <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ color: 'var(--green)', flexShrink: 0 }}><path d="M2 5.5l2.5 2.5 4.5-5"/></svg>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   <button onClick={() => setPlusSubmenu(s => s === 'workflows' ? null : 'workflows')}
                     style={{ width: '100%', padding: '10px 14px', background: plusSubmenu === 'workflows' ? 'var(--bg3)' : 'none', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13, color: 'var(--text)' }}
