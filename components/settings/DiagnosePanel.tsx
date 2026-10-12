@@ -119,7 +119,7 @@ export default function DiagnosePanel({ svc, onClose, onApplied }: {
             </div>
           )}
           {turns.map((t, i) => t.role === 'user' ? (
-            <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '85%', background: 'var(--accent-bg, rgba(0,112,243,.1))', color: 'var(--text)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13 }}>{t.text}</div>
+            <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '85%', background: 'rgba(0,112,243,0.10)', border: '1px solid rgba(0,112,243,0.18)', color: 'var(--text)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13 }}>{t.text}</div>
           ) : (
             <div key={i} style={{ alignSelf: 'flex-start', maxWidth: '92%', background: 'var(--bg)', border: '1px solid var(--border)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--text)' }}>
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{t.text}</div>

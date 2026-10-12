@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.32] - 2026-10-12
+
+### Fixed
+- **"No diagnosis was produced" even though the agent answered.** The diagnose/assist loop only captured an answer if the model called its `finish` tool; when the model replied in prose instead (common for a simple question like "are all endpoints accessible?"), that answer was discarded and the UI showed the fallback message despite a successful probe. The shared engine now keeps the model's final prose as the answer, so Ask & refine and the Diagnose panel show the real response. Applies to both the builder chat and the chat copilot's `diagnose_api_connection`.
+- **Black bubble in the Ask & refine / Diagnose chat.** The user message bubble used `var(--accent-bg, …)`, which resolves to the near-black accent in this theme, rendering a black blob with invisible text. Switched to an explicit light-blue tint that reads correctly in both light and dark.
+
 ## [1.3.31] - 2026-10-12
 
 ### Changed

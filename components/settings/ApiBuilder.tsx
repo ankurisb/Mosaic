@@ -541,7 +541,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                     </div>
                   )}
                   {refineChat.map((t, i) => t.role === 'user' ? (
-                    <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '90%', background: 'var(--accent-bg, rgba(0,112,243,.1))', color: 'var(--text)', padding: '7px 10px', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>{t.text}</div>
+                    <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '90%', background: 'rgba(0,112,243,0.10)', border: '1px solid rgba(0,112,243,0.18)', color: 'var(--text)', padding: '7px 10px', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>{t.text}</div>
                   ) : (
                     <div key={i} style={{ alignSelf: 'flex-start', maxWidth: '96%', background: 'var(--surface)', border: '1px solid var(--border2)', padding: '8px 10px', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text)' }}>
                       <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{t.text}</div>

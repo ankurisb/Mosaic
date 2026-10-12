@@ -134,7 +134,7 @@ export function mergeStoredSecrets(proposedAuth: Record<string, unknown> | undef
 // troubleshooter (diagnoseApiConnection): same tools, same probing, different
 // system prompt and seed.
 async function driveAgent(opts: { system: string; seedUserText: string; creds: Record<string, string> }): Promise<{
-  finished?: AgentCandidate; finishedSummary?: string; transcript: string[]; lastProbe?: ProbeOutcome; error?: string
+  finished?: AgentCandidate; finishedSummary?: string; finalText?: string; transcript: string[]; lastProbe?: ProbeOutcome; error?: string
 }> {
   const creds = opts.creds
   const transcript: string[] = []
@@ -232,12 +232,21 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
     const model = await getDefaultModelId()
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.seedUserText }]
     let finished: AgentCandidate | undefined
+    let finalText = ''
+
+    const textOf = (content: Anthropic.ContentBlock[]) =>
+      content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map(b => b.text).join('\n').trim()
 
     for (let step = 0; step < MAX_STEPS; step++) {
       const resp = await client.messages.create({ model, max_tokens: 2000, system: opts.system, tools: TOOLS, messages })
       messages.push({ role: 'assistant', content: resp.content })
       const toolUses = resp.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      if (!toolUses.length) break
+      if (!toolUses.length) {
+        // The model answered in prose instead of calling finish — keep that text
+        // as the answer rather than discarding it.
+        finalText = textOf(resp.content)
+        break
+      }
       const toolResults: Anthropic.ToolResultBlockParam[] = []
       for (const tu of toolUses) {
         const { result, finished: fin } = await runTool(tu.name, (tu.input || {}) as Record<string, unknown>)
@@ -245,9 +254,13 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 20000) })
       }
       if (finished) break
+      // Preserve any prose the model wrote alongside its tool calls, as a fallback
+      // answer if it never reaches finish within the step budget.
+      const stepText = textOf(resp.content)
+      if (stepText) finalText = stepText
       messages.push({ role: 'user', content: toolResults })
     }
-    return { finished, finishedSummary, transcript, lastProbe }
+    return { finished, finishedSummary, finalText: finalText || undefined, transcript, lastProbe }
   } catch (e) {
     return { transcript, lastProbe, error: e instanceof Error ? e.message : String(e) }
   }
@@ -316,12 +329,15 @@ export async function diagnoseApiConnection(params: {
 
   const d = await driveAgent({ system: assist ? ASSIST_SYSTEM : DIAGNOSE_SYSTEM, seedUserText, creds: secrets })
   if (d.error) return { ok: false, transcript: d.transcript, probe: d.lastProbe, reason: d.error }
+  // The answer is the finish summary if the model called finish, else the prose
+  // it wrote directly. Either is a real answer to show the user.
+  const answer = d.finishedSummary || d.finalText
   return {
-    ok: !!d.finished,
+    ok: !!(d.finished || answer),
     candidate: d.finished,
-    diagnosis: d.finishedSummary,
+    diagnosis: answer,
     transcript: d.transcript,
     probe: d.lastProbe,
-    reason: d.finished ? undefined : 'No diagnosis was produced within the step budget.',
+    reason: answer ? undefined : 'The assistant couldn’t complete an answer in the step budget — try asking again, more specifically.',
   }
 }
