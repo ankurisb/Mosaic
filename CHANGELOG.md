@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.39] - 2026-10-12
+
+### Added
+- **Editable API source name in the AI builder.** The builder previously showed a read-only "API source" name with no way to change it. The Name field in the Draft pane is now an editable input, so you can name the source before (or while) building; the name is saved on Save as draft / Publish. The agent also now defaults the name to the API's own title (e.g. the OpenAPI `info.title`) instead of a generic "API source".
+
 ## [1.3.38] - 2026-10-12
 
 ### Fixed

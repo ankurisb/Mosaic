@@ -280,6 +280,12 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
     setChatBusy(false)
   }
 
+  // Rename the API source in place (editable in the Draft pane). Persisted by
+  // Save as draft / Publish like any other field.
+  function setServiceLabel(label: string) {
+    setCandidate(c => c ? { ...c, service: { ...(c.service || {}), label } } : c)
+  }
+
   // Apply a change the assistant proposed to the in-cockpit draft (re-attaching
   // the live secrets, which the server strips from its proposal). Does NOT
   // publish — you still probe / Publish when ready.
@@ -459,7 +465,15 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
               <div className="apib-scroll">
                 <div>
                   <SectionLabel>Connection</SectionLabel>
-                  <KV k="Name" v={service.label} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0' }}>
+                    <span style={{ color: 'var(--text4)', width: 72, flexShrink: 0, fontSize: 12 }}>Name</span>
+                    <input
+                      value={service.label || ''}
+                      onChange={e => setServiceLabel(e.target.value)}
+                      placeholder="Name this API source"
+                      style={{ ...INP, padding: '4px 8px', fontSize: 12.5, flex: 1 }}
+                    />
+                  </div>
                   <KV k="Base URL" v={service.base_url} mono />
                   <KV k="Auth" v={service.auth_type} />
                   {service.auth_config?.login_url && <KV k="Login" v={service.auth_config.login_url} mono />}
