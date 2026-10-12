@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.37] - 2026-10-12
+
+### Added
+- **Agentic builder can now discover auth-gated API specs.** Some APIs serve their own OpenAPI spec behind login (e.g. `GET /api/openapi.json` → 403 "Superuser session required"). The builder fetched specs unauthenticated, so it couldn't discover these at all. Discovery is now auth-aware as a general primitive: when a spec URL returns 401/403 and credentials are available, the agent logs in against common login endpoints with the server-held credentials, pulls a token from common response paths (e.g. `tokens.access`), and retries the spec with `Authorization: Bearer`. A model-driven `login_probe` also seeds the session. This closes the whole auth-gated-spec class (not a per-API special case). Validated live against a 552-path FactoryOS dev instance: gated spec → login → 739 operations across 43 groups discovered.
+- Spec/doc discovery now uses the `lan` SSRF mode, so specs served from on-prem factory boxes (LAN hosts) are reachable, not just public ones. `fetchUrlText` gained `headers` and `ssrf` options and now returns the HTTP `status` so callers can react to 401/403.
+
 ## [1.3.36] - 2026-10-12
 
 ### Fixed

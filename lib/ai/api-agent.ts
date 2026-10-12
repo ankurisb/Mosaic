@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getDefaultModelId } from '@/lib/models'
 import { getKey } from '@/lib/keys'
-import { fetchUrlText } from '@/lib/doc-fetch'
+import { fetchUrlText, type UrlTextResult } from '@/lib/doc-fetch'
 import { summarizeOpenApi } from '@/lib/ai/openapi-summary'
 import { runCandidateProbe, inspectLogin, type ProbeOutcome } from '@/lib/api-probe'
 import type { AuthConfig } from '@/lib/api-auth'
@@ -36,7 +36,7 @@ const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/openapi.yaml', '/swagger
 
 const SYSTEM = `You connect a live REST API to Mosaic by INVESTIGATING it, not guessing. You have tools to discover the API's spec, log in, and probe endpoints. Work like a careful engineer:
 
-1. If you were given a base URL or docs link, call discover_spec on the base to find an OpenAPI/Swagger spec (or inspect_openapi / fetch_text on a known URL). Read the auth scheme, the login endpoint and its request field names, and the available endpoints.
+1. If you were given a base URL or docs link, call discover_spec on the base to find an OpenAPI/Swagger spec (or inspect_openapi / fetch_text on a known URL). Read the auth scheme, the login endpoint and its request field names, and the available endpoints. discover_spec/inspect_openapi handle an AUTH-GATED spec automatically: if the spec returns 401/403, they log in with the server-held credentials and retry with the token — so still call them even when the spec needs a login.
 2. If auth is a login endpoint that returns a token, call login_probe — it posts the (server-held) credentials for you and returns the RAW login response. LOOK at that response and set token_path to where the token actually is (e.g. "tokens.access", "data.token") instead of assuming "access_token". Note the token header/prefix.
 3. Build a candidate and call probe on a cheap GET list endpoint to confirm the whole chain works (expect 2xx with data, or an empty array). If it fails, read the error and adjust auth_config / token_path / base_path / the path, then probe again.
 4. When a probe succeeds, call finish with the candidate.
@@ -146,6 +146,59 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
   const withCreds = (authConfig: Record<string, unknown> | undefined): Record<string, unknown> =>
     ({ ...(authConfig || {}), ...creds })
 
+  // ── Auth-aware discovery ──────────────────────────────────────────────────
+  // Some APIs gate their own OpenAPI spec behind login (e.g. 403 "Superuser
+  // session required"). This is a missing CAPABILITY, not a reasoning gap: the
+  // fetcher couldn't send an authenticated request while discovering. We give it
+  // a general primitive — log in with the server-held creds, then fetch the spec
+  // with the token — so any login/JWT-shaped API's gated spec unlocks, without a
+  // per-API special case.
+  let session: { token: string; header: string; prefix: string } | null = null
+  const COMMON_LOGIN_PATHS = ['/accounts/login', '/auth/login', '/login', '/users/login', '/sessions', '/auth/token', '/token', '/api-token-auth', '/authenticate']
+  const COMMON_TOKEN_PATHS = ['tokens.access', 'data.tokens.access', 'access_token', 'data.access_token', 'data.token', 'access', 'token', 'jwt', 'id_token', 'key', 'api_key']
+  const byPath = (obj: unknown, path: string): unknown => {
+    let cur: unknown = obj
+    for (const k of path.split('.')) { if (!cur || typeof cur !== 'object') return undefined; cur = (cur as Record<string, unknown>)[k] }
+    return cur
+  }
+  const authHeaders = (): Record<string, string> =>
+    session ? { [session.header]: session.prefix ? `${session.prefix} ${session.token}` : session.token } : {}
+
+  /** Try the server-held creds against common login endpoints under `apiBase`,
+   *  extract a token from common response paths, and cache it for the run. */
+  async function establishSession(apiBase: string): Promise<boolean> {
+    if (session) return true
+    if (!creds.username || !creds.password) return false
+    for (const lp of COMMON_LOGIN_PATHS) {
+      const r = await inspectLogin({ baseUrl: apiBase, login_url: lp, username: creds.username, password: creds.password, login_body_format: 'json', ssrf: 'lan' })
+      if (!r.ok) continue
+      for (const tp of COMMON_TOKEN_PATHS) {
+        const v = byPath(r.body, tp)
+        if (typeof v === 'string' && v.length > 10) {
+          session = { token: v, header: 'Authorization', prefix: 'Bearer' }
+          transcript.push(`Spec was auth-gated — logged in at ${r.resolvedUrl} and got a token (${tp}) to read it.`)
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  /** Fetch a spec URL; if it's auth-gated (401/403) and we have creds, log in
+   *  against `apiBase` and retry with the token. */
+  async function fetchSpecAuthed(url: string, apiBase: string): Promise<UrlTextResult> {
+    const opts = { maxBytes: 12_000_000, maxText: 12_000_000, ssrf: 'lan' as const }
+    let r = await fetchUrlText(url, { ...opts, headers: authHeaders() })
+    if (r.ok) return r
+    if ((r.status === 401 || r.status === 403) && !session) {
+      if (await establishSession(apiBase)) r = await fetchUrlText(url, { ...opts, headers: authHeaders() })
+    } else if (session && (r.status === 401 || r.status === 403)) {
+      // token might have been needed but not yet carried on a direct URL fetch
+      r = await fetchUrlText(url, { ...opts, headers: authHeaders() })
+    }
+    return r
+  }
+
   async function runTool(name: string, input: Record<string, unknown>): Promise<{ result: unknown; finished?: AgentCandidate }> {
     if (name === 'discover_spec') {
       const base = String(input.base_url || '').replace(/\/$/, '')
@@ -154,8 +207,9 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
       for (const sp of SPEC_PATHS) {
         const url = base + sp
         // Specs can be large (hundreds of KB) — fetch without the docs text cap
-        // so a big OpenAPI JSON isn't truncated before it parses.
-        const r = await fetchUrlText(url, { maxBytes: 12_000_000, maxText: 12_000_000 })
+        // so a big OpenAPI JSON isn't truncated. Auth-aware: an auth-gated spec
+        // (401/403) is retried after logging in with the server-held creds.
+        const r = await fetchSpecAuthed(url, base)
         if (!r.ok) { tried.push({ url, status: (r as { ok: false; error: string }).error }); continue }
         tried.push({ url, status: 'ok' })
         const parsed = parseSpec((r as { ok: true; text: string }).text)
@@ -169,8 +223,10 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
     }
 
     if (name === 'inspect_openapi') {
-      const r = await fetchUrlText(String(input.url || ''), { maxBytes: 12_000_000, maxText: 12_000_000 })
-      if (!r.ok) { transcript.push(`Couldn't fetch spec ${input.url}.`); return { result: { ok: false, error: (r as { ok: false; error: string }).error } } }
+      const specUrl = String(input.url || '')
+      const apiBase = specUrl.replace(/\/[^/]*$/, '') // strip the spec filename to get the API base for login
+      const r = await fetchSpecAuthed(specUrl, apiBase)
+      if (!r.ok) { transcript.push(`Couldn't fetch spec ${input.url}${r.status ? ` (HTTP ${r.status})` : ''}.`); return { result: { ok: false, error: (r as { ok: false; error: string }).error } } }
       const parsed = parseSpec((r as { ok: true; text: string }).text)
       const s = parsed ? summarizeOpenApi(parsed, 150, String(input.url || '')) : { ok: false, reason: 'not a spec' }
       transcript.push(s.ok ? `Read spec ${input.url} (${(s as { endpointCount: number }).endpointCount} endpoints).` : `URL ${input.url} wasn't a usable spec.`)
@@ -193,6 +249,14 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
         login_body_format: input.login_body_format === 'form' ? 'form' : 'json',
       })
       transcript.push(`Logged in at ${r.resolvedUrl} → HTTP ${r.status}${r.ok ? ` (response ${redactKeys(r.body)})` : ''}.`)
+      // Seed the run session from a model-driven login too, so a subsequently
+      // inspected auth-gated spec is read with this token.
+      if (r.ok && !session) {
+        for (const tp of COMMON_TOKEN_PATHS) {
+          const v = byPath(r.body, tp)
+          if (typeof v === 'string' && v.length > 10) { session = { token: v, header: 'Authorization', prefix: 'Bearer' }; break }
+        }
+      }
       return { result: r }
     }
 

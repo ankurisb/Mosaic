@@ -32,41 +32,56 @@ export function htmlToText(html: string): string {
     .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 }
 
-export type UrlTextResult = { ok: true; text: string } | { ok: false; error: string }
+export type UrlTextResult = { ok: true; text: string; status: number } | { ok: false; error: string; status?: number }
 
-export interface FetchTextOpts { hops?: number; maxBytes?: number; maxText?: number }
+export interface FetchTextOpts {
+  hops?: number
+  maxBytes?: number
+  maxText?: number
+  // Extra request headers (e.g. an Authorization bearer so an auth-gated spec
+  // can be fetched once the agent has a session token).
+  headers?: Record<string, string>
+  // SSRF mode: 'strict' (public web only, default) or 'lan' (also allow on-prem /
+  // LAN hosts, still blocking loopback + cloud metadata). The agent uses 'lan'
+  // so it can discover specs served from on-prem factory boxes.
+  ssrf?: 'strict' | 'lan' | 'off'
+}
 
 /**
- * Fetch one URL as text, SSRF-guarded (strict), following up to `hops` redirects.
+ * Fetch one URL as text, SSRF-guarded, following up to `hops` redirects.
  * Defaults cap at 2MB / 200k chars (good for docs); callers fetching a spec to
  * PARSE pass larger caps so a big OpenAPI JSON isn't truncated mid-document.
+ * Returns the final HTTP status so callers can react to 401/403 (auth-gated).
  */
 export async function fetchUrlText(rawUrl: string, opts: FetchTextOpts = {}): Promise<UrlTextResult> {
   const hops = opts.hops ?? 2
   const maxBytes = opts.maxBytes ?? FETCH_MAX_BYTES
   const maxText = opts.maxText ?? FETCH_MAX_TEXT
+  const mode = opts.ssrf ?? 'strict'
   let url = rawUrl
   for (let i = 0; i <= hops; i++) {
     try { new URL(url) } catch { return { ok: false, error: 'invalid URL' } }
-    const safe = await assertUrlSafe(url, 'strict')
-    if (!safe.ok) return { ok: false, error: safe.reason || 'blocked' }
+    if (mode !== 'off') {
+      const safe = await assertUrlSafe(url, mode)
+      if (!safe.ok) return { ok: false, error: safe.reason || 'blocked' }
+    }
     let res: Response
     try {
       res = await fetch(url, {
-        headers: { Accept: 'text/plain, text/markdown, application/json, text/yaml, text/html;q=0.8, */*;q=0.5' },
+        headers: { Accept: 'text/plain, text/markdown, application/json, text/yaml, text/html;q=0.8, */*;q=0.5', ...(opts.headers || {}) },
         signal: AbortSignal.timeout(10000),
         redirect: 'manual',
       })
     } catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'fetch failed' } }
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location')
-      if (!loc || i === hops) return { ok: false, error: 'too many redirects' }
+      if (!loc || i === hops) return { ok: false, error: 'too many redirects', status: res.status }
       url = new URL(loc, url).toString()
       continue
     }
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, status: res.status }
     const reader = res.body?.getReader()
-    if (!reader) return { ok: false, error: 'empty response' }
+    if (!reader) return { ok: false, error: 'empty response', status: res.status }
     const chunks: Uint8Array[] = []; let total = 0
     for (;;) {
       const { done, value } = await reader.read()
@@ -76,7 +91,7 @@ export async function fetchUrlText(rawUrl: string, opts: FetchTextOpts = {}): Pr
     const contentType = res.headers.get('content-type') || ''
     let text = Buffer.concat(chunks).toString('utf8')
     if (/html/i.test(contentType) || /^\s*<!doctype html|^\s*<html/i.test(text)) text = htmlToText(text)
-    return { ok: true, text: text.slice(0, maxText) }
+    return { ok: true, text: text.slice(0, maxText), status: res.status }
   }
   return { ok: false, error: 'too many redirects' }
 }
