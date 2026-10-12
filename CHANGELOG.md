@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.35] - 2026-10-12
+
+### Changed
+- **The AI builder is now a full-page view, not stacked above the list.** Opening Add with AI / Resume previously rendered the builder inline *above* the whole API-connections list and the import header, so it never felt like a separate page. The builder now replaces the list view entirely (its own title + Close return you to the list), so the landing page is the list and editing a draft is a dedicated page.
+- **Removed the irrelevant "Back to describe" on a resumed draft.** It only makes sense for a brand-new Add-with-AI flow; on a resumed draft there's no describe step, so it's hidden (Close returns to the list).
+- **No more stacked status banners.** Saving a draft now clears the stale "Resumed draft" hint, so you don't see "Saved as draft" and "Resumed draft" at the same time.
+
 ## [1.3.34] - 2026-10-12
 
 ### Fixed

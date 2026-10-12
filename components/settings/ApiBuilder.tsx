@@ -324,7 +324,11 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
     setBusy('Saving draft…'); setError(null); setInfo(null)
     const id = await persist('draft')
     setBusy(null)
-    if (id) { setInfo('Saved as draft — it’s in your API connections list, marked Draft. It won’t be used in chat until you publish.'); onDraftSaved?.() }
+    if (id) {
+      setInfo('Saved as draft — it’s in your API connections list, marked Draft. It won’t be used in chat until you publish.')
+      setCandidate(c => c ? { ...c, message: undefined } : c)   // drop the now-stale resume/build hint so banners don't stack
+      onDraftSaved?.()
+    }
   }
 
   async function register() {
@@ -592,7 +596,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                   <Btn onClick={saveDraft} disabled={!!busy} style={{ width: '100%' }}>Save as draft</Btn>
                   <span style={{ fontSize: 11, color: 'var(--text4)' }}>A draft stays off chat until you publish.</span>
                   {busy && busy !== 'Probing the live source…' && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}
-                  <Btn size="sm" onClick={() => setStep('describe')} style={{ width: '100%' }}>Back to describe</Btn>
+                  {!resumeDraftId && <Btn size="sm" onClick={() => setStep('describe')} style={{ width: '100%' }}>Back to describe</Btn>}
                 </div>
               </div>
             </section>

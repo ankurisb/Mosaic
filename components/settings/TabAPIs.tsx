@@ -937,6 +937,16 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
   return (
     <div className="fade-in">
+      {user.role === 'admin' && showBuilder ? (
+        <ApiBuilder
+          key={resumeDraftId || 'new'}
+          resumeDraftId={resumeDraftId || undefined}
+          onClose={() => { setShowBuilder(false); setResumeDraftId(null) }}
+          onRegistered={() => { setShowBuilder(false); setResumeDraftId(null); load() }}
+          onDraftSaved={() => load()}
+        />
+      ) : (
+      <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <PageTitle>API connections</PageTitle>
         {user.role === 'admin' && (
@@ -953,19 +963,6 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
 
       {error && <Alert variant="error">{error}</Alert>}
-
-      {/* -- AI builder -- */}
-      {user.role === 'admin' && showBuilder && (
-        <div style={{ margin: '12px 0 20px' }}>
-          <ApiBuilder
-            key={resumeDraftId || 'new'}
-            resumeDraftId={resumeDraftId || undefined}
-            onClose={() => { setShowBuilder(false); setResumeDraftId(null) }}
-            onRegistered={() => { setShowBuilder(false); setResumeDraftId(null); load() }}
-            onDraftSaved={() => load()}
-          />
-        </div>
-      )}
 
       {/* -- Postman import drop zone -- */}
       {user.role === 'admin' && showPostmanZone && !importPreview && (
@@ -1750,6 +1747,8 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           onClose={() => setDiagnoseSvc(null)}
           onApplied={() => load()}
         />
+      )}
+      </>
       )}
     </div>
   )
