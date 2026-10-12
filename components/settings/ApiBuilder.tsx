@@ -65,6 +65,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   const [agentUser, setAgentUser] = useState('')
   const [agentPass, setAgentPass] = useState('')
   const [transcript, setTranscript] = useState<string[]>([])
+  const [agentVerified, setAgentVerified] = useState<{ groups: number; auth: string; status: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -173,7 +174,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   // in and reads the real token path, probes) and lands a working, already-probed
   // candidate in the cockpit — the heavy lifting done for you.
   async function buildWithAgent() {
-    setBusy('Mosaic is investigating the API…'); setError(null); setInfo(null); setTranscript([])
+    setBusy('Mosaic is investigating the API…'); setError(null); setInfo(null); setTranscript([]); setAgentVerified(null)
     try {
       const credentials: Record<string, string> = {}
       if (agentUser.trim()) credentials.username = agentUser.trim()
@@ -196,6 +197,9 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
         applyCandidate({ ...d.candidate, missing: (d.candidate.missing && d.candidate.missing.length) ? d.candidate.missing : missingList })
         if (d.probe) setProbe(d.probe as ProbeResult)   // seed the agent's successful probe
         setStep('review')
+        if (d.ok && d.probe?.ok) {
+          setAgentVerified({ groups: (d.candidate.connections || []).length, auth: authType, status: Number(d.probe.status) || 200 })
+        }
         if (!d.ok) setError(d.reason || 'Mosaic couldn’t fully verify the connection — review and probe below.')
       } else {
         setError(d.reason || d.error || 'Mosaic couldn’t build the connection. See what it tried below, then try Quick draft.')
@@ -403,6 +407,14 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                 {transcript.map((t, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.45 }}>{t}</li>)}
               </ol>
             </details>
+          )}
+          {agentVerified && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--green-bg, rgba(22,163,74,.1))', border: '1px solid rgba(22,163,74,.25)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ color: 'var(--success, #15803d)', fontWeight: 700, lineHeight: 1.5 }}>✓</span>
+              <div style={{ fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
+                <strong>Connection verified.</strong> Found {agentVerified.groups} endpoint group{agentVerified.groups !== 1 ? 's' : ''} behind {agentVerified.auth} auth and confirmed a live call returned {agentVerified.status} OK. Auth is shared across every group, so you don’t need to test each one — <strong>Publish source</strong> registers all {agentVerified.groups} and chat can then call any path under them.
+              </div>
+            </div>
           )}
           <div className="apib-stage">
 

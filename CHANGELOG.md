@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.30] - 2026-10-12
+
+### Added
+- **"Connection verified" summary in the AI API builder.** After an agentic build succeeds, the cockpit now shows a clear green banner — "Found N endpoint groups behind <auth> auth and confirmed a live call returned 200 OK" — and states explicitly that auth is shared across every group, so the user does not need to probe each one; publishing registers them all. Removes the ambiguity of having to click through every group to know the build worked.
+
 ## [1.3.29] - 2026-10-12
 
 ### Added
