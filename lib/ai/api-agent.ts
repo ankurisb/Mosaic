@@ -45,8 +45,10 @@ Rules:
 - NEVER put credentials (username/password/token/key) in any tool argument or in the candidate's auth_config — the server injects them. Set only structural fields.
 - Quote real endpoints from the spec; never invent paths.
 - auth_type is one of: bearer, api_key_header, basic, oauth2_client, session_token, custom_headers. For a username/password login returning a token, use session_token with: login_url (path relative to base is fine), username_field, password_field, login_body_format, token_path, token_header, token_prefix.
-- base_url is scheme+host(+stable prefix) with no trailing slash.
+- base_url: use the spec summary's \`suggestedBaseUrl\` VERBATIM as service.base_url (no trailing slash). It already includes the server origin and any shared mount prefix (shown as \`commonPrefix\`, e.g. "/api"). Every \`path\` and \`loginCandidates[].path\` in the summary is ALREADY RELATIVE to suggestedBaseUrl — use them as given and NEVER prepend the commonPrefix again (doing so is the #1 cause of 404s). Only fall back to deriving base_url yourself if suggestedBaseUrl is absent.
+- The final request URL is base_url + connection.base_path + path (simple concatenation). Confirm your mental math lands exactly on a real endpoint before probing — e.g. base_url "https://h/api" + base_path "" + path "/core/tenants" = "https://h/api/core/tenants".
 - A "connection" is an endpoint GROUP (a base_path the agent can call any path under at query time), NOT a single endpoint. After auth is confirmed, create ONE connection for EACH group in the spec summary's \`groups\` (base_path = "/" + group, e.g. "/assets"), so the WHOLE API is reachable — not just the groups you happened to probe. You do NOT need to probe every group; 1–2 successful probes confirm the auth chain, then register all the groups. Give each connection a readable label and set pagination_data_path if the list responses nest their records. If the user named specific groups, make sure those are included, plus the rest.
+- To CONFIRM auth with a probe, the simplest reliable call is base_path "" + a cheap GET \`path\` taken verbatim from the summary's endpoint list (which is already relative to base_url). Don't hand-assemble paths.
 - Keep going until a probe succeeds, then finish with the full set of group connections. If you truly cannot (e.g. credentials rejected), finish with ready_to_probe:false and a message explaining what's needed.`
 
 const TOOLS: Anthropic.Tool[] = [
@@ -96,12 +98,12 @@ export async function runApiAgent(params: {
         if (!r.ok) { tried.push({ url, status: (r as { ok: false; error: string }).error }); continue }
         tried.push({ url, status: 'ok' })
         const parsed = parseSpec((r as { ok: true; text: string }).text)
-        const s = parsed ? summarizeOpenApi(parsed) : { ok: false }
+        const s = parsed ? summarizeOpenApi(parsed, 150, url) : { ok: false }
         if (s.ok) { summary = s; foundUrl = url; break }
         if (sp.endsWith('llms.txt') || sp.endsWith('/docs')) docText ||= (r as { ok: true; text: string }).text.slice(0, 8000)
       }
-      const sm = summary as { endpointCount: number; groups: string[] } | null
-      transcript.push(sm ? `Discovered API spec at ${foundUrl} — ${sm.endpointCount} endpoints across ${sm.groups.length} groups (${sm.groups.slice(0, 10).join(', ')}${sm.groups.length > 10 ? '…' : ''}).` : `Looked for a spec under ${base} — none found.`)
+      const sm = summary as { endpointCount: number; groups: string[]; suggestedBaseUrl?: string } | null
+      transcript.push(sm ? `Discovered API spec at ${foundUrl} — ${sm.endpointCount} endpoints across ${sm.groups.length} groups (${sm.groups.slice(0, 10).join(', ')}${sm.groups.length > 10 ? '…' : ''}); base URL ${sm.suggestedBaseUrl || '(from spec)'}.` : `Looked for a spec under ${base} — none found.`)
       return { result: { found: foundUrl || null, summary, docs_text: docText || undefined, tried } }
     }
 
@@ -109,7 +111,7 @@ export async function runApiAgent(params: {
       const r = await fetchUrlText(String(input.url || ''), { maxBytes: 12_000_000, maxText: 12_000_000 })
       if (!r.ok) { transcript.push(`Couldn't fetch spec ${input.url}.`); return { result: { ok: false, error: (r as { ok: false; error: string }).error } } }
       const parsed = parseSpec((r as { ok: true; text: string }).text)
-      const s = parsed ? summarizeOpenApi(parsed) : { ok: false, reason: 'not a spec' }
+      const s = parsed ? summarizeOpenApi(parsed, 150, String(input.url || '')) : { ok: false, reason: 'not a spec' }
       transcript.push(s.ok ? `Read spec ${input.url} (${(s as { endpointCount: number }).endpointCount} endpoints).` : `URL ${input.url} wasn't a usable spec.`)
       return { result: s }
     }

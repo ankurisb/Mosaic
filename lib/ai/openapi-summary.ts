@@ -1,9 +1,12 @@
 // lib/ai/openapi-summary.ts
 // Compress an OpenAPI 3.x / Swagger 2.0 spec into a compact summary the builder
 // agent can read in-context (a real spec can be hundreds of KB). Surfaces the
-// decisive facts: base URLs, auth schemes, the login endpoint(s) WITH their
-// request field names (so the agent posts the right keys), and a capped list of
-// endpoints. Pure — the caller fetches/parses (JSON or YAML) and passes the object.
+// decisive facts: the base URL to call (resolved, including any shared mount
+// prefix), the auth schemes, the login endpoint(s) WITH their request field
+// names (so the agent posts the right keys), the endpoint GROUPS, and a capped
+// list of endpoints — all with paths RELATIVE to the resolved base URL, so the
+// agent never has to reason about prefixes. Pure — the caller fetches/parses
+// (JSON or YAML) and passes the object plus (ideally) the spec's own URL.
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -16,6 +19,13 @@ export interface OpenApiSummary {
   title?: string
   version?: string
   servers: string[]
+  // The base URL the agent should use verbatim as service.base_url: the resolved
+  // server origin + any shared mount prefix (e.g. "https://host/api"). All paths
+  // below are relative to THIS — the agent must not re-add the prefix.
+  suggestedBaseUrl?: string
+  // The shared leading path prefix folded into suggestedBaseUrl (e.g. "/api"), or
+  // "" when paths don't share one. Informational.
+  commonPrefix: string
   securitySchemes: Record<string, { type?: string; scheme?: string; in?: string; name?: string }>
   loginCandidates: LoginCandidate[]
   groups: string[]
@@ -25,6 +35,9 @@ export interface OpenApiSummary {
 
 const LOGIN_RE = /(login|authenticate|signin|sign-in|token|session|oauth)/i
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete']
+// Leading segments that are mount points, not meaningful groups — peel them so
+// grouping happens on the real resource segments underneath.
+const MOUNT_SEG = /^(api|apis|rest|public|internal|services?|v\d+(?:[._]\d+)*)$/i
 
 /** Resolve a local $ref ("#/components/schemas/X" or "#/definitions/X"). */
 function resolveRef(spec: Obj, ref: string): Obj | null {
@@ -96,25 +109,82 @@ function securityOf(spec: Obj): OpenApiSummary['securitySchemes'] {
   return out
 }
 
-export function summarizeOpenApi(spec: unknown, endpointCap = 150): OpenApiSummary {
-  if (!isObj(spec)) return { ok: false, reason: 'Not a spec object', servers: [], securitySchemes: {}, loginCandidates: [], groups: [], endpoints: [], endpointCount: 0 }
+/**
+ * Resolve the server base URL (scheme+host+path) the paths are relative to.
+ * - absolute server → use as-is
+ * - relative/empty server → spec document's origin (+ the relative server path)
+ * Returns '' when nothing can be resolved (no absolute server, no spec URL).
+ */
+function resolveServerBase(spec: Obj, specUrl?: string): string {
+  const s = (serversOf(spec)[0] || '').trim()
+  let origin = ''
+  if (specUrl) { try { origin = new URL(specUrl).origin } catch {} }
+  if (/^https?:\/\//i.test(s)) return s.replace(/\/+$/, '')
+  if (!s) return origin
+  return (origin + (s.startsWith('/') ? s : '/' + s)).replace(/\/+$/, '')
+}
+
+/**
+ * Peel leading path segments shared by ALL endpoints when they are mount points
+ * (api, v1, …) or when peeling turns a single top-level group into several real
+ * ones — but never so far that a path would be left empty. Returns the peeled
+ * prefix ("/api", "") and a strip() that rewrites a raw path to be relative to it.
+ */
+function peelPrefix(paths: string[]): { prefix: string; strip: (p: string) => string } {
+  const splits = paths.map(p => p.split('/').filter(Boolean))
+  const prefixSegs: string[] = []
+  let cur = splits
+  // guard against pathological specs
+  for (let guard = 0; guard < 8; guard++) {
+    if (!cur.length) break
+    // Stripping must leave every path with at least one segment.
+    if (!cur.every(s => s.length >= 2)) break
+    const first = cur[0][0]
+    if (!cur.every(s => s[0] === first)) break
+    const distinctNext = new Set(cur.map(s => s[1]))
+    // Peel if it's a recognised mount segment, OR if everything currently sits
+    // under this one segment but branches into several real groups beneath it.
+    if (!MOUNT_SEG.test(first) && distinctNext.size < 2) break
+    prefixSegs.push(first)
+    cur = cur.map(s => s.slice(1))
+  }
+  const prefix = prefixSegs.length ? '/' + prefixSegs.join('/') : ''
+  const strip = (p: string): string => {
+    if (!prefix) return p
+    if (p === prefix) return '/'
+    const rest = p.startsWith(prefix + '/') ? p.slice(prefix.length) : p
+    return rest.startsWith('/') ? rest : '/' + rest
+  }
+  return { prefix, strip }
+}
+
+export function summarizeOpenApi(spec: unknown, endpointCap = 150, specUrl?: string): OpenApiSummary {
+  const empty = { servers: [], commonPrefix: '', securitySchemes: {}, loginCandidates: [], groups: [], endpoints: [], endpointCount: 0 }
+  if (!isObj(spec)) return { ok: false, reason: 'Not a spec object', ...empty }
   const paths = isObj(spec.paths) ? (spec.paths as Obj) : undefined
-  if (!paths) return { ok: false, reason: 'No paths in spec', servers: [], securitySchemes: {}, loginCandidates: [], groups: [], endpoints: [], endpointCount: 0 }
+  if (!paths) return { ok: false, reason: 'No paths in spec', ...empty }
 
   const info = isObj(spec.info) ? spec.info : {}
+
+  // Peel any shared mount prefix so grouping and base_url are correct even when
+  // servers is empty and every path carries the mount (e.g. "/api/...").
+  const rawPaths = Object.keys(paths).filter(p => isObj(paths[p]))
+  const { prefix, strip } = peelPrefix(rawPaths)
+
   const endpoints: EndpointRef[] = []
   const loginCandidates: LoginCandidate[] = []
 
-  for (const p of Object.keys(paths)) {
+  for (const p of rawPaths) {
     const item = paths[p]
     if (!isObj(item)) continue
+    const rel = strip(p)
     for (const m of HTTP_METHODS) {
       const op = item[m]
       if (!isObj(op)) continue
       const summary = typeof op.summary === 'string' ? op.summary : (typeof op.operationId === 'string' ? op.operationId : undefined)
-      endpoints.push({ method: m.toUpperCase(), path: p, summary, hasPathParams: /\{[^}]+\}/.test(p) })
+      endpoints.push({ method: m.toUpperCase(), path: rel, summary, hasPathParams: /\{[^}]+\}/.test(rel) })
       if (m === 'post' && LOGIN_RE.test(p)) {
-        loginCandidates.push({ method: 'POST', path: p, summary, fields: operationRequestFields(spec, op) })
+        loginCandidates.push({ method: 'POST', path: rel, summary, fields: operationRequestFields(spec, op) })
       }
     }
   }
@@ -126,15 +196,20 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 150): OpenApiSumma
     return score(a) - score(b)
   })
 
-  // Distinct top-level path segments (after any shared base like /api) — these
-  // are the natural "connections" (endpoint groups) to register.
+  // Distinct top-level segments of the RELATIVE paths — the natural
+  // "connections" (endpoint groups) to register, one per group.
   const groups = Array.from(new Set(endpoints.map(e => e.path.split('/').filter(Boolean)[0] || '').filter(Boolean))).sort()
+
+  const serverBase = resolveServerBase(spec, specUrl)
+  const suggestedBaseUrl = serverBase ? (serverBase + prefix).replace(/\/+$/, '') || serverBase : (prefix || undefined)
 
   return {
     ok: true,
     title: typeof info.title === 'string' ? info.title : undefined,
     version: typeof info.version === 'string' ? info.version : undefined,
     servers: serversOf(spec),
+    suggestedBaseUrl: suggestedBaseUrl || undefined,
+    commonPrefix: prefix,
     securitySchemes: securityOf(spec),
     loginCandidates,
     groups,

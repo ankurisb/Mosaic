@@ -56,3 +56,67 @@ describe('summarizeOpenApi', () => {
     expect(s2.securitySchemes.apiKey).toEqual({ type: 'apiKey', in: 'header', name: 'X-API-Key', scheme: undefined })
   })
 })
+
+// The real FactoryOS shape that caused 404-on-every-probe: servers is EMPTY and
+// every path already carries a "/api" mount prefix. The summary must fold "/api"
+// into the base URL (from the spec's own origin), group on the segments BENEATH
+// it, and hand back paths relative to that base — so base_url + path never
+// doubles the prefix.
+describe('summarizeOpenApi — shared mount prefix', () => {
+  const factoryos = {
+    openapi: '3.1.0',
+    info: { title: 'FactoryOS API', version: '1.0' },
+    servers: [],
+    components: { securitySchemes: { JWTAuth: { type: 'http', scheme: 'bearer' } } },
+    paths: {
+      '/api/accounts/login': { post: { summary: 'Login', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['username', 'password'], properties: { username: {}, password: {} } } } } } } },
+      '/api/accounts/user-menu': { get: { summary: 'User menu' } },
+      '/api/core/tenants': { get: { summary: 'List tenants' } },
+      '/api/core/tenants/{org_id}': { get: { summary: 'Get tenant' } },
+      '/api/assets/': { get: { summary: 'List assets' }, post: {} },
+    },
+  }
+
+  test('folds the /api prefix into the base URL from the spec origin', () => {
+    const s = summarizeOpenApi(factoryos, 150, 'https://myfactory.ugx.ai/api/openapi.json')
+    expect(s.ok).toBe(true)
+    expect(s.commonPrefix).toBe('/api')
+    expect(s.suggestedBaseUrl).toBe('https://myfactory.ugx.ai/api')
+  })
+
+  test('groups on the segments beneath the mount prefix, not "api"', () => {
+    const s = summarizeOpenApi(factoryos, 150, 'https://myfactory.ugx.ai/api/openapi.json')
+    expect(s.groups).toEqual(['accounts', 'assets', 'core'])
+  })
+
+  test('returns paths relative to the base URL (no /api), so base+path never doubles', () => {
+    const s = summarizeOpenApi(factoryos, 150, 'https://myfactory.ugx.ai/api/openapi.json')
+    expect(s.endpoints.every(e => !e.path.startsWith('/api/'))).toBe(true)
+    expect(s.endpoints.map(e => e.path)).toContain('/core/tenants')
+    expect(s.loginCandidates[0].path).toBe('/accounts/login')
+    // The decisive invariant: base + a listed path hits the real endpoint once.
+    expect(s.suggestedBaseUrl! + '/core/tenants').toBe('https://myfactory.ugx.ai/api/core/tenants')
+  })
+
+  test('peels a version prefix (/v1) too', () => {
+    const s = summarizeOpenApi({
+      openapi: '3.0.0', info: { title: 'X' }, servers: [{ url: 'https://api.acme.com' }],
+      paths: { '/v1/users': { get: {} }, '/v1/orders': { get: {} } },
+    })
+    expect(s.commonPrefix).toBe('/v1')
+    expect(s.suggestedBaseUrl).toBe('https://api.acme.com/v1')
+    expect(s.groups).toEqual(['orders', 'users'])
+  })
+
+  test('does NOT over-peel a genuine single-group API', () => {
+    // All paths share "/assets", but "/assets" itself is an endpoint — peeling
+    // would empty it. Keep it as the group.
+    const s = summarizeOpenApi({
+      openapi: '3.0.0', info: { title: 'Y' }, servers: [{ url: 'https://h' }],
+      paths: { '/assets': { get: {} }, '/assets/{id}': { get: {} }, '/assets/{id}/telemetry': { get: {} } },
+    })
+    expect(s.commonPrefix).toBe('')
+    expect(s.groups).toEqual(['assets'])
+    expect(s.suggestedBaseUrl).toBe('https://h')
+  })
+})

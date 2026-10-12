@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.28] - 2026-10-12
+
+### Fixed
+- **Agentic builder no longer 404s on every probe when a spec has a shared mount prefix.** FactoryOS's spec has an empty `servers` list and every path already carries a `/api` prefix. The builder was told the base URL was `…/api`, then probed `…/api` + `/api/...` → a doubled prefix → 404 on all 188 endpoints; grouping also collapsed to a single bogus `api` group. The OpenAPI summariser now detects a shared mount prefix (`/api`, `/v1`, …), resolves the base URL from the spec's own origin (per the OpenAPI default when `servers` is empty), folds the prefix into a `suggestedBaseUrl`, groups on the real segments beneath it, and returns every path relative to that base. The agent uses `suggestedBaseUrl` verbatim and never re-adds the prefix. FactoryOS now resolves to base `https://myfactory.ugx.ai/api` with 25 real groups (accounts, assets, core, manufacturing, orders, …). The peel is guarded so a genuine single-group API (e.g. all paths under `/assets`, where `/assets` is itself an endpoint) is not over-stripped.
+
 ## [1.3.27] - 2026-10-12
 
 ### Fixed
