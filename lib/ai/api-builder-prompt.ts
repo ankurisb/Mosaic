@@ -15,6 +15,7 @@
 // with no translation.
 import Anthropic from '@anthropic-ai/sdk'
 import { getDefaultModelId } from '@/lib/models'
+import { getKey } from '@/lib/keys'
 
 const SYSTEM = `You configure a live REST/HTTP API as a data source for Mosaic. Mosaic calls the API in real time (during an analysis/chat), so you are NOT writing an ingestion pipeline — you are producing a connection definition Mosaic can call.
 
@@ -98,7 +99,7 @@ export interface ApiCandidateResult {
 /** First-draft candidate from a description plus optional materials (docs text, sample, spec). */
 export async function generateApiCandidate(description: string, materials?: string): Promise<ApiCandidateResult> {
   try {
-    const client = new Anthropic()
+    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const user = [
       `What the user wants to connect:\n${description}`,
       materials ? `\nMaterials they provided (docs / sample response / spec — use these to get base_url, auth and the record path right):\n${materials.slice(0, 24000)}` : '',
@@ -130,7 +131,7 @@ export async function refineApiCandidate(params: {
   userNote?: string
 }): Promise<ApiCandidateResult> {
   try {
-    const client = new Anthropic()
+    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const bodyPreview = params.probeBody !== undefined
       ? JSON.stringify(params.probeBody, null, 2).slice(0, 4000)
       : ''

@@ -15,6 +15,7 @@
 // valid.
 import Anthropic from '@anthropic-ai/sdk'
 import { getDefaultModelId } from '@/lib/models'
+import { getKey } from '@/lib/keys'
 
 const SYSTEM = `You generate Airbyte DECLARATIVE (low-code) connector manifests for REST/HTTP APIs.
 You output ONLY a single JSON object — the manifest — with no prose, no markdown, no code fences.
@@ -107,7 +108,7 @@ export interface ManifestResult {
 /** Generate a first-draft manifest from a plain-English description (+ optional sample/docs). */
 export async function generateManifest(description: string, sample?: string): Promise<ManifestResult> {
   try {
-    const client = new Anthropic()
+    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const user = [
       `Source description:\n${description}`,
       sample ? `\nSample response or API docs (use this to get the record path and fields right):\n${sample.slice(0, 6000)}` : '',
@@ -141,7 +142,7 @@ export async function refineManifest(params: {
   userNote?: string
 }): Promise<ManifestResult> {
   try {
-    const client = new Anthropic()
+    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const parts = [
       `Here is the previous manifest you generated:\n${JSON.stringify(params.previousManifest, null, 2)}`,
       params.testError ? `\nTesting it against the live source FAILED with:\n${params.testError}` : '',

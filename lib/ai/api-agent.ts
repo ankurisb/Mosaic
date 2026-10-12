@@ -7,6 +7,7 @@
 // never sees or emits them.
 import Anthropic from '@anthropic-ai/sdk'
 import { getDefaultModelId } from '@/lib/models'
+import { getKey } from '@/lib/keys'
 import { fetchUrlText } from '@/lib/doc-fetch'
 import { summarizeOpenApi } from '@/lib/ai/openapi-summary'
 import { runCandidateProbe, inspectLogin, type ProbeOutcome } from '@/lib/api-probe'
@@ -160,7 +161,7 @@ export async function runApiAgent(params: {
   }
 
   try {
-    const client = new Anthropic()
+    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const model = await getDefaultModelId()
     const userText = [
       `Connect this API:\n${params.description}`,

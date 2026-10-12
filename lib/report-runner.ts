@@ -9,6 +9,7 @@ import Anthropic            from '@anthropic-ai/sdk'
 import { runMessageBatch }  from './anthropic-batch'
 import type { BatchCapableClient } from './anthropic-batch'
 import { getDefaultModelId } from './models'
+import { getKey } from './keys'
 import { writeFile, mkdir } from 'fs/promises'
 import { join }             from 'path'
 
@@ -97,7 +98,7 @@ function narrativeParams(prompt: string, rows: Row[], model: string) {
 }
 
 async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
-  const client = new Anthropic()
+  const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
   const msg = await client.messages.create(narrativeParams(prompt, rows, await getDefaultModelId()))
   return (msg.content[0] as { text: string }).text || ''
 }
@@ -118,7 +119,7 @@ async function precomputeNarrativesViaBatch(
   )
   const model = await getDefaultModelId()
   const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows, model) }))
-  const client = new Anthropic() as unknown as BatchCapableClient
+  const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined }) as unknown as BatchCapableClient
   const results = await runMessageBatch(client, requests, { pollMs: 4000, timeoutMs: 5 * 60_000 })
   return new Map(executed.map(({ s, rows }) => [s.id, { rows, text: results.get(s.id)?.text ?? '' }]))
 }

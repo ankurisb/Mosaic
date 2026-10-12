@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.26] - 2026-10-12
+
+### Fixed
+- **AI builders now reliably get the Anthropic key.** The API/connector builders and scheduled report narratives constructed their Anthropic client with a bare `new Anthropic()`, which only reads the `ANTHROPIC_API_KEY` env var — but on this deployment the key lives in the database (`kv_settings`). On a freshly started container (before any chat request happened to warm the env), those LLM calls had no key and failed, which is a major reason the AI builder appeared not to work. All of them now resolve the key via `getKey('ANTHROPIC_API_KEY')` and pass it explicitly, like chat and model resolution already do.
+
 ## [1.3.25] - 2026-10-12
 
 ### Added
