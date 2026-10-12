@@ -176,7 +176,7 @@ export async function POST(req: Request) {
   const sql = getDb()
   const [dbConns, apiConns, fileServers, prismInstances, mcpConns] = await Promise.all([
     sql`SELECT id, label, dialect, host, database_name, mcp_endpoint FROM db_connections ORDER BY created_at ASC`.catch(() => []),
-    sql`SELECT c.id, c.label, c.method, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id WHERE COALESCE(s.status,'published')='published' ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
+    sql`SELECT c.id, c.label, c.description, s.label as service_label, c.base_path FROM api_connections c JOIN api_services s ON s.id = c.service_id WHERE COALESCE(s.status,'published')='published' ORDER BY s.created_at ASC, c.created_at ASC`.catch(() => []),
     sql`SELECT id, label, transport, bucket, share_path, sub_path, file_types FROM file_servers ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT id, label, base_url, environment FROM prism_instances WHERE active = true ORDER BY created_at ASC`.catch(() => []),
     sql`SELECT id, label, endpoint_url, description FROM mcp_connections WHERE enabled = true ORDER BY created_at ASC`.catch(() => []),
@@ -228,11 +228,13 @@ export async function POST(req: Request) {
         const isV4 = conns[0] && String(conns[0].base_path || '').includes('odata4')
         const svcHint = isSap ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]` : ''
         const endpointLines = conns.map((conn: Record<string,unknown>) => {
-          const method = String(conn.method || 'GET').toUpperCase()
           const rawDesc = String(conn.description || '').trim()
-          const desc = rawDesc && rawDesc.toLowerCase() !== String(conn.label || '').toLowerCase()
+          const label = String(conn.label || '').trim()
+          const labelNote = label && label.toLowerCase() !== String(conn.base_path || '').toLowerCase() ? ` (${label})` : ''
+          const desc = rawDesc && rawDesc.toLowerCase() !== label.toLowerCase()
             ? ` -- ${rawDesc.slice(0, 50)}` : ''
-          return `  - id:"${conn.id}" | ${method} ${conn.base_path}${desc}`
+          // A connection is a base PATH the model can call any method/sub-path under.
+          return `  - id:"${conn.id}" | ${conn.base_path}${labelNote}${desc} (call any method + sub-path under this base)`
         }).join('\n')
         return `### ${svcLabel}${svcHint}\n${endpointLines}`
       }).join('\n') +

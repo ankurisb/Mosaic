@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.36] - 2026-10-12
+
+### Fixed
+- **Published API sources were invisible to chat (every Type-2 API source, not just FactoryOS).** The chat's connection-listing query selected a `c.method` column from `api_connections`, which doesn't exist — so the query threw, was swallowed by its `.catch(() => [])`, and returned an empty list. The copilot therefore reported "no API connections" even with a published source and 25 connections. Removed the non-existent column (a connection is a base path; method is chosen per call via `call_api`), so published API sources now appear. Also reworded the per-connection prompt line to show the base path and note that any method/sub-path can be called under it, instead of implying GET-only.
+
 ## [1.3.35] - 2026-10-12
 
 ### Changed
