@@ -68,6 +68,11 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   const [agentVerified, setAgentVerified] = useState<{ groups: number; auth: string; status: number } | null>(null)
   const [refineChat, setRefineChat] = useState<Array<{ role: 'user' | 'assistant'; text: string; steps?: string[]; probe?: ProbeResult; candidate?: Candidate; applied?: boolean }>>([])
   const [chatBusy, setChatBusy] = useState(false)
+  // Latches true once ANY probe succeeds this session (manual probe, the agent's
+  // build probe, or an Ask & refine probe). Unlocks Publish and stays unlocked
+  // even if a later probe on a non-existent path 404s. Reset when the config
+  // materially changes (new build / applied refine).
+  const [probedOk, setProbedOk] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -176,7 +181,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   // in and reads the real token path, probes) and lands a working, already-probed
   // candidate in the cockpit — the heavy lifting done for you.
   async function buildWithAgent() {
-    setBusy('Mosaic is investigating the API…'); setError(null); setInfo(null); setTranscript([]); setAgentVerified(null)
+    setBusy('Mosaic is investigating the API…'); setError(null); setInfo(null); setTranscript([]); setAgentVerified(null); setProbedOk(false)
     try {
       const credentials: Record<string, string> = {}
       if (agentUser.trim()) credentials.username = agentUser.trim()
@@ -201,6 +206,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
         setStep('review')
         if (d.ok && d.probe?.ok) {
           setAgentVerified({ groups: (d.candidate.connections || []).length, auth: authType, status: Number(d.probe.status) || 200 })
+          setProbedOk(true)
         }
         if (!d.ok) setError(d.reason || 'Mosaic couldn’t fully verify the connection — review and probe below.')
       } else {
@@ -236,6 +242,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
       const r = await fetch('/api/test-api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const d = await r.json()
       setProbe(d as ProbeResult)
+      if ((d as ProbeResult)?.ok) setProbedOk(true)   // latch: one success unlocks Publish
     } catch (e) { setProbe({ ok: false, status: 0, error: e instanceof Error ? e.message : 'Probe failed' }) }
     setBusy(null)
   }
@@ -263,6 +270,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Request failed')
       setRefineChat(c => [...c, { role: 'assistant', text: d.diagnosis || d.reason || 'No answer.', steps: d.transcript, probe: d.probe as ProbeResult | undefined, candidate: d.candidate as Candidate | undefined }])
+      if ((d.probe as ProbeResult | undefined)?.ok) setProbedOk(true)   // a verified call here also unlocks Publish
     } catch (e) {
       setRefineChat(c => [...c, { role: 'assistant', text: `Sorry — ${e instanceof Error ? e.message : 'request failed'}.` }])
     }
@@ -277,6 +285,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
     if (!c) return
     const merged: Candidate = { ...c, service: { ...(c.service || {}), auth_config: { ...((c.service || {}).auth_config || {}), ...secrets } } as ServiceDraft }
     applyCandidate(merged)
+    setProbedOk(false)   // config changed — re-verify with a probe before publishing
     setRefineChat(list => list.map((t, i) => i === idx ? { ...t, applied: true } : t))
   }
 
@@ -574,8 +583,8 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                   style={{ ...INP, minHeight: 56, resize: 'none', fontFamily: 'inherit' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <Btn onClick={askAssistant} disabled={chatBusy || !note.trim()} style={{ width: '100%' }}>{chatBusy ? 'Thinking…' : 'Send'}</Btn>
-                  <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok} style={{ width: '100%' }}>Publish source</Btn>
-                  {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Publish unlocks once a probe succeeds.</span>}
+                  <Btn variant="primary" onClick={register} disabled={!!busy || !probedOk} style={{ width: '100%' }}>Publish source</Btn>
+                  {!probedOk && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Publish unlocks once any endpoint probes successfully — a 404 on a group root (e.g. /accounts) doesn’t count; try a real endpoint, or ask &ldquo;do all endpoints work?&rdquo;</span>}
                   <Btn onClick={saveDraft} disabled={!!busy} style={{ width: '100%' }}>Save as draft</Btn>
                   <span style={{ fontSize: 11, color: 'var(--text4)' }}>A draft stays off chat until you publish.</span>
                   {busy && busy !== 'Probing the live source…' && <span style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy}</span>}

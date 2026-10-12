@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.33] - 2026-10-12
+
+### Fixed
+- **Publish re-locking after a successful verification.** The AI builder gated Publish on the *current* probe result, so after a connection was verified, probing a non-existent path (e.g. a group root like `/accounts/`, which 404s because it isn't a real endpoint) would re-disable Publish. Publish now latches unlocked once *any* probe succeeds this session — the agent's build probe, a manual probe, or an Ask & refine probe all count — and only re-locks when the config materially changes (new build or an applied refine). The helper text now explains that a 404 on a group root doesn't count and to probe a real endpoint.
+
 ## [1.3.32] - 2026-10-12
 
 ### Fixed
