@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
+import { upsertApiSource, getServiceConfigById } from '@/lib/api-source-store'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -40,43 +41,13 @@ export async function POST(req: Request) {
       connections?: Array<Record<string, unknown>>
       status?: string
     }
-    const s = service
-    const lifecycle = status === 'draft' ? 'draft' : 'published'
-    let serviceId = id as string | undefined
-
-    if (serviceId) {
-      // Update the existing (draft) service. Preserve encrypted auth if none supplied.
-      let authEnc: string
-      if (s.auth_config) authEnc = encrypt(JSON.stringify(s.auth_config))
-      else {
-        const ex = await sql`SELECT auth_config FROM api_services WHERE id=${serviceId}`
-        if (!ex.length) return Response.json({ error: 'Draft not found' }, { status: 404 })
-        authEnc = (ex[0].auth_config as string) || encrypt(JSON.stringify({}))
-      }
-      await sql`
-        UPDATE api_services SET
-          label=${s.label || 'API source'}, base_url=${s.base_url || ''},
-          auth_type=${s.auth_type || 'bearer'}, auth_config=${authEnc},
-          default_headers=${JSON.stringify(s.default_headers || {})},
-          api_version=${s.api_version || null}, version_header=${s.version_header || null},
-          status=${lifecycle}
-        WHERE id=${serviceId}`
-      await sql`DELETE FROM api_connections WHERE service_id=${serviceId}`
-    } else {
-      const authEnc = encrypt(JSON.stringify(s.auth_config || {}))
-      const rows = await sql`
-        INSERT INTO api_services(label,base_url,environment,auth_type,auth_config,default_headers,api_version,version_header,status)
-        VALUES(${s.label || 'API source'},${s.base_url || ''},'production',${s.auth_type || 'bearer'},${authEnc},${JSON.stringify(s.default_headers || {})},${s.api_version || null},${s.version_header || null},${lifecycle})
-        RETURNING id`
-      serviceId = rows[0].id as string
+    try {
+      const r = await upsertApiSource({ id, service, connections, status })
+      return Response.json(r)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return Response.json({ error: msg }, { status: msg === 'Service not found' ? 404 : 500 })
     }
-
-    for (const c of connections) {
-      await sql`
-        INSERT INTO api_connections(service_id,label,description,base_path,pagination_style,pagination_limit_param,pagination_cursor_param,pagination_data_path)
-        VALUES(${serviceId},${c.label || 'Endpoint'},${c.description || null},${c.base_path || null},${c.pagination_style || 'none'},${c.pagination_limit_param || 'limit'},${c.pagination_cursor_param || 'cursor'},${c.pagination_data_path || null})`
-    }
-    return Response.json({ id: serviceId, status: lifecycle })
   }
 
   // Full config for one service (incl. decrypted auth_config) + its connections.
@@ -85,22 +56,9 @@ export async function POST(req: Request) {
   if (action === 'getServiceConfig') {
     const { id } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const rows = await sql`SELECT id,label,base_url,auth_type,auth_config,default_headers,api_version,version_header,COALESCE(status,'published') AS status FROM api_services WHERE id=${id}`
-    if (!rows.length) return Response.json({ error: 'Service not found' }, { status: 404 })
-    const svc = rows[0] as Record<string, unknown>
-    let authConfig: Record<string, unknown> = {}
-    try { authConfig = JSON.parse(decrypt((svc.auth_config as string) || '')) } catch {}
-    let defaultHeaders: Record<string, unknown> = {}
-    try { defaultHeaders = JSON.parse((svc.default_headers as string) || '{}') } catch {}
-    const conns = await sql`SELECT id,label,description,base_path,pagination_style,pagination_limit_param,pagination_cursor_param,pagination_data_path FROM api_connections WHERE service_id=${id} ORDER BY created_at ASC`
-    return Response.json({
-      service: {
-        id: svc.id, label: svc.label, base_url: svc.base_url, auth_type: svc.auth_type,
-        auth_config: authConfig, default_headers: defaultHeaders,
-        api_version: svc.api_version, version_header: svc.version_header, status: svc.status,
-      },
-      connections: conns,
-    })
+    const cfg = await getServiceConfigById(String(id))
+    if (!cfg) return Response.json({ error: 'Service not found' }, { status: 404 })
+    return Response.json(cfg)
   }
 
   if (action === 'publishService') {

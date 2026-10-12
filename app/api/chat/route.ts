@@ -20,6 +20,7 @@ import {
   type GuardrailContext,
 } from '@/lib/guardrails'
 export const runtime = 'nodejs'
+export const maxDuration = 300
 // Note: Anthropic client is instantiated per-request using getKey() below
 
 // Model availability + pricing resolve dynamically via lib/models.ts: the available

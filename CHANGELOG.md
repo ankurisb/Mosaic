@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.29] - 2026-10-12
+
+### Added
+- **Interactive "Diagnose" troubleshooting for live API connections — in Settings and in chat.** Instead of a one-shot "Build it with AI", you can now troubleshoot a misbehaving connection conversationally. A shared agent (`diagnoseApiConnection`) seeds the same investigation loop (discover spec, login, probe) with an *existing* connection's config + a symptom, reproduces the failure against the live API, root-causes it, and — when it's a config problem — proposes a corrected candidate. Credentials never leave the server: the stored `auth_config` is split into structural fields (shown to the model) and secrets (injected only at probe time), and re-attached on apply.
+  - **Settings → APIs:** a **Diagnose** button on each source opens a chat-style panel (symptom → diagnosis + the steps it took + a proposed-fix diff). Applying is admin-only and confirm-gated, re-publishing through the shared upsert and audit-logged.
+  - **Chat:** a `diagnose_api_connection` tool (read-only) lets the copilot troubleshoot a source mid-conversation and surface the root cause + proposed fix; `apply_api_fix` applies it, admin-only and behind an explicit two-step confirm (preview → `confirm:true`), audit-logged. Proposed fixes are held server-side by `fix_id` so the large candidate never round-trips through the model.
+
+### Changed
+- API source persistence (service + connections upsert, and full-config load with decrypted auth) is now a single shared path (`lib/api-source-store.ts`) used by the services route, the AI builder, and the chat apply tool — one place to audit and evolve.
+
 ## [1.3.28] - 2026-10-12
 
 ### Fixed

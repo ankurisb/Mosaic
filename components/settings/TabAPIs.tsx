@@ -4,6 +4,7 @@ import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
 import ApiBuilder from './ApiBuilder'
+import DiagnosePanel from './DiagnosePanel'
 
 interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null; status?: string }
 interface ApiConn { id: string; service_id: string; label: string; description: string; base_path: string; pagination_style: string }
@@ -558,6 +559,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [showSvcForm, setShowSvcForm] = useState(false)
   const [showBuilder, setShowBuilder] = useState(false)
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null)
+  const [diagnoseSvc, setDiagnoseSvc] = useState<ApiService | null>(null)
   const [svcForm, setSvcForm] = useState<Record<string, string>>(SVC_EMPTY)
   const [editingSvc, setEditingSvc] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -1653,6 +1655,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                   )}
                   <Btn size="sm" onClick={() => { openTryIt(svc, null) }}> Try</Btn>
                   {user.role === 'admin' && <>
+                    <Btn size="sm" onClick={() => setDiagnoseSvc(svc)} title="Troubleshoot this connection with AI">Diagnose</Btn>
                     <Btn size="sm" onClick={() => { const s = svc as unknown as Record<string,unknown>; setSvcForm({ ...SVC_EMPTY, label: String(s.label||''), base_url: String(s.base_url||''), environment: String(s.environment||'production'), auth_type: String(s.auth_type||'bearer'), rate_limit_rpm: String(s.rate_limit_rpm||''), request_timeout_ms: String(s.request_timeout_ms||30000), retry_count: String(s.retry_count||3) }); setEditingSvc(svc.id); setShowSvcForm(true); window.scrollTo({top:0,behavior:'smooth'}) }}>Edit</Btn>
                     <Btn size="sm" variant="danger" onClick={() => { delSvc(svc.id, svc.label) }}>Delete</Btn>
                   </>}
@@ -1739,6 +1742,14 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
           </>)
         })()}
         </>
+      )}
+
+      {diagnoseSvc && (
+        <DiagnosePanel
+          svc={{ id: diagnoseSvc.id, label: diagnoseSvc.label }}
+          onClose={() => setDiagnoseSvc(null)}
+          onApplied={() => load()}
+        />
       )}
     </div>
   )

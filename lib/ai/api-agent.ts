@@ -71,15 +71,64 @@ function redactKeys(obj: unknown): string {
   return `{ ${Object.keys(obj as Record<string, unknown>).slice(0, 8).join(', ')} }`
 }
 
-export async function runApiAgent(params: {
-  description: string
-  materials?: string
-  credentials?: Record<string, string>
-}): Promise<AgentResult> {
-  const creds = params.credentials || {}
+export interface DiagnoseResult extends AgentResult {
+  // Plain-language root cause + what to change (from the model's finish summary).
+  diagnosis?: string
+}
+
+const DIAGNOSE_SYSTEM = `You troubleshoot an EXISTING live REST API connection in Mosaic that isn't working. You are given the connection's current config (base_url, auth type + structural auth fields with secrets redacted, and the registered connections/base_paths) and a reported symptom. Credentials are available server-side — never type them. Work like an on-call engineer:
+
+1. REPRODUCE first: call probe with the current config against the failing endpoint (or a cheap GET under the reported group) to see the real status + body. The final request URL is base_url + connection.base_path + path.
+2. If it fails, INVESTIGATE: re-read the spec with discover_spec / inspect_openapi to find the correct base URL and paths; use login_probe to check auth and where the token really is. Look at the actual probe URL in the error — a doubled prefix (e.g. ".../api/api/...") or a missing prefix is the usual cause.
+3. ROOT-CAUSE it and decide whether it's a CONFIG problem (fixable here) or EXTERNAL (API down, credentials rejected/expired, endpoint removed upstream, insufficient permissions, rate limit).
+4. Call finish with:
+   - summary: a clear, specific root cause and exactly what to change (or, if external, what the user must do). This is shown to the user verbatim — be concrete.
+   - candidate: ONLY when a config change fixes it — the corrected service + connections (same shape the builder uses). Omit candidate for an external cause.
+
+Rules:
+- NEVER put credentials in any argument or in candidate.auth_config — set only structural auth fields; the server re-attaches the stored secrets on apply.
+- Use the spec summary's \`suggestedBaseUrl\` verbatim as base_url and treat its paths as relative to it — never re-add the mount prefix (doubled prefixes are the #1 cause of 404s).
+- Prefer confirming your proposed fix with a successful probe before finishing with a candidate.
+- Quote real endpoints; never invent paths. Keep going until you've reproduced and explained the failure, then finish.`
+
+// Credential field names whose VALUES must stay server-side (never shown to the
+// model or written into a proposed candidate). Structural auth fields
+// (login_url, token_path, token_header, token_prefix, *_field, client_id, …) are
+// safe and necessary for diagnosis, so they are NOT treated as secret.
+const SECRET_EXACT = new Set(['password', 'pass', 'token', 'access_token', 'refresh_token', 'api_key', 'apikey', 'key', 'client_secret', 'secret', 'username'])
+function isSecretKey(k: string): boolean {
+  const lk = k.toLowerCase()
+  if (SECRET_EXACT.has(lk)) return true
+  return /_(secret|password|token|key)$/.test(lk) // x_api_key, auth_token, … (NOT token_path/header/prefix/url)
+}
+function splitSecrets(auth: Record<string, unknown> | undefined): { secrets: Record<string, string>; structural: Record<string, unknown> } {
+  const secrets: Record<string, string> = {}
+  const structural: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(auth || {})) {
+    if (isSecretKey(k)) { if (v != null && v !== '') secrets[k] = String(v) }
+    else structural[k] = v
+  }
+  return { secrets, structural }
+}
+
+/** Re-attach the stored secret values onto a model-proposed (structural-only)
+ *  auth_config, so applying a diagnosis fix keeps credentials intact. */
+export function mergeStoredSecrets(proposedAuth: Record<string, unknown> | undefined, storedAuth: Record<string, unknown> | undefined): Record<string, unknown> {
+  const { secrets } = splitSecrets(storedAuth)
+  return { ...(proposedAuth || {}), ...secrets }
+}
+
+// Shared tool-loop driver for both the builder (runApiAgent) and the
+// troubleshooter (diagnoseApiConnection): same tools, same probing, different
+// system prompt and seed.
+async function driveAgent(opts: { system: string; seedUserText: string; creds: Record<string, string> }): Promise<{
+  finished?: AgentCandidate; finishedSummary?: string; transcript: string[]; lastProbe?: ProbeOutcome; error?: string
+}> {
+  const creds = opts.creds
   const transcript: string[] = []
   let lastProbe: ProbeOutcome | undefined
-  const cacheKey = `agent:${Date.now().toString(36)}`
+  let finishedSummary: string | undefined
+  const cacheKey = `agent:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 7)}`
 
   // Merge the real (server-held) credential values into a model-supplied auth_config.
   const withCreds = (authConfig: Record<string, unknown> | undefined): Record<string, unknown> =>
@@ -159,6 +208,7 @@ export async function runApiAgent(params: {
     }
 
     if (name === 'finish') {
+      finishedSummary = input.summary ? String(input.summary) : undefined
       return { result: { ok: true }, finished: (input.candidate || {}) as AgentCandidate }
     }
 
@@ -168,18 +218,11 @@ export async function runApiAgent(params: {
   try {
     const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
     const model = await getDefaultModelId()
-    const userText = [
-      `Connect this API:\n${params.description}`,
-      params.materials ? `\nMaterials provided:\n${params.materials.slice(0, 16000)}` : '',
-      Object.keys(creds).length ? `\nCredentials are available server-side (fields: ${Object.keys(creds).join(', ')}). Use login_probe/probe — never type the values.` : `\nNo credentials were provided; discover what's needed and finish with ready_to_probe:false if auth can't be completed.`,
-      `\nBegin by discovering the API.`,
-    ].join('')
-
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userText }]
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.seedUserText }]
     let finished: AgentCandidate | undefined
 
     for (let step = 0; step < MAX_STEPS; step++) {
-      const resp = await client.messages.create({ model, max_tokens: 2000, system: SYSTEM, tools: TOOLS, messages })
+      const resp = await client.messages.create({ model, max_tokens: 2000, system: opts.system, tools: TOOLS, messages })
       messages.push({ role: 'assistant', content: resp.content })
       const toolUses = resp.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
       if (!toolUses.length) break
@@ -192,10 +235,71 @@ export async function runApiAgent(params: {
       if (finished) break
       messages.push({ role: 'user', content: toolResults })
     }
-
-    if (!finished) return { ok: false, transcript, probe: lastProbe, reason: 'The agent did not reach a working connection in the step budget.' }
-    return { ok: !!lastProbe?.ok, candidate: finished, transcript, probe: lastProbe }
+    return { finished, finishedSummary, transcript, lastProbe }
   } catch (e) {
-    return { ok: false, transcript, reason: e instanceof Error ? e.message : String(e) }
+    return { transcript, lastProbe, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function runApiAgent(params: {
+  description: string
+  materials?: string
+  credentials?: Record<string, string>
+}): Promise<AgentResult> {
+  const creds = params.credentials || {}
+  const seedUserText = [
+    `Connect this API:\n${params.description}`,
+    params.materials ? `\nMaterials provided:\n${params.materials.slice(0, 16000)}` : '',
+    Object.keys(creds).length ? `\nCredentials are available server-side (fields: ${Object.keys(creds).join(', ')}). Use login_probe/probe — never type the values.` : `\nNo credentials were provided; discover what's needed and finish with ready_to_probe:false if auth can't be completed.`,
+    `\nBegin by discovering the API.`,
+  ].join('')
+
+  const d = await driveAgent({ system: SYSTEM, seedUserText, creds })
+  if (d.error) return { ok: false, transcript: d.transcript, probe: d.lastProbe, reason: d.error }
+  if (!d.finished) return { ok: false, transcript: d.transcript, probe: d.lastProbe, reason: 'The agent did not reach a working connection in the step budget.' }
+  return { ok: !!d.lastProbe?.ok, candidate: d.finished, transcript: d.transcript, probe: d.lastProbe }
+}
+
+/**
+ * Troubleshoot an EXISTING connection that's misbehaving. Seeds the same tool
+ * loop with the current (secret-redacted) config + a symptom + optional prior
+ * turns, reproduces the failure, root-causes it, and returns a plain-language
+ * diagnosis plus — if it's a config problem — a corrected candidate. Secrets are
+ * split out of the stored auth_config and injected server-side only.
+ */
+export async function diagnoseApiConnection(params: {
+  service: Record<string, unknown>
+  connections: Array<Record<string, unknown>>
+  symptom: string
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>
+}): Promise<DiagnoseResult> {
+  const { secrets, structural } = splitSecrets(params.service.auth_config as Record<string, unknown>)
+  const safeService: Record<string, unknown> = { ...params.service, auth_config: structural }
+  const configText = JSON.stringify({
+    service: {
+      label: safeService.label, base_url: safeService.base_url, auth_type: safeService.auth_type,
+      auth_config: structural, default_headers: safeService.default_headers,
+      api_version: safeService.api_version, version_header: safeService.version_header,
+    },
+    connections: (params.connections || []).map(c => ({ label: c.label, base_path: c.base_path, pagination_data_path: c.pagination_data_path })),
+  }, null, 1)
+  const histText = (params.history || []).map(h => `${h.role === 'user' ? 'User' : 'You'}: ${h.text}`).join('\n')
+  const seedUserText = [
+    `An existing Mosaic API connection is misbehaving. Troubleshoot it.`,
+    `\nReported symptom:\n${params.symptom}`,
+    `\nCurrent config (credentials redacted; the real values are available server-side as fields: ${Object.keys(secrets).join(', ') || 'none'}):\n${configText}`,
+    histText ? `\nConversation so far:\n${histText}` : '',
+    `\nReproduce the failure with a probe first, then investigate and root-cause.`,
+  ].join('')
+
+  const d = await driveAgent({ system: DIAGNOSE_SYSTEM, seedUserText, creds: secrets })
+  if (d.error) return { ok: false, transcript: d.transcript, probe: d.lastProbe, reason: d.error }
+  return {
+    ok: !!d.finished,
+    candidate: d.finished,
+    diagnosis: d.finishedSummary,
+    transcript: d.transcript,
+    probe: d.lastProbe,
+    reason: d.finished ? undefined : 'No diagnosis was produced within the step budget.',
   }
 }

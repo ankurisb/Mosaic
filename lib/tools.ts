@@ -50,6 +50,29 @@ async function s3SignedFetch(
 import { Pool } from 'pg'
 import type { Pool as MysqlPool } from 'mysql2/promise'
 import { applyAuth, parseAuthConfig } from '@/lib/api-auth'
+import { diagnoseApiConnection, mergeStoredSecrets, type AgentCandidate } from '@/lib/ai/api-agent'
+import { getServiceConfigById, upsertApiSource, type ApiServiceConfig } from '@/lib/api-source-store'
+import { putProposal, getProposal, dropProposal } from '@/lib/ai/fix-proposals'
+import { audit, AUDIT } from '@/lib/audit'
+
+/** Compact, human-readable diff of a proposed connection fix vs the current config. */
+function summariseApiFix(current: ApiServiceConfig, candidate: AgentCandidate): string {
+  const cs = (candidate.service || {}) as Record<string, unknown>
+  const lines: string[] = []
+  const cur = (current || {}) as Record<string, unknown>
+  for (const f of ['base_url', 'auth_type', 'api_version', 'version_header']) {
+    const to = cs[f]
+    if (to !== undefined && String(to ?? '') !== String((cur[f as keyof typeof cur] as unknown) ?? '')) {
+      lines.push(`${f}: ${String((cur[f as keyof typeof cur] as unknown) ?? '(unset)')} → ${String(to ?? '(unset)')}`)
+    }
+  }
+  const conns = candidate.connections || []
+  if (conns.length) {
+    const paths = conns.map(c => String((c as Record<string, unknown>).base_path ?? '')).filter(Boolean)
+    lines.push(`connections: ${conns.length} (${paths.slice(0, 8).join(', ')}${paths.length > 8 ? ', …' : ''})`)
+  }
+  return lines.length ? lines.join('\n') : 'No structural changes (same base URL/auth); connections unchanged.'
+}
 
 // -- Tool definitions ------------------------------------------
 export const TOOLS: Anthropic.Tool[] = [
@@ -291,6 +314,32 @@ Never pass confirmed=true until the user has seen the draft and said yes. If the
       required: ['name', 'source_hint', 'query', 'op', 'threshold', 'channel_hint']
     },
   },
+  {
+    name: 'diagnose_api_connection',
+    description: `Troubleshoot a configured API connection that is failing or behaving wrong (e.g. calls returning 404/401, wrong or empty data, auth errors). Give the connection_id and a clear symptom. An investigation agent reproduces the failure against the live API with the stored credentials, re-reads the API's spec, root-causes it, and returns a plain-language explanation plus — when it's a fixable configuration problem — a proposed fix with a fix_id.
+
+Read-only: this NEVER changes the connection. To APPLY a proposed fix, show the user the diagnosis and the proposed change, and only if they explicitly confirm, call apply_api_fix with the fix_id. Use this when the user asks why a source isn't working, or when your own call_api to a connection fails and the cause isn't obvious.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        connection_id: { type: 'string', description: 'The API connection ID that is misbehaving (same id you would pass to call_api).' },
+        symptom: { type: 'string', description: 'What is going wrong, as specifically as possible — e.g. "every endpoint returns 404", "login works but data calls are 401", "returns an empty list". Include the failing method/path and status if you have them.' },
+      },
+      required: ['connection_id', 'symptom']
+    },
+  },
+  {
+    name: 'apply_api_fix',
+    description: `Apply a configuration fix that diagnose_api_connection proposed, identified by its fix_id. ADMIN ONLY and CONFIRM-GATED: only call this after (a) you showed the user the diagnosis and the specific proposed change, and (b) the user explicitly said to apply it. Pass confirm:true to actually apply; without it the tool only previews what would change. Applying re-publishes the connection and is audit-logged. Stored credentials are preserved automatically.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        fix_id: { type: 'string', description: 'The fix_id returned by diagnose_api_connection for the proposed fix.' },
+        confirm: { type: 'boolean', description: 'Set true ONLY after the user explicitly confirms the specific change. Omit/false to preview the change without applying.' },
+      },
+      required: ['fix_id']
+    },
+  },
 ]
 
 export async function runTool(
@@ -310,7 +359,7 @@ export async function runTool(
   // (the flexible default). This turns the picker from a prompt-level preference
   // into an actual boundary, so a pinned scope cannot be silently escaped.
   if (guardrailCtx?.allowedSources && guardrailCtx.allowedSources.length > 0) {
-    const SOURCE_TOOLS = new Set(['query_database', 'call_api', 'read_file_server', 'query_airbyte', 'query_prism'])
+    const SOURCE_TOOLS = new Set(['query_database', 'call_api', 'read_file_server', 'query_airbyte', 'query_prism', 'diagnose_api_connection'])
     if (SOURCE_TOOLS.has(name)) {
       const targetId = String(
         input.connection_id || input.server_id || input.service_id || input.source_id || ''
@@ -390,6 +439,62 @@ export async function runTool(
         }
       } catch { }
       return callApi(srcId, String(input.method), String(input.path), input.body as Record<string, unknown> | undefined)
+    }
+
+    case 'diagnose_api_connection': {
+      const connId = String(input.connection_id || '')
+      const symptom = String(input.symptom || '')
+      if (!connId || !symptom.trim()) return { error: 'connection_id and symptom are required.' }
+      const db = getDb()
+      // The id may be an api_connections.id (what call_api uses) or a service id.
+      let serviceId = connId
+      try {
+        const rows = await db`SELECT service_id FROM api_connections WHERE id=${connId}`
+        if (rows.length) serviceId = String((rows[0] as Record<string, unknown>).service_id)
+      } catch { /* treat connId as a service id */ }
+      const cfg = await getServiceConfigById(serviceId)
+      if (!cfg) return { error: `No API connection found for "${connId}".` }
+      const r = await diagnoseApiConnection({
+        service: cfg.service as unknown as Record<string, unknown>,
+        connections: cfg.connections as unknown as Array<Record<string, unknown>>,
+        symptom,
+      })
+      let proposed_fix: { fix_id: string; summary: string } | undefined
+      if (r.candidate && (r.candidate.service || (r.candidate.connections && r.candidate.connections.length))) {
+        const fix_id = putProposal({ serviceId, candidate: r.candidate, diagnosis: r.diagnosis })
+        proposed_fix = { fix_id, summary: summariseApiFix(cfg.service, r.candidate) }
+      }
+      return {
+        diagnosis: r.diagnosis || r.reason || 'Could not determine a root cause within the step budget.',
+        steps: r.transcript,
+        probe: r.probe ? { ok: r.probe.ok, status: r.probe.status, url: r.probe.url } : undefined,
+        fixable: !!proposed_fix,
+        proposed_fix,
+        note: proposed_fix
+          ? 'This is read-only. To apply the fix, show the user the diagnosis + proposed change above and, only if they confirm, call apply_api_fix with the fix_id.'
+          : 'No config fix proposed — this looks external (see diagnosis). Nothing was changed.',
+      }
+    }
+
+    case 'apply_api_fix': {
+      if (role !== 'admin') return { error: 'Applying a connection fix requires an admin. An admin can apply it here, or in Settings → APIs → Diagnose.' }
+      const fixId = String(input.fix_id || '')
+      const prop = getProposal(fixId)
+      if (!prop) return { error: 'That proposed fix has expired or was not found. Run diagnose_api_connection again to get a fresh one.' }
+      const existing = await getServiceConfigById(prop.serviceId)
+      if (!existing) return { error: 'That connection no longer exists.' }
+      const diff = summariseApiFix(existing.service, prop.candidate)
+      if (!input.confirm) {
+        return { preview: true, would_change: diff, note: 'Nothing applied yet. Confirm this specific change with the user, then call apply_api_fix again with confirm:true.' }
+      }
+      const mergedAuth = mergeStoredSecrets(prop.candidate.service?.auth_config as Record<string, unknown>, existing.service.auth_config)
+      const svc: ApiServiceConfig = { ...((prop.candidate.service || {}) as ApiServiceConfig), auth_config: mergedAuth }
+      const r = await upsertApiSource({ id: prop.serviceId, service: svc, connections: (prop.candidate.connections || []) as Array<Record<string, unknown>>, status: 'published' })
+      dropProposal(fixId)
+      try {
+        await audit(null, { id: guardrailCtx?.userId, email: guardrailCtx?.userEmail, role }, AUDIT.CONNECTION_UPDATE, `api_service:${prop.serviceId}`, 'success', { via: 'chat_diagnose', base_url: svc.base_url, connections: (prop.candidate.connections || []).length })
+      } catch { /* audit is best-effort */ }
+      return { ok: true, applied: true, id: r.id, changed: diff, note: 'Connection updated and re-published. Try the call again.' }
     }
 
     case 'read_file_server': {
