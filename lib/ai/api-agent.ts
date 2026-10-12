@@ -91,6 +91,18 @@ Rules:
 - Prefer confirming your proposed fix with a successful probe before finishing with a candidate.
 - Quote real endpoints; never invent paths. Keep going until you've reproduced and explained the failure, then finish.`
 
+const ASSIST_SYSTEM = `You help a user build and refine a live REST API connection in Mosaic, conversationally. You are given the connection's current draft config (base_url, auth type + structural auth fields with secrets redacted, and the endpoint groups) and the user's message. Credentials are available server-side — never type them. The user may:
+- ASK a question about the API ("do all endpoints work?", "what does /materials return?", "which groups need an id in the path?"). ANSWER IT by actually checking: probe a cheap GET (or the specific endpoint they mention) and/or read the spec with inspect_openapi / discover_spec. Base the answer on real results, not assumptions. For "do all endpoints work", note that all groups share one base URL + auth, so 1–2 successful probes confirm the whole set; say so plainly rather than probing every group.
+- REQUEST a change ("records are under data.results", "base path should be /v2", "add the orders group"). Make it, and confirm with a probe when you can.
+
+The final request URL is base_url + connection.base_path + path. Use the spec summary's \`suggestedBaseUrl\` verbatim and treat its paths as relative to it — never re-add the mount prefix (doubled prefixes cause 404s).
+
+Finish with:
+- summary: a clear, direct answer to the user, shown verbatim. For a question, answer it (with what the probe/spec showed). For a change, say what you changed and the probe result.
+- candidate: ONLY when you actually changed the configuration — the corrected service + connections (same shape the builder uses). For a pure question, OMIT candidate (don't propose a no-op change).
+
+Rules: never put credentials in any argument or in candidate.auth_config (the server re-attaches the stored secrets). Quote real endpoints; never invent paths. Keep to a probe or two unless more is genuinely needed.`
+
 // Credential field names whose VALUES must stay server-side (never shown to the
 // model or written into a proposed candidate). Structural auth fields
 // (login_url, token_path, token_header, token_prefix, *_field, client_id, …) are
@@ -272,7 +284,11 @@ export async function diagnoseApiConnection(params: {
   connections: Array<Record<string, unknown>>
   symptom: string
   history?: Array<{ role: 'user' | 'assistant'; text: string }>
+  // 'diagnose' (default): a saved connection is misbehaving. 'assist': a chat in
+  // the builder cockpit — answer questions about the draft and make changes.
+  mode?: 'diagnose' | 'assist'
 }): Promise<DiagnoseResult> {
+  const assist = params.mode === 'assist'
   const { secrets, structural } = splitSecrets(params.service.auth_config as Record<string, unknown>)
   const safeService: Record<string, unknown> = { ...params.service, auth_config: structural }
   const configText = JSON.stringify({
@@ -284,7 +300,13 @@ export async function diagnoseApiConnection(params: {
     connections: (params.connections || []).map(c => ({ label: c.label, base_path: c.base_path, pagination_data_path: c.pagination_data_path })),
   }, null, 1)
   const histText = (params.history || []).map(h => `${h.role === 'user' ? 'User' : 'You'}: ${h.text}`).join('\n')
-  const seedUserText = [
+  const seedUserText = assist ? [
+    `You're helping build/refine an API connection in Mosaic. Here is the current draft and the user's message.`,
+    `\nUser message:\n${params.symptom}`,
+    `\nCurrent draft config (credentials redacted; the real values are available server-side as fields: ${Object.keys(secrets).join(', ') || 'none'}):\n${configText}`,
+    histText ? `\nConversation so far:\n${histText}` : '',
+    `\nAnswer the question or make the change; check with a probe where it helps.`,
+  ].join('') : [
     `An existing Mosaic API connection is misbehaving. Troubleshoot it.`,
     `\nReported symptom:\n${params.symptom}`,
     `\nCurrent config (credentials redacted; the real values are available server-side as fields: ${Object.keys(secrets).join(', ') || 'none'}):\n${configText}`,
@@ -292,7 +314,7 @@ export async function diagnoseApiConnection(params: {
     `\nReproduce the failure with a probe first, then investigate and root-cause.`,
   ].join('')
 
-  const d = await driveAgent({ system: DIAGNOSE_SYSTEM, seedUserText, creds: secrets })
+  const d = await driveAgent({ system: assist ? ASSIST_SYSTEM : DIAGNOSE_SYSTEM, seedUserText, creds: secrets })
   if (d.error) return { ok: false, transcript: d.transcript, probe: d.lastProbe, reason: d.error }
   return {
     ok: !!d.finished,

@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     if (action === 'diagnose') {
       // Troubleshoot a misbehaving connection. Either a saved service (service_id,
       // config + decrypted secrets loaded here) or an inline draft candidate.
-      const { service_id, service, connections, symptom, history } = body
+      const { service_id, service, connections, symptom, history, mode } = body
       if (!symptom || !String(symptom).trim()) return Response.json({ error: 'symptom required' }, { status: 400 })
       let svc: Record<string, unknown> | undefined = service
       let conns: Array<Record<string, unknown>> = Array.isArray(connections) ? connections : []
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
         conns = cfg.connections as unknown as Array<Record<string, unknown>>
       }
       if (!svc) return Response.json({ error: 'service or service_id required' }, { status: 400 })
-      const r = await diagnoseApiConnection({ service: svc, connections: conns, symptom: String(symptom), history: Array.isArray(history) ? history : undefined })
+      const r = await diagnoseApiConnection({ service: svc, connections: conns, symptom: String(symptom), history: Array.isArray(history) ? history : undefined, mode: mode === 'assist' ? 'assist' : 'diagnose' })
       return Response.json({ ok: r.ok, diagnosis: r.diagnosis, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, service_id: service_id || null })
     }
 

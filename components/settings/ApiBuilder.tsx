@@ -66,6 +66,8 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   const [agentPass, setAgentPass] = useState('')
   const [transcript, setTranscript] = useState<string[]>([])
   const [agentVerified, setAgentVerified] = useState<{ groups: number; auth: string; status: number } | null>(null)
+  const [refineChat, setRefineChat] = useState<Array<{ role: 'user' | 'assistant'; text: string; steps?: string[]; probe?: ProbeResult; candidate?: Candidate; applied?: boolean }>>([])
+  const [chatBusy, setChatBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -238,27 +240,44 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
     setBusy(null)
   }
 
-  async function refine() {
-    if (!candidate) return
-    setBusy('Refining with the probe result…'); setError(null)
+  // Interactive assistant for the draft: answers questions about the API (by
+  // probing / reading the spec) and makes changes you can apply. Reuses the same
+  // server agent as the Diagnose panel, in 'assist' mode, with the current draft
+  // (incl. live credentials) sent inline.
+  async function askAssistant() {
+    const msg = note.trim()
+    if (!msg || chatBusy || !candidate) return
+    setChatBusy(true); setError(null)
+    const history = refineChat.map(t => ({ role: t.role, text: t.text }))
+    setRefineChat(c => [...c, { role: 'user', text: msg }])
+    setNote('')
     try {
       const r = await fetch('/api/api-builder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'refine',
-          previousCandidate: { ...candidate, service: { ...service, auth_config: mergedAuthConfig } },
-          probeStatus: probe?.status,
-          probeBody: probe?.body,
-          probeError: probe?.error,
-          userNote: note || undefined,
+          action: 'diagnose', mode: 'assist',
+          service: { ...service, auth_config: mergedAuthConfig },
+          connections, symptom: msg, history,
         }),
       })
       const d = await r.json()
-      if (!d.ok) { setError(d.error || 'Refine failed'); setBusy(null); return }
-      applyCandidate(d.candidate)
-      setNote('')
-    } catch { setError('Refine failed') }
-    setBusy(null)
+      if (!r.ok) throw new Error(d.error || 'Request failed')
+      setRefineChat(c => [...c, { role: 'assistant', text: d.diagnosis || d.reason || 'No answer.', steps: d.transcript, probe: d.probe as ProbeResult | undefined, candidate: d.candidate as Candidate | undefined }])
+    } catch (e) {
+      setRefineChat(c => [...c, { role: 'assistant', text: `Sorry — ${e instanceof Error ? e.message : 'request failed'}.` }])
+    }
+    setChatBusy(false)
+  }
+
+  // Apply a change the assistant proposed to the in-cockpit draft (re-attaching
+  // the live secrets, which the server strips from its proposal). Does NOT
+  // publish — you still probe / Publish when ready.
+  function applyProposed(idx: number) {
+    const c = refineChat[idx]?.candidate
+    if (!c) return
+    const merged: Candidate = { ...c, service: { ...(c.service || {}), auth_config: { ...((c.service || {}).auth_config || {}), ...secrets } } as ServiceDraft }
+    applyCandidate(merged)
+    setRefineChat(list => list.map((t, i) => i === idx ? { ...t, applied: true } : t))
   }
 
   // Upsert the whole source (service + connections) with a lifecycle status.
@@ -506,16 +525,55 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
               </div>
             </section>
 
-            {/* ── Refine (right, always visible) ── */}
+            {/* ── Chat: ask about the API + refine (right, always visible) ── */}
             <section className="apib-pane">
-              <div className="apib-head"><span>Refine</span></div>
+              <div className="apib-head"><span>Ask &amp; refine</span></div>
               <div className="apib-refinebody">
-                <label style={{ fontSize: 11.5, color: 'var(--text2)' }}>Tell Mosaic what to fix</label>
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 2 }}>
+                  {refineChat.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+                      Ask about this API or request a change — Mosaic checks it live against the source.
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4, color: 'var(--text4)' }}>
+                        <span>· &ldquo;do all the endpoints work?&rdquo;</span>
+                        <span>· &ldquo;what does the materials endpoint return?&rdquo;</span>
+                        <span>· &ldquo;records are under data.results, not the top level&rdquo;</span>
+                      </div>
+                    </div>
+                  )}
+                  {refineChat.map((t, i) => t.role === 'user' ? (
+                    <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '90%', background: 'var(--accent-bg, rgba(0,112,243,.1))', color: 'var(--text)', padding: '7px 10px', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>{t.text}</div>
+                  ) : (
+                    <div key={i} style={{ alignSelf: 'flex-start', maxWidth: '96%', background: 'var(--surface)', border: '1px solid var(--border2)', padding: '8px 10px', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text)' }}>
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{t.text}</div>
+                      {t.probe && (
+                        <div style={{ marginTop: 5, fontSize: 11, color: t.probe.ok ? 'var(--success, #15803d)' : 'var(--danger, #b91c1c)' }}>
+                          probe: {t.probe.ok ? `${t.probe.status} OK` : `HTTP ${t.probe.status || 'failed'}`}
+                        </div>
+                      )}
+                      {t.steps && t.steps.length > 0 && (
+                        <details style={{ marginTop: 5 }}>
+                          <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--text3)' }}>{t.steps.length} step{t.steps.length !== 1 ? 's' : ''} it took</summary>
+                          <ol style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--text3)', lineHeight: 1.5 }}>
+                            {t.steps.map((s, j) => <li key={j}>{s}</li>)}
+                          </ol>
+                        </details>
+                      )}
+                      {t.candidate && (t.candidate.service || (t.candidate.connections && t.candidate.connections.length)) && (
+                        t.applied
+                          ? <div style={{ marginTop: 7, fontSize: 11.5, color: 'var(--success, #15803d)', fontWeight: 500 }}>✓ Applied to the draft — re-probe, then Publish.</div>
+                          : <Btn size="sm" variant="primary" onClick={() => applyProposed(i)} style={{ marginTop: 7 }}>Apply to draft</Btn>
+                      )}
+                    </div>
+                  ))}
+                  {chatBusy && <div style={{ alignSelf: 'flex-start', display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--text3)' }}><Spinner size={12} /> Checking against the live API…</div>}
+                </div>
+
                 <textarea value={note} onChange={e => setNote(e.target.value)}
-                  placeholder="e.g. the records are under data.results, not the top level — or auth should post to /login not /authenticate"
-                  style={{ ...INP, flex: 1, minHeight: 110, resize: 'none', fontFamily: 'inherit' }} />
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); askAssistant() } }}
+                  placeholder="Ask a question or describe a change…"
+                  style={{ ...INP, minHeight: 56, resize: 'none', fontFamily: 'inherit' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <Btn onClick={refine} disabled={!!busy} style={{ width: '100%' }}>Refine</Btn>
+                  <Btn onClick={askAssistant} disabled={chatBusy || !note.trim()} style={{ width: '100%' }}>{chatBusy ? 'Thinking…' : 'Send'}</Btn>
                   <Btn variant="primary" onClick={register} disabled={!!busy || !probe?.ok} style={{ width: '100%' }}>Publish source</Btn>
                   {!probe?.ok && <span style={{ fontSize: 11, color: 'var(--text4)' }}>Publish unlocks once a probe succeeds.</span>}
                   <Btn onClick={saveDraft} disabled={!!busy} style={{ width: '100%' }}>Save as draft</Btn>

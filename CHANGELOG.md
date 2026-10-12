@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.31] - 2026-10-12
+
+### Changed
+- **The builder's Refine pane is now an interactive chat ("Ask & refine").** Instead of a one-shot "tell Mosaic what to fix" box that regenerated the whole connection as JSON (and could fail to parse on large specs), you can now hold a conversation about the draft: ask questions ("do all the endpoints work?", "what does the materials endpoint return?") and Mosaic answers by actually probing/reading the spec live, or request a change ("records are under data.results") and apply it to the draft with one click, then Publish. Powered by the same agent as the Diagnose panel, in a new `assist` mode, with the draft (incl. live credentials) sent inline. Fixes the "Expected ',' or ']' … JSON" error from typing a question into the old Refine box.
+
 ## [1.3.30] - 2026-10-12
 
 ### Added
