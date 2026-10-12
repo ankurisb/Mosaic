@@ -18,6 +18,7 @@ export interface OpenApiSummary {
   servers: string[]
   securitySchemes: Record<string, { type?: string; scheme?: string; in?: string; name?: string }>
   loginCandidates: LoginCandidate[]
+  groups: string[]
   endpoints: EndpointRef[]
   endpointCount: number
 }
@@ -95,10 +96,10 @@ function securityOf(spec: Obj): OpenApiSummary['securitySchemes'] {
   return out
 }
 
-export function summarizeOpenApi(spec: unknown, endpointCap = 80): OpenApiSummary {
-  if (!isObj(spec)) return { ok: false, reason: 'Not a spec object', servers: [], securitySchemes: {}, loginCandidates: [], endpoints: [], endpointCount: 0 }
+export function summarizeOpenApi(spec: unknown, endpointCap = 150): OpenApiSummary {
+  if (!isObj(spec)) return { ok: false, reason: 'Not a spec object', servers: [], securitySchemes: {}, loginCandidates: [], groups: [], endpoints: [], endpointCount: 0 }
   const paths = isObj(spec.paths) ? (spec.paths as Obj) : undefined
-  if (!paths) return { ok: false, reason: 'No paths in spec', servers: [], securitySchemes: {}, loginCandidates: [], endpoints: [], endpointCount: 0 }
+  if (!paths) return { ok: false, reason: 'No paths in spec', servers: [], securitySchemes: {}, loginCandidates: [], groups: [], endpoints: [], endpointCount: 0 }
 
   const info = isObj(spec.info) ? spec.info : {}
   const endpoints: EndpointRef[] = []
@@ -125,6 +126,10 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 80): OpenApiSummar
     return score(a) - score(b)
   })
 
+  // Distinct top-level path segments (after any shared base like /api) — these
+  // are the natural "connections" (endpoint groups) to register.
+  const groups = Array.from(new Set(endpoints.map(e => e.path.split('/').filter(Boolean)[0] || '').filter(Boolean))).sort()
+
   return {
     ok: true,
     title: typeof info.title === 'string' ? info.title : undefined,
@@ -132,6 +137,7 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 80): OpenApiSummar
     servers: serversOf(spec),
     securitySchemes: securityOf(spec),
     loginCandidates,
+    groups,
     endpoints: endpoints.slice(0, endpointCap),
     endpointCount: endpoints.length,
   }

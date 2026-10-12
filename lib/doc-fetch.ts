@@ -34,8 +34,17 @@ export function htmlToText(html: string): string {
 
 export type UrlTextResult = { ok: true; text: string } | { ok: false; error: string }
 
-/** Fetch one URL as text, SSRF-guarded (strict), following up to `hops` redirects. */
-export async function fetchUrlText(rawUrl: string, hops = 2): Promise<UrlTextResult> {
+export interface FetchTextOpts { hops?: number; maxBytes?: number; maxText?: number }
+
+/**
+ * Fetch one URL as text, SSRF-guarded (strict), following up to `hops` redirects.
+ * Defaults cap at 2MB / 200k chars (good for docs); callers fetching a spec to
+ * PARSE pass larger caps so a big OpenAPI JSON isn't truncated mid-document.
+ */
+export async function fetchUrlText(rawUrl: string, opts: FetchTextOpts = {}): Promise<UrlTextResult> {
+  const hops = opts.hops ?? 2
+  const maxBytes = opts.maxBytes ?? FETCH_MAX_BYTES
+  const maxText = opts.maxText ?? FETCH_MAX_TEXT
   let url = rawUrl
   for (let i = 0; i <= hops; i++) {
     try { new URL(url) } catch { return { ok: false, error: 'invalid URL' } }
@@ -62,12 +71,12 @@ export async function fetchUrlText(rawUrl: string, hops = 2): Promise<UrlTextRes
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      if (value) { chunks.push(value); total += value.length; if (total > FETCH_MAX_BYTES) break }
+      if (value) { chunks.push(value); total += value.length; if (total > maxBytes) break }
     }
     const contentType = res.headers.get('content-type') || ''
     let text = Buffer.concat(chunks).toString('utf8')
     if (/html/i.test(contentType) || /^\s*<!doctype html|^\s*<html/i.test(text)) text = htmlToText(text)
-    return { ok: true, text: text.slice(0, FETCH_MAX_TEXT) }
+    return { ok: true, text: text.slice(0, maxText) }
   }
   return { ok: false, error: 'too many redirects' }
 }

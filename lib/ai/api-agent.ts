@@ -45,9 +45,9 @@ Rules:
 - NEVER put credentials (username/password/token/key) in any tool argument or in the candidate's auth_config — the server injects them. Set only structural fields.
 - Quote real endpoints from the spec; never invent paths.
 - auth_type is one of: bearer, api_key_header, basic, oauth2_client, session_token, custom_headers. For a username/password login returning a token, use session_token with: login_url (path relative to base is fine), username_field, password_field, login_body_format, token_path, token_header, token_prefix.
-- base_url is scheme+host(+stable prefix) with no trailing slash. Put each endpoint's path in a connection's base_path.
-- Create one connection per endpoint group the user asked for (or a sensible default set if they didn't specify).
-- Keep going until a probe succeeds, then finish. If you truly cannot (e.g. credentials rejected), finish with ready_to_probe:false and a message explaining what's needed.`
+- base_url is scheme+host(+stable prefix) with no trailing slash.
+- A "connection" is an endpoint GROUP (a base_path the agent can call any path under at query time), NOT a single endpoint. After auth is confirmed, create ONE connection for EACH group in the spec summary's \`groups\` (base_path = "/" + group, e.g. "/assets"), so the WHOLE API is reachable — not just the groups you happened to probe. You do NOT need to probe every group; 1–2 successful probes confirm the auth chain, then register all the groups. Give each connection a readable label and set pagination_data_path if the list responses nest their records. If the user named specific groups, make sure those are included, plus the rest.
+- Keep going until a probe succeeds, then finish with the full set of group connections. If you truly cannot (e.g. credentials rejected), finish with ready_to_probe:false and a message explaining what's needed.`
 
 const TOOLS: Anthropic.Tool[] = [
   { name: 'discover_spec', description: 'Given a base URL, try common spec/doc locations (/openapi.json, /swagger.json, /api-docs, /llms.txt, …) and return any OpenAPI/Swagger summary found plus which URLs responded.', input_schema: { type: 'object', properties: { base_url: { type: 'string' } }, required: ['base_url'] } },
@@ -90,7 +90,9 @@ export async function runApiAgent(params: {
       let summary: unknown = null; let foundUrl = ''; let docText = ''
       for (const sp of SPEC_PATHS) {
         const url = base + sp
-        const r = await fetchUrlText(url)
+        // Specs can be large (hundreds of KB) — fetch without the docs text cap
+        // so a big OpenAPI JSON isn't truncated before it parses.
+        const r = await fetchUrlText(url, { maxBytes: 12_000_000, maxText: 12_000_000 })
         if (!r.ok) { tried.push({ url, status: (r as { ok: false; error: string }).error }); continue }
         tried.push({ url, status: 'ok' })
         const parsed = parseSpec((r as { ok: true; text: string }).text)
@@ -98,12 +100,13 @@ export async function runApiAgent(params: {
         if (s.ok) { summary = s; foundUrl = url; break }
         if (sp.endsWith('llms.txt') || sp.endsWith('/docs')) docText ||= (r as { ok: true; text: string }).text.slice(0, 8000)
       }
-      transcript.push(summary ? `Discovered API spec at ${foundUrl} (${(summary as { endpointCount: number }).endpointCount} endpoints).` : `Looked for a spec under ${base} — none found.`)
+      const sm = summary as { endpointCount: number; groups: string[] } | null
+      transcript.push(sm ? `Discovered API spec at ${foundUrl} — ${sm.endpointCount} endpoints across ${sm.groups.length} groups (${sm.groups.slice(0, 10).join(', ')}${sm.groups.length > 10 ? '…' : ''}).` : `Looked for a spec under ${base} — none found.`)
       return { result: { found: foundUrl || null, summary, docs_text: docText || undefined, tried } }
     }
 
     if (name === 'inspect_openapi') {
-      const r = await fetchUrlText(String(input.url || ''))
+      const r = await fetchUrlText(String(input.url || ''), { maxBytes: 12_000_000, maxText: 12_000_000 })
       if (!r.ok) { transcript.push(`Couldn't fetch spec ${input.url}.`); return { result: { ok: false, error: (r as { ok: false; error: string }).error } } }
       const parsed = parseSpec((r as { ok: true; text: string }).text)
       const s = parsed ? summarizeOpenApi(parsed) : { ok: false, reason: 'not a spec' }

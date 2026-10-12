@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.27] - 2026-10-12
+
+### Fixed
+- **Agentic builder now reads the full spec and covers the whole API.** The doc fetcher capped text at 200k chars, so a large OpenAPI spec (e.g. FactoryOS at ~267 KB) was truncated before it parsed — the agent fell back to the docs page and only registered the two or three endpoints it happened to probe. Spec fetches now use a much larger cap so the JSON parses, the summariser reports the endpoint **groups**, and the agent registers a connection per group (base path) after confirming auth with a probe or two — so the whole API is reachable, not just what it touched.
+
+
 ## [1.3.26] - 2026-10-12
 
 ### Fixed

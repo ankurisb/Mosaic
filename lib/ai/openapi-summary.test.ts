@@ -27,6 +27,7 @@ describe('summarizeOpenApi', () => {
     expect(s.servers).toEqual(['https://myfactory.ugx.ai/api'])
     expect(s.securitySchemes.JWTAuth).toEqual({ type: 'http', scheme: 'bearer', in: undefined, name: undefined })
     expect(s.endpointCount).toBe(7) // login + assets(2) + asset_id(3) + menu-groups(1)
+    expect(s.groups).toEqual(['accounts', 'assets', 'core'])
   })
 
   test('finds the login endpoint and resolves its $ref field names', () => {
