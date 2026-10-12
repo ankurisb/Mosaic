@@ -115,12 +115,15 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
           pagination_cursor_param: c.pagination_cursor_param as string, pagination_data_path: (c.pagination_data_path as string) ?? null,
         }))
         setSecrets(secretVals)
+        const hasCreds = Object.keys(secretVals).length > 0
         applyCandidate({
           service: { label: d.service.label, base_url: d.service.base_url, auth_type: authType, auth_config: authConfig, default_headers: d.service.default_headers || {}, api_version: d.service.api_version, version_header: d.service.version_header },
           connections: conns,
           probe: { connection_index: 0, method: 'GET', path: conns[0]?.base_path ? '' : '/' },
           missing: missingList,
-          message: 'Resumed draft — credentials filled in. Probe to pick up where you left off.',
+          message: hasCreds
+            ? 'Resumed draft — credentials filled in. Probe a real endpoint to pick up where you left off.'
+            : 'Resumed draft. This draft has no saved credentials — enter them under “Credentials & details needed” on the left, then Probe to verify and publish.',
           ready_to_probe: true,
         })
         setStep('review')
@@ -457,6 +460,21 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                   <KV k="Auth" v={service.auth_type} />
                   {service.auth_config?.login_url && <KV k="Login" v={service.auth_config.login_url} mono />}
                 </div>
+                {missing.length > 0 && (
+                  <div style={unfilledSecrets.length > 0 ? { padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(184,134,11,.10)', border: '1px solid rgba(184,134,11,.3)' } : undefined}>
+                    <SectionLabel>Credentials &amp; details needed</SectionLabel>
+                    {unfilledSecrets.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--warn, #b8860b)', margin: '2px 0 4px', lineHeight: 1.4 }}>Enter these to probe and publish — they aren’t saved on this draft yet.</div>}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                      {missing.map(m => (
+                        <Field key={m.field} label={m.label || m.field}>
+                          <input type={m.secret ? 'password' : 'text'} autoComplete="off"
+                            value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
+                            placeholder={m.secret ? '••••••••' : ''} style={INP} />
+                        </Field>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {connections.length > 0 && (
                   <div>
                     <SectionLabel>Endpoints ({connections.length})</SectionLabel>
@@ -468,20 +486,6 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                           <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{c.label || `Endpoint ${i + 1}`}</span>
                           <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>{c.base_path || '/'}</span>
                         </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {missing.length > 0 && (
-                  <div>
-                    <SectionLabel>Credentials &amp; details needed</SectionLabel>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
-                      {missing.map(m => (
-                        <Field key={m.field} label={m.label || m.field}>
-                          <input type={m.secret ? 'password' : 'text'} autoComplete="off"
-                            value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
-                            placeholder={m.secret ? '••••••••' : ''} style={INP} />
-                        </Field>
                       ))}
                     </div>
                   </div>

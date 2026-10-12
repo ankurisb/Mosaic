@@ -945,7 +945,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
             <Btn onClick={() => { setShowOpenApiZone(s => !s); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') }}> Import OpenAPI</Btn>
             <Btn onClick={() => { setShowSapForm(s => !s); setSapError('') }} style={{ background: 'var(--bg)', border: '1px solid rgba(0,112,243,0.3)', color: '#0070f3' }}> SAP S/4HANA</Btn>
             <Btn onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add manually</Btn>
-            <Btn variant="primary" onClick={() => { setResumeDraftId(null); setShowBuilder(b => !b); setError('') }}>✨ Add with AI</Btn>
+            <Btn variant="primary" onClick={() => { setResumeDraftId(null); setShowBuilder(b => !b); setError(''); setTryIt(null); setTryResult(null) }}>✨ Add with AI</Btn>
           </div>
         )}
       </div>
@@ -1651,11 +1651,11 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                 </div>
                 <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                   {user.role === 'admin' && svc.status === 'draft' && (
-                    <Btn size="sm" variant="primary" onClick={() => { setResumeDraftId(svc.id); setShowBuilder(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Resume</Btn>
+                    <Btn size="sm" variant="primary" onClick={() => { setResumeDraftId(svc.id); setShowBuilder(true); setTryIt(null); setTryResult(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Resume</Btn>
                   )}
                   <Btn size="sm" onClick={() => { openTryIt(svc, null) }}> Try</Btn>
                   {user.role === 'admin' && <>
-                    <Btn size="sm" onClick={() => setDiagnoseSvc(svc)} title="Troubleshoot this connection with AI">Diagnose</Btn>
+                    <Btn size="sm" onClick={() => { setDiagnoseSvc(svc); setTryIt(null); setTryResult(null) }} title="Troubleshoot this connection with AI">Diagnose</Btn>
                     <Btn size="sm" onClick={() => { const s = svc as unknown as Record<string,unknown>; setSvcForm({ ...SVC_EMPTY, label: String(s.label||''), base_url: String(s.base_url||''), environment: String(s.environment||'production'), auth_type: String(s.auth_type||'bearer'), rate_limit_rpm: String(s.rate_limit_rpm||''), request_timeout_ms: String(s.request_timeout_ms||30000), retry_count: String(s.retry_count||3) }); setEditingSvc(svc.id); setShowSvcForm(true); window.scrollTo({top:0,behavior:'smooth'}) }}>Edit</Btn>
                     <Btn size="sm" variant="danger" onClick={() => { delSvc(svc.id, svc.label) }}>Delete</Btn>
                   </>}

@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.34] - 2026-10-12
+
+### Fixed
+- **Resumed draft falsely claimed "credentials filled in".** The resume banner always said credentials were filled, even when the draft had none saved — so the assistant correctly reporting "no login credentials attached" (and Publish staying locked) looked like a contradiction. The banner now reflects reality: if no secrets were loaded, it says the draft has no saved credentials and to enter them.
+- **Credentials buried below the endpoint list.** On resume, the "Credentials & details needed" fields rendered after all 25 endpoint groups, so they were easy to miss. They now sit directly under Connection, and are highlighted with a prompt when unfilled.
+- **Try-It panel stayed open behind the builder.** Opening Add with AI, Resume, or Diagnose now closes the Try-It panel so it doesn't linger.
+
 ## [1.3.33] - 2026-10-12
 
 ### Fixed
