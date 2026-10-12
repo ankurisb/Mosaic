@@ -3,6 +3,7 @@ import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
 import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
+import { sanitizeHistory } from '@/lib/chat-history'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
@@ -513,6 +514,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // Estimate token count (rough: 1 token ≈ 4 chars)
   function estimateTokens(str: string): number { return Math.ceil(str.length / 4) }
 
+
   // Drop oldest tool-result/assistant turns from history when it grows too large,
   // always keeping the first user message (context anchor) and all recent turns.
   function trimHistory(hist: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
@@ -605,7 +607,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           const synthesisNudge = forceSynthesis
             ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
             : ''
-          history = trimHistory(history)
+          history = sanitizeHistory(trimHistory(history))
           const resp = await anthropic.messages.create({
             model,
             max_tokens: 16384,

@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.38] - 2026-10-12
+
+### Fixed
+- **Chat 400 "unexpected tool_use_id found in tool_result blocks" on multi-tool turns.** When the model made several tool calls (now common, since API sources actually work), history trimming (the last-40-messages slice and the char-budget `trimHistory`) could cut between an assistant's `tool_use` and the following user's `tool_result`, leaving an orphaned tool block. The Anthropic API then rejected the whole request. Added `sanitizeHistory` (lib/chat-history.ts, unit-tested) which runs before every model call and drops any unmatched `tool_use`/`tool_result` on either side (removing emptied messages), so the request is always well-formed regardless of trimming.
+
 ## [1.3.37] - 2026-10-12
 
 ### Added
