@@ -499,16 +499,28 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // Large results (wide DB rows, big API payloads, file contents) can easily
   // blow past 200K context if sent verbatim. Cap each result string and attach
   // a summary note so Claude knows data was trimmed.
-  const MAX_TOOL_RESULT_CHARS = 8_000   // ~2K tokens — enough for 50 wide rows
-  const MAX_HISTORY_CHARS     = 60_000  // soft cap on total serialised history
+  const MAX_TOOL_RESULT_CHARS = 12_000  // default (~3K tokens)
+  const MAX_HISTORY_CHARS     = 120_000 // soft cap on total serialised history
+  // List/telemetry/data tools return compact rows but MANY of them (e.g. 100+
+  // IoT devices, wide query results). An 8K cap silently hid records and made
+  // the model wrongly conclude data was "missing" (it could only see ~75 of 101
+  // devices). Give those tools a much larger budget; genuinely huge results are
+  // still trimmed with an explicit note telling the model to narrow the query.
+  const TOOL_RESULT_CAPS: Record<string, number> = {
+    query_prism: 40_000,
+    query_database: 32_000,
+    query_airbyte: 32_000,
+    call_api: 32_000,
+  }
 
   function truncateResult(resultStr: string, toolName: string): string {
-    if (resultStr.length <= MAX_TOOL_RESULT_CHARS) return resultStr
-    const trimmed = resultStr.slice(0, MAX_TOOL_RESULT_CHARS)
-    const pct = Math.round(resultStr.length / MAX_TOOL_RESULT_CHARS * 100)
-    return trimmed + `\n...[TRUNCATED: result was ${resultStr.length.toLocaleString()} chars (${pct}x the limit). ` +
-      `The first ${MAX_TOOL_RESULT_CHARS.toLocaleString()} chars are shown. ` +
-      `To get a smaller result: add WHERE/LIMIT clauses, filter by date range, or request specific columns only.]`
+    const cap = TOOL_RESULT_CAPS[toolName] ?? MAX_TOOL_RESULT_CHARS
+    if (resultStr.length <= cap) return resultStr
+    const trimmed = resultStr.slice(0, cap)
+    const pct = Math.round(resultStr.length / cap * 100)
+    return trimmed + `\n...[TRUNCATED: result was ${resultStr.length.toLocaleString()} chars (${pct}x the ${cap.toLocaleString()}-char limit for ${toolName}). ` +
+      `The first ${cap.toLocaleString()} chars are shown — treat this as a PARTIAL result, not the full set. ` +
+      `To get everything: narrow with WHERE/LIMIT, a date range, a smaller page_size, or request specific fields.]`
   }
 
   // Estimate token count (rough: 1 token ≈ 4 chars)

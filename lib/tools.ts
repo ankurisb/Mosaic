@@ -3267,16 +3267,29 @@ async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
   const pageSize = Number(input.page_size || 100)
 
   async function tbGet(path: string): Promise<unknown> {
-    const res = await fetch(`${base}${path}`, { headers: hdr, signal: AbortSignal.timeout(30000) })
-    if (res.status === 401) {
-      invalidatePrismToken(instanceId)
-      return { error: 'Prism session expired — retry the request' }
+    // Retry transient network failures. Several telemetry calls often run
+    // concurrently against an on-prem gateway/tunnel, which intermittently drops
+    // connections ("fetch failed"); a couple of backed-off retries make a full
+    // device scan reliable instead of returning a bare failure.
+    let lastErr = 'network error'
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${base}${path}`, { headers: hdr, signal: AbortSignal.timeout(30000) })
+        if (res.status === 401) {
+          invalidatePrismToken(instanceId)
+          return { error: 'Prism session expired — retry the request' }
+        }
+        if (!res.ok) {
+          const text = await res.text()
+          return { error: `Prism API error ${res.status}: ${text.slice(0, 200)}` }
+        }
+        return res.json()
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'network error'
+        if (attempt < 2) await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+      }
     }
-    if (!res.ok) {
-      const text = await res.text()
-      return { error: `Prism API error ${res.status}: ${text.slice(0, 200)}` }
-    }
-    return res.json()
+    return { error: `Prism fetch failed after 3 attempts (${lastErr}). The gateway may be dropping concurrent requests — try fewer at a time.` }
   }
 
   switch (op) {

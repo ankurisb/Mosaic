@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.41] - 2026-10-13
+
+### Fixed
+- **Chat silently truncated list/telemetry results, hiding records.** Every tool result was capped at 8,000 chars (~2K tokens), so a 101-device Prism list (~12K chars) was cut to ~75 devices — and the model then reported data as "missing" when it simply couldn't see it. The cap is now tool-aware: query_prism 40k, query_database / query_airbyte / call_api 32k, default 12k. The truncation note is clearer that the result is partial, and the history char budget was raised to match.
+- **Prism telemetry "fetch failed" on concurrent calls.** `tbGet` made a single fetch with no retry, so when several telemetry calls ran at once against an on-prem gateway it would intermittently return a bare "fetch failed". It now retries transient network failures (3 attempts, backoff) and, if it still can't, returns a clear message explaining the gateway is dropping concurrent requests.
+
 ## [1.3.40] - 2026-10-12
 
 ### Fixed
