@@ -1,0 +1,244 @@
+{
+  "url": "http://localhost:8002",
+  "passed": 30,
+  "total": 30,
+  "groups": {
+    "core": {
+      "passed": 4,
+      "total": 4
+    },
+    "files": {
+      "passed": 7,
+      "total": 7
+    },
+    "input": {
+      "passed": 3,
+      "total": 3
+    },
+    "safety": {
+      "passed": 7,
+      "total": 7
+    },
+    "isolation": {
+      "passed": 5,
+      "total": 5
+    },
+    "errors": {
+      "passed": 4,
+      "total": 4
+    }
+  },
+  "results": [
+    {
+      "name": "python stdout + exit 0",
+      "group": "core",
+      "passed": true,
+      "detail": "exit=0",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "node.js execution",
+      "group": "core",
+      "passed": true,
+      "detail": "exit=0",
+      "elapsed_s": 0.03
+    },
+    {
+      "name": "python interpreter reachable",
+      "group": "core",
+      "passed": true,
+      "detail": "3.13.16",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "unsupported language rejected",
+      "group": "core",
+      "passed": true,
+      "detail": "",
+      "elapsed_s": 0.0
+    },
+    {
+      "name": "xlsx generated + valid + openable",
+      "group": "files",
+      "passed": true,
+      "detail": "size=5327 mime=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "elapsed_s": 0.35
+    },
+    {
+      "name": "csv generated",
+      "group": "files",
+      "passed": true,
+      "detail": "mime=text/csv",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "docx generated + valid",
+      "group": "files",
+      "passed": true,
+      "detail": "size=36622",
+      "elapsed_s": 0.13
+    },
+    {
+      "name": "pdf generated + valid (reportlab)",
+      "group": "files",
+      "passed": true,
+      "detail": "mime=application/pdf",
+      "elapsed_s": 0.1
+    },
+    {
+      "name": "matplotlib png chart (headless)",
+      "group": "files",
+      "passed": true,
+      "detail": "size=18479",
+      "elapsed_s": 1.07
+    },
+    {
+      "name": "pptx generated + valid",
+      "group": "files",
+      "passed": true,
+      "detail": "",
+      "elapsed_s": 0.17
+    },
+    {
+      "name": "multiple files captured in one run",
+      "group": "files",
+      "passed": true,
+      "detail": "captured=3",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "input file readable by code",
+      "group": "input",
+      "passed": true,
+      "detail": "sum_y 60",
+      "elapsed_s": 0.38
+    },
+    {
+      "name": "derived output returned, input not echoed",
+      "group": "input",
+      "passed": true,
+      "detail": "echoed_input=False",
+      "elapsed_s": 0.38
+    },
+    {
+      "name": "input filename path-stripped to basename",
+      "group": "input",
+      "passed": true,
+      "detail": "read ABC",
+      "elapsed_s": 0.03
+    },
+    {
+      "name": "infinite loop hits wall-clock timeout",
+      "group": "safety",
+      "passed": true,
+      "detail": "wall=3.0s",
+      "elapsed_s": 3.01
+    },
+    {
+      "name": "sleep killed at timeout (not run to completion)",
+      "group": "safety",
+      "passed": true,
+      "detail": "wall=2.0s",
+      "elapsed_s": 2.01
+    },
+    {
+      "name": "memory ceiling enforced (2GB alloc fails)",
+      "group": "safety",
+      "passed": true,
+      "detail": "exit=1",
+      "elapsed_s": 0.05
+    },
+    {
+      "name": "per-file size limit enforced (128MB write fails)",
+      "group": "safety",
+      "passed": true,
+      "detail": "ok=False",
+      "elapsed_s": 0.16
+    },
+    {
+      "name": "stdout capped + truncation flagged",
+      "group": "safety",
+      "passed": true,
+      "detail": "len=20000",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "output file-count cap (<=20)",
+      "group": "safety",
+      "passed": true,
+      "detail": "returned=20",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "output total-size cap (~20MB)",
+      "group": "safety",
+      "passed": true,
+      "detail": "total=20.0MB files=10",
+      "elapsed_s": 0.36
+    },
+    {
+      "name": "no secrets/credentials in sandbox env",
+      "group": "isolation",
+      "passed": true,
+      "detail": "BAD []",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "env limited to minimal allowlist",
+      "group": "isolation",
+      "passed": true,
+      "detail": "keys=['HOME', 'LANG', 'MPLBACKEND', 'PATH', 'PYTHONDONTWRITEBYTECODE', 'TMPDIR']",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "workdir is fresh per run (no state leak)",
+      "group": "isolation",
+      "passed": true,
+      "detail": "leak_present False",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "file written outside workdir is NOT returned as output",
+      "group": "isolation",
+      "passed": true,
+      "detail": "captured=False",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "network egress (docker-enforced)",
+      "group": "isolation",
+      "passed": true,
+      "detail": "n/a on host \u2014 enforced by sandbox-net internal:true",
+      "elapsed_s": 0.15
+    },
+    {
+      "name": "python exception -> ok=false + stderr",
+      "group": "errors",
+      "passed": true,
+      "detail": "exit=1",
+      "elapsed_s": 0.03
+    },
+    {
+      "name": "partial stdout preserved alongside error",
+      "group": "errors",
+      "passed": true,
+      "detail": "",
+      "elapsed_s": 0.04
+    },
+    {
+      "name": "empty program runs cleanly (no files)",
+      "group": "errors",
+      "passed": true,
+      "detail": "",
+      "elapsed_s": 0.02
+    },
+    {
+      "name": "node non-zero exit -> ok=false",
+      "group": "errors",
+      "passed": true,
+      "detail": "exit=3",
+      "elapsed_s": 0.03
+    }
+  ],
+  "ts": "2026-10-13T23:38:42Z"
+}
