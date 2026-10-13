@@ -250,6 +250,67 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
   )
 }
 
+interface GenFile { id: string; name: string; mime: string; size: number }
+
+// Download chips + inline image previews for files produced by run_code. Each
+// file is served (owner-checked) from /api/files/<id>. Images render inline;
+// everything else shows as a labelled download chip.
+function GeneratedFiles({ files }: { files: GenFile[] }) {
+  if (!files.length) return null
+  const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`
+  const icon = (mime: string) => {
+    if (/sheet|excel|csv/i.test(mime)) return '▦'
+    if (/word|document/i.test(mime)) return '✎'
+    if (/pdf/i.test(mime)) return '▤'
+    if (/^image\//i.test(mime)) return '▣'
+    return '◰'
+  }
+  const images = files.filter(f => /^image\//i.test(f.mime))
+  const others = files.filter(f => !/^image\//i.test(f.mime))
+  return (
+    <div style={{ margin: '4px 0 12px' }}>
+      {images.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: others.length ? 10 : 0 }}>
+          {images.map(f => (
+            <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" style={{ display: 'block', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxWidth: 420 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/api/files/${f.id}`} alt={f.name} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
+            </a>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {others.map(f => (
+            <a key={f.id} href={`/api/files/${f.id}`} download style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', textDecoration: 'none', color: 'var(--text)', fontSize: 12.5, transition: 'all .12s' }}>
+              <span style={{ fontSize: 15, color: 'var(--accent-bg)' }}>{icon(f.mime)}</span>
+              <span style={{ fontWeight: 600, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              <span style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtSize(f.size)}</span>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text3)' }}><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Gather produced files across all run_code calls in a message.
+function collectGeneratedFiles(tools?: ToolCall[]): GenFile[] {
+  if (!Array.isArray(tools)) return []
+  const out: GenFile[] = []
+  for (const t of tools) {
+    if (t.name !== 'run_code' || !t.result || typeof t.result !== 'object') continue
+    const files = (t.result as { files?: unknown }).files
+    if (Array.isArray(files)) {
+      for (const f of files) {
+        if (f && typeof f === 'object' && typeof (f as GenFile).id === 'string') out.push(f as GenFile)
+      }
+    }
+  }
+  return out
+}
+
 export default function ChatPage({ user }: { user: SessionUser }) {
   const router = useRouter()
   const [convs, setConvs] = useState<Conv[]>([{ id: 'local-1', title: 'New conversation', messages: [] }])
@@ -946,6 +1007,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     .filter(t => t.name === 'render_chart' && t.result && typeof t.result === 'object' && (t.result as { kind?: string }).kind === 'chart_artifact')
                     .map((t, k) => <ChartArtifact key={k} spec={(t.result as { spec: import('@/lib/tools').ChartSpec }).spec} />)
                   }
+
+                  {/* Files produced by run_code — download chips + inline images */}
+                  {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} />}
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (

@@ -54,6 +54,7 @@ import { diagnoseApiConnection, mergeStoredSecrets, type AgentCandidate } from '
 import { getServiceConfigById, upsertApiSource, type ApiServiceConfig } from '@/lib/api-source-store'
 import { putProposal, getProposal, dropProposal } from '@/lib/ai/fix-proposals'
 import { audit, AUDIT } from '@/lib/audit'
+import { saveGeneratedFile, getGeneratedFileForUser, readGeneratedFileBytes, type StoredFileMeta } from '@/lib/generated-files'
 
 /** Compact, human-readable diff of a proposed connection fix vs the current config. */
 function summariseApiFix(current: ApiServiceConfig, candidate: AgentCandidate): string {
@@ -340,6 +341,25 @@ Read-only: this NEVER changes the connection. To APPLY a proposed fix, show the 
       required: ['fix_id']
     },
   },
+  {
+    name: 'run_code',
+    description: `Run Python (or Node.js) in a secure, network-isolated sandbox to PRODUCE FILES and do real computation the other tools can't: build a spreadsheet (xlsx/csv), a Word or PDF report, a chart/plot image, convert between formats, or run genuine data analysis on data you already fetched. Available Python libs: pandas, numpy, scipy, matplotlib, openpyxl, XlsxWriter, python-docx, python-pptx, reportlab, fpdf2, Pillow, tabulate, markdown.
+
+How to use it well:
+- Write SELF-CONTAINED code. The sandbox has NO internet and cannot reach any data source, so embed the data you already obtained from query_database / call_api / query_prism directly in the code (as a literal, list of dicts, or CSV string). Do NOT try to fetch inside the code.
+- To hand the user a file, WRITE IT to the current working directory, e.g. df.to_excel("OEE_report.xlsx", index=False) or plt.savefig("trend.png"). EVERY new file you write to the working dir is captured and shown to the user as a download (images render inline). Save plots as .png.
+- Use print() for values you want to inspect in your own reasoning — stdout is returned to you, not to the user.
+Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate in SQL first and pass the summarized rows.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'The complete program source to run.' },
+        language: { type: 'string', enum: ['python', 'node'], description: 'Language to run. Defaults to python.' },
+        input_file_ids: { type: 'array', items: { type: 'string' }, description: 'Optional ids of files produced earlier in this conversation to place in the working directory before running (e.g. to post-process a file you already generated).' },
+      },
+      required: ['code']
+    },
+  },
 ]
 
 export async function runTool(
@@ -552,7 +572,92 @@ export async function runTool(
     }
     case 'render_chart': return renderChart(input)
     case 'create_alert': return createAlertTool(input, guardrailCtx)
+    case 'run_code': return runCode(input, guardrailCtx)
     default: throw new Error(`Unknown tool: ${name}`)
+  }
+}
+
+// -- run_code --------------------------------------------------
+// Execute untrusted code in the isolated sandbox sidecar (services/sandbox,
+// network-cut Docker net). Resolves any requested input files to bytes, POSTs
+// the job, stores every produced file via saveGeneratedFile so the chat can
+// offer them as downloads, audits the run, and returns a compact result (file
+// ids/names/sizes + stdout/stderr) — never the file bytes, which go to disk.
+async function runCode(
+  input: Record<string, unknown>,
+  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string },
+): Promise<unknown> {
+  const code = String(input.code || '')
+  if (!code.trim()) return { error: 'code is required.' }
+  const language = input.language === 'node' ? 'node' : 'python'
+  const sandboxUrl = process.env.SANDBOX_URL || 'http://localhost:8002'
+
+  // Resolve requested input files (owner-checked) into base64 for the sandbox.
+  const inputFiles: Array<{ name: string; b64: string }> = []
+  const ids = Array.isArray(input.input_file_ids) ? (input.input_file_ids as unknown[]).slice(0, 10) : []
+  if (ids.length && guardrailCtx?.userId) {
+    for (const fid of ids) {
+      try {
+        const row = await getGeneratedFileForUser(String(fid), guardrailCtx.userId, guardrailCtx.userRole || 'user')
+        if (row) {
+          const b = await readGeneratedFileBytes(row)
+          inputFiles.push({ name: row.name, b64: b.toString('base64') })
+        }
+      } catch { /* skip unreadable input */ }
+    }
+  }
+
+  let data: {
+    ok?: boolean; error?: string; exit_code?: number; timed_out?: boolean
+    stdout?: string; stderr?: string; stdout_truncated?: boolean
+    files?: Array<{ name?: string; mime?: string; b64?: string }>
+  }
+  try {
+    const res = await fetch(`${sandboxUrl}/exec`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, language, timeout_s: 30, input_files: inputFiles }),
+      signal: AbortSignal.timeout(75_000),
+    })
+    data = await res.json()
+  } catch (e) {
+    return { error: `Code sandbox is unavailable: ${e instanceof Error ? e.message : 'request failed'}. The sandbox container may not be running.` }
+  }
+  if (data.error) return { error: data.error }
+
+  // Persist produced files so the UI can serve them from /api/files/<id>.
+  const stored: StoredFileMeta[] = []
+  for (const f of data.files || []) {
+    try {
+      const bytes = Buffer.from(String(f.b64 || ''), 'base64')
+      if (!bytes.length) continue
+      const meta = await saveGeneratedFile({
+        conversationId: guardrailCtx?.conversationId || null,
+        userId: guardrailCtx?.userId || null,
+        name: String(f.name || 'output'),
+        mime: String(f.mime || 'application/octet-stream'),
+        bytes,
+      })
+      stored.push(meta)
+    } catch { /* skip a file that failed to store */ }
+  }
+
+  try {
+    await audit(null, { id: guardrailCtx?.userId, email: guardrailCtx?.userEmail, role: guardrailCtx?.userRole || 'user' },
+      AUDIT.TOOL_CALL, 'sandbox:run_code', data.ok ? 'success' : 'failure',
+      { language, files: stored.length, timed_out: !!data.timed_out, exit_code: data.exit_code })
+  } catch { /* audit is best-effort */ }
+
+  return {
+    ok: !!data.ok,
+    timed_out: !!data.timed_out,
+    stdout: data.stdout || '',
+    stdout_truncated: !!data.stdout_truncated,
+    stderr: data.stderr || '',
+    files: stored,
+    note: stored.length
+      ? `${stored.length} file(s) produced and shown to the user as downloads.`
+      : (data.ok ? 'Ran successfully (no files written).' : 'Run failed — see stderr.'),
   }
 }
 

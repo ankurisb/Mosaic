@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.42] - 2026-10-14
+
+### Added
+- **Code execution + file generation in chat (`run_code`).** Mosaic can now run real Python (or Node.js) in a secure, network-isolated sandbox to *produce files*: spreadsheets (xlsx/csv), Word/PDF reports, chart images, format conversions, and genuine data analysis on data it already fetched. Files written by the code are captured and shown in the chat as download chips (images render inline), served owner-checked from `/api/files/<id>` and auto-expiring after 7 days.
+  - New isolated sandbox sidecar (`mosaic-sandbox`, services/sandbox): FastAPI runner on a network-cut Docker network (`internal: true`), non-root user, `no-new-privileges`, tmpfs workdir, and per-exec CPU/memory/file-size/process rlimits with a hard timeout. Bundles pandas, numpy, scipy, matplotlib, openpyxl, XlsxWriter, python-docx, python-pptx, reportlab, fpdf2, Pillow.
+  - The sandbox has **no internet and no access to any data source** — the model must fetch data first (query_database/call_api/query_prism) and embed it in the code, so execution stays sealed.
+  - New `generated_files` table + storage (migration 015; bytes on the `/data` volume, metadata/ownership in DB) and a download endpoint with inline/attachment handling.
+
+> Deploy note: this release adds the `mosaic-sandbox` container. The box's `docker-compose.yml` must be updated (new service + `sandbox-net` network + `SANDBOX_URL`) before `docker compose up -d`.
+
 ## [1.3.41] - 2026-10-13
 
 ### Fixed

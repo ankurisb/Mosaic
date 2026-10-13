@@ -680,6 +680,21 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_query_history_executed ON query_history(executed_at DESC)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_query_history_conn     ON query_history(connection_id)`.catch(() => {})
 
+  // Files produced by the code sandbox (run_code). Bytes on disk; metadata here.
+  await sql`CREATE TABLE IF NOT EXISTS generated_files (
+    id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    conversation_id TEXT,
+    user_id         TEXT,
+    name            TEXT NOT NULL,
+    mime            TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size            INTEGER NOT NULL DEFAULT 0,
+    path            TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    expires_at      TEXT
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_generated_files_user ON generated_files(user_id)`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_generated_files_conv ON generated_files(conversation_id)`.catch(() => {})
+
   // -- Schema migrations tracker ---------------------------------
   await sql`CREATE TABLE IF NOT EXISTS schema_migrations (
     version    TEXT PRIMARY KEY,

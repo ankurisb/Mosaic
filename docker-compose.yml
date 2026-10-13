@@ -138,6 +138,8 @@ services:
       - ELASTICSEARCH_INTERNAL_URL=http://elasticsearch:9200
       # Stats sidecar (internal Docker network URL)
       - STATS_SIDECAR_URL=http://mosaic-stats:8001
+      # Code-execution sandbox (internal no-egress network — see sandbox-net)
+      - SANDBOX_URL=http://mosaic-sandbox:8002
       # Tunnel manager (internal Docker network URL — remote support sessions)
       - TUNNEL_MANAGER_URL=http://mosaic-tunnel:3100
       # Browser-facing base URL of Mosaic. Used server-side for the SSO OAuth
@@ -223,6 +225,7 @@ services:
     # that never start.
     networks:
       - mosaic-net
+      - sandbox-net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
       interval: 30s
@@ -670,11 +673,30 @@ services:
     restart: unless-stopped
     networks:
       - mosaic-net
+
+  # Code-execution sandbox: runs model-written Python/Node for the run_code tool.
+  # On sandbox-net ONLY (internal: true => no internet egress, and it can't reach
+  # the other internal services) — reachable by the mosaic app, nothing else.
+  mosaic-sandbox:
+    image: ghcr.io/ankurisb/mosaic-sandbox:${MOSAIC_VERSION:-latest}
+    build:
+      context: ./services/sandbox
+      dockerfile: Dockerfile
+    container_name: mosaic-sandbox
+    restart: unless-stopped
+    # Extra hardening: no new privileges, and a writable tmpfs for the ephemeral
+    # work dir so produced files never touch a persistent layer.
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /work:size=256m
+    networks:
+      - sandbox-net
     healthcheck:
       # Use Python's urllib (always present in the python image) rather than curl,
       # which isn't installed here — the previous curl-based check always failed,
       # marking a healthy service 'unhealthy'. Exit non-zero on any error/non-200.
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health', timeout=5).status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health', timeout=5).status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -845,3 +867,8 @@ volumes:
 networks:
   mosaic-net:
     driver: bridge
+  # Internal network for the code sandbox: no gateway to the host/internet, so
+  # model-written code has no egress. Only the mosaic app and the sandbox join it.
+  sandbox-net:
+    driver: bridge
+    internal: true

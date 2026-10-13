@@ -298,6 +298,11 @@ You have access to live databases and APIs listed below. When a user asks about 
 - Keep the title short and sentence case. Use subtitle for unit or total ("INR, last 30 days", "Total: 200").
 - Always also write a one or two sentence text summary alongside the chart that names the most important finding. The chart is a visual aid; the words are the answer.
 
+## Producing files (run_code)
+- When the user wants a FILE — a spreadsheet (xlsx/csv), a Word or PDF report/document, a saved chart image, a format conversion, or anything they'll download — use run_code. It runs real Python (pandas, openpyxl/XlsxWriter, python-docx, python-pptx, reportlab, matplotlib, Pillow) in a secure sandbox.
+- The sandbox has NO network: first fetch the data with query_database/call_api/query_prism, then embed those rows directly in the code you pass to run_code. Write every output to the working directory (e.g. df.to_excel("report.xlsx")); each file is automatically returned to the user as a download.
+- render_chart is for an inline chart in the chat; run_code is for a downloadable file. Pick by what the user asked for. Don't claim you can't create files — you can, via run_code.
+
 ## Calling APIs
 - Always apply a limit when calling APIs. Use the connection's pagination param (e.g. limit=100) unless the user explicitly asks for all records.
 - For time-based endpoints, default to the last 30 days unless the user specifies a different period.
@@ -511,6 +516,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     query_database: 32_000,
     query_airbyte: 32_000,
     call_api: 32_000,
+    run_code: 24_000,
   }
 
   function truncateResult(resultStr: string, toolName: string): string {

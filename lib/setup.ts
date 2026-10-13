@@ -926,6 +926,19 @@ export async function setupDatabase() {
     updated_at    TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
 
+  // Files produced by the code sandbox (run_code). Bytes on disk; metadata here.
+  await sql`CREATE TABLE IF NOT EXISTS generated_files (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    conversation_id TEXT,
+    user_id         TEXT,
+    name            TEXT NOT NULL,
+    mime            TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size            INTEGER NOT NULL DEFAULT 0,
+    path            TEXT NOT NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    expires_at      TEXT
+  )`.catch(() => {})
+
   // Seed defaults — connector tier gets minimal defaults, full AI tier gets fuller ones.
   // Admin can override any of these from the UI.
   const retentionDefaults: Array<[string, number]> = [

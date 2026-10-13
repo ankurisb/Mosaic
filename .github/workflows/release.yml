@@ -49,6 +49,9 @@ jobs:
           - service: mosaic-stats
             context: ./services/stats-sidecar
             dockerfile: Dockerfile
+          - service: mosaic-sandbox
+            context: ./services/sandbox
+            dockerfile: Dockerfile
           - service: mosaic-tunnel
             context: ./services/tunnel
             dockerfile: Dockerfile
