@@ -10,9 +10,8 @@
 // exist, so this route is only the LLM brain + the docs fetch.
 import { getSession } from '@/lib/auth'
 import { generateApiCandidate, refineApiCandidate } from '@/lib/ai/api-builder-prompt'
-import { runApiAgent, diagnoseApiConnection, mergeStoredSecrets } from '@/lib/ai/api-agent'
-import { getServiceConfigById, upsertApiSource, type ApiServiceConfig } from '@/lib/api-source-store'
-import { audit, AUDIT } from '@/lib/audit'
+import { runApiAgent, diagnoseApiConnection } from '@/lib/ai/api-agent'
+import { getServiceConfigById } from '@/lib/api-source-store'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
 
 export const runtime = 'nodejs'
@@ -109,22 +108,6 @@ export async function POST(req: Request) {
       if (!svc) return Response.json({ error: 'service or service_id required' }, { status: 400 })
       const r = await diagnoseApiConnection({ service: svc, connections: conns, symptom: String(symptom), history: Array.isArray(history) ? history : undefined, mode: mode === 'assist' ? 'assist' : 'diagnose' })
       return Response.json({ ok: r.ok, diagnosis: r.diagnosis, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, service_id: service_id || null })
-    }
-
-    if (action === 'apply_fix') {
-      // Apply a diagnosis-proposed config fix to a SAVED service. Stored secrets
-      // are re-attached server-side (the candidate carries structural auth only),
-      // then the whole source is re-published through the shared upsert.
-      const { service_id, candidate } = body as { service_id?: string; candidate?: { service?: Record<string, unknown>; connections?: Array<Record<string, unknown>> } }
-      if (!service_id) return Response.json({ error: 'service_id required' }, { status: 400 })
-      if (!candidate || !candidate.service) return Response.json({ error: 'candidate.service required' }, { status: 400 })
-      const existing = await getServiceConfigById(String(service_id))
-      if (!existing) return Response.json({ error: 'Connection not found' }, { status: 404 })
-      const mergedAuth = mergeStoredSecrets(candidate.service.auth_config as Record<string, unknown>, existing.service.auth_config)
-      const svc: ApiServiceConfig = { ...(candidate.service as ApiServiceConfig), auth_config: mergedAuth }
-      const r = await upsertApiSource({ id: String(service_id), service: svc, connections: candidate.connections || [], status: 'published' })
-      await audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_UPDATE, `api_service:${service_id}`, 'success', { via: 'ai_diagnose', base_url: svc.base_url, connections: (candidate.connections || []).length })
-      return Response.json({ ok: true, id: r.id })
     }
 
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })

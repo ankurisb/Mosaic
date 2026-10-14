@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.63] - 2026-10-14
+
+### Removed
+- **Dead `apply_fix` action** in `app/api/api-builder/route.ts` — it was only called by the removed Diagnose panel (and was the source of the "candidate.service required" error). Dropped it and its now-unused imports (`upsertApiSource`, `ApiServiceConfig`, `mergeStoredSecrets`, `audit`/`AUDIT`). The `diagnose` action stays — the builder's "Ask & refine" chat still uses it.
+
 ## [1.3.62] - 2026-10-14
 
 ### Changed
