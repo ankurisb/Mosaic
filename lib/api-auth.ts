@@ -94,6 +94,18 @@ export type OAuth2TokenResult =
 const oauth2Inflight = new Map<string, Promise<OAuth2TokenResult>>()
 const sessionTokenInflight = new Map<string, Promise<SessionTokenResult>>()
 const prismInflight = new Map<string, Promise<PrismTokenResult>>()
+// Login-handshake timeout. The DATA request already honours each service's
+// configured request_timeout_ms, but the login did not — it was hardcoded at
+// 10s. A real credentialed login (DB lookup + password hash + token mint) can
+// take well over 10s on a small/loaded instance, so an otherwise-reachable
+// service surfaced as "The operation was aborted due to timeout". Callers now
+// pass the service's request_timeout_ms; this is the fallback, and the clamp
+// keeps it sane (5s floor, 60s cap).
+const DEFAULT_LOGIN_TIMEOUT_MS = 20000
+function clampTimeout(ms: number | undefined): number {
+  const n = typeof ms === 'number' && ms > 0 ? ms : DEFAULT_LOGIN_TIMEOUT_MS
+  return Math.min(Math.max(n, 5000), 60000)
+}
 function singleFlight<T>(map: Map<string, Promise<T>>, key: string, fn: () => Promise<T>): Promise<T> {
   const existing = map.get(key)
   if (existing) return existing
@@ -111,14 +123,15 @@ function singleFlight<T>(map: Map<string, Promise<T>>, key: string, fn: () => Pr
  * error code with description; for non-standard responses it falls back
  * to the raw response body.
  */
-export async function getOAuth2AccessToken(serviceId: string, authConfig: AuthConfig): Promise<OAuth2TokenResult> {
+export async function getOAuth2AccessToken(serviceId: string, authConfig: AuthConfig, timeoutMs?: number): Promise<OAuth2TokenResult> {
   const warm = oauth2TokenCache.get(serviceId)
   if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token }
-  return singleFlight(oauth2Inflight, serviceId, () => getOAuth2AccessTokenImpl(serviceId, authConfig))
+  return singleFlight(oauth2Inflight, serviceId, () => getOAuth2AccessTokenImpl(serviceId, authConfig, clampTimeout(timeoutMs)))
 }
 async function getOAuth2AccessTokenImpl(
   serviceId: string,
-  authConfig: AuthConfig
+  authConfig: AuthConfig,
+  timeoutMs: number
 ): Promise<OAuth2TokenResult> {
   const cached = oauth2TokenCache.get(serviceId)
   if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token }
@@ -142,7 +155,7 @@ async function getOAuth2AccessTokenImpl(
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const bodyText = await res.text()
     if (!res.ok) {
@@ -202,17 +215,19 @@ export async function getSessionToken(
   serviceId: string,
   baseUrl: string | undefined,
   authConfig: AuthConfig,
+  timeoutMs?: number,
 ): Promise<SessionTokenResult> {
   const warmHeader = authConfig.token_header || 'Authorization'
   const warmPrefix = authConfig.token_prefix ?? 'Bearer'
   const warm = sessionTokenCache.get(serviceId)
   if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token, header: warmHeader, prefix: warmPrefix }
-  return singleFlight(sessionTokenInflight, serviceId, () => getSessionTokenImpl(serviceId, baseUrl, authConfig))
+  return singleFlight(sessionTokenInflight, serviceId, () => getSessionTokenImpl(serviceId, baseUrl, authConfig, clampTimeout(timeoutMs)))
 }
 async function getSessionTokenImpl(
   serviceId: string,
   baseUrl: string | undefined,
   authConfig: AuthConfig,
+  timeoutMs: number,
 ): Promise<SessionTokenResult> {
   const header = authConfig.token_header || 'Authorization'
   const prefix = authConfig.token_prefix ?? 'Bearer'
@@ -254,7 +269,7 @@ async function getSessionTokenImpl(
       body: format === 'form'
         ? new URLSearchParams(bodyObj as Record<string, string>).toString()
         : JSON.stringify(bodyObj),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const bodyText = await res.text()
     if (!res.ok) {
@@ -336,16 +351,18 @@ function jwtExpiry(token: string): number | null {
 export async function getPrismToken(
   instanceId: string,
   baseUrl: string,
-  authConfig: AuthConfig
+  authConfig: AuthConfig,
+  timeoutMs?: number
 ): Promise<PrismTokenResult> {
   const warm = prismTokenCache.get(instanceId)
   if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token }
-  return singleFlight(prismInflight, instanceId, () => getPrismTokenImpl(instanceId, baseUrl, authConfig))
+  return singleFlight(prismInflight, instanceId, () => getPrismTokenImpl(instanceId, baseUrl, authConfig, clampTimeout(timeoutMs)))
 }
 async function getPrismTokenImpl(
   instanceId: string,
   baseUrl: string,
-  authConfig: AuthConfig
+  authConfig: AuthConfig,
+  timeoutMs: number
 ): Promise<PrismTokenResult> {
   let cached = prismTokenCache.get(instanceId)
   const now = Date.now()
@@ -395,7 +412,7 @@ async function getPrismTokenImpl(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: cached.refreshToken }),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (res.ok) {
         const data = await res.json() as { token: string; refreshToken: string }
@@ -426,7 +443,7 @@ async function getPrismTokenImpl(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const bodyText = await res.text()
     if (!res.ok) {
@@ -510,7 +527,8 @@ export async function applyAuth(
   authType: string,
   authConfig: AuthConfig,
   headers: Record<string, string>,
-  baseUrl?: string
+  baseUrl?: string,
+  loginTimeoutMs?: number
 ): Promise<ApplyAuthResult> {
   if (authType === 'bearer' && authConfig.token) {
     headers['Authorization'] = `Bearer ${authConfig.token}`
@@ -529,7 +547,7 @@ export async function applyAuth(
   }
 
   if (authType === 'oauth2_client') {
-    const result = await getOAuth2AccessToken(serviceId, authConfig)
+    const result = await getOAuth2AccessToken(serviceId, authConfig, loginTimeoutMs)
     if (!result.ok) {
       const err = (result as { ok: false; error: string }).error
       void recordAuthStatus(serviceId, false, err)
@@ -542,7 +560,7 @@ export async function applyAuth(
   }
 
   if (authType === 'session_token') {
-    const result = await getSessionToken(serviceId, baseUrl || authConfig.base_url, authConfig)
+    const result = await getSessionToken(serviceId, baseUrl || authConfig.base_url, authConfig, loginTimeoutMs)
     if (!result.ok) {
       const err = (result as { ok: false; error: string }).error
       void recordAuthStatus(serviceId, false, err)
@@ -556,7 +574,7 @@ export async function applyAuth(
   if (authType === 'prism') {
     const prismBase = baseUrl || authConfig.base_url || ''
     if (!prismBase) return { ok: false, error: 'Prism auth requires base_url' }
-    const result = await getPrismToken(serviceId, prismBase, authConfig)
+    const result = await getPrismToken(serviceId, prismBase, authConfig, loginTimeoutMs)
     if (!result.ok) {
       const err = (result as { ok: false; error: string }).error
       void recordAuthStatus(serviceId, false, err)

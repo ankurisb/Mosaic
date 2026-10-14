@@ -89,6 +89,20 @@ describe('getSessionToken', () => {
     expect(results.every(r => r.ok && (r as { ok: true; token: string }).token === 'sf-tok')).toBe(true)
   })
 
+  test('login honours the passed timeout (threaded from the service request_timeout_ms)', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    stubFetch(() => ({ body: { access_token: 't' } }))
+    await getSessionToken('svc-timeout', undefined, { login_url: 'https://h/l', username: 'a', password: 'b' }, 30000)
+    expect(timeoutSpy).toHaveBeenCalledWith(30000)
+  })
+
+  test('login uses the 20s default (not the old 10s) when no timeout is passed', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    stubFetch(() => ({ body: { access_token: 't' } }))
+    await getSessionToken('svc-timeout-def', undefined, { login_url: 'https://h/l', username: 'a', password: 'b' })
+    expect(timeoutSpy).toHaveBeenCalledWith(20000)
+  })
+
   test('surfaces a login failure with the upstream message', async () => {
     stubFetch(() => ({ status: 401, body: { message: 'bad credentials' } }))
     const r = await getSessionToken('svc-fail', undefined, { login_url: 'https://h/l', username: 'a', password: 'b' })

@@ -1704,7 +1704,7 @@ async function callApi(connectionId: string, method: string, path: string, body?
   try { Object.assign(headers, JSON.parse((conn.default_headers as string) || '{}')) } catch {}
   const authConfig = parseAuthConfig(conn.auth_config as string)
   const authType = (conn.auth_type as string) || ''
-  const authResult = await applyAuth(conn.service_id as string, authType, authConfig, headers, conn.base_url as string)
+  const authResult = await applyAuth(conn.service_id as string, authType, authConfig, headers, conn.base_url as string, (conn.request_timeout_ms as number) || undefined)
   if (!authResult.ok) throw new Error((authResult as { ok: false; error: string }).error)
   if (conn.api_version && conn.version_header) headers[conn.version_header as string] = conn.api_version as string
   // SAP OData: auto-inject correct format headers/params based on path

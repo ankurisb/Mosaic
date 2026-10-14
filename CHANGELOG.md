@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.59] - 2026-10-14
+
+### Fixed
+- **Datasource auth login now honours the configured request timeout (was hardcoded 10s).** After the stampede fix (v1.3.58), a single login could still time out: the *data* request already used each service's `request_timeout_ms` (30s by default), but the login handshake was hardcoded to 10s. A real credentialed login (DB lookup + password hash + token mint) on a small or loaded upstream can exceed 10s even though the endpoint is reachable (verified: the failing login endpoint validates in ~120ms but the full credentialed login runs longer). `getSessionToken` / `getOAuth2AccessToken` / `getPrismToken` now take the service's timeout (threaded via `applyAuth` from `call_api`), the default is raised from 10s to 20s, and it's clamped to a 5s–60s range. Tests assert the timeout is threaded through (`AbortSignal.timeout` called with the configured value / the 20s default).
+
+### Note (not a code issue)
+- The "Dev FactoryOS" connection is recorded as `broken: session_token auth requires login_url` — it simply has **no login URL configured** in its connection settings; set that for it to authenticate. "API source" (myfactory) and Prism were login *timeouts*, addressed above.
+
 ## [1.3.58] - 2026-10-14
 
 ### Fixed
