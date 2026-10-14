@@ -121,9 +121,13 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
           connections: conns,
           probe: { connection_index: 0, method: 'GET', path: conns[0]?.base_path ? '' : '/' },
           missing: missingList,
-          message: hasCreds
-            ? 'Resumed draft — credentials filled in. Probe a real endpoint to pick up where you left off.'
-            : 'Resumed draft. This draft has no saved credentials — enter them under “Credentials & details needed” on the left, then Probe to verify and publish.',
+          message: d.service.status === 'draft'
+            ? (hasCreds
+                ? 'Resumed draft — credentials filled in. Probe a real endpoint to pick up where you left off.'
+                : 'Resumed draft. This draft has no saved credentials — enter them under “Credentials & details needed” on the left, then Probe to verify and publish.')
+            : (hasCreds
+                ? `Loaded “${d.service.label}”. Its saved configuration and credentials are filled in — tell the AI what to fix below (or edit the fields on the left), then Probe and republish.`
+                : `Loaded “${d.service.label}”. No saved credentials were found — add them under “Credentials & details needed” on the left (and tell the AI anything else to fix), then Probe and republish.`),
           ready_to_probe: true,
         })
         setStep('review')

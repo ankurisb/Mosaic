@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.62] - 2026-10-14
+
+### Changed
+- **Editing an API connection now opens the AI builder — "Diagnose" removed.** The Diagnose panel (and its `apply_fix` flow, which was erroring with "candidate.service required") is gone. The **Edit** button on a published API service now opens the same **"Add with AI"** builder used to create it, pre-loaded with the service's saved configuration and credentials. You describe what's wrong (or edit the fields), the AI probes the live API and refines the config, and publishing updates the service **in place** (same id). This turns "fix a broken connection" into the same AI-assisted flow as creating one — e.g. add Dev FactoryOS's missing login URL + credentials, probe, republish. `DiagnosePanel` was removed. (Note: republishing re-writes the service's connections, so any per-connection `auth_override` is not preserved across an AI edit; service-level auth is.)
+
 ## [1.3.61] - 2026-10-14
 
 ### Added
