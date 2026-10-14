@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.57] - 2026-10-14
+
+### Fixed
+- **Memory settings tab no longer looks cramped / edge-to-edge.** The shared `Card` primitive has no internal padding, and the Memory composer and list placed their inputs directly inside it, so fields sat flush against the card border with no margin. Added proper internal padding, and redesigned the tab: the category picker is now a **segmented control** (Preference / Fact / Project shown at once instead of a dropdown), a **saved count** sits next to the "Saved memories" header, the "Add memory" button is a primary action aligned right, and the empty state is a real placeholder card instead of a bare line. No API/behaviour change.
+
 ## [1.3.56] - 2026-10-14
 
 ### Changed
