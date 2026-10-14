@@ -5,6 +5,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Sandbox `/work` not writable by the non-root user.** The `tmpfs` mount at `/work` overrode the image's directory ownership, so the sandbox user (uid 10001) got `PermissionError` creating its per-run work dir and every `run_code` call returned 500. The mount is now `mode=1777` (world-writable + sticky, like `/tmp`). Compose-only change; caught verifying the v1.3.42 deploy on the live box.
+
 ## [1.3.42] - 2026-10-14
 
 ### Added

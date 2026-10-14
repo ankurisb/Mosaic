@@ -689,7 +689,11 @@ services:
     security_opt:
       - no-new-privileges:true
     tmpfs:
-      - /work:size=256m
+      # world-writable + sticky (like /tmp): the tmpfs mount overrides the image's
+      # /work ownership, so without a mode the non-root sandbox user (uid 10001)
+      # can't create its per-run work dir. 1777 lets it, while the sticky bit keeps
+      # runs from touching each other.
+      - /work:size=256m,mode=1777
     networks:
       - sandbox-net
     healthcheck:
