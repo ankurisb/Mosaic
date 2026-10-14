@@ -24,7 +24,32 @@ export interface ResearchDeps { client?: Anthropic; exec?: typeof runTool }
 
 interface SubTask { id: string; title: string; brief: string }
 interface Source { title: string; url: string }
-interface SubResult extends SubTask { summary: string; sources: Source[]; toolCalls: number; error?: string }
+interface SubResult extends SubTask { summary: string; headline?: string; bullets?: string[]; sources: Source[]; toolCalls: number; error?: string }
+
+// Sub-agents end their final message with a `===FINDING===` JSON trailer so the
+// Research panel can render a structured card (one-line headline + key-fact
+// bullets) instead of a wall of prose. Parsing is best-effort: a model that
+// doesn't emit the trailer just falls back to its raw text as the summary, so
+// nothing breaks. The prose BEFORE the marker is kept as `summary` (what the
+// synthesis step consumes); the JSON AFTER it becomes headline + bullets.
+const FINDING_MARKER = '===FINDING==='
+function parseFinding(raw: string): { summary: string; headline?: string; bullets?: string[] } {
+  const text = (raw || '').trim()
+  const at = text.indexOf(FINDING_MARKER)
+  if (at === -1) return { summary: text || '(no findings)' }
+  const prose = text.slice(0, at).trim()
+  const tail = text.slice(at + FINDING_MARKER.length).trim()
+  try {
+    const obj = JSON.parse(tail.slice(tail.indexOf('{'), tail.lastIndexOf('}') + 1)) as { headline?: unknown; bullets?: unknown }
+    const headline = typeof obj.headline === 'string' ? obj.headline.trim().slice(0, 200) : undefined
+    const bullets = Array.isArray(obj.bullets)
+      ? obj.bullets.filter((b): b is string => typeof b === 'string' && b.trim().length > 0).slice(0, 5).map(b => b.trim().slice(0, 240))
+      : undefined
+    return { summary: prose || headline || '(no findings)', headline, bullets: bullets && bullets.length ? bullets : undefined }
+  } catch {
+    return { summary: prose || text || '(no findings)' }
+  }
+}
 
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
@@ -75,7 +100,13 @@ async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask
   const sources: Source[] = []
   let toolCalls = 0
   const history: Anthropic.MessageParam[] = [{ role: 'user', content: `Research task: ${task.brief}\n\nGather evidence with the tools, then give a concise findings summary (the key facts, numbers, named players), citing what you found. Be efficient — at most ${SUBAGENT_TOOL_BUDGET} tool calls.` }]
-  const system = `You are a focused research sub-agent. Use web_search and fetch_url for public sources, and the data tools for internal data. Do not speculate — report only what the tools return. Keep your final summary tight (a few sentences) and factual.`
+  const system = `You are a focused research sub-agent. Use web_search and fetch_url for public sources, and the data tools for internal data. Do not speculate — report only what the tools return.
+
+Your final message MUST have two parts:
+1. A tight factual summary (one or two sentences).
+2. Then, on its own line, the marker ${FINDING_MARKER} followed by a JSON object:
+{"headline":"<the single most important takeaway, one clause>","bullets":["<concrete fact, number or named player>", "<another>", "...up to 5"]}
+Keep each bullet to one short line — a figure, a name, a specific fact — not a sentence of prose. Only include facts the tools returned.`
 
   for (let round = 0; round < SUBAGENT_TOOL_BUDGET; round++) {
     const forceFinish = round === SUBAGENT_TOOL_BUDGET - 1
@@ -85,7 +116,7 @@ async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask
     } catch (e) { return { ...task, summary: `Sub-agent error: ${e instanceof Error ? e.message : 'failed'}`, sources, toolCalls, error: 'model' } }
     const toolUses = resp.content.filter(b => b.type === 'tool_use') as Anthropic.ToolUseBlock[]
     if (resp.stop_reason !== 'tool_use' || !toolUses.length) {
-      return { ...task, summary: extractText(resp) || '(no findings)', sources, toolCalls }
+      return { ...task, ...parseFinding(extractText(resp)), sources, toolCalls }
     }
     history.push({ role: 'assistant', content: resp.content })
     const results: Anthropic.ToolResultBlockParam[] = []
@@ -104,8 +135,8 @@ async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask
   }
   // Budget exhausted without a clean finish — ask for a summary with no tools.
   try {
-    const fin = await anthropic.messages.create({ model: ctx.model, max_tokens: 1500, system, messages: [...history, { role: 'user', content: 'Summarise your findings now in a few factual sentences. No more tools.' }] })
-    return { ...task, summary: extractText(fin) || '(no findings)', sources, toolCalls }
+    const fin = await anthropic.messages.create({ model: ctx.model, max_tokens: 1500, system, messages: [...history, { role: 'user', content: `Summarise your findings now. No more tools. Give one or two factual sentences, then the ${FINDING_MARKER} JSON object (headline + bullets) as instructed.` }] })
+    return { ...task, ...parseFinding(extractText(fin)), sources, toolCalls }
   } catch { return { ...task, summary: '(summary unavailable)', sources, toolCalls, error: 'synth' } }
 }
 
@@ -132,7 +163,7 @@ export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit
 
   const results = await mapLimit(tasks, CONCURRENCY, async (task) => {
     const r = await runSubAgent(anthropic, ctx, task, emit, exec)
-    emit({ type: 'subagent_result', id: task.id, status: 'done', title: task.title, summary: r.summary, sources: r.sources.length, toolCalls: r.toolCalls, error: r.error })
+    emit({ type: 'subagent_result', id: task.id, status: 'done', title: task.title, summary: r.summary, headline: r.headline, bullets: r.bullets, links: r.sources.slice(0, 3), sources: r.sources.length, toolCalls: r.toolCalls, error: r.error })
     return r
   })
 

@@ -255,7 +255,7 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
 
 interface GenFile { id: string; name: string; mime: string; size: number }
 // Live state of a deep-research / deep-diagnose run, driven by streamed SSE events.
-interface ResearchSubtask { id: string; title: string; brief?: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; sources?: number; toolCalls?: number; error?: string; verdict?: 'supported' | 'refuted' | 'inconclusive'; confidence?: number }
+interface ResearchSubtask { id: string; title: string; brief?: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; headline?: string; bullets?: string[]; links?: Array<{ title: string; url: string }>; sources?: number; toolCalls?: number; error?: string; verdict?: 'supported' | 'refuted' | 'inconclusive'; confidence?: number }
 interface DiagCause { cause: string; confidence: number; evidence: string[] }
 interface ResearchState { mode: 'research' | 'diagnose'; question: string; phase: 'planning' | 'researching' | 'synthesizing' | 'done'; subtasks: ResearchSubtask[]; sourceCount?: number; subagentCount?: number; ms?: number; causes?: DiagCause[]; checks?: string[] }
 
@@ -565,7 +565,29 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
               </div>
             )}
             {s.status === 'running' && s.tool && <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--text2)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>▸ {s.tool}</div>}
-            {s.summary && <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.5 }}>{s.summary}</div>}
+            {/* Structured finding: one-line headline + key-fact bullets. Falls back
+                to the raw summary text when a sub-agent didn't emit the trailer. */}
+            {s.status === 'done' && (s.headline || (s.bullets?.length) || s.summary) ? (
+              <div style={{ marginTop: 8 }}>
+                {s.headline && <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', lineHeight: 1.45 }}>{s.headline}</div>}
+                {s.bullets?.length ? (
+                  <ul style={{ margin: s.headline ? '6px 0 0' : 0, paddingLeft: 16 }}>
+                    {s.bullets.map((b, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 3 }}>{b}</li>)}
+                  </ul>
+                ) : (!s.headline && s.summary ? (
+                  <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.5 }}>{s.summary}</div>
+                ) : null)}
+              </div>
+            ) : null}
+            {s.status === 'done' && s.links?.length ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                {s.links.map((l, i) => {
+                  let host = l.title || l.url
+                  try { host = new URL(l.url).hostname.replace(/^www\./, '') } catch { /* keep title */ }
+                  return <a key={i} href={l.url} target="_blank" rel="noreferrer" title={l.title ? `${l.title} — ${l.url}` : l.url} style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 9px', textDecoration: 'none', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>↗ {host}</a>
+                })}
+              </div>
+            ) : null}
             {s.status === 'done' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 7 }}>{s.error ? 'completed with issues' : `${s.sources ?? 0} source${(s.sources ?? 0) === 1 ? '' : 's'} · ${s.toolCalls ?? 0} tool call${(s.toolCalls ?? 0) === 1 ? '' : 's'}`}</div>}
           </div>
         ) })}
@@ -1058,7 +1080,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               setPanel({ kind: 'research' })
             }
             else if (e.type === 'subagent_status') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: (e.status as ResearchSubtask['status']) || s.status, tool: e.tool as string | undefined } : s) }) : r)
-            else if (e.type === 'subagent_result') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: 'done', tool: undefined, summary: e.summary as string, sources: Number(e.sources) || 0, toolCalls: Number(e.toolCalls) || 0, error: e.error as string | undefined, verdict: e.verdict as ResearchSubtask['verdict'], confidence: typeof e.confidence === 'number' ? e.confidence : undefined } : s) }) : r)
+            else if (e.type === 'subagent_result') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: 'done', tool: undefined, summary: e.summary as string, headline: typeof e.headline === 'string' ? e.headline : undefined, bullets: Array.isArray(e.bullets) ? (e.bullets as string[]) : undefined, links: Array.isArray(e.links) ? (e.links as Array<{ title: string; url: string }>) : undefined, sources: Number(e.sources) || 0, toolCalls: Number(e.toolCalls) || 0, error: e.error as string | undefined, verdict: e.verdict as ResearchSubtask['verdict'], confidence: typeof e.confidence === 'number' ? e.confidence : undefined } : s) }) : r)
             else if (e.type === 'research_synthesizing') setResearch(r => r ? ({ ...r, phase: 'synthesizing' }) : r)
             else if (e.type === 'research_done') setResearch(r => r ? ({ ...r, phase: 'done', sourceCount: Number(e.sourceCount) || 0, subagentCount: Number(e.subagentCount) || r.subtasks.length, ms: Number(e.ms) || undefined, causes: Array.isArray(e.causes) ? e.causes as DiagCause[] : r.causes, checks: Array.isArray(e.checks) ? (e.checks as string[]) : r.checks }) : r)
             else if (e.type === 'error') updateLast(cid, m => ({ ...m, content: 'Error: ' + e.message }))

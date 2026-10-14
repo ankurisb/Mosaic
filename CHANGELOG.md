@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.53] - 2026-10-14
+
+### Changed
+- **Research sub-agent findings are now structured, not a wall of text.** Each research sub-agent ends its final message with a `===FINDING===` JSON trailer — a one-line **headline** (the key takeaway) plus up to five **key-fact bullets** (figures, named players, specific facts) — mirroring the `===VERDICT===` pattern the diagnose sub-agents already use. The Research workspace panel renders the headline, the bullet list, and the sub-agent's **top sources as clickable chips**, instead of dumping the raw model prose into one unstyled block. The prose summary is still kept (trailer stripped) and fed to the synthesis step, so the final briefing is unchanged. Parsing is best-effort: a sub-agent that omits the trailer degrades gracefully to its raw summary — no headline/bullets, same as before.
+  - Verified by a fake-model test pass: `tests/research/finding.test.ts` (10/10) — headline/bullets parsed, marker stripped from both headline and summary, bullets kept short, source chips emitted, and the no-trailer fallback. Research orchestrator (24/24) and SSE heartbeat (18/18) suites still green.
+
 ## [1.3.52] - 2026-10-14
 
 ### Fixed

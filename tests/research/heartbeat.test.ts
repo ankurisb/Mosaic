@@ -209,7 +209,7 @@ async function main() {
       report = res.report
     }, 30)
     const chunks = await drain(stream)
-    const flat = chunks.flatMap((c, ci) => c.events.map(e => ({ ...e, _ci: ci })))
+    const flat: Record<string, unknown>[] = chunks.flatMap(c => c.events)
 
     const synthIdx = chunks.findIndex(c => c.events.some(e => e.type === 'research_synthesizing'))
     const doneIdx = chunks.findIndex(c => c.events.some(e => e.type === 'research_done'))
