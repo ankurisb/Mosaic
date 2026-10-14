@@ -83,7 +83,8 @@ export async function upsertApiSource(params: {
         auth_type=${s.auth_type || 'bearer'}, auth_config=${authEnc},
         default_headers=${JSON.stringify(s.default_headers || {})},
         api_version=${s.api_version || null}, version_header=${s.version_header || null},
-        status=${lifecycle}
+        status=${lifecycle},
+        auth_status='unknown', last_auth_error=NULL, last_auth_check=NULL
       WHERE id=${serviceId}`
     await sql`DELETE FROM api_connections WHERE service_id=${serviceId}`
   } else {

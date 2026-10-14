@@ -1648,7 +1648,6 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                   {user.role === 'admin' && svc.status === 'draft' && (
                     <Btn size="sm" variant="primary" onClick={() => { setResumeDraftId(svc.id); setShowBuilder(true); setTryIt(null); setTryResult(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Resume</Btn>
                   )}
-                  <Btn size="sm" onClick={() => { openTryIt(svc, null) }}> Try</Btn>
                   {user.role === 'admin' && <>
                     {svc.status !== 'draft' && (
                       <Btn size="sm" onClick={() => { setResumeDraftId(svc.id); setShowBuilder(true); setTryIt(null); setTryResult(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }} title="Edit with AI — loads this API's config so you can fix or refine it and republish">Edit</Btn>
@@ -1680,7 +1679,6 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                       {c.base_path && <code style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', padding: '2px 7px', borderRadius: 5, border: '1px solid var(--border)' }}>{c.base_path}</code>}
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text4)' }}> inherits auth</span>
                       <div style={{ display: 'flex', gap: 5 }}>
-                        <Btn size="sm" onClick={() => openTryIt(svc, c)}> Try</Btn>
                         {user.role === 'admin' && <>
                           <Btn size="sm" onClick={() => { setConnForm({ ...CONN_EMPTY, ...(c as unknown as Record<string,string>) }); setEditingConn(c.id); setShowConnForm(svc.id); setExpanded(p => new Set([...p, svc.id])) }}>Edit</Btn>
                           <Btn size="sm" variant="danger" onClick={() => delConn(c.id, c.label)}>Delete</Btn>

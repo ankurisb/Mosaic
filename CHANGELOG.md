@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.64] - 2026-10-14
+
+### Changed
+- **Removed the "Try" buttons from API connections** (service and per-connection) — live testing is already in the AI builder's Probe step, so Try was redundant.
+- **A re-published API service no longer shows a stale "Auth broken" badge.** `upsertApiSource` now resets `auth_status`/`last_auth_error`/`last_auth_check` when a service is updated, so after you edit and republish a connection its health shows neutral until the next real call sets it accurately — instead of keeping the pre-fix "broken" status.
+
+### Fixed (operational note)
+- A connection using `session_token` auth needs a **login URL**, not just username/password. The old manual edit form had no field for it, so "fixing credentials" there left `login_url` missing and auth still broken. Editing via the AI builder (now the default) surfaces the login URL as a required field.
+
 ## [1.3.63] - 2026-10-14
 
 ### Removed
