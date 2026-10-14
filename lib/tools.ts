@@ -399,6 +399,19 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
     },
   },
   {
+    name: 'deep_diagnose',
+    description: `Run a multi-agent root-cause analysis (RCA) for an equipment fault or breakdown. Use when the user reports a machine/device/asset problem and wants to know WHY — "why did inverter X trip", "diagnose the breakdown of line 2", an RCA on a specific asset. The lead forms testable hypotheses (failure modes — telemetry, alarms, maintenance, neighbouring assets, setpoints, sensor quality), sub-agents each test one against your telemetry/alarms/history data, and you get back ranked probable causes with evidence, confidence, and recommended next checks. Prefer this over a one-shot answer for anything ambiguous or cross-system. For a single data lookup, use a data tool directly. When it returns, present the ranked causes, the confidence, the evidence, and the recommended checks.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'The asset/device/line to diagnose (name or id).' },
+        symptom: { type: 'string', description: 'What went wrong — the observed fault or symptom.' },
+        window: { type: 'string', description: 'Optional time window to focus on (e.g. "last night", "last 7 days").' },
+      },
+      required: ['target', 'symptom']
+    },
+  },
+  {
     name: 'fetch_url',
     description: `Fetch the text content of a specific public web page by URL. Use this to read a named page you already know or found via web_search — docs, an article, a competitor/vendor page, a spec. Returns the page title and readable text (HTML stripped, truncated). For discovery use web_search; use fetch_url when you have a concrete URL to read. Public web only — internal/private addresses are refused.`,
     input_schema: {
@@ -434,7 +447,7 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
 export async function runTool(
   name: string,
   input: Record<string, unknown>,
-  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[] }
+  guardrailCtx?: { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[]; strictSources?: boolean }
 ): Promise<unknown> {
   const role = guardrailCtx?.userRole || 'user'
   const auditCtx: GuardrailAuditCtx | undefined = guardrailCtx
@@ -459,6 +472,17 @@ export async function runTool(
       if (targetId && !guardrailCtx.allowedSources.includes(targetId)) {
         return {
           error: `That data source is outside the sources you selected for this chat. To use it, add it to the selected sources (the + menu) or clear the selection to allow all sources.`,
+          blocked: true,
+          out_of_scope: true,
+        }
+      }
+      // strictSources (used by Deep Diagnose sub-agents): when a scope is active,
+      // a source tool MUST name an explicit, in-scope source — no implicit
+      // "resolve your own target" fall-through. Closes the scoping gap for
+      // automated sub-agents that shouldn't reach beyond the pinned sources.
+      if (!targetId && guardrailCtx.strictSources) {
+        return {
+          error: `This source tool must target an explicit source id within the selected sources (${guardrailCtx.allowedSources.join(', ')}). Name one of them.`,
           blocked: true,
           out_of_scope: true,
         }

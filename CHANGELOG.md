@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.51] - 2026-10-14
+
+### Added
+- **Deep Diagnose — multi-agent root-cause analysis (Phase 3.1).** For an equipment fault/breakdown, a new `deep_diagnose` tool runs a diagnostic variant of the research orchestrator: the lead forms 3–6 **testable failure-mode hypotheses** (telemetry, alarms, maintenance, neighbouring assets, setpoints, sensor quality), each **hypothesis sub-agent** tests one against your telemetry/alarms/history data in parallel and returns a **verdict (supported / refuted / inconclusive) + confidence + evidence**, and synthesis produces **ranked probable causes with confidence, evidence, and recommended next checks**. The right panel is a live **Diagnosis workspace** — hypothesis cards with verdict badges and confidence bars, resolving into the ranked-cause board. Streams the same workspace events in `diagnose` mode.
+  - **Scope hardening (folded in from the sub-agent review):** diagnostic sub-agents are given the **data-source catalog** in their prompt (so they can target internal data), and run with **`strictSources`** — when a source scope is active, a data tool must name an explicit in-scope source (no implicit "resolve your own target" fall-through). The `strictSources` guard was added to `runTool` and is used only by diagnostic sub-agents; the main chat is unchanged.
+  - Verified by a fake-model test pass (9/9): hypothesis planning, verdict/confidence parsing, ranked-cause + checks parsing, event ordering in diagnose mode, and both strict/non-strict scope-guard behaviours.
+
 ## [1.3.50] - 2026-10-14
 
 ### Fixed

@@ -254,9 +254,10 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
 }
 
 interface GenFile { id: string; name: string; mime: string; size: number }
-// Live state of a deep-research run, driven by streamed SSE events.
-interface ResearchSubtask { id: string; title: string; brief?: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; sources?: number; toolCalls?: number; error?: string }
-interface ResearchState { question: string; phase: 'planning' | 'researching' | 'synthesizing' | 'done'; subtasks: ResearchSubtask[]; sourceCount?: number; subagentCount?: number; ms?: number }
+// Live state of a deep-research / deep-diagnose run, driven by streamed SSE events.
+interface ResearchSubtask { id: string; title: string; brief?: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; sources?: number; toolCalls?: number; error?: string; verdict?: 'supported' | 'refuted' | 'inconclusive'; confidence?: number }
+interface DiagCause { cause: string; confidence: number; evidence: string[] }
+interface ResearchState { mode: 'research' | 'diagnose'; question: string; phase: 'planning' | 'researching' | 'synthesizing' | 'done'; subtasks: ResearchSubtask[]; sourceCount?: number; subagentCount?: number; ms?: number; causes?: DiagCause[]; checks?: string[] }
 
 // What the right-side panel is currently showing.
 type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData } | { kind: 'research' }
@@ -518,42 +519,78 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  const dx = research.mode === 'diagnose'
   const done = research.subtasks.filter(s => s.status === 'done').length
-  const lead = research.phase === 'planning' ? 'Decomposing the question into focused sub-tasks…'
-    : research.phase === 'researching' ? `Spun out ${research.subtasks.length} sub-agents, each with a focused brief and a tool budget.`
-    : research.phase === 'synthesizing' ? 'All sub-agents done — synthesising a cited briefing.'
-    : `Research complete — ${research.sourceCount ?? 0} sources across ${research.subagentCount ?? research.subtasks.length} sub-agents.`
-  const sub = research.phase === 'done' ? `complete · ${research.sourceCount ?? 0} sources` : `${done}/${research.subtasks.length || '…'} done`
-  const badge = (s: ResearchSubtask['status']) => s === 'done' ? { bg: 'var(--green-bg,#ecfdf5)', c: 'var(--green-t,#16a34a)', t: 'Done' }
-    : s === 'running' ? { bg: 'var(--accent-bg)', c: 'var(--accent-fg,#fff)', t: 'Researching' }
-    : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Queued' }
+  const noun = dx ? 'hypotheses' : 'sub-agents'
+  const lead = research.phase === 'planning' ? (dx ? 'Forming testable fault-mode hypotheses…' : 'Decomposing the question into focused sub-tasks…')
+    : research.phase === 'researching' ? (dx ? `Testing ${research.subtasks.length} hypotheses in parallel against your data.` : `Spun out ${research.subtasks.length} sub-agents, each with a focused brief and a tool budget.`)
+    : research.phase === 'synthesizing' ? (dx ? 'All hypotheses tested — ranking the probable causes.' : 'All sub-agents done — synthesising a cited briefing.')
+    : (dx ? `Diagnosis complete — ${research.causes?.length ?? 0} probable cause(s) ranked.` : `Research complete — ${research.sourceCount ?? 0} sources across ${research.subagentCount ?? research.subtasks.length} sub-agents.`)
+  const sub = research.phase === 'done' ? (dx ? `complete · ${research.causes?.length ?? 0} ranked causes` : `complete · ${research.sourceCount ?? 0} sources`) : `${done}/${research.subtasks.length || '…'} ${noun} done`
+  // status / verdict badge
+  const badge = (s: ResearchSubtask) => {
+    if (s.status !== 'done') return s.status === 'running' ? { bg: 'var(--accent-bg)', c: 'var(--accent-fg,#fff)', t: dx ? 'Testing' : 'Researching' } : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Queued' }
+    if (dx && s.verdict) return s.verdict === 'supported' ? { bg: 'var(--amber-bg,#fffbeb)', c: 'var(--amber-t,#d97706)', t: 'Likely' }
+      : s.verdict === 'refuted' ? { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Ruled out' }
+      : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Inconclusive' }
+    return { bg: 'var(--green-bg,#ecfdf5)', c: 'var(--green-t,#16a34a)', t: 'Done' }
+  }
+  const pct = (c?: number) => Math.round((c ?? 0) * 100)
   return (
     <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Research workspace</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{dx ? 'Diagnosis workspace' : 'Research workspace'}</div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div>
         </div>
         <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg3)', marginBottom: 14 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface)', display: 'grid', placeItems: 'center', flexShrink: 0, fontSize: 15 }}>◎</div>
-          <div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>Lead agent{research.phase !== 'done' ? <span style={{ color: 'var(--accent-bg)', marginLeft: 6, animation: 'blink 1s step-end infinite' }}>●</span> : null}</div><div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{lead}</div></div>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface)', display: 'grid', placeItems: 'center', flexShrink: 0, fontSize: 15 }}>{dx ? '🩺' : '◎'}</div>
+          <div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>Lead {dx ? 'diagnostician' : 'agent'}{research.phase !== 'done' ? <span style={{ color: 'var(--accent-bg)', marginLeft: 6, animation: 'blink 1s step-end infinite' }}>●</span> : null}</div><div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{lead}</div></div>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 2px 9px' }}>Sub-agents</div>
-        {research.subtasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>Planning…</div>}
-        {research.subtasks.map(s => { const b = badge(s.status); return (
+        <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 2px 9px' }}>{dx ? 'Hypotheses' : 'Sub-agents'}</div>
+        {research.subtasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>{dx ? 'Forming hypotheses…' : 'Planning…'}</div>}
+        {research.subtasks.map(s => { const b = badge(s); return (
           <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', padding: '11px 12px', marginBottom: 9 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, color: 'var(--text)' }}>{s.title}</div>
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: b.bg, color: b.c }}>{b.t}</span>
             </div>
+            {dx && s.status === 'done' && typeof s.confidence === 'number' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct(s.confidence)}%`, background: s.verdict === 'supported' ? 'var(--amber-t,#d97706)' : 'var(--text3)' }} /></div>
+                <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct(s.confidence)}%</span>
+              </div>
+            )}
             {s.status === 'running' && s.tool && <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--text2)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>▸ {s.tool}</div>}
             {s.summary && <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.5 }}>{s.summary}</div>}
             {s.status === 'done' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 7 }}>{s.error ? 'completed with issues' : `${s.sources ?? 0} source${(s.sources ?? 0) === 1 ? '' : 's'} · ${s.toolCalls ?? 0} tool call${(s.toolCalls ?? 0) === 1 ? '' : 's'}`}</div>}
           </div>
         ) })}
+
+        {dx && research.phase === 'done' && (research.causes?.length || research.checks?.length) ? (
+          <div style={{ marginTop: 6, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 2px 9px' }}>Ranked probable causes</div>
+            {(research.causes || []).map((c, i) => (
+              <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg3)', padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-bg)' }}>{i + 1}.</span>
+                  <div style={{ fontSize: 13, fontWeight: 600, flex: 1, color: 'var(--text)' }}>{c.cause}</div>
+                  <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct(c.confidence)}%</span>
+                </div>
+                {c.evidence?.length ? <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{c.evidence.map((ev, k) => <li key={k} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>{ev}</li>)}</ul> : null}
+              </div>
+            ))}
+            {research.checks?.length ? (
+              <>
+                <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '14px 2px 8px' }}>Recommended checks</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>{research.checks.map((c, i) => <li key={i} style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>{c}</li>)}</ul>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -1014,16 +1051,16 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               if (e.name === 'render_map' && e.result && (e.result as { kind?: string }).kind === 'map_artifact') setPanel({ kind: 'map', map: e.result as MapData })
             }
             // -- Deep research live events --
-            else if (e.type === 'research_started') { setResearch({ question: String(e.question || ''), phase: 'planning', subtasks: [] }); setPanel({ kind: 'research' }) }
+            else if (e.type === 'research_started') { setResearch({ mode: e.mode === 'diagnose' ? 'diagnose' : 'research', question: String(e.question || ''), phase: 'planning', subtasks: [] }); setPanel({ kind: 'research' }) }
             else if (e.type === 'research_plan') {
               const subs = (Array.isArray(e.subtasks) ? e.subtasks : []) as Array<{ id: string; title: string; brief?: string }>
-              setResearch(r => ({ question: String(e.question || r?.question || ''), phase: 'researching', subtasks: subs.map(s => ({ id: s.id, title: s.title, brief: s.brief, status: 'queued' as const })) }))
+              setResearch(r => ({ mode: e.mode === 'diagnose' ? 'diagnose' : (r?.mode || 'research'), question: String(e.question || r?.question || ''), phase: 'researching', subtasks: subs.map(s => ({ id: s.id, title: s.title, brief: s.brief, status: 'queued' as const })) }))
               setPanel({ kind: 'research' })
             }
             else if (e.type === 'subagent_status') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: (e.status as ResearchSubtask['status']) || s.status, tool: e.tool as string | undefined } : s) }) : r)
-            else if (e.type === 'subagent_result') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: 'done', tool: undefined, summary: e.summary as string, sources: Number(e.sources) || 0, toolCalls: Number(e.toolCalls) || 0, error: e.error as string | undefined } : s) }) : r)
+            else if (e.type === 'subagent_result') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: 'done', tool: undefined, summary: e.summary as string, sources: Number(e.sources) || 0, toolCalls: Number(e.toolCalls) || 0, error: e.error as string | undefined, verdict: e.verdict as ResearchSubtask['verdict'], confidence: typeof e.confidence === 'number' ? e.confidence : undefined } : s) }) : r)
             else if (e.type === 'research_synthesizing') setResearch(r => r ? ({ ...r, phase: 'synthesizing' }) : r)
-            else if (e.type === 'research_done') setResearch(r => r ? ({ ...r, phase: 'done', sourceCount: Number(e.sourceCount) || 0, subagentCount: Number(e.subagentCount) || r.subtasks.length, ms: Number(e.ms) || undefined }) : r)
+            else if (e.type === 'research_done') setResearch(r => r ? ({ ...r, phase: 'done', sourceCount: Number(e.sourceCount) || 0, subagentCount: Number(e.subagentCount) || r.subtasks.length, ms: Number(e.ms) || undefined, causes: Array.isArray(e.causes) ? e.causes as DiagCause[] : r.causes, checks: Array.isArray(e.checks) ? (e.checks as string[]) : r.checks }) : r)
             else if (e.type === 'error') updateLast(cid, m => ({ ...m, content: 'Error: ' + e.message }))
           } catch {}
         }
@@ -1292,13 +1329,13 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   {/* Files produced by run_code — download chips + inline images */}
                   {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
                   {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
-                  {msg.role === 'assistant' && research && Array.isArray(msg.tools) && msg.tools.some(t => t.name === 'deep_research') && (
+                  {msg.role === 'assistant' && research && Array.isArray(msg.tools) && msg.tools.some(t => t.name === 'deep_research' || t.name === 'deep_diagnose') && (
                     <div style={{ margin: '4px 0 12px' }}>
-                      <button onClick={() => setPanel({ kind: 'research' })} title="Open research workspace"
+                      <button onClick={() => setPanel({ kind: 'research' })} title={research.mode === 'diagnose' ? 'Open diagnosis workspace' : 'Open research workspace'}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        <span style={{ fontSize: 14, color: 'var(--accent-bg)' }}>◎</span>
-                        <span style={{ fontWeight: 600 }}>Research workspace</span>
-                        <span style={{ color: 'var(--text3)', fontSize: 11 }}>{research.subagentCount ?? research.subtasks.length} agents · {research.sourceCount ?? 0} sources</span>
+                        <span style={{ fontSize: 14, color: 'var(--accent-bg)' }}>{research.mode === 'diagnose' ? '🩺' : '◎'}</span>
+                        <span style={{ fontWeight: 600 }}>{research.mode === 'diagnose' ? 'Diagnosis workspace' : 'Research workspace'}</span>
+                        <span style={{ color: 'var(--text3)', fontSize: 11 }}>{research.mode === 'diagnose' ? `${research.causes?.length ?? 0} causes` : `${research.subagentCount ?? research.subtasks.length} agents · ${research.sourceCount ?? 0} sources`}</span>
                       </button>
                     </div>
                   )}

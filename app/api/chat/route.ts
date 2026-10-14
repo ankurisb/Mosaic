@@ -8,6 +8,7 @@ import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { runResearch } from '@/lib/research'
+import { runDiagnose } from '@/lib/diagnose'
 import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
@@ -300,6 +301,7 @@ You have access to live databases and APIs listed below. When a user asks about 
 - Always also write a one or two sentence text summary alongside the chart that names the most important finding. The chart is a visual aid; the words are the answer.
 - When the answer is geographic — where sites/plants/devices are, their locations on a map — fetch the coordinates (lat/lng) from your data first, then call render_map to show them on an interactive map in the side panel. Never invent coordinates.
 - For broad, comparative or multi-part questions that need several angles and sources (a landscape, a market, "compare X vs Y across …", "research … and what should we do"), call deep_research with a self-contained question. It runs parallel sub-agents and returns a cited briefing — present that as your answer with the Sources list. For a single fact or one lookup, use web_search or a data tool directly, not deep_research.
+- When the user reports an equipment FAULT or BREAKDOWN and wants the root cause ("why did inverter X trip", "diagnose the breakdown of line 2", an RCA on a specific asset), call deep_diagnose with the target asset and the symptom. It forms failure-mode hypotheses, tests each against the telemetry/alarms/history data in parallel, and returns ranked probable causes with evidence, confidence and recommended checks — present those. Use it for ambiguous or cross-system faults; for a single obvious lookup, use a data tool directly.
 
 ## Producing files (run_code)
 - When the user wants a FILE — a spreadsheet (xlsx/csv), a Word or PDF report/document, a saved chart image, a format conversion, or anything they'll download — use run_code. It runs real Python (pandas, openpyxl/XlsxWriter, python-docx, python-pptx, reportlab, matplotlib, Pillow) in a secure sandbox.
@@ -525,6 +527,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     call_api: 32_000,
     run_code: 24_000,
     deep_research: 60_000,
+    deep_diagnose: 60_000,
   }
 
   function truncateResult(resultStr: string, toolName: string): string {
@@ -774,6 +777,26 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                   const msg = e instanceof Error ? e.message : 'research failed'
                   send({ type: 'tool_result', name: 'deep_research', result: { error: msg } })
                   return { type: 'tool_result' as const, tool_use_id: block.id, content: `Research could not complete: ${msg}` }
+                }
+              }
+              // Deep Diagnose — multi-agent RCA for an equipment fault (streams the
+              // same research-workspace events, in diagnose mode).
+              if (block.name === 'deep_diagnose') {
+                const inp = block.input as { target?: string; symptom?: string; window?: string }
+                const catalog = [dbList, apiList, fileServerList, prismList, mcpList].filter(Boolean).join('\n')
+                try {
+                  const dx = await runDiagnose({ target: String(inp.target || ''), symptom: String(inp.symptom || lastUserContent), window: inp.window ? String(inp.window) : undefined },
+                    { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources, model, catalog }, (ev) => send(ev))
+                  const srcList = dx.sources.map((s, i) => `[${i + 1}] ${s.title} — ${s.url}`).join('\n')
+                  const causes = dx.causes.map((c, i) => `${i + 1}. ${c.cause} (confidence ${(c.confidence * 100).toFixed(0)}%) — ${c.evidence.join('; ')}`).join('\n')
+                  send({ type: 'tool_result', name: 'deep_diagnose', result: { causes: dx.causes.length, checks: dx.checks.length, sources: dx.sources.length } })
+                  finalToolCalls.push({ name: 'deep_diagnose', input: block.input, result: { causes: dx.causes.length, sources: dx.sources.length } })
+                  const content = `${dx.report}\n\nRanked probable causes:\n${causes || '(inconclusive)'}\n\nRecommended checks:\n${dx.checks.map(c => `- ${c}`).join('\n') || '(none)'}\n\nSources:\n${srcList || '(none)'}`
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content }
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : 'diagnosis failed'
+                  send({ type: 'tool_result', name: 'deep_diagnose', result: { error: msg } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Diagnosis could not complete: ${msg}` }
                 }
               }
               const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources }
