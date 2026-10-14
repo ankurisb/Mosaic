@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.44] - 2026-10-14
+
+### Added
+- **In-chat file previewer (Claude-style right-side panel).** Clicking any file produced by `run_code` (or an inline image) now opens a docked preview panel instead of a raw download. A generic renderer registry keyed by extension/MIME handles images, PDF, Markdown, code/text, JSON (pretty-printed), CSV/TSV, XLSX (with sheet tabs), and HTML (rendered in a script-disabled sandboxed iframe). Every type falls through to a download card when it can't be previewed, is over a 2 MB inline cap, or fails to parse — so it degrades gracefully rather than breaking. Download stays one click away from the panel header. Front-end only; reuses the existing `/api/files/<id>` endpoint.
+
 ## [1.3.43] - 2026-10-14
 
 ### Fixed

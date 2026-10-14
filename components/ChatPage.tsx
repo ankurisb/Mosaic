@@ -9,6 +9,7 @@ import { APP_VERSION } from '@/lib/version'
 import { UpdateModal } from '@/components/UpdateModal'
 import RcaRenderer from './rca/RcaRenderer'
 import ReactMarkdown from 'react-markdown'
+import * as XLSX from 'xlsx'
 import SetupBanner from './SetupBanner'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
 import type { RcaBlock, RcaAction } from '@/lib/rca'
@@ -255,9 +256,10 @@ interface GenFile { id: string; name: string; mime: string; size: number }
 // Download chips + inline image previews for files produced by run_code. Each
 // file is served (owner-checked) from /api/files/<id>. Images render inline;
 // everything else shows as a labelled download chip.
-function GeneratedFiles({ files }: { files: GenFile[] }) {
+function fmtBytes(n: number) { return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB` }
+
+function GeneratedFiles({ files, onOpen }: { files: GenFile[]; onOpen: (f: GenFile) => void }) {
   if (!files.length) return null
-  const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`
   const icon = (mime: string) => {
     if (/sheet|excel|csv/i.test(mime)) return '▦'
     if (/word|document/i.test(mime)) return '✎'
@@ -272,25 +274,180 @@ function GeneratedFiles({ files }: { files: GenFile[] }) {
       {images.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: others.length ? 10 : 0 }}>
           {images.map(f => (
-            <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" style={{ display: 'block', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxWidth: 420 }}>
+            <button key={f.id} onClick={() => onOpen(f)} title={`Preview ${f.name}`}
+              style={{ padding: 0, display: 'block', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxWidth: 420, cursor: 'pointer', background: 'none' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`/api/files/${f.id}`} alt={f.name} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
-            </a>
+            </button>
           ))}
         </div>
       )}
       {others.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {others.map(f => (
-            <a key={f.id} href={`/api/files/${f.id}`} download style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', textDecoration: 'none', color: 'var(--text)', fontSize: 12.5, transition: 'all .12s' }}>
+            <button key={f.id} onClick={() => onOpen(f)} title={`Preview ${f.name}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s' }}>
               <span style={{ fontSize: 15, color: 'var(--accent-bg)' }}>{icon(f.mime)}</span>
               <span style={{ fontWeight: 600, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-              <span style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtSize(f.size)}</span>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text3)' }}><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg>
-            </a>
+              <span style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtBytes(f.size)}</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text3)' }}><path d="M2 8s2.5-4.5 6-4.5S14 8 14 8s-2.5 4.5-6 4.5S2 8 2 8z"/><circle cx="8" cy="8" r="1.8"/></svg>
+            </button>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Generic file preview panel (Claude-style right-side previewer) ──────────
+// Renders a file from /api/files/<id> by type, with a download card as the
+// universal fallback so unknown/oversized/unparseable types degrade gracefully
+// rather than breaking. Images & PDFs stream from the URL; text/CSV/XLSX/JSON/
+// HTML are fetched and rendered client-side. HTML is shown in a script-disabled
+// sandboxed iframe.
+const PREVIEW_TEXT_MAX = 2 * 1024 * 1024  // 2 MB ceiling for fetch+parse previews
+
+function classifyFile(name: string, mime: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  if (/^image\//.test(mime) || ['png','jpg','jpeg','gif','webp','bmp','svg'].includes(ext)) return 'image'
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
+  if (mime === 'text/html' || ext === 'html' || ext === 'htm') return 'html'
+  if (ext === 'md' || ext === 'markdown') return 'markdown'
+  if (mime === 'application/json' || ext === 'json') return 'json'
+  if (ext === 'csv') return 'csv'
+  if (ext === 'tsv') return 'tsv'
+  if (/spreadsheet|excel/.test(mime) || ['xlsx','xls','xlsm'].includes(ext)) return 'xlsx'
+  if (['js','jsx','ts','tsx','py','sh','bash','sql','yaml','yml','css','scss','xml','java','go','rb','rs','c','cpp','h','hpp','toml','ini','r','php'].includes(ext)) return 'code'
+  if (/^text\//.test(mime) || ['txt','log','text',''].includes(ext)) return 'text'
+  return 'other'
+}
+
+type PreviewState = { status: 'loading'|'ready'|'error'|'toobig'|'unsupported'; text?: string; sheets?: Record<string, string[][]>; sheetNames?: string[] }
+
+function FilePreviewPanel({ file, onClose }: { file: GenFile; onClose: () => void }) {
+  const kind = classifyFile(file.name, file.mime)
+  const url = `/api/files/${file.id}`
+  const [st, setSt] = useState<PreviewState>({ status: 'loading' })
+  const [activeSheet, setActiveSheet] = useState<string>('')
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  useEffect(() => {
+    let cancelled = false
+    setSt({ status: 'loading' })
+    async function load() {
+      if (kind === 'image' || kind === 'pdf') { setSt({ status: 'ready' }); return }
+      if (kind === 'other') { setSt({ status: 'unsupported' }); return }
+      if (file.size > PREVIEW_TEXT_MAX && kind !== 'xlsx') { setSt({ status: 'toobig' }); return }
+      try {
+        const toRows = (ws: XLSX.WorkSheet) => (XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' }) as unknown[][]).slice(0, 1000).map(r => r.map(c => String(c)))
+        if (kind === 'xlsx') {
+          const buf = await (await fetch(url)).arrayBuffer()
+          const wb = XLSX.read(buf, { type: 'array' })
+          const sheets: Record<string, string[][]> = {}
+          for (const n of wb.SheetNames) sheets[n] = toRows(wb.Sheets[n])
+          if (cancelled) return
+          setActiveSheet(wb.SheetNames[0] || '')
+          setSt({ status: 'ready', sheets, sheetNames: wb.SheetNames })
+          return
+        }
+        const text = await (await fetch(url)).text()
+        if (cancelled) return
+        if (kind === 'csv' || kind === 'tsv') {
+          const wb = XLSX.read(text, { type: 'string', FS: kind === 'tsv' ? '\t' : ',' })
+          const n = wb.SheetNames[0]
+          setSt({ status: 'ready', sheets: { data: toRows(wb.Sheets[n]) }, sheetNames: ['data'] })
+          setActiveSheet('data')
+        } else {
+          setSt({ status: 'ready', text })
+        }
+      } catch { if (!cancelled) setSt({ status: 'error' }) }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [file.id, file.size, kind, url])
+
+  const DownloadBtn = () => (
+    <a href={url} download style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--accent-bg)', color: 'var(--accent-fg,#fff)', borderRadius: 'var(--radius-pill)', textDecoration: 'none', fontSize: 12, fontWeight: 600 }}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg>
+      Download
+    </a>
+  )
+
+  const Fallback = ({ msg }: { msg: string }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 14, color: 'var(--text3)', textAlign: 'center', padding: 24 }}>
+      <div style={{ fontSize: 34 }}>◰</div>
+      <div style={{ fontSize: 13, maxWidth: 280 }}>{msg}</div>
+      <DownloadBtn />
+    </div>
+  )
+
+  const Table = ({ rows }: { rows: string[][] }) => (
+    <div style={{ overflow: 'auto', height: '100%' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td style={{ color: 'var(--text3)', textAlign: 'right', padding: '2px 8px', position: 'sticky', left: 0, background: 'var(--bg)', borderRight: '1px solid var(--border)', userSelect: 'none' }}>{i === 0 ? '' : i}</td>
+              {r.map((c, j) => (
+                <td key={j} style={{ padding: '3px 10px', border: '1px solid var(--border)', whiteSpace: 'nowrap', fontWeight: i === 0 ? 700 : 400, background: i === 0 ? 'var(--bg3)' : 'transparent', color: 'var(--text)' }}>{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+
+  let body: React.ReactNode
+  if (st.status === 'loading') body = <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text3)', fontSize: 13 }}>Loading preview…</div>
+  else if (st.status === 'error') body = <Fallback msg="Couldn't render a preview for this file. You can download it to view it in another app." />
+  else if (st.status === 'toobig') body = <Fallback msg={`This file is ${fmtBytes(file.size)} — too large to preview inline. Download it to view.`} />
+  else if (st.status === 'unsupported') body = <Fallback msg="No inline preview for this file type. Download it to open in the right app." />
+  else if (kind === 'image') body = (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 12, overflow: 'auto' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt={file.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+    </div>
+  )
+  else if (kind === 'pdf') body = <iframe src={url} title={file.name} style={{ width: '100%', height: '100%', border: 0 }} />
+  else if (kind === 'html') body = <iframe title={file.name} sandbox="" srcDoc={st.text} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+  else if (kind === 'markdown') body = <div className="prose-mosaic" style={{ padding: 18, fontSize: 14, lineHeight: 1.7, color: 'var(--text)', overflow: 'auto', height: '100%' }}><ReactMarkdown>{st.text || ''}</ReactMarkdown></div>
+  else if (kind === 'json') { let t = st.text || ''; try { t = JSON.stringify(JSON.parse(t), null, 2) } catch {} body = <pre style={{ margin: 0, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, color: 'var(--text)', overflow: 'auto', height: '100%', whiteSpace: 'pre' }}>{t}</pre> }
+  else if (kind === 'code' || kind === 'text') body = <pre style={{ margin: 0, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, color: 'var(--text)', overflow: 'auto', height: '100%', whiteSpace: 'pre' }}>{st.text}</pre>
+  else if ((kind === 'csv' || kind === 'tsv' || kind === 'xlsx') && st.sheets) {
+    const names = st.sheetNames || []
+    const rows = st.sheets[activeSheet] || st.sheets[names[0]] || []
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {names.length > 1 && (
+          <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0 }}>
+            {names.map(n => (
+              <button key={n} onClick={() => setActiveSheet(n)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', cursor: 'pointer', background: n === activeSheet ? 'var(--accent-bg)' : 'var(--bg3)', color: n === activeSheet ? 'var(--accent-fg,#fff)' : 'var(--text2)', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>{n}</button>
+            ))}
+          </div>
+        )}
+        <div style={{ flex: 1, overflow: 'hidden' }}><Table rows={rows} /></div>
+      </div>
+    )
+  }
+  else body = <Fallback msg="No inline preview available. Download to view." />
+
+  return (
+    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtBytes(file.size)}{file.mime && file.mime !== 'application/octet-stream' ? ` · ${file.mime}` : ''}</div>
+        </div>
+        <DownloadBtn />
+        <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>{body}</div>
     </div>
   )
 }
@@ -387,6 +544,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [srcSearch, setSrcSearch] = useState('')
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
+  const [preview, setPreview] = useState<GenFile | null>(null)
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -1009,7 +1167,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   }
 
                   {/* Files produced by run_code — download chips + inline images */}
-                  {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} />}
+                  {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={setPreview} />}
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (
@@ -1404,6 +1562,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
+      {preview && <FilePreviewPanel file={preview} onClose={() => setPreview(null)} />}
     </div>
   )
 }
