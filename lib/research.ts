@@ -13,16 +13,20 @@ export type Emit = (event: Record<string, unknown>) => void
 export interface ResearchCtx { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[]; model: string }
 
 // Sub-agents get read-only research tools only — never write actions or run_code.
-const SUBAGENT_TOOL_NAMES = new Set(['web_search', 'fetch_url', 'query_database', 'query_prism', 'call_api', 'read_file_server', 'query_airbyte', 'query_mcp', 'combine_sources', 'run_statistical_analysis'])
+export const SUBAGENT_TOOL_NAMES = new Set(['web_search', 'fetch_url', 'query_database', 'query_prism', 'call_api', 'read_file_server', 'query_airbyte', 'query_mcp', 'combine_sources', 'run_statistical_analysis'])
 const MIN_SUBAGENTS = 2, MAX_SUBAGENTS = 6
-const SUBAGENT_TOOL_BUDGET = 6
-const CONCURRENCY = 3
+export const SUBAGENT_TOOL_BUDGET = 6
+export const CONCURRENCY = 3
+
+// Dependency injection point for tests: swap the Anthropic client and the tool
+// executor with scripted fakes to exercise the orchestration deterministically.
+export interface ResearchDeps { client?: Anthropic; exec?: typeof runTool }
 
 interface SubTask { id: string; title: string; brief: string }
 interface Source { title: string; url: string }
 interface SubResult extends SubTask { summary: string; sources: Source[]; toolCalls: number; error?: string }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
   async function worker() { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i) } }
@@ -35,7 +39,7 @@ function extractText(msg: Anthropic.Message): string {
 }
 
 // Pull {title,url} pairs out of whatever a research tool returned.
-function harvestSources(result: unknown, acc: Source[]) {
+export function harvestSources(result: unknown, acc: Source[]) {
   const seen = new Set(acc.map(s => s.url))
   const visit = (v: unknown, depth: number) => {
     if (!v || depth > 4) return
@@ -65,7 +69,7 @@ async function planResearch(anthropic: Anthropic, model: string, question: strin
   return [{ id: 's1', title: 'Research the question', brief: question.slice(0, 400) }]
 }
 
-async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask, emit: Emit): Promise<SubResult> {
+async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask, emit: Emit, exec: typeof runTool): Promise<SubResult> {
   const tools = TOOLS.filter(t => SUBAGENT_TOOL_NAMES.has(t.name))
   const guardrailCtx = { userId: ctx.userId, userEmail: ctx.userEmail, userRole: ctx.userRole, conversationId: ctx.conversationId, allowedSources: ctx.allowedSources }
   const sources: Source[] = []
@@ -89,7 +93,7 @@ async function runSubAgent(anthropic: Anthropic, ctx: ResearchCtx, task: SubTask
       emit({ type: 'subagent_status', id: task.id, status: 'running', tool: tu.name })
       toolCalls++
       let result: unknown
-      try { result = await runTool(tu.name, tu.input as Record<string, unknown>, guardrailCtx) }
+      try { result = await exec(tu.name, tu.input as Record<string, unknown>, guardrailCtx) }
       catch (e) { result = { error: e instanceof Error ? e.message : 'tool failed' } }
       harvestSources(result, sources)
       let s = JSON.stringify(result)
@@ -116,9 +120,9 @@ async function synthesize(anthropic: Anthropic, model: string, question: string,
   return extractText(resp)
 }
 
-export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit): Promise<{ report: string; sources: Source[]; subagents: Array<{ title: string; summary: string; sources: number }> }> {
-  const apiKey = await getKey('ANTHROPIC_API_KEY')
-  const anthropic = new Anthropic({ apiKey: apiKey || undefined })
+export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; sources: Source[]; subagents: Array<{ title: string; summary: string; sources: number }> }> {
+  const anthropic = deps?.client ?? new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+  const exec = deps?.exec ?? runTool
 
   emit({ type: 'research_started', question })
   const t0 = Date.now()
@@ -127,7 +131,7 @@ export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit
   for (const t of tasks) emit({ type: 'subagent_status', id: t.id, status: 'queued' })
 
   const results = await mapLimit(tasks, CONCURRENCY, async (task) => {
-    const r = await runSubAgent(anthropic, ctx, task, emit)
+    const r = await runSubAgent(anthropic, ctx, task, emit, exec)
     emit({ type: 'subagent_result', id: task.id, status: 'done', title: task.title, summary: r.summary, sources: r.sources.length, toolCalls: r.toolCalls, error: r.error })
     return r
   })

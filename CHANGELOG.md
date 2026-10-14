@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.50] - 2026-10-14
+
+### Fixed
+- **`fetch_url` now decodes HTML entities in the page title** (e.g. `Hi &amp; Bye` → `Hi & Bye`), matching the body text. Found by the Phase 3 extreme test pass.
+
+### Changed
+- Deep-research orchestrator (`lib/research.ts`) is now dependency-injectable (Anthropic client + tool executor) so the full orchestration can be tested deterministically. Added `tests/research/` — 24 orchestrator cases (planning, sub-agent loop, budget cap, concurrency, source de-dupe, synthesis, event ordering, failure isolation, read-only isolation) + a 9-case `fetch_url` suite (content extraction, truncation, redirects, and a 13-URL SSRF matrix). 33/33.
+
 ## [1.3.49] - 2026-10-14
 
 ### Added

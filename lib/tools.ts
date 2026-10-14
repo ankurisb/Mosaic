@@ -3676,12 +3676,14 @@ function isBlockedHost(h: string): boolean {
   if (m) { const a = +m[1], b = +m[2]; if (a === 0 || a === 10 || a === 127 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)) return true }
   return false
 }
+function decodeEntities(s: string): string {
+  return s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+}
 function htmlToText(html: string): string {
-  return html
+  return decodeEntities(html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ').trim()
+  ).replace(/\s+/g, ' ').trim()
 }
 async function fetchUrl(input: Record<string, unknown>): Promise<unknown> {
   const raw = String(input.url || '').trim()
@@ -3698,7 +3700,7 @@ async function fetchUrl(input: Record<string, unknown>): Promise<unknown> {
     if (!/text\/html|text\/plain|xhtml|application\/json|xml/.test(ct)) return { url: u.toString(), title: '', text: '', note: `Unsupported content-type (${ct || 'unknown'}) — not a readable page.` }
     let body = await res.text()
     if (body.length > 3_000_000) body = body.slice(0, 3_000_000)
-    const title = (body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim()
+    const title = decodeEntities((body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')).replace(/\s+/g, ' ').trim()
     const full = /html|xml/.test(ct) ? htmlToText(body) : body
     const text = full.slice(0, 12000)
     return { url: u.toString(), title, text, truncated: full.length > text.length }
