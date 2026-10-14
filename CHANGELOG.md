@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.52] - 2026-10-14
+
+### Fixed
+- **Long research/diagnose runs no longer drop with "Error: network error".** A `deep_research` / `deep_diagnose` turn has silent windows where the server is awaiting a single long model call and emits no SSE events — the lead planning call, a sub-agent mid model-round, and above all the **synthesis gap** between `research_synthesizing` and `research_done`. Safari (and some proxies) tear down a streaming fetch that goes idle during those windows; the client's reader threw, and because no assistant text had streamed yet the catch wrote `Error: <message>` into the empty bubble (on Safari, literally "network error"). The server kept working — the v1.3.43 `cancel()` guard turned the disconnect into a clean no-op, so nothing was logged — but the user saw a failed run even though sub-agents had produced real findings.
+  - Fix: a lightweight **SSE heartbeat** (`{type:'ping'}` every 10s) runs for the life of every chat stream and is cleared in `finally`, so the connection is never idle long enough to be dropped. The client ignores unknown event types, so pings are harmless. Also set `X-Accel-Buffering: no` on the response as belt-and-suspenders against any buffering proxy (Caddy already auto-flushes `text/event-stream`). No version-gating — this is a pure reliability fix that applies to all long turns (including `run_code`).
+
 ## [1.3.51] - 2026-10-14
 
 ### Added

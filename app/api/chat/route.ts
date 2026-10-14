@@ -590,6 +590,17 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         try { ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n')) }
         catch { streamClosed = true }
       }
+      // SSE heartbeat. Long turns — deep_research / deep_diagnose above all —
+      // have silent windows where the server is awaiting a single long model
+      // call and emits no events: the lead planning call, a sub-agent mid
+      // model-round, and the synthesis gap between research_synthesizing and
+      // research_done. Safari (and some proxies) drop a streaming fetch that
+      // goes idle, which surfaced client-side as "Error: network error" even
+      // though the server was still working. A lightweight ping every 10s keeps
+      // the connection warm; the client ignores unknown event types. send() is
+      // already a no-op once the stream is closed, and the interval is cleared
+      // in the finally below.
+      const heartbeat = setInterval(() => send({ type: 'ping', t: Date.now() }), 10_000)
       try {
         let history: Anthropic.MessageParam[] = trimmedMessages.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
         // Attachments belong to the latest user turn. Rebuild that message's
@@ -979,6 +990,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         reqLog.error({ err }, 'Chat request failed')
         send({ type: 'error', message: err instanceof Error ? err.message : 'Something went wrong' })
       } finally {
+        clearInterval(heartbeat)
         if (!streamClosed) { try { ctrl.close() } catch { /* already closed */ } }
         streamClosed = true
       }
@@ -989,5 +1001,5 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       streamClosed = true
     },
   })
-  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' } })
 }
