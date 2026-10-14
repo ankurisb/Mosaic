@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.49] - 2026-10-14
+
+### Added
+- **Deep research with sub-agents (Phase 3).** For broad / comparative / multi-part questions, Mosaic now runs a `deep_research` investigation: a lead pass decomposes the question into 3–6 focused sub-tasks, each sub-task runs its own bounded, read-only agentic loop (a "sub-agent") in parallel, and a final pass synthesises a **cited briefing**. The right-side panel becomes a live **Research workspace** — the lead agent and each sub-agent with its status (queued → researching → done), the tool it's using right now, and its finding — streamed as it happens (new SSE events `research_plan` / `subagent_status` / `subagent_result` / …). Results come back as a report + numbered sources in chat, and can be turned into a PDF/map.
+  - Governance: sub-agents get **read-only research tools only** (web_search, fetch_url, query_database/query_prism/call_api/read_file_server/query_airbyte/query_mcp/combine_sources/stats) — never write actions, `run_code`, memory, or `deep_research` itself (no recursion). Budgets: 2–6 sub-agents, ≤6 tool calls each, 3 running concurrently; the whole run is audited.
+- **`fetch_url` tool.** Reads a named public web page's text (HTML stripped, truncated) — complements keyword `web_search` for reading a concrete URL. **SSRF-guarded**: http(s) only; blocks loopback, private/link-local IPs, cloud metadata (169.254.169.254), single-label internal docker hostnames, `.local`/`.internal`, and disallowed redirects. 13/13 guard tests pass.
+
 ## [1.3.48] - 2026-10-14
 
 ### Fixed

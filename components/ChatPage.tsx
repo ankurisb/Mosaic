@@ -254,8 +254,12 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
 }
 
 interface GenFile { id: string; name: string; mime: string; size: number }
-// What the right-side panel is currently showing: a file preview or a map artifact.
-type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData }
+// Live state of a deep-research run, driven by streamed SSE events.
+interface ResearchSubtask { id: string; title: string; brief?: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; sources?: number; toolCalls?: number; error?: string }
+interface ResearchState { question: string; phase: 'planning' | 'researching' | 'synthesizing' | 'done'; subtasks: ResearchSubtask[]; sourceCount?: number; subagentCount?: number; ms?: number }
+
+// What the right-side panel is currently showing.
+type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData } | { kind: 'research' }
 
 // Download chips + inline image previews for files produced by run_code. Each
 // file is served (owner-checked) from /api/files/<id>. Images render inline;
@@ -506,6 +510,55 @@ function MapPanel({ map, onClose }: { map: MapData; onClose: () => void }) {
   )
 }
 
+// Live "Research workspace": the lead agent and each sub-agent with status, the
+// tool it's using now, and its finding — the Phase 3 orchestration view.
+function ResearchPanel({ research, onClose }: { research: ResearchState; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const done = research.subtasks.filter(s => s.status === 'done').length
+  const lead = research.phase === 'planning' ? 'Decomposing the question into focused sub-tasks…'
+    : research.phase === 'researching' ? `Spun out ${research.subtasks.length} sub-agents, each with a focused brief and a tool budget.`
+    : research.phase === 'synthesizing' ? 'All sub-agents done — synthesising a cited briefing.'
+    : `Research complete — ${research.sourceCount ?? 0} sources across ${research.subagentCount ?? research.subtasks.length} sub-agents.`
+  const sub = research.phase === 'done' ? `complete · ${research.sourceCount ?? 0} sources` : `${done}/${research.subtasks.length || '…'} done`
+  const badge = (s: ResearchSubtask['status']) => s === 'done' ? { bg: 'var(--green-bg,#ecfdf5)', c: 'var(--green-t,#16a34a)', t: 'Done' }
+    : s === 'running' ? { bg: 'var(--accent-bg)', c: 'var(--accent-fg,#fff)', t: 'Researching' }
+    : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Queued' }
+  return (
+    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Research workspace</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div>
+        </div>
+        <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg3)', marginBottom: 14 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface)', display: 'grid', placeItems: 'center', flexShrink: 0, fontSize: 15 }}>◎</div>
+          <div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>Lead agent{research.phase !== 'done' ? <span style={{ color: 'var(--accent-bg)', marginLeft: 6, animation: 'blink 1s step-end infinite' }}>●</span> : null}</div><div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{lead}</div></div>
+        </div>
+        <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 2px 9px' }}>Sub-agents</div>
+        {research.subtasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>Planning…</div>}
+        {research.subtasks.map(s => { const b = badge(s.status); return (
+          <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', padding: '11px 12px', marginBottom: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, color: 'var(--text)' }}>{s.title}</div>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: b.bg, color: b.c }}>{b.t}</span>
+            </div>
+            {s.status === 'running' && s.tool && <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--text2)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>▸ {s.tool}</div>}
+            {s.summary && <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.5 }}>{s.summary}</div>}
+            {s.status === 'done' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 7 }}>{s.error ? 'completed with issues' : `${s.sources ?? 0} source${(s.sources ?? 0) === 1 ? '' : 's'} · ${s.toolCalls ?? 0} tool call${(s.toolCalls ?? 0) === 1 ? '' : 's'}`}</div>}
+          </div>
+        ) })}
+      </div>
+    </div>
+  )
+}
+
 // Gather produced files across all run_code calls in a message.
 function collectGeneratedFiles(tools?: ToolCall[]): GenFile[] {
   if (!Array.isArray(tools)) return []
@@ -599,6 +652,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
   const [panel, setPanel] = useState<PanelItem | null>(null)
+  const [research, setResearch] = useState<ResearchState | null>(null)
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -959,6 +1013,17 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               // Auto-open a produced map in the right panel.
               if (e.name === 'render_map' && e.result && (e.result as { kind?: string }).kind === 'map_artifact') setPanel({ kind: 'map', map: e.result as MapData })
             }
+            // -- Deep research live events --
+            else if (e.type === 'research_started') { setResearch({ question: String(e.question || ''), phase: 'planning', subtasks: [] }); setPanel({ kind: 'research' }) }
+            else if (e.type === 'research_plan') {
+              const subs = (Array.isArray(e.subtasks) ? e.subtasks : []) as Array<{ id: string; title: string; brief?: string }>
+              setResearch(r => ({ question: String(e.question || r?.question || ''), phase: 'researching', subtasks: subs.map(s => ({ id: s.id, title: s.title, brief: s.brief, status: 'queued' as const })) }))
+              setPanel({ kind: 'research' })
+            }
+            else if (e.type === 'subagent_status') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: (e.status as ResearchSubtask['status']) || s.status, tool: e.tool as string | undefined } : s) }) : r)
+            else if (e.type === 'subagent_result') setResearch(r => r ? ({ ...r, subtasks: r.subtasks.map(s => s.id === e.id ? { ...s, status: 'done', tool: undefined, summary: e.summary as string, sources: Number(e.sources) || 0, toolCalls: Number(e.toolCalls) || 0, error: e.error as string | undefined } : s) }) : r)
+            else if (e.type === 'research_synthesizing') setResearch(r => r ? ({ ...r, phase: 'synthesizing' }) : r)
+            else if (e.type === 'research_done') setResearch(r => r ? ({ ...r, phase: 'done', sourceCount: Number(e.sourceCount) || 0, subagentCount: Number(e.subagentCount) || r.subtasks.length, ms: Number(e.ms) || undefined }) : r)
             else if (e.type === 'error') updateLast(cid, m => ({ ...m, content: 'Error: ' + e.message }))
           } catch {}
         }
@@ -1227,6 +1292,16 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   {/* Files produced by run_code — download chips + inline images */}
                   {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
                   {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
+                  {msg.role === 'assistant' && research && Array.isArray(msg.tools) && msg.tools.some(t => t.name === 'deep_research') && (
+                    <div style={{ margin: '4px 0 12px' }}>
+                      <button onClick={() => setPanel({ kind: 'research' })} title="Open research workspace"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <span style={{ fontSize: 14, color: 'var(--accent-bg)' }}>◎</span>
+                        <span style={{ fontWeight: 600 }}>Research workspace</span>
+                        <span style={{ color: 'var(--text3)', fontSize: 11 }}>{research.subagentCount ?? research.subtasks.length} agents · {research.sourceCount ?? 0} sources</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (
@@ -1623,6 +1698,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       </div>
       {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} />}
       {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} />}
+      {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} />}
     </div>
   )
 }

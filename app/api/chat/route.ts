@@ -7,6 +7,7 @@ import { sanitizeHistory } from '@/lib/chat-history'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
+import { runResearch } from '@/lib/research'
 import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
@@ -298,6 +299,7 @@ You have access to live databases and APIs listed below. When a user asks about 
 - Keep the title short and sentence case. Use subtitle for unit or total ("INR, last 30 days", "Total: 200").
 - Always also write a one or two sentence text summary alongside the chart that names the most important finding. The chart is a visual aid; the words are the answer.
 - When the answer is geographic — where sites/plants/devices are, their locations on a map — fetch the coordinates (lat/lng) from your data first, then call render_map to show them on an interactive map in the side panel. Never invent coordinates.
+- For broad, comparative or multi-part questions that need several angles and sources (a landscape, a market, "compare X vs Y across …", "research … and what should we do"), call deep_research with a self-contained question. It runs parallel sub-agents and returns a cited briefing — present that as your answer with the Sources list. For a single fact or one lookup, use web_search or a data tool directly, not deep_research.
 
 ## Producing files (run_code)
 - When the user wants a FILE — a spreadsheet (xlsx/csv), a Word or PDF report/document, a saved chart image, a format conversion, or anything they'll download — use run_code. It runs real Python (pandas, openpyxl/XlsxWriter, python-docx, python-pptx, reportlab, matplotlib, Pillow) in a secure sandbox.
@@ -522,6 +524,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     query_airbyte: 32_000,
     call_api: 32_000,
     run_code: 24_000,
+    deep_research: 60_000,
   }
 
   function truncateResult(resultStr: string, toolName: string): string {
@@ -756,6 +759,23 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           }
           const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
             try {
+              // Deep research runs its own orchestrator (lead + parallel sub-agents)
+              // and streams progress events so the Research Workspace panel can show
+              // agents spinning out live. It is NOT a plain runTool call.
+              if (block.name === 'deep_research') {
+                const question = String((block.input as { question?: string }).question || lastUserContent)
+                try {
+                  const research = await runResearch(question, { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources, model }, (ev) => send(ev))
+                  const srcList = research.sources.map((s, i) => `[${i + 1}] ${s.title} — ${s.url}`).join('\n')
+                  send({ type: 'tool_result', name: 'deep_research', result: { subagents: research.subagents.length, sources: research.sources.length } })
+                  finalToolCalls.push({ name: 'deep_research', input: block.input, result: { subagents: research.subagents, sources: research.sources.length } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `${research.report}\n\nSources:\n${srcList || '(no external sources)'}` }
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : 'research failed'
+                  send({ type: 'tool_result', name: 'deep_research', result: { error: msg } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Research could not complete: ${msg}` }
+                }
+              }
               const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources }
               const result = await runTool(block.name, block.input as Record<string, unknown>, guardrailCtx)
               // HITL: if tool requires confirmation, surface to client and halt

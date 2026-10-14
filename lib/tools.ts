@@ -390,6 +390,24 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
     },
   },
   {
+    name: 'deep_research',
+    description: `Run a multi-step research investigation with parallel sub-agents, then synthesise a cited briefing. Use for broad, comparative, or multi-part questions that need several angles and sources — e.g. "research the competitive landscape for X", "compare A vs B across price/features/support", "what's the state of Y and what should we do". The lead decomposes the question, each sub-agent researches one angle (web + your data), and you get back a synthesised report plus a numbered source list. Do NOT use it for a single fact or one lookup (use web_search or a data tool). When it returns, present the report to the user as your answer (you may add a one-line lead-in) followed by the Sources list, and you may offer to turn it into a PDF with run_code.`,
+    input_schema: {
+      type: 'object',
+      properties: { question: { type: 'string', description: 'The full, self-contained research question to investigate.' } },
+      required: ['question']
+    },
+  },
+  {
+    name: 'fetch_url',
+    description: `Fetch the text content of a specific public web page by URL. Use this to read a named page you already know or found via web_search — docs, an article, a competitor/vendor page, a spec. Returns the page title and readable text (HTML stripped, truncated). For discovery use web_search; use fetch_url when you have a concrete URL to read. Public web only — internal/private addresses are refused.`,
+    input_schema: {
+      type: 'object',
+      properties: { url: { type: 'string', description: 'Absolute http(s) URL of the page to read.' } },
+      required: ['url']
+    },
+  },
+  {
     name: 'save_memory',
     description: `Remember a short, durable fact about THIS user across conversations: a preference (how they like answers or formats), a fact (their terminology, which sites/APIs/devices matter to them), or project context. Use when the user says "remember…", "note that…", "from now on…", or clearly states a stable preference worth keeping for next time. Keep each memory to one concise sentence, one fact per call. NEVER store secrets, passwords, API keys, ID/card/account numbers, or health information.`,
     input_schema: {
@@ -623,6 +641,7 @@ export async function runTool(
     }
     case 'render_chart': return renderChart(input)
     case 'render_map': return renderMap(input)
+    case 'fetch_url': return fetchUrl(input)
     case 'create_alert': return createAlertTool(input, guardrailCtx)
     case 'run_code': return runCode(input, guardrailCtx)
     case 'save_memory': {
@@ -3642,4 +3661,49 @@ function renderMap(input: Record<string, unknown>): MapArtifact | { error: strin
   const center = c && Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lng)) ? { lat: Number(c.lat), lng: Number(c.lng) } : undefined
   const zoom = Number.isFinite(Number(input.zoom)) ? Math.max(1, Math.min(18, Number(input.zoom))) : undefined
   return { kind: 'map_artifact', title: input.title ? String(input.title) : undefined, points, center, zoom }
+}
+
+// -- fetch_url --------------------------------------------------
+// Read a public web page's text. SSRF-guarded: http(s) only; blocks loopback,
+// private/link-local IPs, cloud metadata, and single-label (internal docker)
+// hostnames. HTML is stripped to text and truncated.
+function isBlockedHost(h: string): boolean {
+  h = h.toLowerCase().replace(/^\[|\]$/g, '')
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true
+  if (!h.includes('.') && !h.includes(':')) return true  // single-label = internal service name (superset, mosaic-stats, …)
+  if (h === '::1' || h.startsWith('fe80') || h.startsWith('fc') || h.startsWith('fd')) return true
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (m) { const a = +m[1], b = +m[2]; if (a === 0 || a === 10 || a === 127 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)) return true }
+  return false
+}
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim()
+}
+async function fetchUrl(input: Record<string, unknown>): Promise<unknown> {
+  const raw = String(input.url || '').trim()
+  let u: URL
+  try { u = new URL(raw) } catch { return { error: 'Invalid URL.' } }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return { error: 'Only http(s) URLs are allowed.' }
+  if (isBlockedHost(u.hostname)) return { error: 'That host is not allowed (internal or private address).' }
+  try {
+    const res = await fetch(u.toString(), { redirect: 'follow', signal: AbortSignal.timeout(15000), headers: { 'User-Agent': 'Mosaic-Research/1.0 (+https://mosaic.ugx.ai)', 'Accept': 'text/html,application/xhtml+xml,text/plain' } })
+    // Guard against a redirect landing on an internal host.
+    try { if (isBlockedHost(new URL(res.url).hostname)) return { error: 'Redirected to a disallowed host.' } } catch {}
+    const ct = (res.headers.get('content-type') || '').toLowerCase()
+    if (!res.ok) return { url: u.toString(), error: `HTTP ${res.status}` }
+    if (!/text\/html|text\/plain|xhtml|application\/json|xml/.test(ct)) return { url: u.toString(), title: '', text: '', note: `Unsupported content-type (${ct || 'unknown'}) — not a readable page.` }
+    let body = await res.text()
+    if (body.length > 3_000_000) body = body.slice(0, 3_000_000)
+    const title = (body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim()
+    const full = /html|xml/.test(ct) ? htmlToText(body) : body
+    const text = full.slice(0, 12000)
+    return { url: u.toString(), title, text, truncated: full.length > text.length }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'request failed'
+    return { url: u.toString(), error: /timed? ?out|abort/i.test(msg) ? 'Timed out fetching the page.' : `Fetch failed: ${msg}` }
+  }
 }
