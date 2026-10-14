@@ -5,7 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.43] - 2026-10-14
+
 ### Fixed
+- **Chat stream crashed with "Controller is already closed" → browser showed "Load failed".** The SSE `send()` enqueued with no guard and the stream had no `cancel()` handler, so if the client connection dropped mid-turn (navigation, a network blip, or a proxy/browser timeout — more likely on a longer `run_code` turn) the next `send()` threw and errored the whole response, which the browser surfaced as "Load failed" even though the file had been produced. `send()` now no-ops once the controller is closed, a `cancel()` handler marks the stream closed on client disconnect, and the agentic loop stops early when the client is gone. Surfaced by a `run_code` spreadsheet request on the live box.
 - **Sandbox `/work` not writable by the non-root user.** The `tmpfs` mount at `/work` overrode the image's directory ownership, so the sandbox user (uid 10001) got `PermissionError` creating its per-run work dir and every `run_code` call returned 500. The mount is now `mode=1777` (world-writable + sticky, like `/tmp`). Compose-only change; caught verifying the v1.3.42 deploy on the live box.
 
 ## [1.3.42] - 2026-10-14

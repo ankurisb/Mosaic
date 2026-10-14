@@ -564,9 +564,21 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   }
   const anthropic = new Anthropic({ apiKey })
 
+  // Tracks whether the SSE controller is still writable. The client can go away
+  // mid-turn (navigation, network blip, a proxy/browser timeout on a longer
+  // run_code turn); once that happens the controller is closed and any further
+  // enqueue throws "Invalid state: Controller is already closed", which errored
+  // the whole stream and surfaced in the browser as "Load failed". send() now
+  // no-ops after close, and cancel() marks the stream closed when the client
+  // disconnects, so a dropped connection never turns into a thrown error.
+  let streamClosed = false
   const stream = new ReadableStream({
     async start(ctrl) {
-      const send = (o: object) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'))
+      const send = (o: object) => {
+        if (streamClosed) return
+        try { ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n')) }
+        catch { streamClosed = true }
+      }
       try {
         let history: Anthropic.MessageParam[] = trimmedMessages.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
         // Attachments belong to the latest user turn. Rebuild that message's
@@ -619,6 +631,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           return idx === TOOLS.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
         })
         while (true) {
+          // Client gone — stop burning model/tool work for a response nobody
+          // will read. (send() already no-ops once closed.)
+          if (streamClosed) break
           // When the budget is exhausted or the previous turn ran out of tokens
           // mid-synthesis, force a final no-tools turn with a synthesis nudge
           // and generous max_tokens so the model can produce the rca_output JSON.
@@ -915,7 +930,15 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       } catch (err) {
         reqLog.error({ err }, 'Chat request failed')
         send({ type: 'error', message: err instanceof Error ? err.message : 'Something went wrong' })
-      } finally { ctrl.close() }
+      } finally {
+        if (!streamClosed) { try { ctrl.close() } catch { /* already closed */ } }
+        streamClosed = true
+      }
+    },
+    cancel() {
+      // Client disconnected — mark closed so any in-flight send() no-ops instead
+      // of throwing. The agentic loop checks streamClosed to stop early.
+      streamClosed = true
     },
   })
   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })
