@@ -45,8 +45,17 @@ describe('isRcaQuery', () => {
     expect(isRcaQuery('FISHBONE chart please')).toBe(true)
   })
 
-  test('returns false for general question', () => {
-    expect(isRcaQuery('what is OEE?')).toBe(false)
+  test('returns false for a genuinely general / non-manufacturing question', () => {
+    // NOTE: 'OEE', 'availability', 'capability' etc. are themselves manufacturing
+    // RCA keywords (see RCA_KEYWORDS), so "what is OEE?" is intentionally
+    // RCA-eligible — a general question must be outside the manufacturing domain.
+    expect(isRcaQuery('what is the capital of France?')).toBe(false)
+    expect(isRcaQuery('how do I change my password?')).toBe(false)
+  })
+
+  test('an OEE / availability question is RCA-eligible (manufacturing signal)', () => {
+    expect(isRcaQuery('what is our OEE this week?')).toBe(true)
+    expect(isRcaQuery('availability has dropped on line A')).toBe(true)
   })
 
   test('returns false for data query', () => {

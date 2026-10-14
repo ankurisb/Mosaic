@@ -28,3 +28,18 @@ jobs:
           # Provides a stable secret so encrypt/decrypt tests don't
           # need filesystem access to ~/.mosaic/secret.key
           AUTH_SECRET: ci-test-secret-key-32-chars-padding
+
+      # Standalone orchestrator/artifact suites authored as tsx scripts (they
+      # self-assert and exit non-zero on failure). vitest only globs lib/** and
+      # app/**, so these weren't gating CI before. Run them with a pinned tsx so
+      # a regression in deep_research / deep_diagnose / render_map fails the
+      # build. (tests/memory.test.ts needs a Postgres DB and is run separately.)
+      - name: Orchestrator & artifact suites (tsx)
+        run: |
+          for f in tests/research/*.test.ts tests/map/*.test.ts; do
+            echo "::group::$f"
+            npx -y tsx@4.19.2 "$f"
+            echo "::endgroup::"
+          done
+        env:
+          AUTH_SECRET: ci-test-secret-key-32-chars-padding
