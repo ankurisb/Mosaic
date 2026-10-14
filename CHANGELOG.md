@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.66] - 2026-10-14
+
+### Removed
+- **"Check all sources" button in Settings → Data sources** (and its `/api/datasources/health` endpoint) — it duplicated the in-chat `check_data_sources` health check. The chat health card and the tool remain the single way to run it.
+
 ## [1.3.65] - 2026-10-14
 
 ### Fixed
