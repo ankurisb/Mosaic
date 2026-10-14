@@ -261,7 +261,7 @@ def test_isolation():
 
     # Env is the minimal allowlist only
     envkeys_line = next((l for l in res.get("stdout", "").splitlines() if l.startswith("ENVKEYS")), "")
-    allowed = {"PATH", "HOME", "TMPDIR", "MPLBACKEND", "PYTHONDONTWRITEBYTECODE", "LANG"}
+    allowed = {"PATH", "HOME", "TMPDIR", "MPLBACKEND", "MPLCONFIGDIR", "PYTHONDONTWRITEBYTECODE", "LANG"}
     got = set(envkeys_line.replace("ENVKEYS ", "").split(",")) if envkeys_line else set()
     check("env limited to minimal allowlist", "isolation", got and got.issubset(allowed),
           f"keys={sorted(got)}", el)

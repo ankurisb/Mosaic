@@ -108,6 +108,9 @@ def execute(req: ExecRequest):
             "HOME": workdir,
             "TMPDIR": workdir,
             "MPLBACKEND": "Agg",
+            # Keep matplotlib's font cache (fontlist-vNNN.json) OUT of the work dir
+            # so it's never captured as a produced file. Pre-warmed in the image.
+            "MPLCONFIGDIR": "/opt/mplconfig",
             "PYTHONDONTWRITEBYTECODE": "1",
             "LANG": "C.UTF-8",
         }
@@ -138,13 +141,21 @@ def execute(req: ExecRequest):
             return {"ok": False, "error": f"execution failed: {e}"}
 
         # Collect produced files (anything new in the workdir, shallow + one level).
+        # Hidden dirs/files and bytecode caches are tool artifacts, never user
+        # output (e.g. matplotlib's .config/.matplotlib cache, __pycache__), so
+        # they are pruned from the walk and skipped — the user only gets the
+        # files their code actually meant to produce.
         produced = []
         total_out = 0
         for root, _dirs, files in os.walk(workdir):
+            _dirs[:] = [d for d in _dirs if not d.startswith(".") and d != "__pycache__"]
             depth = os.path.relpath(root, workdir).count(os.sep)
             if depth > 2:
+                _dirs[:] = []
                 continue
             for fn in sorted(files):
+                if fn.startswith(".") or fn.endswith(".pyc"):
+                    continue
                 rel = os.path.relpath(os.path.join(root, fn), workdir)
                 if rel in preexisting:
                     continue

@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.45] - 2026-10-14
+
+### Fixed
+- **Stray `fontlist-vNNN.json` returned alongside real `run_code` output.** When code used matplotlib, its font cache was written into the sandbox work dir (where `HOME` pointed) and then captured as a "produced file", so a plot or PDF-with-chart came back with an extra JSON file. Matplotlib's cache now lives at `MPLCONFIGDIR=/opt/mplconfig` (outside the work dir, pre-warmed at image build so the first plot is fast), and the file-capture step now prunes hidden dirs/files and `__pycache__`/`.pyc` as a safety net. Verified that every format (png, xlsx, docx, pdf, pptx, csv, json, html, txt, Node) returns exactly the intended file(s) and nothing else.
+
 ## [1.3.44] - 2026-10-14
 
 ### Added
