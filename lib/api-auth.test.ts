@@ -73,6 +73,22 @@ describe('getSessionToken', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  test('single-flight: concurrent cold-cache logins collapse into ONE login (no stampede)', async () => {
+    // Reproduces "check all data sources": many connections share one auth
+    // service, the token is cold, and all are queried in the same turn. Without
+    // single-flight every caller fires its own login and stampedes the endpoint.
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls++
+      await new Promise(r => setTimeout(r, 20)) // slow login so all 25 overlap
+      return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'sf-tok' }) } as unknown as Response
+    }))
+    const cfg: AuthConfig = { login_url: 'https://h/l', username: 'a', password: 'b', token_ttl_seconds: '3600' }
+    const results = await Promise.all(Array.from({ length: 25 }, () => getSessionToken('svc-stampede', undefined, cfg)))
+    expect(calls).toBe(1)
+    expect(results.every(r => r.ok && (r as { ok: true; token: string }).token === 'sf-tok')).toBe(true)
+  })
+
   test('surfaces a login failure with the upstream message', async () => {
     stubFetch(() => ({ status: 401, body: { message: 'bad credentials' } }))
     const r = await getSessionToken('svc-fail', undefined, { login_url: 'https://h/l', username: 'a', password: 'b' })

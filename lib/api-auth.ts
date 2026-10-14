@@ -84,6 +84,24 @@ export type OAuth2TokenResult =
   | { ok: true; token: string }
   | { ok: false; error: string }
 
+// Single-flight: collapse concurrent cold-cache logins for the same key into ONE
+// in-flight request. Without this, when the token for a service is cold or
+// expired and N connections sharing that service are queried in the same turn
+// (e.g. "check all data sources"), all N miss the cache and each fires its own
+// login simultaneously — stampeding the external auth endpoint until every one
+// hits the 10s timeout ("The operation was aborted due to timeout"). With this,
+// the first caller logs in and the rest await that same result.
+const oauth2Inflight = new Map<string, Promise<OAuth2TokenResult>>()
+const sessionTokenInflight = new Map<string, Promise<SessionTokenResult>>()
+const prismInflight = new Map<string, Promise<PrismTokenResult>>()
+function singleFlight<T>(map: Map<string, Promise<T>>, key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = map.get(key)
+  if (existing) return existing
+  const p = fn().finally(() => { if (map.get(key) === p) map.delete(key) })
+  map.set(key, p)
+  return p
+}
+
 /**
  * Mints an OAuth2 access token. Returns ok:true with the token on success,
  * or ok:false with a descriptive error from the upstream provider on failure.
@@ -93,7 +111,12 @@ export type OAuth2TokenResult =
  * error code with description; for non-standard responses it falls back
  * to the raw response body.
  */
-export async function getOAuth2AccessToken(
+export async function getOAuth2AccessToken(serviceId: string, authConfig: AuthConfig): Promise<OAuth2TokenResult> {
+  const warm = oauth2TokenCache.get(serviceId)
+  if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token }
+  return singleFlight(oauth2Inflight, serviceId, () => getOAuth2AccessTokenImpl(serviceId, authConfig))
+}
+async function getOAuth2AccessTokenImpl(
   serviceId: string,
   authConfig: AuthConfig
 ): Promise<OAuth2TokenResult> {
@@ -176,6 +199,17 @@ export type SessionTokenResult =
   | { ok: false; error: string }
 
 export async function getSessionToken(
+  serviceId: string,
+  baseUrl: string | undefined,
+  authConfig: AuthConfig,
+): Promise<SessionTokenResult> {
+  const warmHeader = authConfig.token_header || 'Authorization'
+  const warmPrefix = authConfig.token_prefix ?? 'Bearer'
+  const warm = sessionTokenCache.get(serviceId)
+  if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token, header: warmHeader, prefix: warmPrefix }
+  return singleFlight(sessionTokenInflight, serviceId, () => getSessionTokenImpl(serviceId, baseUrl, authConfig))
+}
+async function getSessionTokenImpl(
   serviceId: string,
   baseUrl: string | undefined,
   authConfig: AuthConfig,
@@ -300,6 +334,15 @@ function jwtExpiry(token: string): number | null {
 }
 
 export async function getPrismToken(
+  instanceId: string,
+  baseUrl: string,
+  authConfig: AuthConfig
+): Promise<PrismTokenResult> {
+  const warm = prismTokenCache.get(instanceId)
+  if (warm && warm.expiresAt > Date.now() + 60_000) return { ok: true, token: warm.token }
+  return singleFlight(prismInflight, instanceId, () => getPrismTokenImpl(instanceId, baseUrl, authConfig))
+}
+async function getPrismTokenImpl(
   instanceId: string,
   baseUrl: string,
   authConfig: AuthConfig

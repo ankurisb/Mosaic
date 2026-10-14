@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.58] - 2026-10-14
+
+### Fixed
+- **Datasource auth login stampede — mass "The operation was aborted due to timeout" when checking many sources at once.** API connections (session_token / OAuth2) and Prism authenticate with a login handshake before the first call, and the token is cached only *after* a successful login. When many connections that share one auth service were queried in the same turn (e.g. "list all data sources and check they're accessible"), the token was cold so **every** concurrent caller missed the cache and fired its own login simultaneously — stampeding the external auth endpoint until all of them hit the 10s timeout. The datasources were not actually down (connectivity to each was verified healthy); it was a thundering herd of logins.
+  - Fix: **single-flight** on all three token paths (`getOAuth2AccessToken`, `getSessionToken`, `getPrismToken`) in `lib/api-auth.ts` — concurrent cold-cache logins for the same service now collapse into one in-flight request; the first logs in and the rest await that result. Regression test (`lib/api-auth.test.ts`): 25 concurrent cold logins for one service → exactly 1 login call.
+  - Note: this collapses the common case where connections share an auth service. A "check all data sources" that spans many *distinct* slow external services could still be slow; a dedicated bounded-concurrency health check is a possible follow-up.
+
 ## [1.3.57] - 2026-10-14
 
 ### Fixed
