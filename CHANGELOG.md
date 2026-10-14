@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.54] - 2026-10-14
+
+### Added
+- **Collapsible sub-agent cards + overall progress bar in the Research/Diagnosis workspace.** Each sub-agent (and each diagnose hypothesis) card now collapses to a single header row — chevron, title, status badge — and **starts collapsed by default**, so a run with several sub-agents is scannable at a glance instead of a long scroll of findings. Click any card to expand its working + output; an **Expand all / Collapse all** control sits by the section header. A **progress bar across the top of the panel** fills as sub-agents complete (8–90% during the run, ~95% while synthesising, 100% done), with the live percentage shown in the header subtitle. Collapsed running cards keep a pulsing status dot so liveness is still visible. Same component powers both the research and diagnose panels.
+
 ## [1.3.53] - 2026-10-14
 
 ### Changed

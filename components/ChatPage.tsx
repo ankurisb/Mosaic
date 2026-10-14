@@ -519,6 +519,12 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  // Per-sub-agent expand/collapse. Default: ALL collapsed (empty set). Reset when
+  // a new run starts (question/mode changes). A card only has a body once it has
+  // left 'queued', so expand-all / collapse-all operates over those ids.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  useEffect(() => { setExpanded(new Set()) }, [research.question, research.mode])
+  const toggle = (id: string) => setExpanded(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const dx = research.mode === 'diagnose'
   const done = research.subtasks.filter(s => s.status === 'done').length
   const noun = dx ? 'hypotheses' : 'sub-agents'
@@ -527,6 +533,16 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
     : research.phase === 'synthesizing' ? (dx ? 'All hypotheses tested — ranking the probable causes.' : 'All sub-agents done — synthesising a cited briefing.')
     : (dx ? `Diagnosis complete — ${research.causes?.length ?? 0} probable cause(s) ranked.` : `Research complete — ${research.sourceCount ?? 0} sources across ${research.subagentCount ?? research.subtasks.length} sub-agents.`)
   const sub = research.phase === 'done' ? (dx ? `complete · ${research.causes?.length ?? 0} ranked causes` : `complete · ${research.sourceCount ?? 0} sources`) : `${done}/${research.subtasks.length || '…'} ${noun} done`
+  const bodyIds = research.subtasks.filter(s => s.status !== 'queued').map(s => s.id)
+  const allOpen = bodyIds.length > 0 && bodyIds.every(id => expanded.has(id))
+  // Overall progress: sub-agent completion fills a 8–90% band during the run,
+  // synthesis is ~95%, done is 100%; planning (no sub-tasks yet) shows a sliver.
+  const total = research.subtasks.length
+  const frac = research.phase === 'done' ? 1
+    : research.phase === 'synthesizing' ? 0.95
+    : total === 0 ? 0.06
+    : Math.max(0.08, (done / total) * 0.9)
+  const pctRun = Math.round(frac * 100)
   // status / verdict badge
   const badge = (s: ResearchSubtask) => {
     if (s.status !== 'done') return s.status === 'running' ? { bg: 'var(--accent-bg)', c: 'var(--accent-fg,#fff)', t: dx ? 'Testing' : 'Researching' } : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Queued' }
@@ -541,54 +557,70 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{dx ? 'Diagnosis workspace' : 'Research workspace'}</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}{research.phase !== 'done' ? ` · ${pctRun}%` : ''}</div>
         </div>
         <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+      {/* Overall progress bar */}
+      <div style={{ height: 3, background: 'var(--bg3)', flexShrink: 0 }} role="progressbar" aria-valuenow={pctRun} aria-valuemin={0} aria-valuemax={100}>
+        <div style={{ height: '100%', width: `${pctRun}%`, background: research.phase === 'done' ? 'var(--green-t,#16a34a)' : 'var(--accent-bg)', transition: 'width .4s ease' }} />
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg3)', marginBottom: 14 }}>
           <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface)', display: 'grid', placeItems: 'center', flexShrink: 0, fontSize: 15 }}>{dx ? '🩺' : '◎'}</div>
           <div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>Lead {dx ? 'diagnostician' : 'agent'}{research.phase !== 'done' ? <span style={{ color: 'var(--accent-bg)', marginLeft: 6, animation: 'blink 1s step-end infinite' }}>●</span> : null}</div><div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{lead}</div></div>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 2px 9px' }}>{dx ? 'Hypotheses' : 'Sub-agents'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 2px 9px' }}>
+          <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{dx ? 'Hypotheses' : 'Sub-agents'}</span>
+          {bodyIds.length > 0 ? (
+            <button onClick={() => setExpanded(allOpen ? new Set() : new Set(bodyIds))} style={{ fontSize: 10.5, color: 'var(--text2)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}>{allOpen ? 'Collapse all' : 'Expand all'}</button>
+          ) : null}
+        </div>
         {research.subtasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>{dx ? 'Forming hypotheses…' : 'Planning…'}</div>}
-        {research.subtasks.map(s => { const b = badge(s); return (
+        {research.subtasks.map(s => { const b = badge(s); const hasBody = s.status !== 'queued'; const open = expanded.has(s.id); return (
           <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', padding: '11px 12px', marginBottom: 9 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, color: 'var(--text)' }}>{s.title}</div>
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: b.bg, color: b.c }}>{b.t}</span>
+            <div onClick={() => hasBody && toggle(s.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: hasBody ? 'pointer' : 'default', userSelect: 'none' }}>
+              <span style={{ fontSize: 9, color: 'var(--text3)', flexShrink: 0, width: 10, transition: 'transform .15s ease', transform: open ? 'rotate(90deg)' : 'none', opacity: hasBody ? 1 : 0.25 }}>▶</span>
+              <div style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.title}>{s.title}</div>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: b.bg, color: b.c, flexShrink: 0 }}>{b.t}{s.status === 'running' ? <span style={{ marginLeft: 5, animation: 'blink 1s step-end infinite' }}>●</span> : null}</span>
             </div>
-            {dx && s.status === 'done' && typeof s.confidence === 'number' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                <div style={{ flex: 1, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct(s.confidence)}%`, background: s.verdict === 'supported' ? 'var(--amber-t,#d97706)' : 'var(--text3)' }} /></div>
-                <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct(s.confidence)}%</span>
-              </div>
-            )}
-            {s.status === 'running' && s.tool && <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--text2)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>▸ {s.tool}</div>}
-            {/* Structured finding: one-line headline + key-fact bullets. Falls back
-                to the raw summary text when a sub-agent didn't emit the trailer. */}
-            {s.status === 'done' && (s.headline || (s.bullets?.length) || s.summary) ? (
-              <div style={{ marginTop: 8 }}>
-                {s.headline && <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', lineHeight: 1.45 }}>{s.headline}</div>}
-                {s.bullets?.length ? (
-                  <ul style={{ margin: s.headline ? '6px 0 0' : 0, paddingLeft: 16 }}>
-                    {s.bullets.map((b, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 3 }}>{b}</li>)}
-                  </ul>
-                ) : (!s.headline && s.summary ? (
-                  <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.5 }}>{s.summary}</div>
-                ) : null)}
+            {open && hasBody ? (
+              <div>
+                {dx && s.status === 'done' && typeof s.confidence === 'number' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <div style={{ flex: 1, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct(s.confidence)}%`, background: s.verdict === 'supported' ? 'var(--amber-t,#d97706)' : 'var(--text3)' }} /></div>
+                    <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct(s.confidence)}%</span>
+                  </div>
+                )}
+                {s.status === 'running' && (s.tool
+                  ? <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--text2)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>▸ {s.tool}</div>
+                  : <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 8 }}>working…</div>)}
+                {/* Structured finding: one-line headline + key-fact bullets. Falls back
+                    to the raw summary text when a sub-agent didn't emit the trailer. */}
+                {s.status === 'done' && (s.headline || (s.bullets?.length) || s.summary) ? (
+                  <div style={{ marginTop: 8 }}>
+                    {s.headline && <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', lineHeight: 1.45 }}>{s.headline}</div>}
+                    {s.bullets?.length ? (
+                      <ul style={{ margin: s.headline ? '6px 0 0' : 0, paddingLeft: 16 }}>
+                        {s.bullets.map((b, i) => <li key={i} style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 3 }}>{b}</li>)}
+                      </ul>
+                    ) : (!s.headline && s.summary ? (
+                      <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.5 }}>{s.summary}</div>
+                    ) : null)}
+                  </div>
+                ) : null}
+                {s.status === 'done' && s.links?.length ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                    {s.links.map((l, i) => {
+                      let host = l.title || l.url
+                      try { host = new URL(l.url).hostname.replace(/^www\./, '') } catch { /* keep title */ }
+                      return <a key={i} href={l.url} target="_blank" rel="noreferrer" title={l.title ? `${l.title} — ${l.url}` : l.url} style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 9px', textDecoration: 'none', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>↗ {host}</a>
+                    })}
+                  </div>
+                ) : null}
+                {s.status === 'done' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 7 }}>{s.error ? 'completed with issues' : `${s.sources ?? 0} source${(s.sources ?? 0) === 1 ? '' : 's'} · ${s.toolCalls ?? 0} tool call${(s.toolCalls ?? 0) === 1 ? '' : 's'}`}</div>}
               </div>
             ) : null}
-            {s.status === 'done' && s.links?.length ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
-                {s.links.map((l, i) => {
-                  let host = l.title || l.url
-                  try { host = new URL(l.url).hostname.replace(/^www\./, '') } catch { /* keep title */ }
-                  return <a key={i} href={l.url} target="_blank" rel="noreferrer" title={l.title ? `${l.title} — ${l.url}` : l.url} style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 9px', textDecoration: 'none', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>↗ {host}</a>
-                })}
-              </div>
-            ) : null}
-            {s.status === 'done' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 7 }}>{s.error ? 'completed with issues' : `${s.sources ?? 0} source${(s.sources ?? 0) === 1 ? '' : 's'} · ${s.toolCalls ?? 0} tool call${(s.toolCalls ?? 0) === 1 ? '' : 's'}`}</div>}
           </div>
         ) })}
 
