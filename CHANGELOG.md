@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.48] - 2026-10-14
+
+### Fixed
+- **Hardened `render_map` coordinate handling (found by the Phase 2 test pass).** The tool now accepts only a real number or a non-empty numeric string for lat/lng — `null`, `undefined`, `''`, `NaN`, booleans and objects are dropped instead of being coerced to `0` (which would have plotted a stray marker at the equator). The map component also guards each marker individually, so one malformed point can never collapse the whole map to the fallback list. Verified by an extreme test pass — 16/16 tool-logic cases + 7/7 headless-browser rendering/fallback cases (markers, escaped popups/XSS, offline-tiles note, Leaflet-unavailable list fallback, 500-point load). Test harness under `tests/map/`.
+
 ## [1.3.47] - 2026-10-14
 
 ### Added

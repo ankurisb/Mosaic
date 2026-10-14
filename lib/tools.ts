@@ -3622,9 +3622,13 @@ export interface MapArtifact {
 
 function renderMap(input: Record<string, unknown>): MapArtifact | { error: string } {
   const raw = Array.isArray(input.points) ? input.points as Array<Record<string, unknown>> : []
+  // Accept only a real number or a non-empty numeric string — reject null,
+  // undefined, '', NaN, booleans, objects (which Number() would silently coerce
+  // to 0 and plot at the equator / prime meridian).
+  const num = (v: unknown): number => typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN)
   const points: MapPoint[] = []
   for (const p of raw.slice(0, 2000)) {
-    const lat = Number(p.lat), lng = Number(p.lng)
+    const lat = num(p.lat), lng = num(p.lng)
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
     points.push({
       lat, lng,

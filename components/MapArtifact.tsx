@@ -31,14 +31,19 @@ export default function MapArtifact({ data }: { data: MapData }) {
         tiles.addTo(map)
         const latlngs: [number, number][] = []
         for (const p of points) {
-          latlngs.push([p.lat, p.lng])
-          const m = L.circleMarker([p.lat, p.lng], { radius: 7, color: '#1d4ed8', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.7 })
-          const parts: string[] = []
-          if (p.label) parts.push(`<strong>${esc(p.label)}</strong>`)
-          if (p.detail) parts.push(esc(p.detail))
-          if (p.value != null) parts.push(`<span style="color:#1d4ed8">${esc(String(p.value))}</span>`)
-          if (parts.length) m.bindPopup(parts.join('<br>'))
-          m.addTo(map!)
+          // Defensive: a single malformed point must never collapse the whole map.
+          try {
+            const lat = Number(p.lat), lng = Number(p.lng)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
+            latlngs.push([lat, lng])
+            const m = L.circleMarker([lat, lng], { radius: 7, color: '#1d4ed8', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.7 })
+            const parts: string[] = []
+            if (p.label) parts.push(`<strong>${esc(p.label)}</strong>`)
+            if (p.detail) parts.push(esc(p.detail))
+            if (p.value != null) parts.push(`<span style="color:#1d4ed8">${esc(String(p.value))}</span>`)
+            if (parts.length) m.bindPopup(parts.join('<br>'))
+            m.addTo(map!)
+          } catch { /* skip a bad point, keep the rest */ }
         }
         if (data.center) map.setView([data.center.lat, data.center.lng], data.zoom || 10)
         else if (latlngs.length === 1) map.setView(latlngs[0], data.zoom || 12)
