@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.65] - 2026-10-14
+
+### Fixed
+- **The AI builder now exposes a "Login URL" (and "Token path") field for `session_token` APIs.** Previously the only editable fields for session-token auth were Username and Password — there was no way to enter the **login URL**, which that auth type requires, so an edited connection could never be made to work from the form (the Base URL shown on the left is read-only). `CRED_FIELDS.session_token` now includes `login_url` and `token_path` (both non-secret, so they don't block Probe), and the new-build path prefills these from the AI's candidate so they aren't blanked. Editing a session-token service now shows its Login URL / Token path, ready to fill or fix.
+
 ## [1.3.64] - 2026-10-14
 
 ### Changed

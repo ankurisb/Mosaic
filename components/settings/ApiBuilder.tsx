@@ -18,7 +18,12 @@ const CRED_FIELDS: Record<string, { field: string; label: string; secret: boolea
   api_key_header: [{ field: 'key', label: 'API key', secret: true }],
   basic: [{ field: 'username', label: 'Username', secret: false }, { field: 'password', label: 'Password', secret: true }],
   oauth2_client: [{ field: 'client_id', label: 'Client ID', secret: false }, { field: 'client_secret', label: 'Client secret', secret: true }, { field: 'refresh_token', label: 'Refresh token', secret: true }],
-  session_token: [{ field: 'username', label: 'Username', secret: false }, { field: 'password', label: 'Password', secret: true }],
+  session_token: [
+    { field: 'login_url', label: 'Login URL (absolute URL, or a path like /auth/login)', secret: false },
+    { field: 'username', label: 'Username', secret: false },
+    { field: 'password', label: 'Password', secret: true },
+    { field: 'token_path', label: 'Token path in the login response (default: access_token)', secret: false },
+  ],
 }
 
 interface MissingField { field: string; label?: string; secret?: boolean }
@@ -206,7 +211,14 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
         const authType = String((d.candidate.service || {}).auth_type || 'bearer')
         const secretVals: Record<string, string> = {}
         const missingList: MissingField[] = []
-        for (const cf of (CRED_FIELDS[authType] || [])) { missingList.push(cf); if (credentials[cf.field]) secretVals[cf.field] = credentials[cf.field] }
+        for (const cf of (CRED_FIELDS[authType] || [])) {
+          missingList.push(cf)
+          if (credentials[cf.field]) secretVals[cf.field] = credentials[cf.field]
+          // Prefill non-secret structural fields (login_url, token_path) the AI
+          // already set on the candidate, so they show in the inputs instead of
+          // appearing blank.
+          else if (!cf.secret) { const v = ((d.candidate.service || {}).auth_config || {})[cf.field]; if (v != null && v !== '') secretVals[cf.field] = String(v) }
+        }
         setSecrets(secretVals)
         applyCandidate({ ...d.candidate, missing: (d.candidate.missing && d.candidate.missing.length) ? d.candidate.missing : missingList })
         if (d.probe) setProbe(d.probe as ProbeResult)   // seed the agent's successful probe
