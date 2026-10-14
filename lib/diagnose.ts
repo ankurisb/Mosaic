@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getKey } from '@/lib/keys'
 import { TOOLS, runTool } from '@/lib/tools'
 import { audit, AUDIT } from '@/lib/audit'
-import { mapLimit, harvestSources, SUBAGENT_TOOL_NAMES, SUBAGENT_TOOL_BUDGET, CONCURRENCY, type Emit, type ResearchCtx, type ResearchDeps } from '@/lib/research'
+import { mapLimit, harvestSources, SUBAGENT_TOOL_NAMES, SUBAGENT_TOOL_BUDGET, CONCURRENCY, type Emit, type ResearchCtx, type ResearchDeps, type Workspace } from '@/lib/research'
 
 export interface DiagnoseCtx extends ResearchCtx { catalog?: string }
 interface Hypothesis { id: string; title: string; hypothesis: string; how_to_test: string }
@@ -112,7 +112,7 @@ async function synthesizeDiagnosis(anthropic: Anthropic, model: string, target: 
   return { report, causes, checks }
 }
 
-export async function runDiagnose(params: { target: string; symptom: string; window?: string }, ctx: DiagnoseCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; causes: Cause[]; checks: string[]; sources: Source[] }> {
+export async function runDiagnose(params: { target: string; symptom: string; window?: string }, ctx: DiagnoseCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; causes: Cause[]; checks: string[]; sources: Source[]; workspace: Workspace }> {
   const anthropic = deps?.client ?? new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
   const exec = deps?.exec ?? runTool
   const target = params.target || 'the asset', symptom = params.symptom || 'a fault', window = params.window || ''
@@ -136,5 +136,12 @@ export async function runDiagnose(params: { target: string; symptom: string; win
   emit({ type: 'research_done', mode: 'diagnose', sourceCount: sources.length, subagentCount: results.length, causes: syn.causes, checks: syn.checks, ms: Date.now() - t0 })
 
   try { await audit(null, { id: ctx.userId, email: ctx.userEmail, role: ctx.userRole }, AUDIT.TOOL_CALL, 'deep_diagnose', 'success', { hypotheses: results.length, sources: sources.length, causes: syn.causes.length }) } catch {}
-  return { report: syn.report, causes: syn.causes, checks: syn.checks, sources }
+
+  const workspace: Workspace = {
+    mode: 'diagnose', question: `Diagnose ${target}: ${symptom}`, phase: 'done',
+    subtasks: results.map(r => ({ id: r.id, title: r.title, status: 'done' as const, summary: r.summary, verdict: r.verdict, confidence: r.confidence, sources: r.sources.length, toolCalls: r.toolCalls, error: r.error })),
+    sourceCount: sources.length, subagentCount: results.length,
+    causes: syn.causes, checks: syn.checks,
+  }
+  return { report: syn.report, causes: syn.causes, checks: syn.checks, sources, workspace }
 }

@@ -26,6 +26,22 @@ interface SubTask { id: string; title: string; brief: string }
 interface Source { title: string; url: string }
 interface SubResult extends SubTask { summary: string; headline?: string; bullets?: string[]; sources: Source[]; toolCalls: number; error?: string }
 
+// A serialisable snapshot of the finished workspace, persisted on the assistant
+// message so the Research/Diagnosis panel can be reopened later (and after a
+// reload) instead of being lost when it's closed. Shape mirrors the client's
+// ResearchState so the panel can render it directly.
+export interface WorkspaceSubtask {
+  id: string; title: string; status: 'done'
+  summary?: string; headline?: string; bullets?: string[]
+  links?: Source[]; sources?: number; toolCalls?: number; error?: string
+  verdict?: 'supported' | 'refuted' | 'inconclusive'; confidence?: number
+}
+export interface Workspace {
+  mode: 'research' | 'diagnose'; question: string; phase: 'done'
+  subtasks: WorkspaceSubtask[]; sourceCount: number; subagentCount: number
+  causes?: Array<{ cause: string; confidence: number; evidence: string[] }>; checks?: string[]
+}
+
 // Sub-agents end their final message with a `===FINDING===` JSON trailer so the
 // Research panel can render a structured card (one-line headline + key-fact
 // bullets) instead of a wall of prose. Parsing is best-effort: a model that
@@ -151,7 +167,7 @@ async function synthesize(anthropic: Anthropic, model: string, question: string,
   return extractText(resp)
 }
 
-export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; sources: Source[]; subagents: Array<{ title: string; summary: string; sources: number }> }> {
+export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; sources: Source[]; subagents: Array<{ title: string; summary: string; sources: number }>; workspace: Workspace }> {
   const anthropic = deps?.client ?? new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
   const exec = deps?.exec ?? runTool
 
@@ -175,5 +191,10 @@ export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit
 
   try { await audit(null, { id: ctx.userId, email: ctx.userEmail, role: ctx.userRole }, AUDIT.TOOL_CALL, 'deep_research', 'success', { subagents: results.length, sources: sources.length, toolCalls: results.reduce((a, r) => a + r.toolCalls, 0) }) } catch {}
 
-  return { report, sources, subagents: results.map(r => ({ title: r.title, summary: r.summary, sources: r.sources.length })) }
+  const workspace: Workspace = {
+    mode: 'research', question, phase: 'done',
+    subtasks: results.map(r => ({ id: r.id, title: r.title, status: 'done' as const, summary: r.summary, headline: r.headline, bullets: r.bullets, links: r.sources.slice(0, 3), sources: r.sources.length, toolCalls: r.toolCalls, error: r.error })),
+    sourceCount: sources.length, subagentCount: results.length,
+  }
+  return { report, sources, subagents: results.map(r => ({ title: r.title, summary: r.summary, sources: r.sources.length })), workspace }
 }

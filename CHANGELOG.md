@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.55] - 2026-10-14
+
+### Fixed
+- **The Research/Diagnosis workspace panel can now be reopened — it is no longer lost once closed or after a reload.** Previously the panel was driven only by transient live state (`research`), which held just the latest run and was never persisted, so closing the panel (or reopening the conversation from history) left only the main-chat text with no way back to the sub-agent workspace. Now `runResearch` / `runDiagnose` return a serialisable **workspace snapshot** (mode, each sub-agent's headline/bullets/source-links or verdict/confidence, ranked causes + checks for diagnose, counts), the chat route streams it in the tool result **and persists it on the assistant message** (`tool_calls`), and the "Research workspace / Diagnosis workspace" chip under each message reopens the panel from that per-message snapshot. Works for multiple research messages in one conversation and survives a page reload; during an in-flight run the chip falls back to the live state.
+  - Verified: `tests/research/workspace.test.ts` (16/16) — snapshot shape for both research and diagnose, structured finding + source links preserved, ranked causes/checks preserved, and JSON-serialisability. Research (24/24), finding (10/10), diagnose (9/9) and heartbeat (18/18) suites still green.
+
 ## [1.3.54] - 2026-10-14
 
 ### Added

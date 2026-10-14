@@ -781,8 +781,10 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                 try {
                   const research = await runResearch(question, { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources, model }, (ev) => send(ev))
                   const srcList = research.sources.map((s, i) => `[${i + 1}] ${s.title} — ${s.url}`).join('\n')
-                  send({ type: 'tool_result', name: 'deep_research', result: { subagents: research.subagents.length, sources: research.sources.length } })
-                  finalToolCalls.push({ name: 'deep_research', input: block.input, result: { subagents: research.subagents, sources: research.sources.length } })
+                  // Include the workspace snapshot so the panel can be reopened later
+                  // (and after reload) from the message, not just the live run.
+                  send({ type: 'tool_result', name: 'deep_research', result: { subagents: research.subagents.length, sources: research.sources.length, workspace: research.workspace } })
+                  finalToolCalls.push({ name: 'deep_research', input: block.input, result: { subagents: research.subagents, sources: research.sources.length, workspace: research.workspace } })
                   return { type: 'tool_result' as const, tool_use_id: block.id, content: `${research.report}\n\nSources:\n${srcList || '(no external sources)'}` }
                 } catch (e) {
                   const msg = e instanceof Error ? e.message : 'research failed'
@@ -800,8 +802,8 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                     { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources, model, catalog }, (ev) => send(ev))
                   const srcList = dx.sources.map((s, i) => `[${i + 1}] ${s.title} — ${s.url}`).join('\n')
                   const causes = dx.causes.map((c, i) => `${i + 1}. ${c.cause} (confidence ${(c.confidence * 100).toFixed(0)}%) — ${c.evidence.join('; ')}`).join('\n')
-                  send({ type: 'tool_result', name: 'deep_diagnose', result: { causes: dx.causes.length, checks: dx.checks.length, sources: dx.sources.length } })
-                  finalToolCalls.push({ name: 'deep_diagnose', input: block.input, result: { causes: dx.causes.length, sources: dx.sources.length } })
+                  send({ type: 'tool_result', name: 'deep_diagnose', result: { causes: dx.causes.length, checks: dx.checks.length, sources: dx.sources.length, workspace: dx.workspace } })
+                  finalToolCalls.push({ name: 'deep_diagnose', input: block.input, result: { causes: dx.causes.length, sources: dx.sources.length, workspace: dx.workspace } })
                   const content = `${dx.report}\n\nRanked probable causes:\n${causes || '(inconclusive)'}\n\nRecommended checks:\n${dx.checks.map(c => `- ${c}`).join('\n') || '(none)'}\n\nSources:\n${srcList || '(none)'}`
                   return { type: 'tool_result' as const, tool_use_id: block.id, content }
                 } catch (e) {

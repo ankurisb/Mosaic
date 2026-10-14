@@ -666,6 +666,20 @@ function collectGeneratedFiles(tools?: ToolCall[]): GenFile[] {
   return out
 }
 
+// Pull the persisted Research/Diagnosis workspace snapshot off a message's tool
+// calls, so the panel can be reopened later (and after a reload) from the
+// message itself rather than the transient live `research` state.
+function workspaceFromMsg(tools?: ToolCall[]): ResearchState | null {
+  if (!Array.isArray(tools)) return null
+  for (const t of tools) {
+    if ((t.name === 'deep_research' || t.name === 'deep_diagnose') && t.result && typeof t.result === 'object') {
+      const ws = (t.result as { workspace?: unknown }).workspace
+      if (ws && typeof ws === 'object' && Array.isArray((ws as ResearchState).subtasks)) return ws as ResearchState
+    }
+  }
+  return null
+}
+
 export default function ChatPage({ user }: { user: SessionUser }) {
   const router = useRouter()
   const [convs, setConvs] = useState<Conv[]>([{ id: 'local-1', title: 'New conversation', messages: [] }])
@@ -1383,16 +1397,23 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   {/* Files produced by run_code — download chips + inline images */}
                   {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
                   {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
-                  {msg.role === 'assistant' && research && Array.isArray(msg.tools) && msg.tools.some(t => t.name === 'deep_research' || t.name === 'deep_diagnose') && (
-                    <div style={{ margin: '4px 0 12px' }}>
-                      <button onClick={() => setPanel({ kind: 'research' })} title={research.mode === 'diagnose' ? 'Open diagnosis workspace' : 'Open research workspace'}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        <span style={{ fontSize: 14, color: 'var(--accent-bg)' }}>{research.mode === 'diagnose' ? '🩺' : '◎'}</span>
-                        <span style={{ fontWeight: 600 }}>{research.mode === 'diagnose' ? 'Diagnosis workspace' : 'Research workspace'}</span>
-                        <span style={{ color: 'var(--text3)', fontSize: 11 }}>{research.mode === 'diagnose' ? `${research.causes?.length ?? 0} causes` : `${research.subagentCount ?? research.subtasks.length} agents · ${research.sourceCount ?? 0} sources`}</span>
-                      </button>
-                    </div>
-                  )}
+                  {msg.role === 'assistant' && (() => {
+                    // Reopen from the message's own persisted snapshot. While a run is
+                    // still streaming its result isn't attached yet, so fall back to the
+                    // live `research` state for the in-flight message.
+                    const ws = workspaceFromMsg(msg.tools) || (streaming && Array.isArray(msg.tools) && msg.tools.some(t => (t.name === 'deep_research' || t.name === 'deep_diagnose') && t.result === undefined) ? research : null)
+                    if (!ws) return null
+                    return (
+                      <div style={{ margin: '4px 0 12px' }}>
+                        <button onClick={() => { setResearch(ws); setPanel({ kind: 'research' }) }} title={ws.mode === 'diagnose' ? 'Open diagnosis workspace' : 'Open research workspace'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          <span style={{ fontSize: 14, color: 'var(--accent-bg)' }}>{ws.mode === 'diagnose' ? '🩺' : '◎'}</span>
+                          <span style={{ fontWeight: 600 }}>{ws.mode === 'diagnose' ? 'Diagnosis workspace' : 'Research workspace'}</span>
+                          <span style={{ color: 'var(--text3)', fontSize: 11 }}>{ws.mode === 'diagnose' ? `${ws.causes?.length ?? 0} causes` : `${ws.subagentCount ?? ws.subtasks.length} agents · ${ws.sourceCount ?? 0} sources`}</span>
+                        </button>
+                      </div>
+                    )
+                  })()}
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (
