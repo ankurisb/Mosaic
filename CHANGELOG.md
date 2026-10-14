@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.47] - 2026-10-14
+
+### Added
+- **Interactive map in the preview panel (Phase 2 — interactive artifacts).** The right-side panel now renders interactive artifacts, not just files. First one: an interactive **Leaflet map**. A new `render_map` tool plots locations (plants / sites / devices) the model fetched from your data — pan, zoom, click a marker for its label/detail. It opens automatically in the panel, and a map chip in the message reopens it.
+  - **Graceful degradation** (for on-prem/air-gapped installs): OpenStreetMap tiles when online; if tiles can't load, markers still render on a plain background with an "offline basemap" note; if Leaflet itself can't initialise, it falls back to a scrollable location list. Never a blank panel.
+  - Vector circle markers (no image assets, so no broken-icon issues). `render_map` validates coordinates (lat −90..90, lng −180..180), drops invalid points, caps at 2000, and clamps zoom; it never geocodes server-side (the model must supply real coordinates).
+  - The panel is now a generic artifact surface (file | map), so Phase 3's live research/sub-agent view drops into the same slot.
+
 ## [1.3.46] - 2026-10-14
 
 ### Added

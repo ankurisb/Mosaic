@@ -362,6 +362,34 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
     },
   },
   {
+    name: 'render_map',
+    description: `Show locations on an interactive map in the right-side panel. Use when the answer is geographic — plant/site/device locations, where assets are, anything the user would want to SEE on a map. First get the coordinates from your data (e.g. a Prism/database query that returns lat/lng for devices or sites), then pass them here. Each point can carry a label and a short detail shown when clicked. Do NOT invent coordinates — only plot points you actually retrieved.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        points: {
+          type: 'array',
+          description: 'The locations to plot. At least one, each with numeric lat and lng.',
+          items: {
+            type: 'object',
+            properties: {
+              lat: { type: 'number', description: 'Latitude (-90..90).' },
+              lng: { type: 'number', description: 'Longitude (-180..180).' },
+              label: { type: 'string', description: 'Short name shown on the marker (e.g. device or site name).' },
+              detail: { type: 'string', description: 'Optional one-line detail shown when the marker is clicked.' },
+              value: { description: 'Optional metric associated with the point (number or short string).' },
+            },
+            required: ['lat', 'lng']
+          }
+        },
+        title: { type: 'string', description: 'Short title for the map.' },
+        center: { type: 'object', properties: { lat: { type: 'number' }, lng: { type: 'number' } }, description: 'Optional initial center; defaults to fitting all points.' },
+        zoom: { type: 'number', description: 'Optional initial zoom (1–18); defaults to fitting all points.' },
+      },
+      required: ['points']
+    },
+  },
+  {
     name: 'save_memory',
     description: `Remember a short, durable fact about THIS user across conversations: a preference (how they like answers or formats), a fact (their terminology, which sites/APIs/devices matter to them), or project context. Use when the user says "remember…", "note that…", "from now on…", or clearly states a stable preference worth keeping for next time. Keep each memory to one concise sentence, one fact per call. NEVER store secrets, passwords, API keys, ID/card/account numbers, or health information.`,
     input_schema: {
@@ -594,6 +622,7 @@ export async function runTool(
       return combineSources({ tables: input.tables as Record<string, unknown>, sql: String(input.sql || ''), max_rows: input.max_rows as number | undefined })
     }
     case 'render_chart': return renderChart(input)
+    case 'render_map': return renderMap(input)
     case 'create_alert': return createAlertTool(input, guardrailCtx)
     case 'run_code': return runCode(input, guardrailCtx)
     case 'save_memory': {
@@ -3575,4 +3604,38 @@ function renderChart(input: Record<string, unknown>): ChartArtifact {
     throw new Error('render_chart requires type and title')
   }
   return { kind: 'chart_artifact', spec }
+}
+
+// -- render_map -------------------------------------------------
+// Emits a { kind: 'map_artifact', ... } envelope the chat UI recognises and
+// renders as an interactive Leaflet map in the right-side preview panel.
+// Points come from data the model already fetched (device/site coordinates,
+// geo-results); nothing is geocoded server-side.
+export interface MapPoint { lat: number; lng: number; label?: string; detail?: string; value?: number | string }
+export interface MapArtifact {
+  kind: 'map_artifact'
+  title?: string
+  points: MapPoint[]
+  center?: { lat: number; lng: number }
+  zoom?: number
+}
+
+function renderMap(input: Record<string, unknown>): MapArtifact | { error: string } {
+  const raw = Array.isArray(input.points) ? input.points as Array<Record<string, unknown>> : []
+  const points: MapPoint[] = []
+  for (const p of raw.slice(0, 2000)) {
+    const lat = Number(p.lat), lng = Number(p.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
+    points.push({
+      lat, lng,
+      label: p.label != null ? String(p.label) : undefined,
+      detail: p.detail != null ? String(p.detail) : undefined,
+      value: (typeof p.value === 'number' || typeof p.value === 'string') ? p.value : undefined,
+    })
+  }
+  if (!points.length) return { error: 'render_map needs at least one valid point with numeric lat/lng.' }
+  const c = input.center as Record<string, unknown> | undefined
+  const center = c && Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lng)) ? { lat: Number(c.lat), lng: Number(c.lng) } : undefined
+  const zoom = Number.isFinite(Number(input.zoom)) ? Math.max(1, Math.min(18, Number(input.zoom))) : undefined
+  return { kind: 'map_artifact', title: input.title ? String(input.title) : undefined, points, center, zoom }
 }

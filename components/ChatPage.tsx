@@ -1,6 +1,8 @@
 'use client'
 import React from 'react'
 import ChartArtifact from '@/components/ChartArtifact'
+import MapView from '@/components/MapArtifact'
+import type { MapArtifact as MapData } from '@/lib/tools'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -252,6 +254,8 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
 }
 
 interface GenFile { id: string; name: string; mime: string; size: number }
+// What the right-side panel is currently showing: a file preview or a map artifact.
+type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData }
 
 // Download chips + inline image previews for files produced by run_code. Each
 // file is served (owner-checked) from /api/files/<id>. Images render inline;
@@ -452,6 +456,56 @@ function FilePreviewPanel({ file, onClose }: { file: GenFile; onClose: () => voi
   )
 }
 
+// Gather map artifacts produced by render_map calls in a message.
+function collectMapArtifacts(tools?: ToolCall[]): MapData[] {
+  if (!Array.isArray(tools)) return []
+  const out: MapData[] = []
+  for (const t of tools) {
+    if (t.name !== 'render_map' || !t.result || typeof t.result !== 'object') continue
+    if ((t.result as { kind?: string }).kind === 'map_artifact') out.push(t.result as MapData)
+  }
+  return out
+}
+
+// Chip(s) that open a produced map in the right panel.
+function MapChips({ maps, onOpen }: { maps: MapData[]; onOpen: (m: MapData) => void }) {
+  if (!maps.length) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '4px 0 12px' }}>
+      {maps.map((m, i) => (
+        <button key={i} onClick={() => onOpen(m)} title="Open map"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-bg)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L2 4v10l4-2 4 2 4-2V2l-4 2-4-2z"/><path d="M6 2v10M10 4v10"/></svg>
+          <span style={{ fontWeight: 600 }}>{m.title || 'Map'}</span>
+          <span style={{ color: 'var(--text3)', fontSize: 11 }}>{m.points?.length || 0} location{(m.points?.length || 0) === 1 ? '' : 's'}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Right-side panel wrapper for an interactive map artifact (mirrors the file
+// preview panel's chrome so the two feel like one surface).
+function MapPanel({ map, onClose }: { map: MapData; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{map.title || 'Map'}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{map.points?.length || 0} location{(map.points?.length || 0) === 1 ? '' : 's'}</div>
+        </div>
+        <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}><MapView data={map} /></div>
+    </div>
+  )
+}
+
 // Gather produced files across all run_code calls in a message.
 function collectGeneratedFiles(tools?: ToolCall[]): GenFile[] {
   if (!Array.isArray(tools)) return []
@@ -544,7 +598,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [srcSearch, setSrcSearch] = useState('')
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
-  const [preview, setPreview] = useState<GenFile | null>(null)
+  const [panel, setPanel] = useState<PanelItem | null>(null)
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -896,11 +950,15 @@ export default function ChatPage({ user }: { user: SessionUser }) {
             else if (e.type === 'text') updateLast(cid, m => ({ ...m, content: m.content + e.text }))
             else if (e.type === 'intermediate_text') updateLast(cid, m => ({ ...m, narration: (m.narration || '') + e.text }))
             else if (e.type === 'tool_start') updateLast(cid, m => ({ ...m, tools: [...(m.tools || []), { name: e.name, input: e.input }] }))
-            else if (e.type === 'tool_result') updateLast(cid, m => {
-              const tools = [...(m.tools || [])]
-              for (let i = tools.length - 1; i >= 0; i--) { if (tools[i].name === e.name && tools[i].result === undefined) { tools[i] = { ...tools[i], result: e.result }; break } }
-              return { ...m, tools }
-            })
+            else if (e.type === 'tool_result') {
+              updateLast(cid, m => {
+                const tools = [...(m.tools || [])]
+                for (let i = tools.length - 1; i >= 0; i--) { if (tools[i].name === e.name && tools[i].result === undefined) { tools[i] = { ...tools[i], result: e.result }; break } }
+                return { ...m, tools }
+              })
+              // Auto-open a produced map in the right panel.
+              if (e.name === 'render_map' && e.result && (e.result as { kind?: string }).kind === 'map_artifact') setPanel({ kind: 'map', map: e.result as MapData })
+            }
             else if (e.type === 'error') updateLast(cid, m => ({ ...m, content: 'Error: ' + e.message }))
           } catch {}
         }
@@ -1167,7 +1225,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   }
 
                   {/* Files produced by run_code — download chips + inline images */}
-                  {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={setPreview} />}
+                  {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
+                  {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
 
                   {/* Message bubble */}
                   {msg.role === 'user' ? (
@@ -1562,7 +1621,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
-      {preview && <FilePreviewPanel file={preview} onClose={() => setPreview(null)} />}
+      {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} />}
+      {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} />}
     </div>
   )
 }
