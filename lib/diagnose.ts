@@ -132,7 +132,20 @@ export async function runDiagnose(params: { target: string; symptom: string; win
   emit({ type: 'research_synthesizing' })
   const sources: Source[] = []
   for (const r of results) harvestSources(r.sources, sources)
-  const syn = await synthesizeDiagnosis(anthropic, ctx.model, target, symptom, results, sources)
+  // Synthesis failing must NOT lose the hypothesis tests that already ran. Fall
+  // back to surfacing the supported hypotheses (highest-confidence first) as the
+  // ranked causes, so the engineer still gets actionable output.
+  let syn: { report: string; causes: Cause[]; checks: string[] }
+  try {
+    syn = await synthesizeDiagnosis(anthropic, ctx.model, target, symptom, results, sources)
+  } catch {
+    const supported = results.filter(r => r.verdict === 'supported').sort((a, b) => b.confidence - a.confidence)
+    syn = {
+      report: 'Synthesis could not complete, but the hypothesis tests ran — review the per-hypothesis verdicts and evidence below.',
+      causes: supported.map(r => ({ cause: r.title, confidence: r.confidence, evidence: r.evidence })),
+      checks: [],
+    }
+  }
   emit({ type: 'research_done', mode: 'diagnose', sourceCount: sources.length, subagentCount: results.length, causes: syn.causes, checks: syn.checks, ms: Date.now() - t0 })
 
   try { await audit(null, { id: ctx.userId, email: ctx.userEmail, role: ctx.userRole }, AUDIT.TOOL_CALL, 'deep_diagnose', 'success', { hypotheses: results.length, sources: sources.length, causes: syn.causes.length }) } catch {}

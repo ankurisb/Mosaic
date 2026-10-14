@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.56] - 2026-10-14
+
+### Changed
+- **Deep Diagnose survives a synthesis failure.** If the final RCA synthesis call fails (model/network error), the run no longer loses everything — it now falls back to surfacing the **supported hypotheses (highest-confidence first) as the ranked causes**, so the engineer still gets the per-hypothesis verdicts and evidence that already ran, with a clear note that synthesis didn't complete.
+
+### Tests
+- **Deep Diagnose extreme-test pass** (`tests/research/diagnose-extreme.test.ts`, 19/19): malformed/absent `===VERDICT===` and `===CAUSES===` JSON, invalid verdict values, out-of-range/non-numeric confidence clamping, non-array evidence, empty plan → fallback hypothesis, overflowing plan capped at MAX_H, **sub-agent failure isolation** (one hypothesis' model call throws, siblings still resolve), the **synthesis-failure fallback** above, tool-budget exhaustion → forced verdict, `strictSources` blocking an unscoped source-tool call, and read-only governance (sub-agents never get `run_code`/write/recursion tools).
+- **CI is now trustworthy:** fixed a stale `lib/rca.test.ts` assertion (`'oee'` is intentionally an RCA keyword) — full vitest suite green (109 tests) — and wired the standalone tsx suites (`tests/research/*`, `tests/map/*`) into the CI Test gate via a pinned `tsx`, so a regression in deep_research / deep_diagnose / render_map / the heartbeat & workspace snapshots now fails the build.
+
 ## [1.3.55] - 2026-10-14
 
 ### Fixed
