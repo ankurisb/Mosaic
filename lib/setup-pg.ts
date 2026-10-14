@@ -695,6 +695,19 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_generated_files_user ON generated_files(user_id)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_generated_files_conv ON generated_files(conversation_id)`.catch(() => {})
 
+  // Cross-conversation memory: durable per-user facts/preferences/project context.
+  await sql`CREATE TABLE IF NOT EXISTS user_memory (
+    id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id     TEXT NOT NULL,
+    project     TEXT,
+    category    TEXT NOT NULL DEFAULT 'fact',
+    content     TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'chat',
+    created_at  TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    updated_at  TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_memory_user ON user_memory(user_id)`.catch(() => {})
+
   // -- Schema migrations tracker ---------------------------------
   await sql`CREATE TABLE IF NOT EXISTS schema_migrations (
     version    TEXT PRIMARY KEY,

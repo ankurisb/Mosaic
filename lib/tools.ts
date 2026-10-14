@@ -55,6 +55,7 @@ import { getServiceConfigById, upsertApiSource, type ApiServiceConfig } from '@/
 import { putProposal, getProposal, dropProposal } from '@/lib/ai/fix-proposals'
 import { audit, AUDIT } from '@/lib/audit'
 import { saveGeneratedFile, getGeneratedFileForUser, readGeneratedFileBytes, type StoredFileMeta } from '@/lib/generated-files'
+import { saveMemory, forgetMemory } from '@/lib/memory'
 
 /** Compact, human-readable diff of a proposed connection fix vs the current config. */
 function summariseApiFix(current: ApiServiceConfig, candidate: AgentCandidate): string {
@@ -360,6 +361,28 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
       required: ['code']
     },
   },
+  {
+    name: 'save_memory',
+    description: `Remember a short, durable fact about THIS user across conversations: a preference (how they like answers or formats), a fact (their terminology, which sites/APIs/devices matter to them), or project context. Use when the user says "remember…", "note that…", "from now on…", or clearly states a stable preference worth keeping for next time. Keep each memory to one concise sentence, one fact per call. NEVER store secrets, passwords, API keys, ID/card/account numbers, or health information.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'The fact to remember, as one concise sentence.' },
+        category: { type: 'string', enum: ['preference', 'fact', 'project'], description: 'preference | fact | project. Defaults to fact.' },
+        project: { type: 'string', description: 'Optional project/area tag this fact belongs to.' },
+      },
+      required: ['content']
+    },
+  },
+  {
+    name: 'forget_memory',
+    description: `Forget previously remembered facts about this user that match the given text. Use when the user says "forget…", "that's no longer true", or asks you to remove something you remembered. All stored memories containing the match text are removed.`,
+    input_schema: {
+      type: 'object',
+      properties: { match: { type: 'string', description: 'Text to match against stored memories; every entry containing it is removed.' } },
+      required: ['match']
+    },
+  },
 ]
 
 export async function runTool(
@@ -573,6 +596,18 @@ export async function runTool(
     case 'render_chart': return renderChart(input)
     case 'create_alert': return createAlertTool(input, guardrailCtx)
     case 'run_code': return runCode(input, guardrailCtx)
+    case 'save_memory': {
+      if (!guardrailCtx?.userId) return { error: 'No user context for memory.' }
+      const r = await saveMemory({ userId: guardrailCtx.userId, content: String(input.content || ''), category: input.category ? String(input.category) : undefined, project: input.project ? String(input.project) : null, source: 'chat' })
+      try { await audit(null, { id: guardrailCtx.userId, email: guardrailCtx.userEmail, role: guardrailCtx.userRole }, AUDIT.TOOL_CALL, 'memory:save', r.ok ? 'success' : 'failure', { category: input.category || 'fact' }) } catch {}
+      return r.ok ? { ok: true, saved: true, note: 'Saved to memory.' } : { ok: false, error: r.reason }
+    }
+    case 'forget_memory': {
+      if (!guardrailCtx?.userId) return { error: 'No user context for memory.' }
+      const n = await forgetMemory(guardrailCtx.userId, String(input.match || ''))
+      try { await audit(null, { id: guardrailCtx.userId, email: guardrailCtx.userEmail, role: guardrailCtx.userRole }, AUDIT.TOOL_CALL, 'memory:forget', 'success', { removed: n }) } catch {}
+      return { ok: true, removed: n, note: n ? `Forgot ${n} item(s).` : 'Nothing matched.' }
+    }
     default: throw new Error(`Unknown tool: ${name}`)
   }
 }

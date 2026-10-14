@@ -25,6 +25,7 @@ import TabTransparency from './TabTransparency'
 import TabBackup from './TabBackup'
 import TabInterfaces from './TabInterfaces'
 import TabAccount from './TabAccount'
+import TabMemory from './TabMemory'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -40,6 +41,7 @@ const ALL_TABS = [
   { id: 'auth',          label: 'Authentication',       adminOnly: true, enterpriseOnly: true  },
   { id: 'users',         label: 'Users',                adminOnly: true, enterpriseOnly: true  },
   { id: 'usage',         label: 'Usage analytics',      adminOnly: false },
+  { id: 'memory',        label: 'Memory',               adminOnly: false },
   { id: 'system-health', label: 'System health',        adminOnly: true  },
   { id: 'data-sources',  label: 'Data sources',         adminOnly: true  },
   { id: 'interfaces',    label: 'Connected tools',      adminOnly: false },
@@ -84,6 +86,7 @@ function TabIcon({ id }: { id: string }) {
     case 'support':      return <svg {...p}><path d="M7 1l3 2v4c0 2-1.5 3.5-3 4.5C4.5 10.5 3 9 3 7V3l3-2z"/><path d="M5 7l1.5 1.5L9 5"/></svg>
     case 'backup':       return <svg {...p}><path d="M7 1v8M4 6l3 3 3-3"/><path d="M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
+    case 'memory':       return <svg {...p}><path d="M4.5 2.5h5a1 1 0 011 1v9l-3.5-2-3.5 2v-9a1 1 0 011-1z"/></svg>
     default:             return null
   }
 }
@@ -214,6 +217,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}
           {tab === 'usage'     && <TabUsage user={user} />}
+          {tab === 'memory'    && <TabMemory />}
           {tab === 'system-health' && <TabMonitor />}
           {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'interfaces'    && <TabInterfaces />}

@@ -939,6 +939,19 @@ export async function setupDatabase() {
     expires_at      TEXT
   )`.catch(() => {})
 
+  // Cross-conversation memory: durable per-user facts/preferences/project context.
+  await sql`CREATE TABLE IF NOT EXISTS user_memory (
+    id          TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    user_id     TEXT NOT NULL,
+    project     TEXT,
+    category    TEXT NOT NULL DEFAULT 'fact',
+    content     TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'chat',
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_memory_user ON user_memory(user_id)`.catch(() => {})
+
   // Seed defaults — connector tier gets minimal defaults, full AI tier gets fuller ones.
   // Admin can override any of these from the UI.
   const retentionDefaults: Array<[string, number]> = [

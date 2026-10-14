@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.46] - 2026-10-14
+
+### Added
+- **Cross-conversation memory (Phase 1 of the chat roadmap).** Mosaic can now remember durable facts about a user across chats — preferences (how they like answers), facts (their terminology, which sites/APIs/devices matter), and project context. Saved explicitly via `remember…` / `forget…` in chat (new `save_memory` / `forget_memory` tools) or on a new **Settings → Memory** page (view / add / edit / delete). Memory is injected as a compact block into the chat system prompt at the start of each turn.
+  - Per-user isolation (never shared across users); each user only sees and edits their own memory. New `user_memory` table (migration 016 + setup baselines) and owner-scoped `/api/memory` CRUD.
+  - A privacy filter keeps obviously-sensitive content out of the store (passwords, API keys, card/account/ID numbers, health details), on both the tool and the settings page. Per-user caps (200 items, 500 chars each) and exact-duplicate de-dupe.
+  - Auto-learning (extracting facts automatically at end of chat) is intentionally deferred to a later, flag-gated phase; v1 is explicit-save only.
+
 ## [1.3.45] - 2026-10-14
 
 ### Fixed

@@ -459,7 +459,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let metricsBlock = ''
   try { const { getMetricsInjection } = await import('@/lib/metrics'); metricsBlock = await getMetricsInjection() } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock
+  // Cross-conversation memory: durable facts this user asked Mosaic to remember.
+  let memoryBlock = ''
+  try { const { formatMemoryForPrompt } = await import('@/lib/memory'); memoryBlock = await formatMemoryForPrompt(session.id) } catch { }
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
