@@ -9,6 +9,7 @@ import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
 import { runResearch } from '@/lib/research'
 import { runDiagnose } from '@/lib/diagnose'
+import { mapLimit, TOOL_FANOUT_CONCURRENCY } from '@/lib/concurrency'
 import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
@@ -302,6 +303,7 @@ You have access to live databases and APIs listed below. When a user asks about 
 - When the answer is geographic — where sites/plants/devices are, their locations on a map — fetch the coordinates (lat/lng) from your data first, then call render_map to show them on an interactive map in the side panel. Never invent coordinates.
 - For broad, comparative or multi-part questions that need several angles and sources (a landscape, a market, "compare X vs Y across …", "research … and what should we do"), call deep_research with a self-contained question. It runs parallel sub-agents and returns a cited briefing — present that as your answer with the Sources list. For a single fact or one lookup, use web_search or a data tool directly, not deep_research.
 - When the user reports an equipment FAULT or BREAKDOWN and wants the root cause ("why did inverter X trip", "diagnose the breakdown of line 2", an RCA on a specific asset), call deep_diagnose with the target asset and the symptom. It forms failure-mode hypotheses, tests each against the telemetry/alarms/history data in parallel, and returns ranked probable causes with evidence, confidence and recommended checks — present those. Use it for ambiguous or cross-system faults; for a single obvious lookup, use a data tool directly.
+- When the user asks to LIST all data sources, CHECK that they are accessible/working, or which are up/down/broken, call check_data_sources ONCE. It health-checks every configured source (databases, APIs, Prism, MCP, file servers) with a single bounded, de-duplicated probe per source and returns each one's status, latency and detail. Never verify sources by firing a separate query/call to each one — that overloads shared logins and connection pools; use check_data_sources instead, then summarise the results (group by ok vs needs-attention).
 
 ## Producing files (run_code)
 - When the user wants a FILE — a spreadsheet (xlsx/csv), a Word or PDF report/document, a saved chart image, a format conversion, or anything they'll download — use run_code. It runs real Python (pandas, openpyxl/XlsxWriter, python-docx, python-pptx, reportlab, matplotlib, Pillow) in a secure sandbox.
@@ -771,7 +773,11 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           if (toolCallsUsed >= TOOL_CALL_BUDGET) {
             forceSynthesis = true
           }
-          const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(toolBlocks.map(async block => {
+          // Bounded fan-out: cap how many tool calls run at once so a wide turn
+          // (e.g. "check all data sources") can't stampede connection pools or
+          // shared auth endpoints. The callback never throws (it returns error
+          // results), so one failing tool never rejects the batch.
+          const toolResults: Anthropic.ToolResultBlockParam[] = await mapLimit(toolBlocks, TOOL_FANOUT_CONCURRENCY, async (block) => {
             try {
               // Deep research runs its own orchestrator (lead + parallel sub-agents)
               // and streams progress events so the Research Workspace panel can show
@@ -855,7 +861,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
               finalToolCalls.push({ name: block.name, input: block.input, result: { error: msg } })
               return { type: 'tool_result' as const, tool_use_id: block.id, content: 'Error: ' + msg }
             }
-          }))
+          })
           history = [...history, { role: 'assistant', content: [...thinkingBlocks, ...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks] }, { role: 'user', content: toolResults }]
         }
         // Persist assistant message + update conversation timestamp

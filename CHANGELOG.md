@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.60] - 2026-10-14
+
+### Added
+- **Bounded tool executor.** The chat loop could emit many tool calls in one turn and ran them through an unbounded `Promise.all`, which stampeded shared resources (connection pools, per-host rate limits, auth logins). Tool fan-out now runs through `mapLimit` with a capped concurrency (`TOOL_FANOUT_CONCURRENCY`, default 6, env-overridable) — a wide turn degrades to "slower", not "mass timeouts". The model can still batch parallel fetches; only how many execute at once is bounded. New `lib/concurrency.ts` (+ tests: order preserved, concurrency cap never exceeded, still parallel).
+- **`check_data_sources` health tool — a real "are my sources accessible?" path.** Replaces the pattern where the model fired a separate query per connection (the stampede trigger). One tool call now health-checks **every** configured source — databases, API services, Prism, MCP servers, file servers — with bounded concurrency, a short per-probe timeout and a hard backstop, reusing the existing probes (`runCandidateProbe`, `getPrismToken`, `testMcpEndpoint`, a DB `SELECT 1`, a file-server reachability list). It probes **once per service** (single-flight login), not once per connection, and returns each source's status (`ok` / `auth_failed` / `degraded` / `down`), latency and a short detail, plus a summary. The system prompt routes "list/check all data sources" and "which are up/down" to it. Honours pinned-source scoping.
+
 ## [1.3.59] - 2026-10-14
 
 ### Fixed

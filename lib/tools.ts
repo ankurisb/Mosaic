@@ -50,6 +50,8 @@ async function s3SignedFetch(
 import { Pool } from 'pg'
 import type { Pool as MysqlPool } from 'mysql2/promise'
 import { applyAuth, parseAuthConfig } from '@/lib/api-auth'
+import { runCandidateProbe } from '@/lib/api-probe'
+import { mapLimit } from '@/lib/concurrency'
 import { diagnoseApiConnection, mergeStoredSecrets, type AgentCandidate } from '@/lib/ai/api-agent'
 import { getServiceConfigById, upsertApiSource, type ApiServiceConfig } from '@/lib/api-source-store'
 import { putProposal, getProposal, dropProposal } from '@/lib/ai/fix-proposals'
@@ -85,6 +87,14 @@ export const TOOLS: Anthropic.Tool[] = [
       type: 'object',
       properties: { query: { type: 'string', description: 'Search query' } },
       required: ['query']
+    },
+  },
+  {
+    name: 'check_data_sources',
+    description: 'Health-check ALL configured data sources at once (databases, APIs, Prism, MCP servers, file servers) and report which are accessible. Use this for "list/check all my data sources", "are my connections working", "which sources are down/broken", or any request to verify connectivity across sources. Runs one bounded, de-duplicated probe per source (one login per service, not per connection) and returns each source\'s status (ok / auth_failed / degraded / down), latency and a short detail. Prefer this over firing a separate query per source — it is faster and will not overload the connections.',
+    input_schema: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -518,6 +528,8 @@ export async function runTool(
 
   switch (name) {
     case 'web_search': return webSearch(String(input.query))
+
+    case 'check_data_sources': return checkDataSources({ allowedSources: guardrailCtx?.allowedSources })
 
     case 'query_database': {
       const srcId = String(input.connection_id || '')
@@ -2707,6 +2719,132 @@ async function parseFileContent(
 }
 
 // -- Airbyte tool -----------------------------------------------
+// ── Data-source health check ──────────────────────────────────────────────
+// A deterministic, bounded "are my sources accessible?" probe. Replaces the
+// pattern where the model fired one tool per connection in a single turn (which
+// stampeded shared auth endpoints). Enumerates every configured source and
+// probes each with bounded concurrency, a short timeout, and a per-probe
+// backstop, then returns a structured per-source status — one shared login per
+// service (single-flight), not one per connection.
+type SourceStatus = 'ok' | 'auth_failed' | 'degraded' | 'down' | 'unknown'
+interface SourceHealth { id: string; label: string; type: 'database' | 'api' | 'prism' | 'mcp' | 'file_server'; status: SourceStatus; latencyMs?: number; detail?: string }
+
+// Connection-level failure keywords → the source is unreachable/broken. Anything
+// else (e.g. a SQL syntax error from a health ping) means we DID reach it.
+const CONNECTIVITY_RE = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|getaddrinfo|ECONNRESET|connection (refused|reset|timed out|error)|connect ETIMEDOUT|timed out|timeout|aborted|unreachable|fetch failed|socket hang up|network error|refused to connect|could not connect|login failed|unauthorized|401|403/i
+const isConnFailure = (msg: string) => CONNECTIVITY_RE.test(msg || '')
+
+// Race a probe against a hard backstop so a single hanging source can't stall
+// the whole health check beyond the cap.
+async function raceProbe<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const guard = new Promise<T>(res => { timer = setTimeout(() => res(onTimeout), ms) })
+  try { return await Promise.race([p, guard]) } finally { if (timer) clearTimeout(timer) }
+}
+
+export async function checkDataSources(guardrailCtx: { allowedSources?: string[] } = {}): Promise<{ sources: SourceHealth[]; summary: { total: number; ok: number; issues: number } }> {
+  const db = getDb()
+  const PROBE_CAP_MS = 15000       // per-source hard backstop
+  const CONCURRENCY = 6            // bounded fan-out (same ceiling as the tool runtime)
+  const allow = guardrailCtx.allowedSources
+  const inScope = (id: string) => !allow || allow.length === 0 || allow.includes(id)
+
+  const [dbConns, apiSvcs, prisms, fileSrvs, mcps] = await Promise.all([
+    db`SELECT id, label, dialect FROM db_connections`.catch(() => []),
+    db`SELECT s.id, s.label, s.base_url, s.auth_type, s.auth_config, s.request_timeout_ms,
+            (SELECT COUNT(*) FROM api_connections c WHERE c.service_id = s.id) AS conns
+         FROM api_services s WHERE COALESCE(s.status,'published') = 'published'`.catch(() => []),
+    db`SELECT id, label, base_url, username, password_enc FROM prism_instances WHERE active = true`.catch(() => []),
+    db`SELECT id, label, transport FROM file_servers`.catch(() => []),
+    db`SELECT id, label, endpoint_url FROM mcp_connections WHERE enabled = true`.catch(() => []),
+  ]) as [Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[]]
+
+  // One probe task per source, each resolving to a SourceHealth (never throws).
+  type Task = () => Promise<SourceHealth>
+  const tasks: Task[] = []
+
+  for (const c of dbConns) if (inScope(String(c.id))) tasks.push(async () => {
+    const t0 = Date.now()
+    const probe = (async (): Promise<SourceHealth> => {
+      try {
+        const r = await queryDatabase(String(c.id), 'SELECT 1') as { error?: string }
+        if (r && typeof r === 'object' && r.error) {
+          return { id: String(c.id), label: String(c.label), type: 'database', status: isConnFailure(r.error) ? 'down' : 'ok', latencyMs: Date.now() - t0, detail: isConnFailure(r.error) ? r.error : 'reachable' }
+        }
+        return { id: String(c.id), label: String(c.label), type: 'database', status: 'ok', latencyMs: Date.now() - t0, detail: `${c.dialect} reachable` }
+      } catch (e) {
+        const m = e instanceof Error ? e.message : 'failed'
+        return { id: String(c.id), label: String(c.label), type: 'database', status: isConnFailure(m) ? 'down' : 'ok', latencyMs: Date.now() - t0, detail: m }
+      }
+    })()
+    return raceProbe(probe, PROBE_CAP_MS, { id: String(c.id), label: String(c.label), type: 'database', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
+  })
+
+  for (const s of apiSvcs) if (inScope(String(s.id))) tasks.push(async () => {
+    const probe = (async (): Promise<SourceHealth> => {
+      const label = `${s.label}${Number(s.conns) ? ` (${s.conns} connection${Number(s.conns) === 1 ? '' : 's'})` : ''}`
+      try {
+        const r = await runCandidateProbe({ cacheKey: String(s.id), baseUrl: String(s.base_url), authType: String(s.auth_type || ''), authConfig: parseAuthConfig(String(s.auth_config || '{}')), method: 'GET', path: '/', ssrf: 'off', timeoutMs: Math.min(Number(s.request_timeout_ms) || 12000, 14000) })
+        const status: SourceStatus = r.ok ? 'ok'
+          : r.status === 0 ? (isConnFailure(r.error || '') ? 'down' : 'auth_failed')
+          : (r.status === 401 || r.status === 403) ? 'auth_failed'
+          : r.status >= 500 ? 'degraded' : 'ok'
+        return { id: String(s.id), label, type: 'api', status, latencyMs: r.latencyMs, detail: r.error || `HTTP ${r.status}` }
+      } catch (e) {
+        return { id: String(s.id), label, type: 'api', status: 'down', detail: e instanceof Error ? e.message : 'failed' }
+      }
+    })()
+    return raceProbe(probe, PROBE_CAP_MS, { id: String(s.id), label: String(s.label), type: 'api', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
+  })
+
+  for (const p of prisms) if (inScope(String(p.id))) tasks.push(async () => {
+    const t0 = Date.now()
+    const probe = (async (): Promise<SourceHealth> => {
+      try {
+        const base = String(p.base_url).replace(/\/$/, '')
+        const authConfig = { username: String(p.username || ''), password: p.password_enc ? decrypt(String(p.password_enc)) : '' }
+        const r = await getPrismToken(String(p.id), base, authConfig, 12000)
+        return { id: String(p.id), label: String(p.label), type: 'prism', status: r.ok ? 'ok' : (isConnFailure((r as { error: string }).error) ? 'down' : 'auth_failed'), latencyMs: Date.now() - t0, detail: r.ok ? 'authenticated' : (r as { error: string }).error }
+      } catch (e) {
+        return { id: String(p.id), label: String(p.label), type: 'prism', status: 'down', latencyMs: Date.now() - t0, detail: e instanceof Error ? e.message : 'failed' }
+      }
+    })()
+    return raceProbe(probe, PROBE_CAP_MS, { id: String(p.id), label: String(p.label), type: 'prism', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
+  })
+
+  for (const m of mcps) if (inScope(String(m.id))) tasks.push(async () => {
+    const t0 = Date.now()
+    const probe = (async (): Promise<SourceHealth> => {
+      try {
+        const r = await testMcpEndpoint(String(m.endpoint_url))
+        return { id: String(m.id), label: String(m.label), type: 'mcp', status: r.ok ? 'ok' : (isConnFailure(r.error || '') ? 'down' : 'degraded'), latencyMs: Date.now() - t0, detail: r.ok ? `${r.tools?.length ?? 0} tools` : (r.error || 'unreachable') }
+      } catch (e) {
+        return { id: String(m.id), label: String(m.label), type: 'mcp', status: 'down', latencyMs: Date.now() - t0, detail: e instanceof Error ? e.message : 'failed' }
+      }
+    })()
+    return raceProbe(probe, PROBE_CAP_MS, { id: String(m.id), label: String(m.label), type: 'mcp', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
+  })
+
+  for (const f of fileSrvs) if (inScope(String(f.id))) tasks.push(async () => {
+    const t0 = Date.now()
+    const probe = (async (): Promise<SourceHealth> => {
+      try {
+        const r = await listAllFiles(String(f.id)) as { error?: string }
+        if (r && typeof r === 'object' && r.error) return { id: String(f.id), label: String(f.label), type: 'file_server', status: isConnFailure(r.error) ? 'down' : 'degraded', latencyMs: Date.now() - t0, detail: r.error }
+        return { id: String(f.id), label: String(f.label), type: 'file_server', status: 'ok', latencyMs: Date.now() - t0, detail: `${f.transport} reachable` }
+      } catch (e) {
+        const m = e instanceof Error ? e.message : 'failed'
+        return { id: String(f.id), label: String(f.label), type: 'file_server', status: isConnFailure(m) ? 'down' : 'degraded', latencyMs: Date.now() - t0, detail: m }
+      }
+    })()
+    return raceProbe(probe, Math.min(PROBE_CAP_MS, 9000), { id: String(f.id), label: String(f.label), type: 'file_server', status: 'unknown', latencyMs: 9000, detail: 'probe timed out (list may be large) — test it in Settings → Data sources' })
+  })
+
+  const sources = await mapLimit(tasks, CONCURRENCY, (t) => t())
+  const ok = sources.filter(s => s.status === 'ok').length
+  return { sources, summary: { total: sources.length, ok, issues: sources.length - ok } }
+}
+
 async function queryAirbyte(action: string, instanceId?: string, connectionId?: string): Promise<unknown> {
   const sql = getDb()
 
