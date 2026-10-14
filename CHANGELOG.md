@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.61] - 2026-10-14
+
+### Added
+- **Structured health card for `check_data_sources` — in chat and in Settings.** The health check used to come back as a wall of prose. Now its result renders as a compact, scannable **Source health** card: a `{ok}/{total} reachable` summary, sources grouped into **Needs attention** (first) and **Working**, each with a color-coded status dot (green/amber/red), type chip, latency and a one-line detail. In chat the card renders automatically from the tool result and the assistant replies with just a one-line headline + the single next action (it no longer re-lists every source). The same card is available in **Settings → Data sources** behind a **"Check all sources"** button (new `GET /api/datasources/health`, which runs the same bounded, one-probe-per-service check). New reusable `components/SourceHealthCard.tsx`.
+
 ## [1.3.60] - 2026-10-14
 
 ### Added

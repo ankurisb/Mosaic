@@ -1,6 +1,7 @@
 'use client'
 import React from 'react'
 import ChartArtifact from '@/components/ChartArtifact'
+import SourceHealthCard, { type HealthData } from '@/components/SourceHealthCard'
 import MapView from '@/components/MapArtifact'
 import type { MapArtifact as MapData } from '@/lib/tools'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
@@ -1392,6 +1393,12 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   {Array.isArray(msg.tools) && msg.tools
                     .filter(t => t.name === 'render_chart' && t.result && typeof t.result === 'object' && (t.result as { kind?: string }).kind === 'chart_artifact')
                     .map((t, k) => <ChartArtifact key={k} spec={(t.result as { spec: import('@/lib/tools').ChartSpec }).spec} />)
+                  }
+
+                  {/* Data-source health check — render the structured card from the tool result */}
+                  {msg.role === 'assistant' && Array.isArray(msg.tools) && msg.tools
+                    .filter(t => t.name === 'check_data_sources' && t.result && typeof t.result === 'object' && Array.isArray((t.result as { sources?: unknown }).sources))
+                    .map((t, k) => <SourceHealthCard key={k} data={t.result as HealthData} />)
                   }
 
                   {/* Files produced by run_code — download chips + inline images */}
