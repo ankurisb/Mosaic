@@ -10,6 +10,7 @@ import { getKey } from '@/lib/keys'
 import { runResearch } from '@/lib/research'
 import { runDiagnose } from '@/lib/diagnose'
 import { mapLimit, TOOL_FANOUT_CONCURRENCY } from '@/lib/concurrency'
+import { parseToolBudget, chatTurnMode, BUILD_TOOL_NAMES } from '@/lib/chat-budget'
 import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
@@ -634,9 +635,17 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         // (b) no upper bound on tool calls, (c) stop_reason='max_tokens' was
         // treated identically to 'end_turn' so a truncated turn looked like
         // success to the loop.
-        const TOOL_CALL_BUDGET = 20
+        // Per-turn tool-call budget. Env-configurable (CHAT_TOOL_CALL_BUDGET),
+        // raised from 20 → 40 so data-heavy reports (a long date range across
+        // several sources) don't routinely trip it. BUILD_GRACE lets the model
+        // keep calling ONLY deliverable tools (run_code/render_*) for a few more
+        // calls after the data budget, so a report is actually built rather than
+        // cut off between gathering and building.
+        const TOOL_CALL_BUDGET = parseToolBudget(process.env.CHAT_TOOL_CALL_BUDGET)
+        const BUILD_GRACE = 6
         let toolCallsUsed = 0
-        let forceSynthesis = false
+        let forceSynthesis = false   // no tools at all: finish in prose (max_tokens recovery, or hard stop)
+        let buildOnly = false        // data budget reached: allow ONLY deliverable tools
         // Prompt caching: the tools block and the system prompt are identical
         // across every iteration of this agentic loop (synthesisNudge aside) and
         // largely across queries, so mark them cacheable. After the first call,
@@ -654,6 +663,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             : t
           return idx === TOOLS.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
         })
+        // Deliverable-only subset, used in the 'build' phase after the data budget
+        // is reached so a report/chart can still be produced from gathered data.
+        const buildTools = cachedTools.filter(t => BUILD_TOOL_NAMES.has(t.name))
         while (true) {
           // Client gone — stop burning model/tool work for a response nobody
           // will read. (send() already no-ops once closed.)
@@ -661,8 +673,13 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           // When the budget is exhausted or the previous turn ran out of tokens
           // mid-synthesis, force a final no-tools turn with a synthesis nudge
           // and generous max_tokens so the model can produce the rca_output JSON.
-          const synthesisNudge = forceSynthesis
+          const approachingCap = !forceSynthesis && !buildOnly && toolCallsUsed >= TOOL_CALL_BUDGET - 4
+          const turnNudge = forceSynthesis
             ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
+            : buildOnly
+            ? '\n\nYou have reached this turn\'s data-gathering limit — do NOT query any data source again. Using ONLY the data already gathered, call run_code / render_chart / render_map to build and return the deliverable the user asked for, then give your final answer in prose. If a deliverable cannot be built from what you have, say so plainly and summarise what you found — never end silently.'
+            : approachingCap
+            ? '\n\nYou are close to this turn\'s tool-call limit. Stop opening new data sources and prioritise building the deliverable and your final answer from the data you already have.'
             : ''
           history = sanitizeHistory(trimHistory(history))
           const resp = await anthropic.messages.create({
@@ -670,9 +687,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             max_tokens: 16384,
             system: [
               { type: 'text' as const, text: fullSystem, cache_control: { type: 'ephemeral' as const } },
-              ...(synthesisNudge ? [{ type: 'text' as const, text: synthesisNudge }] : []),
+              ...(turnNudge ? [{ type: 'text' as const, text: turnNudge }] : []),
             ],
-            tools: cachedTools,
+            tools: buildOnly ? buildTools : cachedTools,
             messages: history,
             stream: true,
             ...(forceSynthesis ? { tool_choice: { type: 'none' as const } } : {}),
@@ -680,7 +697,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             // a forced tool_choice (thinking requires auto tool choice), and the
             // budget is < max_tokens. Resulting thinking blocks are captured below
             // and echoed back in history unmodified (required with tool use).
-            ...(RCA_THINKING && keywordRca && !forceSynthesis
+            ...(RCA_THINKING && keywordRca && !forceSynthesis && !buildOnly
               ? { thinking: { type: 'adaptive' as const }, output_config: { effort: RCA_THINKING_EFFORT } }
               : {}),
           })
@@ -770,9 +787,12 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           // We have tool calls to execute. Bump the counter and decide whether
           // the NEXT turn should be a forced synthesis.
           toolCallsUsed += toolBlocks.length
-          if (toolCallsUsed >= TOOL_CALL_BUDGET) {
-            forceSynthesis = true
-          }
+          // Phase transition from how many tool calls have run: 'build' allows
+          // only deliverable tools (so a report can still be produced from
+          // gathered data); 'synthesis' past the grace stops all tools.
+          const mode = chatTurnMode(toolCallsUsed, TOOL_CALL_BUDGET, BUILD_GRACE)
+          if (mode === 'synthesis') { forceSynthesis = true; buildOnly = false }
+          else if (mode === 'build') { buildOnly = true }
           // Bounded fan-out: cap how many tool calls run at once so a wide turn
           // (e.g. "check all data sources") can't stampede connection pools or
           // shared auth endpoints. The callback never throws (it returns error
@@ -863,6 +883,19 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
             }
           })
           history = [...history, { role: 'assistant', content: [...thinkingBlocks, ...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks] }, { role: 'user', content: toolResults }]
+        }
+        // Anti-silent-failure guard: never end a turn with zero visible output.
+        // If the loop produced no final text (e.g. the tool-call budget tripped a
+        // forced synthesis before a deliverable could be built), tell the user
+        // what happened and how to proceed — and persist it — instead of a blank
+        // reply. (If the client disconnected, there's no one to tell; skip.)
+        if (!finalText.trim() && !streamClosed) {
+          const hitCap = toolCallsUsed >= TOOL_CALL_BUDGET
+          const notice = hitCap
+            ? `I reached my tool-call limit for this turn (${toolCallsUsed} calls) before I could finish putting the answer together, so it came back empty. This usually happens on data-heavy requests — a long date range across several sources. Please narrow it (a shorter range, or fewer machines/sources), or reply “continue” and I’ll pick up from the data I already pulled.`
+            : `I wasn’t able to produce a response that time. Please try again or rephrase — if it keeps happening, narrow the request.`
+          for (const ch of notice.match(/[\s\S]{1,120}/g) || [notice]) send({ type: 'text', text: ch })
+          finalText = notice
         }
         // Persist assistant message + update conversation timestamp
         let rcaBlock: unknown = null

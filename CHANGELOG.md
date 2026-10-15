@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.69] - 2026-10-15
+
+### Fixed
+- **Chat turns can no longer fail silently, and data-heavy reports no longer get cut off by the tool-call budget.** A "last 1 month" report hit the agent's hard `TOOL_CALL_BUDGET` (was 20) during data-gathering; the loop then forced a no-tools synthesis turn *before* the report was built, that turn produced no text, and — because the message is only streamed/persisted when it is non-empty — the user got a blank reply with no error. Two fixes in `app/api/chat/route.ts`:
+  1. **Anti-silent-failure guard.** If a turn ends with empty output, the user now gets a clear message (tool-call limit reached; narrow the request or reply "continue") that is also persisted — never a blank reply.
+  2. **Phased, less brittle budget** (`lib/chat-budget.ts`). The budget is raised 20 → 40 and made env-configurable (`CHAT_TOOL_CALL_BUDGET`). Approaching the cap, the model is nudged to stop opening new sources and build the deliverable. At the cap it enters a **build phase** where only deliverable tools (`run_code`, `render_chart`, `render_map`) are allowed for a small grace (6 calls), so a report is actually built from gathered data instead of being cut off between gathering and building. Only past that grace does it hard-stop to prose.
+
 ## [1.3.68] - 2026-10-15
 
 ### Added
