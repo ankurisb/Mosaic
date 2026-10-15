@@ -106,6 +106,43 @@ export async function runCandidateProbe(input: ProbeInput): Promise<ProbeOutcome
   }
 }
 
+// ── Endpoint validation classifier ──────────────────────────────────────────
+// Given a probe outcome for an endpoint group's root, decide what it actually
+// is. This is the deterministic backbone behind best-effort discovery: whatever
+// endpoints were registered (from a spec, a 404 pattern dump, or the model's
+// guesses), this says which truly serve data — catching both the "module prefix
+// that 404s / returns HTML" case and the "reachable but empty" case, with no LLM
+// in the loop. Classes:
+//   data  — 2xx with a non-empty record list (or a non-list object body)
+//   empty — 2xx but the list is empty (often a missing required param)
+//   dead  — 404, or 2xx HTML: not a real data endpoint (usually a module prefix)
+//   auth  — 401/403: credentials/permission problem for this endpoint
+//   error — 5xx / network / timeout
+export type EpClass = 'data' | 'empty' | 'dead' | 'auth' | 'error'
+export function classifyProbe(out: ProbeOutcome): { cls: EpClass; rows?: number; dataKey?: string; detail: string } {
+  const status = out.status
+  if (!status && out.error) return { cls: 'error', detail: out.error.slice(0, 140) }
+  if (status === 401 || status === 403) return { cls: 'auth', detail: `HTTP ${status} — auth or permission` }
+  if (status === 404) return { cls: 'dead', detail: 'HTTP 404 — not a data endpoint (likely a module prefix)' }
+  if (status >= 500) return { cls: 'error', detail: `HTTP ${status}` }
+  if (status >= 200 && status < 300) {
+    let body: unknown = out.body
+    if (typeof body === 'string') {
+      if (/^\s*<(?:!doctype|html)/i.test(body)) return { cls: 'dead', detail: 'Returned an HTML page, not JSON data' }
+      try { body = JSON.parse(body) } catch { return body.trim() ? { cls: 'data', detail: 'Returned text' } : { cls: 'empty', detail: 'Empty response' } }
+    }
+    if (Array.isArray(body)) return body.length ? { cls: 'data', rows: body.length, dataKey: '(root array)', detail: `${body.length} record${body.length === 1 ? '' : 's'}` } : { cls: 'empty', rows: 0, detail: 'Empty array' }
+    if (body && typeof body === 'object') {
+      const obj = body as Record<string, unknown>
+      const key = Object.keys(obj).find(k => Array.isArray(obj[k]))
+      if (key) { const n = (obj[key] as unknown[]).length; return n ? { cls: 'data', rows: n, dataKey: key, detail: `${n} record${n === 1 ? '' : 's'} under "${key}"` } : { cls: 'empty', rows: 0, dataKey: key, detail: `Empty "${key}" list` } }
+      return { cls: 'data', dataKey: '(object)', detail: 'Object response (not a list)' }
+    }
+    return { cls: 'empty', detail: `HTTP ${status} — no data` }
+  }
+  return { cls: 'error', detail: `HTTP ${status}` }
+}
+
 export interface LoginInspect {
   baseUrl?: string
   login_url: string

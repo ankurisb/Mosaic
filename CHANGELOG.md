@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.67] - 2026-10-15
+
+### Added
+- **"Validate all" in the AI builder's Endpoints pane.** One click probes every registered endpoint group with a cheap authenticated GET and classifies what actually came back — separating *connected* (auth works) from *serves data* (a real, reachable collection). Each endpoint gets a monochrome status glyph (✓ data · ○ reachable-but-empty · ✕ no data · ⦸ auth · ! error) with the detail in a tooltip, plus a roll-up summary ("3 return data · 40 no data") and a one-click **"Remove N with no data"** to prune dead module-prefix endpoints. A data endpoint also unlocks Publish. Backed by a new deterministic `validate_endpoints` action (`app/api/api-builder/route.ts`) and `classifyProbe` (`lib/api-probe.ts`); the whole sweep shares one login (single-flight) so validating 40+ endpoints doesn't stampede the auth endpoint.
+- **AI-led "Test with AI" in the Test & result pane.** Replaces the manual path-typing probe as the primary action: Mosaic picks a real, data-returning path under the selected endpoint group, fills any required query params / path variables itself, probes it, and shows the response here with its reasoning in Ask & refine. The old manual probe (method + path) is still available under an "Advanced" fold.
+
+### Why
+- Two attempts at the same FactoryOS API showed the same underlying bug from opposite sides: one connection saved **43** endpoints (40 of them module prefixes that 404), another saved just **1** (discovery truncated). Root cause: endpoint *discovery* is unreliable when an API has no machine-readable spec (FactoryOS gates its OpenAPI schema behind a superuser session), so the agent improvises the endpoint list. The fix separates best-effort *discovery* ("which endpoints exist") from deterministic *validation* ("which endpoints actually return data"), making a connection's real coverage visible and prunable regardless of how it was discovered — and removes the need to type non-obvious probe params by hand.
+
 ## [1.3.66] - 2026-10-14
 
 ### Removed

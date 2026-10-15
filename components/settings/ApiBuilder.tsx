@@ -78,6 +78,12 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   // even if a later probe on a non-existent path 404s. Reset when the config
   // materially changes (new build / applied refine).
   const [probedOk, setProbedOk] = useState(false)
+  // Per-endpoint validation status (keyed by connection index) + roll-up summary.
+  // Populated by "Validate all" — a deterministic probe of each endpoint group
+  // that classifies what actually came back (data / empty / dead / auth / error).
+  const [epStatus, setEpStatus] = useState<Record<number, { cls: string; rows?: number; dataKey?: string; detail: string; status: number }>>({})
+  const [epSummary, setEpSummary] = useState<{ total: number; data: number; empty: number; dead: number; auth: number; error: number } | null>(null)
+  const [validating, setValidating] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -238,10 +244,71 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   function applyCandidate(c: Candidate) {
     setCandidate(c)
     setProbe(null)
+    setEpStatus({}); setEpSummary(null)   // endpoint set changed — stale validation
     const idx = c.probe?.connection_index ?? 0
     setProbeConnIdx(idx)
     setProbeMethod((c.probe?.method || 'GET').toUpperCase())
     setProbePath(c.probe?.path || '/')
+  }
+
+  // Deterministically probe every endpoint group and classify what came back, so
+  // you can see at a glance which endpoints actually serve data vs. which are
+  // dead module prefixes — without guessing paths. A data endpoint also unlocks
+  // Publish (same as a successful probe).
+  async function validateEndpoints() {
+    if (!candidate || !connections.length || validating) return
+    setValidating(true); setError(null)
+    try {
+      const r = await fetch('/api/api-builder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'validate_endpoints', service: { ...service, auth_config: mergedAuthConfig }, connections }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.ok) { setError(d.error || 'Validation failed'); setValidating(false); return }
+      const map: Record<number, { cls: string; rows?: number; dataKey?: string; detail: string; status: number }> = {}
+      for (const row of d.results) map[row.index] = { cls: row.cls, rows: row.rows, dataKey: row.dataKey, detail: row.detail, status: row.status }
+      setEpStatus(map); setEpSummary(d.summary)
+      if (d.results.some((x: { cls: string }) => x.cls === 'data')) setProbedOk(true)
+    } catch { setError('Validation failed') }
+    setValidating(false)
+  }
+
+  // Drop the endpoints that returned no data (404 / HTML module prefixes) in one
+  // click. Keeps data/empty/auth/error so nothing fixable is lost.
+  function removeDeadEndpoints() {
+    const dead = new Set(Object.entries(epStatus).filter(([, v]) => v.cls === 'dead').map(([k]) => Number(k)))
+    if (!dead.size) return
+    const kept = connections.filter((_, i) => !dead.has(i))
+    setCandidate(c => c ? { ...c, connections: kept } : c)
+    setEpStatus({}); setEpSummary(null)
+    if (probeConnIdx >= kept.length) setProbeConnIdx(0)
+  }
+
+  // AI-led test: instead of making you type a path and guess the required query
+  // params, Mosaic picks a real data-returning endpoint under the selected group,
+  // fills the params itself, probes it, and shows the response here + its
+  // reasoning in Ask & refine.
+  async function aiTest() {
+    if (!candidate || chatBusy || busy) return
+    const conn = connections[probeConnIdx] || {}
+    const target = conn.label || conn.base_path || 'this API'
+    const msg = `Test ${target} (${conn.base_path || '/'}): probe a real path under it that returns data — fill in any required query parameters or path variables yourself — and show me what came back. If the group root returns 404 or an HTML page, find the correct listable endpoint under it and probe that instead.`
+    setChatBusy(true); setBusy('Testing with AI…'); setError(null)
+    setRefineChat(c => [...c, { role: 'user', text: `Test “${target}” with AI` }])
+    try {
+      const r = await fetch('/api/api-builder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'diagnose', mode: 'assist', service: { ...service, auth_config: mergedAuthConfig }, connections, symptom: msg, history: [] }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Request failed')
+      setRefineChat(c => [...c, { role: 'assistant', text: d.diagnosis || d.reason || 'No answer.', steps: d.transcript, probe: d.probe as ProbeResult | undefined, candidate: d.candidate as Candidate | undefined }])
+      if (d.probe) setProbe(d.probe as ProbeResult)
+      if ((d.probe as ProbeResult | undefined)?.ok) setProbedOk(true)
+    } catch (e) {
+      setRefineChat(c => [...c, { role: 'assistant', text: `Sorry — ${e instanceof Error ? e.message : 'request failed'}.` }])
+    }
+    setChatBusy(false); setBusy(null)
   }
 
   async function runProbe() {
@@ -511,16 +578,44 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                 )}
                 {connections.length > 0 && (
                   <div>
-                    <SectionLabel>Endpoints ({connections.length})</SectionLabel>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <SectionLabel>Endpoints ({connections.length})</SectionLabel>
+                      <button type="button" onClick={validateEndpoints} disabled={validating || unfilledSecrets.length > 0}
+                        title={unfilledSecrets.length > 0 ? 'Fill the credentials first' : 'Probe every endpoint and show which return data'}
+                        style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6, padding: '3px 9px', cursor: (validating || unfilledSecrets.length > 0) ? 'default' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5, opacity: unfilledSecrets.length > 0 ? 0.5 : 1 }}>
+                        {validating ? <><Spinner size={10} />Validating…</> : 'Validate all'}
+                      </button>
+                    </div>
+                    {epSummary && (
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, lineHeight: 1.5 }}>
+                        <span style={{ color: 'var(--text2)' }}>{epSummary.data} return data</span>
+                        {epSummary.empty ? ` · ${epSummary.empty} reachable, empty` : ''}
+                        {epSummary.dead ? ` · ${epSummary.dead} no data` : ''}
+                        {epSummary.auth ? ` · ${epSummary.auth} auth` : ''}
+                        {epSummary.error ? ` · ${epSummary.error} error` : ''}
+                        {epSummary.dead > 0 && (
+                          <>{' '}<button type="button" onClick={removeDeadEndpoints}
+                            style={{ fontSize: 11, color: 'var(--text2)', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                            Remove {epSummary.dead} with no data
+                          </button></>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
-                      {connections.map((c, i) => (
-                        <button key={i} type="button"
-                          onClick={() => { setProbeConnIdx(i); setProbePath(i === (candidate.probe?.connection_index ?? 0) ? (candidate.probe?.path || '') : '') }}
-                          style={{ ...epBtn, ...(probeConnIdx === i ? epBtnSel : null) }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{c.label || `Endpoint ${i + 1}`}</span>
-                          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>{c.base_path || '/'}</span>
-                        </button>
-                      ))}
+                      {connections.map((c, i) => {
+                        const st = epStatus[i]
+                        return (
+                          <button key={i} type="button"
+                            onClick={() => { setProbeConnIdx(i); setProbePath(i === (candidate.probe?.connection_index ?? 0) ? (candidate.probe?.path || '') : '') }}
+                            title={st?.detail}
+                            style={{ ...epBtn, ...(probeConnIdx === i ? epBtnSel : null) }}>
+                            {st && <EpIcon cls={st.cls} />}
+                            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{c.label || `Endpoint ${i + 1}`}</span>
+                            {st?.rows != null && <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>{st.rows} row{st.rows === 1 ? '' : 's'}</span>}
+                            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>{c.base_path || '/'}</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -537,26 +632,37 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                 <span>Test &amp; result</span>
                 {probe && typeof probe.latencyMs === 'number' && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text4)', textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{probe.latencyMs}ms</span>}
               </div>
-              <div className="apib-probebar">
-                {connections.length > 1 && (
-                  <select value={probeConnIdx} onChange={e => setProbeConnIdx(Number(e.target.value))} style={{ ...INP, width: 'auto' }}>
-                    {connections.map((c, i) => <option key={i} value={i}>{c.label || `Endpoint ${i + 1}`}</option>)}
-                  </select>
-                )}
-                <select value={probeMethod} onChange={e => setProbeMethod(e.target.value)} style={{ ...INP, width: 'auto' }}>
-                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
-                </select>
-                <input value={probePath} onChange={e => setProbePath(e.target.value)} placeholder="/path?query"
-                  style={{ ...INP, flex: 1, minWidth: 110, fontFamily: 'var(--font-mono)' }} />
-                <Btn variant="primary" size="sm" onClick={runProbe} disabled={!!busy || unfilledSecrets.length > 0}>Probe</Btn>
+              <div className="apib-probebar" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Btn variant="primary" size="sm" onClick={aiTest} disabled={chatBusy || !!busy || unfilledSecrets.length > 0}>Test with AI</Btn>
+                  <span style={{ fontSize: 11, color: 'var(--text4)', lineHeight: 1.4 }}>
+                    {connections.length > 1 ? `Tests “${connections[probeConnIdx]?.label || `Endpoint ${probeConnIdx + 1}`}” — Mosaic picks a real path & fills the params.` : 'Mosaic picks a real endpoint & fills the params.'}
+                  </span>
+                </div>
+                <details>
+                  <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--text3)', userSelect: 'none' }}>Manual probe</summary>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                    {connections.length > 1 && (
+                      <select value={probeConnIdx} onChange={e => setProbeConnIdx(Number(e.target.value))} style={{ ...INP, width: 'auto' }}>
+                        {connections.map((c, i) => <option key={i} value={i}>{c.label || `Endpoint ${i + 1}`}</option>)}
+                      </select>
+                    )}
+                    <select value={probeMethod} onChange={e => setProbeMethod(e.target.value)} style={{ ...INP, width: 'auto' }}>
+                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
+                    </select>
+                    <input value={probePath} onChange={e => setProbePath(e.target.value)} placeholder="/path?query"
+                      style={{ ...INP, flex: 1, minWidth: 110, fontFamily: 'var(--font-mono)' }} />
+                    <Btn size="sm" onClick={runProbe} disabled={!!busy || unfilledSecrets.length > 0}>Probe</Btn>
+                  </div>
+                </details>
               </div>
               <div className="apib-result">
-                {busy === 'Probing the live source…' && <div style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />Calling the source…</div>}
-                {!probe && busy !== 'Probing the live source…' && (
+                {(busy === 'Probing the live source…' || busy === 'Testing with AI…') && <div style={{ fontSize: 12, color: 'var(--text3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} />{busy === 'Testing with AI…' ? 'Mosaic is finding a real endpoint…' : 'Calling the source…'}</div>}
+                {!probe && busy !== 'Probing the live source…' && busy !== 'Testing with AI…' && (
                   <div style={{ fontSize: 12.5, color: 'var(--text4)', lineHeight: 1.5 }}>
                     {unfilledSecrets.length > 0
-                      ? 'Fill the credentials on the left, then Probe.'
-                      : <>Hit <strong>Probe</strong> to call the live endpoint. The response stays here while you refine.</>}
+                      ? 'Fill the credentials on the left, then test.'
+                      : <>Hit <strong>Test with AI</strong> — Mosaic finds a working endpoint, fills the params, and shows the response here. Or open <strong>Manual probe</strong> to call a specific path.</>}
                   </div>
                 )}
                 {probe && (
@@ -653,6 +759,21 @@ function safePreview(body: unknown): string {
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{children}</div>
 )
+// Monochrome status glyph for a validated endpoint — single-hue (greys only), no
+// colour coding, so it reads as a quiet signal next to the endpoint name. The
+// full detail is in the button's title tooltip and the summary line.
+function EpIcon({ cls }: { cls?: string }) {
+  if (!cls) return null
+  const map: Record<string, { g: string; c: string }> = {
+    data:  { g: '✓', c: 'var(--text)' },
+    empty: { g: '○', c: 'var(--text4)' },
+    dead:  { g: '✕', c: 'var(--text4)' },
+    auth:  { g: '⦸', c: 'var(--text3)' },
+    error: { g: '!', c: 'var(--text3)' },
+  }
+  const m = map[cls] || map.error
+  return <span aria-hidden style={{ fontFamily: 'var(--font-mono)', fontSize: 12, width: 13, textAlign: 'center', color: m.c, flexShrink: 0, fontWeight: 600 }}>{m.g}</span>
+}
 function KV({ k, v, mono }: { k: string; v?: string | null; mono?: boolean }) {
   if (!v) return null
   return (

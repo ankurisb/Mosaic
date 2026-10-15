@@ -12,6 +12,9 @@ import { getSession } from '@/lib/auth'
 import { generateApiCandidate, refineApiCandidate } from '@/lib/ai/api-builder-prompt'
 import { runApiAgent, diagnoseApiConnection } from '@/lib/ai/api-agent'
 import { getServiceConfigById } from '@/lib/api-source-store'
+import { runCandidateProbe, classifyProbe } from '@/lib/api-probe'
+import { mapLimit } from '@/lib/concurrency'
+import type { AuthConfig } from '@/lib/api-auth'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
 
 export const runtime = 'nodejs'
@@ -108,6 +111,47 @@ export async function POST(req: Request) {
       if (!svc) return Response.json({ error: 'service or service_id required' }, { status: 400 })
       const r = await diagnoseApiConnection({ service: svc, connections: conns, symptom: String(symptom), history: Array.isArray(history) ? history : undefined, mode: mode === 'assist' ? 'assist' : 'diagnose' })
       return Response.json({ ok: r.ok, diagnosis: r.diagnosis, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, service_id: service_id || null })
+    }
+
+    if (action === 'validate_endpoints') {
+      // Probe every registered endpoint group with a cheap GET and report which
+      // actually return data — separating "connected" (auth works) from "serves
+      // data" (a real, reachable collection). Accepts an inline draft (service +
+      // connections, secrets inline like the diagnose action) or a saved
+      // service_id (config + secrets loaded here). One shared cacheKey means a
+      // session_token login happens once and is reused across all probes
+      // (single-flight), so validating 40 endpoints doesn't stampede the login.
+      const { service_id, service, connections } = body
+      let svc: Record<string, unknown> | undefined = service
+      let conns: Array<Record<string, unknown>> = Array.isArray(connections) ? connections : []
+      if (service_id) {
+        const cfg = await getServiceConfigById(String(service_id))
+        if (!cfg) return Response.json({ error: 'Connection not found' }, { status: 404 })
+        svc = cfg.service as unknown as Record<string, unknown>
+        conns = cfg.connections as unknown as Array<Record<string, unknown>>
+      }
+      if (!svc || !svc.base_url) return Response.json({ error: 'service or service_id required' }, { status: 400 })
+      if (!conns.length) return Response.json({ ok: true, results: [], summary: { total: 0, data: 0, empty: 0, dead: 0, auth: 0, error: 0 } })
+      const cacheKey = `validate:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 7)}`
+      const authConfig = (svc.auth_config || {}) as unknown as AuthConfig
+      const results = await mapLimit(conns, 6, async (c, i) => {
+        const out = await runCandidateProbe({
+          cacheKey,
+          baseUrl: String(svc!.base_url),
+          basePath: String(c.base_path || ''),
+          authType: String(svc!.auth_type || ''),
+          authConfig,
+          defaultHeaders: (svc!.default_headers as Record<string, string>) || {},
+          apiVersion: svc!.api_version ? String(svc!.api_version) : undefined,
+          versionHeader: svc!.version_header ? String(svc!.version_header) : undefined,
+          method: 'GET', path: '/', ssrf: 'lan', timeoutMs: 12000,
+        })
+        const cl = classifyProbe(out)
+        return { index: i, label: (c.label as string) || `Endpoint ${i + 1}`, base_path: String(c.base_path || ''), status: out.status, url: out.url, ...cl }
+      })
+      const summary: Record<string, number> = { total: results.length, data: 0, empty: 0, dead: 0, auth: 0, error: 0 }
+      for (const r of results) summary[r.cls] = (summary[r.cls] || 0) + 1
+      return Response.json({ ok: true, results, summary })
     }
 
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })
