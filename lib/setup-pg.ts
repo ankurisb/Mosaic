@@ -75,6 +75,16 @@ export async function setupDatabasePostgres(): Promise<void> {
     created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
 
+  // Chat folders — per-user grouping of conversations in the sidebar.
+  await sql`CREATE TABLE IF NOT EXISTS chat_folders (
+    id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL DEFAULT 'New folder',
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+  await sql`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS folder_id TEXT`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS db_connections (
     id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     label               TEXT NOT NULL,

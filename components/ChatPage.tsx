@@ -35,7 +35,48 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
 interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number }
-interface Conv { id: string; title: string; messages: Message[] }
+interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
+interface Folder { id: string; name: string; position?: number }
+
+// Persisted, clamped width for a resizable panel (localStorage-backed; falls
+// back gracefully where storage is unavailable).
+function usePersistentWidth(key: string, def: number, min: number, max: number): [number, (v: number) => void] {
+  const [w, setW] = useState(def)
+  useEffect(() => {
+    try { const v = parseInt(localStorage.getItem(key) || '', 10); if (Number.isFinite(v)) setW(Math.min(max, Math.max(min, v))) } catch {}
+  }, [key, min, max])
+  const set = (v: number) => {
+    const c = Math.min(max, Math.max(min, Math.round(v)))
+    setW(c)
+    try { localStorage.setItem(key, String(c)) } catch {}
+  }
+  return [w, set]
+}
+
+// A thin draggable divider sitting on `side` of its (position:relative) parent.
+// dir=+1 → dragging right widens; dir=-1 → dragging left widens (left-edge
+// handle on a right-docked panel).
+function ResizeHandle({ width, setWidth, min, max, dir, side }: { width: number; setWidth: (v: number) => void; min: number; max: number; dir: 1 | -1; side: 'left' | 'right' }) {
+  const start = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const x0 = e.clientX, w0 = width
+    const move = (ev: MouseEvent) => setWidth(Math.min(max, Math.max(min, w0 + dir * (ev.clientX - x0))))
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''; document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'
+  }
+  const style: React.CSSProperties = { position: 'absolute', top: 0, width: 7, height: '100%', cursor: 'col-resize', zIndex: 30, background: 'transparent', transition: 'background .12s' }
+  style[side] = -3
+  return (
+    <div onMouseDown={start} title="Drag to resize"
+      style={style}
+      onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent-bg, var(--border2))')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} />
+  )
+}
 
 const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = []
 
@@ -334,7 +375,7 @@ function classifyFile(name: string, mime: string): string {
 
 type PreviewState = { status: 'loading'|'ready'|'error'|'toobig'|'unsupported'; text?: string; sheets?: Record<string, string[][]>; sheetNames?: string[] }
 
-function FilePreviewPanel({ file, onClose }: { file: GenFile; onClose: () => void }) {
+function FilePreviewPanel({ file, onClose, panelW, setPanelW }: { file: GenFile; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
   const kind = classifyFile(file.name, file.mime)
   const url = `/api/files/${file.id}`
   const [st, setSt] = useState<PreviewState>({ status: 'loading' })
@@ -448,7 +489,8 @@ function FilePreviewPanel({ file, onClose }: { file: GenFile; onClose: () => voi
   else body = <Fallback msg="No inline preview available. Download to view." />
 
   return (
-    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
@@ -492,14 +534,15 @@ function MapChips({ maps, onOpen }: { maps: MapData[]; onOpen: (m: MapData) => v
 
 // Right-side panel wrapper for an interactive map artifact (mirrors the file
 // preview panel's chrome so the two feel like one surface).
-function MapPanel({ map, onClose }: { map: MapData; onClose: () => void }) {
+function MapPanel({ map, onClose, panelW, setPanelW }: { map: MapData; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{map.title || 'Map'}</div>
@@ -514,7 +557,7 @@ function MapPanel({ map, onClose }: { map: MapData; onClose: () => void }) {
 
 // Live "Research workspace": the lead agent and each sub-agent with status, the
 // tool it's using now, and its finding — the Phase 3 orchestration view.
-function ResearchPanel({ research, onClose }: { research: ResearchState; onClose: () => void }) {
+function ResearchPanel({ research, onClose, panelW, setPanelW }: { research: ResearchState; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -554,7 +597,8 @@ function ResearchPanel({ research, onClose }: { research: ResearchState; onClose
   }
   const pct = (c?: number) => Math.round((c ?? 0) * 100)
   return (
-    <div style={{ width: 'min(48vw, 560px)', minWidth: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{dx ? 'Diagnosis workspace' : 'Research workspace'}</div>
@@ -752,6 +796,16 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [pinnedSources, setPinnedSources] = useState<DataSource[]>([])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [convSearch, setConvSearch] = useState('')
+  // Resizable panel widths (persisted). Sidebar 200–460; right panel 320–1100.
+  const [sidebarWidth, setSidebarWidth] = usePersistentWidth('mosaic.sidebarW', 240, 200, 460)
+  const [panelWidth, setPanelWidth] = usePersistentWidth('mosaic.panelW', 560, 320, 1100)
+  // Chat folders.
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('mosaic.collapsedFolders') || '[]')) } catch { return new Set() }
+  })
+  const [moveMenuFor, setMoveMenuFor] = useState<string | null>(null)   // conversation id whose move-menu is open
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
   const [plusOpen, setPlusOpen] = useState(false)
   const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
   const [srcSearch, setSrcSearch] = useState('')
@@ -888,8 +942,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         if (data.conversations?.length) {
           // Keep any unsaved local conversations + prepend with DB ones
           setConvs(prev => {
-            const dbConvs: Conv[] = data.conversations.map((c: { id: string; title: string }) => ({
-              id: c.id, title: c.title, messages: [],
+            const dbConvs: Conv[] = data.conversations.map((c: { id: string; title: string; folder_id?: string | null }) => ({
+              id: c.id, title: c.title, messages: [], folderId: c.folder_id ?? null,
             }))
             const localUnsaved = prev.filter(c => c.id.startsWith('local-') && c.messages.length > 0)
             return [...localUnsaved, ...dbConvs]
@@ -899,7 +953,81 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       })
       .catch(() => {})
       .finally(() => setLoadingConvs(false))
+    // Load the user's chat folders.
+    fetch('/api/folders').then(r => r.json()).then(d => { if (Array.isArray(d.folders)) setFolders(d.folders) }).catch(() => {})
   }, [])
+
+  // Persist folder collapse state.
+  useEffect(() => {
+    try { localStorage.setItem('mosaic.collapsedFolders', JSON.stringify([...collapsedFolders])) } catch {}
+  }, [collapsedFolders])
+
+  // ── Folder operations ───────────────────────────────────────────────────
+  async function createFolder(): Promise<string | null> {
+    try {
+      const r = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New folder' }) })
+      const d = await r.json()
+      if (d.folder) { setFolders(f => [...f, d.folder]); setRenamingFolder(d.folder.id); return d.folder.id }
+    } catch {}
+    return null
+  }
+  async function renameFolder(id: string, name: string) {
+    const trimmed = name.trim(); if (!trimmed) return
+    setFolders(f => f.map(x => x.id === id ? { ...x, name: trimmed } : x))
+    fetch('/api/folders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: trimmed }) }).catch(() => {})
+  }
+  async function deleteFolder(id: string) {
+    setFolders(f => f.filter(x => x.id !== id))
+    setConvs(p => p.map(c => c.folderId === id ? { ...c, folderId: null } : c))
+    fetch('/api/folders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {})
+  }
+  // Move a conversation into a folder (or out, folderId=null). Server-backed
+  // conversations only — a brand-new local chat is folderable once it has saved.
+  async function moveConv(convId: string, folderId: string | null) {
+    setMoveMenuFor(null)
+    if (convId.startsWith('local-')) return
+    setConvs(p => p.map(c => c.id === convId ? { ...c, folderId } : c))
+    fetch(`/api/conversations/${convId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder_id: folderId }) }).catch(() => {})
+  }
+  function toggleFolder(id: string) {
+    setCollapsedFolders(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  const fMenuItem: React.CSSProperties = { width: '100%', padding: '6px 8px', background: 'none', border: 'none', fontSize: 12, color: 'var(--text2)', cursor: 'pointer', textAlign: 'left', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
+  // One conversation row, with a move-to-folder menu and delete. Shared by the
+  // grouped (folder) and ungrouped lists.
+  const renderConvRow = (conv: Conv) => (
+    <div key={conv.id} className="conv-row" onClick={() => setActiveId(conv.id)}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
+      <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
+      {!conv.id.startsWith('local-') && (
+        <button onClick={e => { e.stopPropagation(); setMoveMenuFor(moveMenuFor === conv.id ? null : conv.id) }} title="Move to folder" className="conv-row-btn"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', paddingLeft: 2, flexShrink: 0, opacity: moveMenuFor === conv.id ? 1 : 0, display: 'flex' }}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
+        </button>
+      )}
+      <button onClick={e => delConv(conv.id, e)} title="Delete" className="conv-row-btn"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+      </button>
+      {moveMenuFor === conv.id && (
+        <>
+          <div onClick={e => { e.stopPropagation(); setMoveMenuFor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 2px)', right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', padding: 5, width: 184, zIndex: 61, maxHeight: 280, overflowY: 'auto' }}>
+            <div style={{ fontSize: 10, color: 'var(--text4)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Move to</div>
+            {conv.folderId && <button style={fMenuItem} onClick={() => moveConv(conv.id, null)}>Remove from folder</button>}
+            {folders.filter(f => f.id !== conv.folderId).map(f => (
+              <button key={f.id} style={fMenuItem} onClick={() => moveConv(conv.id, f.id)}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>{f.name}</button>
+            ))}
+            <button style={{ ...fMenuItem, color: 'var(--text3)', borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 7 }}
+              onClick={async () => { const fid = await createFolder(); if (fid) moveConv(conv.id, fid) }}>+ New folder</button>
+          </div>
+        </>
+      )}
+    </div>
+  )
 
   // Load messages when switching to a DB conversation
   useEffect(() => {
@@ -1213,7 +1341,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* -- Sidebar -- */}
-      <div style={{ width: sidebarCollapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
+      <div style={{ width: sidebarCollapsed ? 56 : sidebarWidth, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: sidebarCollapsed ? 'width .2s ease' : 'none', overflow: 'visible' }}>
+        {!sidebarCollapsed && <ResizeHandle width={sidebarWidth} setWidth={setSidebarWidth} min={200} max={460} dir={1} side="right" />}
 
         {/* Logo — extra top padding so the wordmark clears the window's top edge /
             macOS traffic-light title bar in the Electron desktop app. */}
@@ -1281,15 +1410,56 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   </button>
                 )}
               </div>
-              {convs.filter(conv => !convSearch || conv.title.toLowerCase().includes(convSearch.toLowerCase())).map(conv => (
-                <div key={conv.id} onClick={() => setActiveId(conv.id)}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
-                  <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
-                  <button onClick={e => delConv(conv.id, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, paddingLeft: 6, flexShrink: 0, opacity: 0 }} className="conv-del-btn">
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
-                  </button>
-                </div>
-              ))}
+              <style>{`.conv-row:hover .conv-row-btn{opacity:1 !important}`}</style>
+              <button onClick={createFolder} title="New folder"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 6, background: 'none', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text3)', fontSize: 11, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7 3.5v7M3.5 7h7"/></svg> New folder
+              </button>
+              {(() => {
+                const q = convSearch.toLowerCase()
+                const match = (c: Conv) => !q || c.title.toLowerCase().includes(q)
+                const visible = convs.filter(match)
+                const ungrouped = visible.filter(c => !c.folderId)
+                return (
+                  <>
+                    {folders.map(f => {
+                      const items = visible.filter(c => c.folderId === f.id)
+                      const open = !collapsedFolders.has(f.id)
+                      return (
+                        <div key={f.id} style={{ marginBottom: 2 }}>
+                          <div onClick={() => toggleFolder(f.id)} className="conv-row"
+                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            <span style={{ fontSize: 9, color: 'var(--text4)', width: 10, flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>▶</span>
+                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text3)', flexShrink: 0 }}><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
+                            {renamingFolder === f.id ? (
+                              <input autoFocus defaultValue={f.name} onClick={e => e.stopPropagation()}
+                                onBlur={e => { renameFolder(f.id, e.target.value); setRenamingFolder(null) }}
+                                onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, (e.target as HTMLInputElement).value); setRenamingFolder(null) } if (e.key === 'Escape') setRenamingFolder(null) }}
+                                style={{ flex: 1, fontSize: 12, padding: '1px 4px', border: '1px solid var(--border2)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', minWidth: 0 }} />
+                            ) : (
+                              <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                            )}
+                            <span style={{ fontSize: 10, color: 'var(--text4)', flexShrink: 0 }}>{items.length}</span>
+                            <button onClick={e => { e.stopPropagation(); setRenamingFolder(f.id) }} title="Rename folder" className="conv-row-btn"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
+                              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2l3 3-7 7H2v-3z"/></svg>
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); if (confirm(`Delete folder "${f.name}"? Chats inside move to Ungrouped (they are not deleted).`)) deleteFolder(f.id) }} title="Delete folder" className="conv-row-btn"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
+                              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3.5h10M5 3.5V2h4v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5"/></svg>
+                            </button>
+                          </div>
+                          {open && <div style={{ paddingLeft: 10 }}>{items.length ? items.map(renderConvRow) : <div style={{ fontSize: 11, color: 'var(--text4)', padding: '4px 10px' }}>Empty — move chats here from the ⋯ menu</div>}</div>}
+                        </div>
+                      )
+                    })}
+                    {folders.length > 0 && ungrouped.length > 0 && <div style={{ fontSize: 10, color: 'var(--text4)', padding: '8px 8px 3px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Ungrouped</div>}
+                    {ungrouped.map(renderConvRow)}
+                  </>
+                )
+              })()}
             </>
           )}
         </div>
@@ -1815,9 +1985,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
-      {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} />}
-      {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} />}
-      {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} />}
+      {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
+      {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
+      {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
     </div>
   )
 }

@@ -92,6 +92,16 @@ export async function setupDatabase() {
   await sql`ALTER TABLE messages ADD COLUMN tool_calls TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
   await sql`ALTER TABLE messages ADD COLUMN rca_block  TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
 
+  // Chat folders — per-user grouping of conversations in the sidebar.
+  await sql`CREATE TABLE IF NOT EXISTS chat_folders (
+    id         TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL DEFAULT 'New folder',
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`
+  await sql`ALTER TABLE conversations ADD COLUMN folder_id TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+
   // -- Database connections --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS db_connections (
     id                  TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),

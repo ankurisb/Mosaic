@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.71] - 2026-10-15
+
+### Added
+- **Chat folders.** Organise conversations in the sidebar into per-user folders. A "New folder" button sits above the chat list; folders are collapsible (with a count), rename in place, and delete (chats inside move to Ungrouped, not deleted — collapse state persists per browser). Each chat has a hover menu to move it into a folder, create a folder and move it there, or remove it from its folder. Backed by a new `chat_folders` table + `conversations.folder_id` (migration `017_chat_folders.sql`, plus setup for fresh installs), a `/api/folders` CRUD route, and `PATCH /api/conversations/[id]` extended to move a chat between folders.
+- **Resizable panels.** The sidebar and the right-hand panel (file preview / map / research workspace) now have draggable dividers, and their widths persist per browser (`localStorage`). Sidebar clamps 200–460px, the right panel 320–1100px; the sidebar collapse toggle still works.
+
 ## [1.3.70] - 2026-10-15
 
 ### Note

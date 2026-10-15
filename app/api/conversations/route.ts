@@ -7,7 +7,7 @@ export async function GET() {
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const sql = getDb()
   const rows = await sql`
-    SELECT c.id, c.title, c.created_at, c.updated_at,
+    SELECT c.id, c.title, c.folder_id, c.created_at, c.updated_at,
            COUNT(m.id) AS message_count
     FROM conversations c
     LEFT JOIN messages m ON m.conversation_id = c.id
