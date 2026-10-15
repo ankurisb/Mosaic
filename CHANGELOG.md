@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.70] - 2026-10-15
+
+### Note
+- Re-release of **1.3.69** under a fresh tag. The `v1.3.69` tag was accidentally created on the previous commit (the v1.3.68 HEAD) before the chat-budget commit was pulled, so it would have shipped the wrong code. No code changes beyond 1.3.69 — the chat anti-silent-failure + phased tool-call budget fix below is the payload.
+
 ## [1.3.69] - 2026-10-15
 
 ### Fixed
