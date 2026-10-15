@@ -175,7 +175,7 @@ export async function POST(req: Request) {
         cacheKey, baseUrl: String(svc.base_url), authType: String(svc.auth_type || ''),
         authConfig, defaultHeaders: (svc.default_headers as Record<string, string>) || {},
       })
-      const candidates = disc.collections.slice(0, 120)
+      const candidates = disc.collections.slice(0, 200)
       const validated = await mapLimit(candidates, 8, async (c) => {
         const out = await runCandidateProbe({
           cacheKey, baseUrl: String(svc!.base_url), basePath: c.path,

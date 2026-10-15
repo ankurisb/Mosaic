@@ -35,11 +35,25 @@ function labelFor(path: string): string {
 export function parseDjangoDebugRoutes(html: string): { path: string; name?: string }[] {
   if (!/Using the URLconf|Django tried these URL patterns/i.test(html)) return []
   const out: { path: string; name?: string }[] = []
-  const re = /<code>([^<]+)<\/code>(?:[\s\S]{0,180}?\[name=['"]([^'"]+)['"]\])?/g
+  // Each registered pattern is wrapped in a <code> block. On the real page the
+  // route name sits INSIDE the block on the next line
+  // ("mes/shifts/\n   [name='list_shifts']"), so the block spans newlines — take
+  // only the first line as the path, and read the name from inside the block (or
+  // just after it, for layouts that put it there). A single <code> prefix node
+  // ("api/") repeats before each leaf; that's fine — it resolves to a redundant
+  // path that live validation drops.
+  const re = /<code>([\s\S]*?)<\/code>(?:\s*\[name=['"]([^'"]+)['"]\])?/g
   let m: RegExpExecArray | null
   while ((m = re.exec(html))) {
-    const path = m[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim()
-    if (path) out.push({ path, name: m[2] })
+    const raw = m[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    // The real page indents the content, so it starts with a newline — the path
+    // is the first NON-EMPTY line, and the name (when present) is a later line.
+    const lines = raw.split('\n').map(s => s.trim()).filter(Boolean)
+    if (!lines.length) continue
+    const path = lines[0]
+    const nameLine = lines.find(l => /^\[name=/.test(l))
+    const inName = nameLine ? (nameLine.match(/\[name=['"]([^'"]+)['"]\]/) || [])[1] : undefined
+    out.push({ path, name: inName || m[2] })
   }
   return out
 }
