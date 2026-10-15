@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.68] - 2026-10-15
+
+### Added
+- **"Discover" in the AI builder's Endpoints pane — multi-source endpoint discovery.** Fixes the *under-coverage* side of the problem (a connection that saved only 1 endpoint). Discovery now tries, in order: (1) an authenticated OpenAPI/Swagger spec, then (2) the server's own **route map** — a Django DEBUG 404 page lists every registered URL pattern. Whatever it finds is run through the deterministic validator, so only real, data-returning collections are proposed. The result shows the source ("via OpenAPI spec" / "via server route map"), a monochrome list of the data endpoints found (with record counts and the detected records key), and a one-click **"Add N endpoints"** that merges them into the draft (de-duped, carrying the records key as `pagination_data_path`). New `discover_endpoints` action (`app/api/api-builder/route.ts`) + `lib/api-discover.ts` (`discoverEndpoints`, `parseDjangoDebugRoutes`, `selectCollectionPaths`). One shared login across the whole sweep (single-flight).
+
+### Why
+- The same root cause as 1.3.67, from the opposite side: endpoint *discovery* is unreliable when an API has no reachable machine-readable spec (FactoryOS gates `openapi.json` behind a superuser session), so the agent improvises and under- or over-captures. The FactoryOS route map exposes ~748 real routes, and crucially shows the real data collections are **deep paths** (`mes/assets/oee/`, `core/tenants`) — not the module roots (`/mes`, `/core`) that were being saved and 404ing. Discovery + validation together now yield the real collections, generalising to any API that hides its spec.
+- **Scope note:** the route-map source reads Django's DEBUG URL dump, which only exists when `DEBUG=True` (dev/on-prem); a locked-down production app hides it, and there the spec path carries discovery. The UI always names which source found the endpoints.
+
 ## [1.3.67] - 2026-10-15
 
 ### Added

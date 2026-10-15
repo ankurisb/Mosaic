@@ -13,6 +13,7 @@ import { generateApiCandidate, refineApiCandidate } from '@/lib/ai/api-builder-p
 import { runApiAgent, diagnoseApiConnection } from '@/lib/ai/api-agent'
 import { getServiceConfigById } from '@/lib/api-source-store'
 import { runCandidateProbe, classifyProbe } from '@/lib/api-probe'
+import { discoverEndpoints } from '@/lib/api-discover'
 import { mapLimit } from '@/lib/concurrency'
 import type { AuthConfig } from '@/lib/api-auth'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
@@ -152,6 +153,47 @@ export async function POST(req: Request) {
       const summary: Record<string, number> = { total: results.length, data: 0, empty: 0, dead: 0, auth: 0, error: 0 }
       for (const r of results) summary[r.cls] = (summary[r.cls] || 0) + 1
       return Response.json({ ok: true, results, summary })
+    }
+
+    if (action === 'discover_endpoints') {
+      // Enumerate real endpoint collections for a service that under-covers the
+      // API (e.g. only 1 endpoint saved). Multi-source: OpenAPI spec first, then
+      // the server's route map. Each discovered collection is then validated with
+      // a live probe so we only propose ones that actually return data — the
+      // non-/api routes and param-only routes fall out here (they 404 under base).
+      const { service_id, service } = body
+      let svc: Record<string, unknown> | undefined = service
+      if (service_id) {
+        const cfg = await getServiceConfigById(String(service_id))
+        if (!cfg) return Response.json({ error: 'Connection not found' }, { status: 404 })
+        svc = cfg.service as unknown as Record<string, unknown>
+      }
+      if (!svc || !svc.base_url) return Response.json({ error: 'service or service_id required' }, { status: 400 })
+      const cacheKey = `discover:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 7)}`
+      const authConfig = (svc.auth_config || {}) as unknown as AuthConfig
+      const disc = await discoverEndpoints({
+        cacheKey, baseUrl: String(svc.base_url), authType: String(svc.auth_type || ''),
+        authConfig, defaultHeaders: (svc.default_headers as Record<string, string>) || {},
+      })
+      const candidates = disc.collections.slice(0, 120)
+      const validated = await mapLimit(candidates, 8, async (c) => {
+        const out = await runCandidateProbe({
+          cacheKey, baseUrl: String(svc!.base_url), basePath: c.path,
+          authType: String(svc!.auth_type || ''), authConfig,
+          defaultHeaders: (svc!.default_headers as Record<string, string>) || {},
+          apiVersion: svc!.api_version ? String(svc!.api_version) : undefined,
+          versionHeader: svc!.version_header ? String(svc!.version_header) : undefined,
+          method: 'GET', path: '/', ssrf: 'lan', timeoutMs: 8000,
+        })
+        const cl = classifyProbe(out)
+        return { path: c.path, label: c.label, status: out.status, ...cl }
+      })
+      // Propose the reachable data endpoints (data + reachable-but-empty); the
+      // dead/auth/error ones are returned too so the UI can show what was skipped.
+      const proposed = validated.filter(v => v.cls === 'data' || v.cls === 'empty')
+      const summary: Record<string, number> = { scanned: disc.collections.length, probed: validated.length, data: 0, empty: 0, dead: 0, auth: 0, error: 0 }
+      for (const v of validated) summary[v.cls] = (summary[v.cls] || 0) + 1
+      return Response.json({ ok: true, source: disc.source, note: disc.note, proposed, all: validated, summary })
     }
 
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })

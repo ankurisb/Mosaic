@@ -84,6 +84,10 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   const [epStatus, setEpStatus] = useState<Record<number, { cls: string; rows?: number; dataKey?: string; detail: string; status: number }>>({})
   const [epSummary, setEpSummary] = useState<{ total: number; data: number; empty: number; dead: number; auth: number; error: number } | null>(null)
   const [validating, setValidating] = useState(false)
+  // Multi-source endpoint discovery (spec → server route map), for a service that
+  // under-covers the API. Proposes the real data collections to add.
+  const [discovering, setDiscovering] = useState(false)
+  const [discovered, setDiscovered] = useState<{ source: string; note?: string; proposed: Array<{ path: string; label: string; cls: string; rows?: number; dataKey?: string }> } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const probeId = useRef(`draft-${Date.now().toString(36)}`)
 
@@ -244,7 +248,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
   function applyCandidate(c: Candidate) {
     setCandidate(c)
     setProbe(null)
-    setEpStatus({}); setEpSummary(null)   // endpoint set changed — stale validation
+    setEpStatus({}); setEpSummary(null); setDiscovered(null)   // endpoint set changed — stale validation/discovery
     const idx = c.probe?.connection_index ?? 0
     setProbeConnIdx(idx)
     setProbeMethod((c.probe?.method || 'GET').toUpperCase())
@@ -271,6 +275,41 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
       if (d.results.some((x: { cls: string }) => x.cls === 'data')) setProbedOk(true)
     } catch { setError('Validation failed') }
     setValidating(false)
+  }
+
+  // Enumerate the API's real endpoint collections (spec → server route map) and
+  // propose the data-returning ones to add — the fix for a connection that only
+  // covers a handful of the API's endpoints.
+  async function discoverMore() {
+    if (!candidate || discovering) return
+    setDiscovering(true); setError(null); setDiscovered(null)
+    try {
+      const r = await fetch('/api/api-builder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'discover_endpoints', service: { ...service, auth_config: mergedAuthConfig } }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.ok) { setError(d.error || 'Discovery failed'); setDiscovering(false); return }
+      setDiscovered({ source: d.source, note: d.note, proposed: d.proposed || [] })
+    } catch { setError('Discovery failed') }
+    setDiscovering(false)
+  }
+
+  // Merge discovered collections into the draft (dedup against existing
+  // base_paths; carry the detected records key as pagination_data_path).
+  function addDiscovered() {
+    if (!discovered) return
+    const existing = new Set(connections.map(c => (c.base_path || '').replace(/\/$/, '')))
+    const toAdd = discovered.proposed
+      .filter(p => !existing.has(p.path.replace(/\/$/, '')))
+      .map(p => ({
+        label: p.label,
+        base_path: p.path,
+        pagination_data_path: p.dataKey && p.dataKey !== '(root array)' && p.dataKey !== '(object)' ? p.dataKey : null,
+      } as ConnDraft))
+    if (!toAdd.length) { setDiscovered(null); return }
+    setCandidate(c => c ? { ...c, connections: [...(c.connections || []), ...toAdd] } : c)
+    setEpStatus({}); setEpSummary(null); setDiscovered(null); setProbedOk(true)
   }
 
   // Drop the endpoints that returned no data (404 / HTML module prefixes) in one
@@ -580,12 +619,43 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <SectionLabel>Endpoints ({connections.length})</SectionLabel>
-                      <button type="button" onClick={validateEndpoints} disabled={validating || unfilledSecrets.length > 0}
-                        title={unfilledSecrets.length > 0 ? 'Fill the credentials first' : 'Probe every endpoint and show which return data'}
-                        style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6, padding: '3px 9px', cursor: (validating || unfilledSecrets.length > 0) ? 'default' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5, opacity: unfilledSecrets.length > 0 ? 0.5 : 1 }}>
-                        {validating ? <><Spinner size={10} />Validating…</> : 'Validate all'}
-                      </button>
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button type="button" onClick={discoverMore} disabled={discovering || unfilledSecrets.length > 0}
+                          title={unfilledSecrets.length > 0 ? 'Fill the credentials first' : 'Find the API’s real endpoints (reads its spec, else the server route map)'}
+                          style={{ ...epActionBtn, cursor: (discovering || unfilledSecrets.length > 0) ? 'default' : 'pointer', opacity: unfilledSecrets.length > 0 ? 0.5 : 1 }}>
+                          {discovering ? <><Spinner size={10} />Discovering…</> : 'Discover'}
+                        </button>
+                        <button type="button" onClick={validateEndpoints} disabled={validating || unfilledSecrets.length > 0}
+                          title={unfilledSecrets.length > 0 ? 'Fill the credentials first' : 'Probe every endpoint and show which return data'}
+                          style={{ ...epActionBtn, cursor: (validating || unfilledSecrets.length > 0) ? 'default' : 'pointer', opacity: unfilledSecrets.length > 0 ? 0.5 : 1 }}>
+                          {validating ? <><Spinner size={10} />Validating…</> : 'Validate all'}
+                        </button>
+                      </div>
                     </div>
+                    {discovered && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', border: '1px solid var(--border2)', borderRadius: 8, background: 'var(--bg3)' }}>
+                        <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5 }}>
+                          {discovered.proposed.length > 0
+                            ? <>Found <strong>{discovered.proposed.length}</strong> data endpoint{discovered.proposed.length !== 1 ? 's' : ''} <span style={{ color: 'var(--text4)' }}>· via {discovered.source === 'route-map' ? 'server route map' : discovered.source === 'spec' ? 'OpenAPI spec' : discovered.source}</span></>
+                            : <>No new data endpoints found. <span style={{ color: 'var(--text4)' }}>{discovered.note}</span></>}
+                        </div>
+                        {discovered.proposed.length > 0 && (
+                          <>
+                            <div style={{ maxHeight: 130, overflow: 'auto', margin: '7px 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              {discovered.proposed.map((p, i) => (
+                                <div key={i} style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 7, alignItems: 'center' }}>
+                                  <EpIcon cls={p.cls} />
+                                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
+                                  {p.rows != null && <span style={{ color: 'var(--text4)' }}>{p.rows}</span>}
+                                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text3)', fontSize: 10.5 }}>{p.path}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <Btn size="sm" variant="primary" onClick={addDiscovered}>Add {discovered.proposed.length} endpoint{discovered.proposed.length !== 1 ? 's' : ''}</Btn>
+                          </>
+                        )}
+                      </div>
+                    )}
                     {epSummary && (
                       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, lineHeight: 1.5 }}>
                         <span style={{ color: 'var(--text2)' }}>{epSummary.data} return data</span>
@@ -787,6 +857,7 @@ const card: React.CSSProperties = { background: 'var(--bg)', border: '1px solid 
 const chip: React.CSSProperties = { fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 10px' }
 const pre: React.CSSProperties = { marginTop: 8, padding: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)', overflow: 'auto', maxHeight: 280, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
 const badge: React.CSSProperties = { fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 999, padding: '2px 9px', textTransform: 'none', letterSpacing: 0, fontWeight: 500 }
+const epActionBtn: React.CSSProperties = { fontSize: 11, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6, padding: '3px 9px', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }
 const epBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px', fontFamily: 'inherit' }
 const epBtnSel: React.CSSProperties = { borderColor: '#615cf5', background: 'rgba(97,92,245,0.09)' }
 // Cockpit: three panes (Draft · Test&result · Refine) that fill one screen —
