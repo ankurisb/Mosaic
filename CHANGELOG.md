@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.72] - 2026-10-16
+
+### Added
+- **Mobile: Phase 1 — installable PWA + mobile chat shell.** Mosaic now installs to a phone's home screen (web manifest, maskable icons, Apple touch icon, `black-translucent` status bar) and runs full-screen standalone, with a conservative service worker that caches only static assets + an offline fallback page (never API or authenticated HTML). The chat surface is now phone-native below a 760px breakpoint: the sidebar becomes a slide-over **drawer** (hamburger in a mobile top bar, backdrop, auto-closes on select/new chat), the file/map/research panels open as **full-screen sheets**, the composer docks to the bottom with home-indicator safe-area padding, message gutters tighten, and the desktop resize handles don't render. Desktop above the breakpoint is byte-for-byte unchanged.
+- The root layout now sets the mobile **viewport** (`width=device-width`, `viewport-fit=cover`, per-mode `theme-color`) — previously absent, which made the app render desktop-zoomed on phones — plus safe-area CSS vars and `100dvh` sizing.
+
+### Note
+- This is Phase 1. Phase 2 (SSE reconnect/resume so long reports survive a screen-lock, and Web Push) and an optional Phase 3 (Capacitor store wrapper) are planned separately.
+
 ## [1.3.71] - 2026-10-15
 
 ### Added

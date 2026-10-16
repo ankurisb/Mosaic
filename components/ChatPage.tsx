@@ -38,6 +38,19 @@ interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCal
 interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
 interface Folder { id: string; name: string; position?: number }
 
+// True on phone-width viewports. Drives the mobile chat shell (drawer sidebar,
+// full-screen panels, bottom-docked composer) without touching desktop.
+function useIsMobile(breakpoint = 760): boolean {
+  const [m, setM] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    const on = () => setM(mq.matches)
+    on(); mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [breakpoint])
+  return m
+}
+
 // Persisted, clamped width for a resizable panel (localStorage-backed; falls
 // back gracefully where storage is unavailable).
 function usePersistentWidth(key: string, def: number, min: number, max: number): [number, (v: number) => void] {
@@ -375,7 +388,7 @@ function classifyFile(name: string, mime: string): string {
 
 type PreviewState = { status: 'loading'|'ready'|'error'|'toobig'|'unsupported'; text?: string; sheets?: Record<string, string[][]>; sheetNames?: string[] }
 
-function FilePreviewPanel({ file, onClose, panelW, setPanelW }: { file: GenFile; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
+function FilePreviewPanel({ file, onClose, panelW, setPanelW, mobile }: { file: GenFile; onClose: () => void; panelW: number; setPanelW: (v: number) => void; mobile: boolean }) {
   const kind = classifyFile(file.name, file.mime)
   const url = `/api/files/${file.id}`
   const [st, setSt] = useState<PreviewState>({ status: 'loading' })
@@ -489,8 +502,10 @@ function FilePreviewPanel({ file, onClose, panelW, setPanelW }: { file: GenFile;
   else body = <Fallback msg="No inline preview available. Download to view." />
 
   return (
-    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
-      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
+    <div style={mobile
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
@@ -534,15 +549,17 @@ function MapChips({ maps, onOpen }: { maps: MapData[]; onOpen: (m: MapData) => v
 
 // Right-side panel wrapper for an interactive map artifact (mirrors the file
 // preview panel's chrome so the two feel like one surface).
-function MapPanel({ map, onClose, panelW, setPanelW }: { map: MapData; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
+function MapPanel({ map, onClose, panelW, setPanelW, mobile }: { map: MapData; onClose: () => void; panelW: number; setPanelW: (v: number) => void; mobile: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
-      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
+    <div style={mobile
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{map.title || 'Map'}</div>
@@ -557,7 +574,7 @@ function MapPanel({ map, onClose, panelW, setPanelW }: { map: MapData; onClose: 
 
 // Live "Research workspace": the lead agent and each sub-agent with status, the
 // tool it's using now, and its finding — the Phase 3 orchestration view.
-function ResearchPanel({ research, onClose, panelW, setPanelW }: { research: ResearchState; onClose: () => void; panelW: number; setPanelW: (v: number) => void }) {
+function ResearchPanel({ research, onClose, panelW, setPanelW, mobile }: { research: ResearchState; onClose: () => void; panelW: number; setPanelW: (v: number) => void; mobile: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -597,8 +614,10 @@ function ResearchPanel({ research, onClose, panelW, setPanelW }: { research: Res
   }
   const pct = (c?: number) => Math.round((c ?? 0) * 100)
   return (
-    <div style={{ width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
-      <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />
+    <div style={mobile
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{dx ? 'Diagnosis workspace' : 'Research workspace'}</div>
@@ -799,6 +818,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   // Resizable panel widths (persisted). Sidebar 200–460; right panel 320–1100.
   const [sidebarWidth, setSidebarWidth] = usePersistentWidth('mosaic.sidebarW', 240, 200, 460)
   const [panelWidth, setPanelWidth] = usePersistentWidth('mosaic.panelW', 560, 320, 1100)
+  // Mobile shell: the sidebar becomes an off-canvas drawer, panels go full-screen.
+  const isMobile = useIsMobile()
+  const [mobileNav, setMobileNav] = useState(false)
   // Chat folders.
   const [folders, setFolders] = useState<Folder[]>([])
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => {
@@ -998,7 +1020,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   // One conversation row, with a move-to-folder menu and delete. Shared by the
   // grouped (folder) and ungrouped lists.
   const renderConvRow = (conv: Conv) => (
-    <div key={conv.id} className="conv-row" onClick={() => setActiveId(conv.id)}
+    <div key={conv.id} className="conv-row" onClick={() => { setActiveId(conv.id); if (isMobile) setMobileNav(false) }}
       style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
       <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
       {!conv.id.startsWith('local-') && (
@@ -1056,6 +1078,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     const id = `local-${Date.now()}`
     setConvs(p => [{ id, title: 'New conversation', messages: [] }, ...p])
     setActiveId(id)
+    if (isMobile) setMobileNav(false)
   }
 
   function delConv(id: string, e: React.MouseEvent) {
@@ -1337,12 +1360,16 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const toolLabel: Record<string, string> = { web_search: ' Web search', query_database: ' Database query', call_api: ' API call' }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
+      {/* Mobile drawer backdrop */}
+      {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
 
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* -- Sidebar -- */}
-      <div style={{ width: sidebarCollapsed ? 56 : sidebarWidth, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: sidebarCollapsed ? 'width .2s ease' : 'none', overflow: 'visible' }}>
-        {!sidebarCollapsed && <ResizeHandle width={sidebarWidth} setWidth={setSidebarWidth} min={200} max={460} dir={1} side="right" />}
+      <div style={isMobile
+        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)' }
+        : { width: sidebarCollapsed ? 56 : sidebarWidth, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: sidebarCollapsed ? 'width .2s ease' : 'none', overflow: 'visible' }}>
+        {!isMobile && !sidebarCollapsed && <ResizeHandle width={sidebarWidth} setWidth={setSidebarWidth} min={200} max={460} dir={1} side="right" />}
 
         {/* Logo — extra top padding so the wordmark clears the window's top edge /
             macOS traffic-light title bar in the Electron desktop app. */}
@@ -1520,13 +1547,28 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       </div>
 
       {/* -- Main -- */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+
+        {/* Mobile top bar — hamburger opens the chat drawer; + starts a new chat. */}
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(var(--safe-top) + 8px) 12px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+            <button onClick={() => setMobileNav(true)} title="Menu" aria-label="Open menu"
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+            </button>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 18, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Mosaic</span>
+            <button onClick={newConv} title="New chat" aria-label="New chat"
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
+            </button>
+          </div>
+        )}
 
         <SetupBanner isAdmin={user.role === 'admin'} />
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 0' }}>
-          <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 32px' }}>
+          <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '0 16px' : '0 32px' }}>
             {active.messages.length === 0 ? (
               <div className="fade-in">
                 <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: 'var(--text)', marginBottom: 8 }}>What can I help with?</h1>
@@ -1678,7 +1720,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         </div>
 
         {/* Input bar */}
-        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: '14px 24px 18px', flexShrink: 0 }}>
+        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: isMobile ? '10px 12px calc(10px + var(--safe-bottom))' : '14px 24px 18px', flexShrink: 0 }}>
           <div style={{ maxWidth: 720, margin: '0 auto', position: 'relative' }}>
             {/* Pinned source + attachment chips */}
             {(pinnedSources.length > 0 || attachments.length > 0) && (
@@ -1985,9 +2027,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
-      {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
-      {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
-      {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} />}
+      {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
+      {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
+      {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
     </div>
   )
 }
