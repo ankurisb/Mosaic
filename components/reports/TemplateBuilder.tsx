@@ -699,7 +699,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   )
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div data-rsplit style={{ display: 'flex', height: '100dvh', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* Left panel — sections */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
@@ -746,7 +746,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
       </div>
 
       {/* Right panel — metadata + save */}
-      <div style={{ width: 320, borderLeft: '1px solid var(--border)', overflowY: 'auto', padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--surface)', flexShrink: 0 }}>
+      <div data-rsplit-aside style={{ width: 320, borderLeft: '1px solid var(--border)', overflowY: 'auto', padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--surface)', flexShrink: 0 }}>
 
         <div style={{ fontWeight: 700, fontSize: 15 }}>Template settings</div>
 

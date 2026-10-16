@@ -500,7 +500,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
         {!n8nStatus ? (
           <div style={{ fontSize: 13, color: 'var(--text3)' }}>Click "Check status" to connect to your n8n instance</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <div data-rgrid style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>n8n instance</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -586,7 +586,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   // -- List view ------------------------------------------------
   const listView = (
     <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 24 }}>
+      <div data-rgrid-2 style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 24 }}>
         {[['Groups', String(groups.length), ''], ['Active', String(groups.filter(g => g.active).length), 'monitoring'], ['Fired today', String(groups.reduce((s,g) => s + g.fire_count_today, 0)), 'notifications']].map(([l,v,s]) => (
           <div key={l} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', boxShadow: 'var(--shadow)' }}>
             <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: 4 }}>{l}</div>
@@ -877,7 +877,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
       {/* Controls */}
       <Section title="Controls">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+        <div data-rgrid-2 style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
           <div><label style={LBL}>Cooldown</label>
             <select style={SEL} value={form.controls.cooldown_sec} onChange={e => setForm(p => ({ ...p, controls: { ...p.controls, cooldown_sec: Number(e.target.value) } }))}>
               {[[0,'None'],[1800,'30m'],[3600,'1h'],[7200,'2h'],[14400,'4h'],[86400,'1d']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}

@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.73] - 2026-10-16
+
+### Added
+- **Mobile: Phase 1b — comprehensive responsive pass across every page.** Building on the chat shell (1.3.72), the rest of the app is now phone-usable:
+  - **AppShell** (the shared nav behind Dashboards, Reports, Query Builder, Rules, Connectors) gets the same mobile treatment: sidebar → slide-over drawer with a hamburger top bar (section title shown), backdrop, auto-close on navigate. One change, five pages fixed.
+  - **Settings** gets its own drawer + hamburger top bar (shows the active tab), and its content padding tightens on mobile.
+  - **Fixed multi-column layouts collapse on phones:** the dashboard panel grid (4-col → 1), the Rules grids (3/4-col → 1–2 col), via a global `@media` rule that overrides the components' inline grid columns (`data-panel-grid` / `data-rgrid` / `data-rgrid-2`).
+  - **Two-pane editors stack:** the report Template Builder's fixed 320px side panel drops below the editor on mobile (`data-rsplit`), and the page scrolls instead of clipping.
+  - Data tables (Reports, dashboard query tables) already scroll horizontally; modals already cap at viewport width — left as-is.
+- Shared `useIsMobile` hook (`lib/useIsMobile.ts`) now drives all three shells (chat, AppShell, settings).
+
+### Note
+- This makes every page navigable and readable on a phone. Per-tab polish inside the heaviest Settings sub-tabs (Databases/APIs builders) and true mobile-optimised data entry are follow-ups, as is Phase 2 (SSE reconnect/resume + Web Push).
+
 ## [1.3.72] - 2026-10-16
 
 ### Added

@@ -4,12 +4,17 @@ import { useRouter, usePathname } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
+import { useIsMobile } from '@/lib/useIsMobile'
 
 interface Conv { id: string; title: string }
+
+const SECTION_TITLES: Record<string, string> = { '/': 'Chats', '/dashboards': 'Dashboards', '/reports': 'Reports', '/query-builder': 'Query Builder', '/rules': 'Rules', '/connectors': 'Connectors', '/settings': 'Settings' }
 
 export default function AppShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
+  const isMobile = useIsMobile()
+  const [mobileNav, setMobileNav] = useState(false)
   const [convs, setConvs] = useState<Conv[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -32,12 +37,13 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
 
   function navBtn(path: string, icon: React.ReactNode, label: string) {
     const active = path === '/' ? pathname === '/' : pathname.startsWith(path)
+    const showCollapsed = collapsed && !isMobile
     return (
-      <button onClick={() => router.push(path)} title={collapsed ? label : undefined}
-        style={{ width: '100%', padding: collapsed ? '8px 0' : '8px 10px', background: active ? 'var(--bg3)' : 'none', border: `1px solid ${active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--text)' : 'var(--text2)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+      <button onClick={() => { router.push(path); setMobileNav(false) }} title={showCollapsed ? label : undefined}
+        style={{ width: '100%', padding: showCollapsed ? '8px 0' : '8px 10px', background: active ? 'var(--bg3)' : 'none', border: `1px solid ${active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--text)' : 'var(--text2)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: showCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg3)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
-        {icon}{!collapsed && label}
+        {icon}{!showCollapsed && label}
       </button>
     )
   }
@@ -45,10 +51,14 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const isChat = pathname === '/'
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
+      {/* Mobile drawer backdrop */}
+      {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
       {/* Sidebar */}
-      <div style={{ width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
+      <div style={isMobile
+        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)', overflow: 'hidden' }
+        : { width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
         {/* Logo — top padding clears the window edge / macOS title bar (Electron app). */}
         <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
           {!collapsed && <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>}
@@ -93,7 +103,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
         {/* Conversations */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
           {!collapsed && convs.map(c => (
-            <div key={c.id} onClick={() => router.push(`/?conv=${c.id}`)}
+            <div key={c.id} onClick={() => { router.push(`/?conv=${c.id}`); setMobileNav(false) }}
               style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -154,7 +164,16 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
         </div>
       </div>
       {/* Main content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(var(--safe-top) + 8px) 12px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+            <button onClick={() => setMobileNav(true)} title="Menu" aria-label="Open menu"
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+            </button>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{SECTION_TITLES[pathname] || (pathname.startsWith('/settings') ? 'Settings' : 'Mosaic')}</span>
+          </div>
+        )}
         {children}
       </div>
     </div>

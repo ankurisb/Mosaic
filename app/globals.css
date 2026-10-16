@@ -20,6 +20,24 @@ body {
   body { -webkit-tap-highlight-color: transparent; }
 }
 
+/* Mobile: collapse fixed multi-column layouts. These use !important so they win
+   over the components' inline grid-template-columns. Opt in by tagging a grid
+   with data-panel-grid / data-rgrid, or a two-pane flex with data-rsplit. */
+@media (max-width: 760px) {
+  [data-panel-grid], [data-rgrid] { grid-template-columns: 1fr !important; }
+  [data-rgrid-2] { grid-template-columns: repeat(2, 1fr) !important; }
+  /* Two-pane editor/detail layouts stack vertically; the fixed side panel goes
+     full-width and loses its side border/fixed width. Height goes auto so the
+     page scrolls instead of clipping the stacked panes. */
+  [data-rsplit] { flex-direction: column !important; height: auto !important; min-height: 100dvh; overflow: visible !important; }
+  [data-rsplit] > [data-rsplit-aside] {
+    width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border) !important;
+    flex-shrink: 1 !important;
+  }
+}
+
 /* ── Light mode (default) ── */
 :root {
   --bg:        #f5f5f5;

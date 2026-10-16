@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
+import { useIsMobile } from '@/lib/useIsMobile'
 import ThemeToggle from '../ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
 import TabKeys from './TabKeys'
@@ -97,6 +98,8 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   // Users/Auth/Audit etc. can't function on a localhost, one-person install.
   const [edition, setEdition] = useState<string>('enterprise')
   const [showUpdate, setShowUpdate] = useState(false)
+  const isMobile = useIsMobile()
+  const [mobileNav, setMobileNav] = useState(false)
   const [deploy, setDeploy] = useState<{ edition?: string; currentVersion?: string; updateAvailable?: boolean; latestVersion?: string | null; changelog?: { version: string; date: string; sections: Record<string, string[]> }[] }>({})
   const TABS = ALL_TABS.filter(t =>
     (!t.adminOnly || user.role === 'admin') &&
@@ -149,14 +152,18 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   function navigateTab(id: string) {
     setTab(id)
     window.location.hash = id
+    if (isMobile) setMobileNav(false)
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
+      {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
 
       {/* Sidebar */}
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
+      <div style={isMobile
+        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)' }
+        : { width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
 
         {/* Logo — top padding clears the window edge / macOS title bar (Electron app). */}
         <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -207,8 +214,17 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
-        <div style={{ maxWidth: tab === 'analytics' ? 1100 : (tab === 'users' ? 1000 : 820), margin: '0 auto', padding: '40px 40px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)', minWidth: 0 }}>
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(var(--safe-top) + 8px) 12px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 10 }}>
+            <button onClick={() => setMobileNav(true)} title="Settings menu" aria-label="Open settings menu"
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+            </button>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{TABS.find(t => t.id === tab)?.label || 'Settings'}</span>
+          </div>
+        )}
+        <div style={{ maxWidth: tab === 'analytics' ? 1100 : (tab === 'users' ? 1000 : 820), margin: '0 auto', padding: isMobile ? '18px 16px calc(24px + var(--safe-bottom))' : '40px 40px' }}>
           {tab === 'setup'        && <TabSetup user={user} onNavigate={navigateTab} />}
           {tab === 'developer-api'&& <TabDeveloperAPI user={user} />}
           {tab === 'audit'        && <TabAudit user={user} />}
