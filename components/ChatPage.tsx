@@ -16,6 +16,85 @@ import * as XLSX from 'xlsx'
 import SetupBanner from './SetupBanner'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
 import type { RcaBlock, RcaAction } from '@/lib/rca'
+import {
+  classifyAttachment, humanBytes, extOf, SUPPORTED_IMAGE_MIME,
+  MAX_ATTACH_COUNT, MAX_DOC_BYTES, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE, TARGET_IMAGE_JPEG_QUALITY,
+} from '@/lib/attachment-limits'
+
+// ── Client-side attachment preparation ──────────────────────────────────────
+// Shrinks/transcodes images in the browser BEFORE upload so we never ship a
+// full-res photo (which 400s Claude's vision API) or a HEIC file (which it
+// can't read) or a multi-MB payload that stalls/resets the POST. Each failure
+// becomes a visible error chip with a reason — never a silent drop.
+type AttachStatus = 'pending' | 'ready' | 'error'
+interface Attachment { id: string; name: string; type: string; data: string; preview?: string; status: AttachStatus; error?: string }
+
+function readAsBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => { try { resolve((r.result as string).split(',')[1] || '') } catch { reject(new Error('read failed')) } }
+    r.onerror = () => reject(new Error('the file could not be read'))
+    r.onabort = () => reject(new Error('reading was interrupted'))
+    r.readAsDataURL(blob)
+  })
+}
+
+// Downscale an already-decoded bitmap to within MAX_IMAGE_EDGE and encode it.
+function encodeBitmap(bmp: ImageBitmap, outType: 'image/jpeg' | 'image/png'): Promise<Blob> {
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bmp.width, bmp.height))
+  const w = Math.max(1, Math.round(bmp.width * scale))
+  const h = Math.max(1, Math.round(bmp.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w; canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return Promise.reject(new Error('canvas unavailable'))
+  if (outType === 'image/jpeg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h) } // flatten alpha for JPEG
+  ctx.drawImage(bmp, 0, 0, w, h)
+  return new Promise((res, rej) =>
+    canvas.toBlob(b => b ? res(b) : rej(new Error('image could not be encoded')), outType,
+      outType === 'image/jpeg' ? TARGET_IMAGE_JPEG_QUALITY : undefined))
+}
+
+// Produce an upload-ready {type,data,preview} for any image kind, or throw with
+// a user-facing reason. GIFs are kept as-is (may be animated); PNGs that need
+// shrinking stay PNG (crisp screenshots); everything else becomes JPEG.
+async function prepareImage(file: File, kind: string): Promise<{ type: string; data: string; preview: string }> {
+  const srcMime = (file.type || '').toLowerCase()
+  const ext = extOf(file.name)
+  const isGif = srcMime === 'image/gif' || ext === 'gif'
+  if (isGif) {
+    if (file.size > MAX_IMAGE_BYTES) throw new Error(`GIF is ${humanBytes(file.size)}, over the ${humanBytes(MAX_IMAGE_BYTES)} limit — please resize it`)
+    const data = await readAsBase64(file)
+    return { type: 'image/gif', data, preview: `data:image/gif;base64,${data}` }
+  }
+  let bmp: ImageBitmap
+  try { bmp = await createImageBitmap(file) }
+  catch {
+    if (kind === 'image-heic') throw new Error('this browser can’t read HEIC — re-send as JPEG or PNG (iPhone: share the photo, or Settings → Camera → Formats → “Most Compatible”)')
+    throw new Error('this image couldn’t be decoded — convert it to JPEG or PNG and re-send')
+  }
+  const srcIsPng = kind === 'image-native' && (srcMime === 'image/png' || ext === 'png')
+  const keepable = kind === 'image-native' && (srcIsPng
+    || srcMime === 'image/jpeg' || ext === 'jpg' || ext === 'jpeg'
+    || srcMime === 'image/webp' || ext === 'webp')
+  const maxEdge = Math.max(bmp.width, bmp.height)
+  // Already within both caps and a vision-native type → ship original bytes (no re-encode, full fidelity).
+  if (keepable && maxEdge <= MAX_IMAGE_EDGE && file.size <= MAX_IMAGE_BYTES) {
+    if (bmp.close) bmp.close()
+    const data = await readAsBase64(file)
+    const t = SUPPORTED_IMAGE_MIME.has(srcMime) ? srcMime : (srcIsPng ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg'))
+    return { type: t, data, preview: `data:${t};base64,${data}` }
+  }
+  // Otherwise downscale/transcode.
+  const outType: 'image/jpeg' | 'image/png' = srcIsPng ? 'image/png' : 'image/jpeg'
+  let blob = await encodeBitmap(bmp, outType)
+  if (blob.size > MAX_IMAGE_BYTES && outType === 'image/png') blob = await encodeBitmap(bmp, 'image/jpeg') // PNG still too big → JPEG
+  if (bmp.close) bmp.close()
+  if (blob.size > MAX_IMAGE_BYTES) throw new Error(`image is still ${humanBytes(blob.size)} after shrinking — crop or resize it and re-send`)
+  const outMime = blob.type || outType
+  const data = await readAsBase64(blob)
+  return { type: outMime, data, preview: `data:${outMime};base64,${data}` }
+}
 
 interface DataSource {
   id: string; label: string; type: 'db' | 'api' | 'airbyte' | 'prism' | 'file_server' | 'mcp'
@@ -832,7 +911,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
   const [srcSearch, setSrcSearch] = useState('')
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
-  const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string; preview?: string }>>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [panel, setPanel] = useState<PanelItem | null>(null)
   const [research, setResearch] = useState<ResearchState | null>(null)
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
@@ -863,16 +942,39 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   async function handleFiles(files: FileList | null) {
     if (!files) return
     for (const file of Array.from(files)) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const data = (e.target?.result as string).split(',')[1]
-        const preview = file.type.startsWith('image/') ? (e.target?.result as string) : undefined
-        setAttachments(a => [...a, { name: file.name, type: file.type, data, preview }])
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      // Add a chip immediately (pending), or an error chip if over the count cap —
+      // so the user always sees what happened to each file, never a silent skip.
+      let accepted = true
+      setAttachments(cur => {
+        if (cur.length >= MAX_ATTACH_COUNT) {
+          accepted = false
+          return [...cur, { id, name: file.name, type: file.type, data: '', status: 'error', error: `too many files (max ${MAX_ATTACH_COUNT})` }]
+        }
+        return [...cur, { id, name: file.name, type: file.type, data: '', status: 'pending' }]
+      })
+      if (!accepted) continue
+
+      const kind = classifyAttachment(file.type, file.name)
+      try {
+        if (kind.startsWith('image')) {
+          const r = await prepareImage(file, kind)
+          setAttachments(cur => cur.map(a => a.id === id ? { ...a, type: r.type, data: r.data, preview: r.preview, status: 'ready' } : a))
+        } else {
+          if (file.size > MAX_DOC_BYTES) throw new Error(`file is ${humanBytes(file.size)}, over the ${humanBytes(MAX_DOC_BYTES)} limit`)
+          const data = await readAsBase64(file)
+          if (!data) throw new Error('the file appears to be empty')
+          setAttachments(cur => cur.map(a => a.id === id ? { ...a, data, status: 'ready' } : a))
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'could not be read'
+        setAttachments(cur => cur.map(a => a.id === id ? { ...a, status: 'error', error: msg } : a))
       }
-      reader.readAsDataURL(file)
     }
   }
 
+  const attachPending = attachments.some(a => a.status === 'pending')
+  const attachHasReady = attachments.some(a => a.status === 'ready')
   const active = convs.find(c => c.id === activeId) || convs[0] || { id: 'local-0', title: 'New conversation', messages: [] }
   // Safety: ensure messages is always an array
   if (!Array.isArray(active.messages)) (active as Conv).messages = []
@@ -1192,7 +1294,10 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   }
 
     async function send(text: string) {
-    if (!text.trim() || streaming) return
+    if (streaming) return
+    if (attachments.some(a => a.status === 'pending')) return  // still preparing a file — button is disabled too
+    const readyAttachments = attachments.filter(a => a.status === 'ready' && a.data)
+    if (!text.trim() && readyAttachments.length === 0) return  // nothing to send
     let cid = activeId
     const isFirstMsg = (convs.find(c => c.id === cid)?.messages.length ?? 0) === 0
     const newTitle = isFirstMsg ? text.slice(0, 42) : undefined
@@ -1226,9 +1331,11 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           // Hard scope: when the user has pinned sources, send their ids so the
           // server restricts tool calls to them (not just the prompt hint above).
           allowed_sources: pinnedSources.map(s => s.id),
-          // Uploaded files for this turn: images (native vision) + documents
-          // (extracted to text server-side). Sent once with the message.
-          attachments: attachments.map(a => ({ name: a.name, type: a.type, data: a.data })),
+          // Uploaded files for this turn: images (native vision, already
+          // downscaled/transcoded client-side) + documents (extracted to text
+          // server-side). Only ready files are sent; errored/pending chips are
+          // excluded. Sent once with the message.
+          attachments: readyAttachments.map(a => ({ name: a.name, type: a.type, data: a.data })),
         }),
       })
       // Attachments are consumed by this turn — clear them so they don't re-send.
@@ -1732,16 +1839,27 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <button onClick={() => removePinned(src.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
                   </span>
                 ))}
-                {attachments.map((a, i) => (
-                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 500, color: 'var(--text2)' }}>
-                    {a.preview
-                      ? <img src={a.preview} style={{ width: 16, height: 16, borderRadius: 2, objectFit: 'cover' }} alt="" />
-                      : <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h5l3 3v7H2V1z"/><path d="M7 1v3h3"/></svg>
-                    }
-                    {a.name.slice(0, 20)}{a.name.length > 20 ? '…' : ''}
-                    <button onClick={() => setAttachments(x => x.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
-                  </span>
-                ))}
+                {attachments.map(a => {
+                  const isErr = a.status === 'error'
+                  const isPending = a.status === 'pending'
+                  return (
+                    <span key={a.id}
+                      title={isErr ? `${a.name} — ${a.error}` : a.name}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: isErr ? 'var(--red-bg, rgba(220,38,38,0.08))' : 'var(--bg3)', border: `1px solid ${isErr ? 'var(--red-t, #dc2626)' : 'var(--border)'}`, fontSize: 11, fontWeight: 500, color: isErr ? 'var(--red-t, #dc2626)' : 'var(--text2)', opacity: isPending ? 0.65 : 1 }}>
+                      {isPending
+                        ? <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="20" strokeDashoffset="12" strokeLinecap="round"/></svg>
+                        : isErr
+                          ? <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7 1.5 13 12.5H1L7 1.5z"/><path d="M7 6v2.5M7 10.5v.2"/></svg>
+                          : a.preview
+                            ? <img src={a.preview} style={{ width: 16, height: 16, borderRadius: 2, objectFit: 'cover' }} alt="" />
+                            : <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h5l3 3v7H2V1z"/><path d="M7 1v3h3"/></svg>
+                      }
+                      {a.name.slice(0, 20)}{a.name.length > 20 ? '…' : ''}
+                      {isErr && <span style={{ fontSize: 10, opacity: 0.85, fontWeight: 600 }}>· failed</span>}
+                      <button onClick={() => setAttachments(x => x.filter(y => y.id !== a.id))} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</button>
+                    </span>
+                  )
+                })}
               </div>
             )}
 
@@ -1775,7 +1893,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               ) : null
             })()}
             {/* Hidden file input */}
-            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt,.docx,.pptx" style={{ display: 'none' }}
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.heic,.heif,.pdf,.csv,.tsv,.xlsx,.xls,.json,.txt,.md,.docx,.pptx" style={{ display: 'none' }}
               onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
 
             {/* + menu */}
@@ -2015,8 +2133,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
                 </button>
               ) : (
-                <button onClick={() => send(input)} disabled={!input.trim()}
-                  style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: !input.trim() ? 'var(--bg4)' : 'var(--accent-bg)', color: !input.trim() ? 'var(--text4)' : 'var(--accent-fg)', cursor: !input.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s', boxShadow: !input.trim() ? 'none' : 'var(--shadow)' }}>
+                <button onClick={() => send(input)} disabled={(!input.trim() && !attachHasReady) || attachPending}
+                  title={attachPending ? 'Preparing attachment…' : undefined}
+                  style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: ((!input.trim() && !attachHasReady) || attachPending) ? 'var(--bg4)' : 'var(--accent-bg)', color: ((!input.trim() && !attachHasReady) || attachPending) ? 'var(--text4)' : 'var(--accent-fg)', cursor: ((!input.trim() && !attachHasReady) || attachPending) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s', boxShadow: ((!input.trim() && !attachHasReady) || attachPending) ? 'none' : 'var(--shadow)' }}>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7h10M8 3l4 4-4 4"/></svg>
                 </button>
               )}

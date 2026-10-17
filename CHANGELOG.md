@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.75] - 2026-10-18
+
+### Fixed
+- **Chat media uploads: hardened ingestion to end "network error" / silent drop-offs.** Uploaded images and documents *were* reaching the model (images → native vision, docs → server-side text extraction), but ingestion failed in ways that looked like a network error or a file that simply did nothing. Root causes and fixes:
+  - **HEIC/HEIF photos (the iPhone default) silently failed.** They matched neither the image whitelist nor a document type, so they fell into the text extractor, returned "no extractable text," and the turn appeared to do nothing — and Claude's vision API can't read HEIC anyway. The client now **transcodes HEIC→JPEG** in-browser (works on iOS/Safari via canvas); if the browser can't decode it, the file is **rejected with a clear message** ("re-send as JPEG/PNG") instead of vanishing.
+  - **Full-res images 400-ed the whole request.** No size/dimension guard meant a large photo could exceed Anthropic's per-image limit and fail the entire turn with a generic error. The client now **downscales images to ≤1568px long edge and re-encodes** (PNG stays PNG for crisp screenshots; others → JPEG) before upload; the server re-checks decoded size as a backstop.
+  - **Many multi-MB images in one JSON body stalled/reset the POST.** Downscaling plus a per-file size cap, a 20-file count cap, and a combined-payload ceiling keep the request well-bounded.
+  - **No read-error handling and no send-gating.** `FileReader` had no `onerror`, and nothing blocked *send* until async reads finished, so a file could be dropped or a message sent without its attachment. Reads now surface errors, each attachment shows a **pending spinner / red "failed" chip with the reason**, send is disabled while any file is preparing, and **image-only messages (no text) can now be sent**.
+  - **Server is now a loud safety net:** every unusable file (HEIC, unsupported image type, oversized, unreadable, or truncated document) becomes a **visible notice in the turn** instead of a silent drop or a misrouted document (`lib/attachments.ts`).
+  - New shared, isomorphic limits/classifier module (`lib/attachment-limits.ts`) is the single source of truth for both client and server, with unit tests (`lib/attachment-limits.test.ts`).
+
 ## [1.3.74] - 2026-10-17
 
 ### Fixed
