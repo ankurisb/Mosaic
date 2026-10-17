@@ -5,7 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.73] - 2026-10-16
+## [1.3.74] - 2026-10-17
+
+### Fixed
+- **Critical: Google (and any role-less) SSO login no longer demotes admins to `user`.** The SSO role-federation code was written for Keycloak — it reads roles from `realm_access.roles` / `resource_access[...].roles`. Google OIDC tokens carry no such claims, so `ssoRoles` was always empty, which the code treated as "no admin role → set `user`," overwriting the stored role on every Google login. Audit trail confirmed a real demotion (`SSO_ROLE_ASSIGNED … previous_role: admin, new_role: user, sso_roles: []`). Fix: role federation now only takes effect when the IdP **actually asserts roles**; an IdP that asserts none leaves the Mosaic-managed role untouched (`app/api/auth/callback/[provider]/route.ts`, decision extracted to tested `lib/sso-role.ts`). Keycloak federation — including legitimate demotions — is unchanged.
+
+
 
 ### Added
 - **Mobile: Phase 1b — comprehensive responsive pass across every page.** Building on the chat shell (1.3.72), the rest of the app is now phone-usable:

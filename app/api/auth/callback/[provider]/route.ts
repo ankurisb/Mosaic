@@ -6,6 +6,7 @@ import { log } from '@/lib/logger'
 import { decrypt } from '@/lib/encrypt'
 import { audit, AUDIT } from '@/lib/audit'
 import { createToken, COOKIE_NAME } from '@/lib/auth'
+import { deriveSsoRole, type Role } from '@/lib/sso-role'
 import { SSO_STATE_COOKIE } from '@/app/api/auth/sso/route'
 import { cookies } from 'next/headers'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
@@ -182,7 +183,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     // Keycloak puts roles in: payload.realm_access.roles[]
     // Any role named "admin", "mosaic-admin", or "mosaic_admin" → Mosaic admin.
     // All other SSO users default to 'user'.
-    let derivedRole: 'admin' | 'user' = user.role as 'admin' | 'user'
+    let derivedRole: Role = user.role as Role
     const realmAccess = payload.realm_access as { roles?: string[] } | undefined
     const resourceAccess = payload.resource_access as Record<string, { roles?: string[] }> | undefined
     const ssoRoles: string[] = [
@@ -190,16 +191,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
       ...(resourceAccess?.[String(cfg.client_id)]?.roles || []),
     ].map(r => r.toLowerCase())
 
-    const ADMIN_ROLE_NAMES = ['admin', 'mosaic-admin', 'mosaic_admin', 'administrator']
-    const isAdminViaSso = ssoRoles.some(r => ADMIN_ROLE_NAMES.includes(r))
-    const newRole: 'admin' | 'user' = isAdminViaSso ? 'admin' : 'user'
-
-    // Only update if role has changed — avoids unnecessary writes and audit noise
-    if (newRole !== derivedRole) {
-      await sql`UPDATE users SET role = ${newRole} WHERE id = ${user.id}`
-      derivedRole = newRole
-      audit(req, { id: user.id as string, email: user.email as string, role: newRole }, AUDIT.SSO_ROLE_ASSIGNED, `user:${user.email}`, 'success', {
-        provider, previous_role: user.role, new_role: newRole, sso_roles: ssoRoles,
+    // Role federation only takes effect when the IdP actually asserts roles
+    // (Keycloak). An IdP that asserts none (Google OIDC) leaves the Mosaic role
+    // untouched — previously it demoted admins to 'user' on every Google login.
+    const { role: fedRole, federated } = deriveSsoRole(derivedRole, ssoRoles)
+    if (federated && fedRole !== derivedRole) {
+      await sql`UPDATE users SET role = ${fedRole} WHERE id = ${user.id}`
+      derivedRole = fedRole
+      audit(req, { id: user.id as string, email: user.email as string, role: fedRole }, AUDIT.SSO_ROLE_ASSIGNED, `user:${user.email}`, 'success', {
+        provider, previous_role: user.role, new_role: fedRole, sso_roles: ssoRoles,
       })
     }
 
