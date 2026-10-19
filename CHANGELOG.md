@@ -5,7 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.75] - 2026-10-18
+## [1.3.76] - 2026-10-19
+
+### Added
+- **Semantic schema dictionary — plain-language table/column descriptions that make NL→SQL reliable on cryptic industrial schemas.** This is Phase 1A of the conversational dashboard builder (design: `claude/mosaic-dashboard-chat-builder-design.md`), but it improves every AI query path immediately (chat, PanelBuilder, future dashboard builder). It complements the existing `metric_definitions` business-metric layer: that one holds metrics/entities/terms, this one holds the data-dictionary — what an opaque column like `kWh_sf`, `v1n`, `mb_error` or `machine_status` actually means.
+  - **New `semantic_descriptions` table** (migration 018): per-source table/column descriptions, unique on `(source_type, source_id, object_key)`.
+  - **Woven into the schema block the model already sees** (`formatSchemaForPrompt` now takes a hints map): each described table is annotated and described columns get a compact gloss, so the model stops guessing at opaque names. Degrades silently to the plain schema when no descriptions exist. Loaded in the chat route's schema injection (`lib/semantic.ts`, unit-tested).
+  - **AI auto-describe (propose → confirm loop):** `/api/semantic` `generate` pulls the real schema + sample rows and makes one bounded model call to draft a description per table/column; the user reviews, edits, and saves (`upsert`). Same propose→confirm pattern as the data-source "Test with AI" flow. CRUD + generate are admin-gated; reads are available to any signed-in user so the dictionary feeds everyone's queries.
+  - **UI:** a "Describe" action on each database connection in Settings → Databases opens a dictionary editor (`SemanticDescriptionsModal`) — "Describe with AI", edit inline, save.
 
 ### Fixed
 - **Chat media uploads: hardened ingestion to end "network error" / silent drop-offs.** Uploaded images and documents *were* reaching the model (images → native vision, docs → server-side text extraction), but ingestion failed in ways that looked like a network error or a file that simply did nothing. Root causes and fixes:

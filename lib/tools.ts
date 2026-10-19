@@ -12,6 +12,7 @@ import {
   type GuardrailAuditCtx,
 } from './guardrails'
 import { decrypt } from './encrypt'
+import { annotateTableLine, columnGloss, type SchemaHints } from './semantic'
 import { getPrismToken, invalidatePrismToken } from './api-auth'
 import * as aws4 from 'aws4'
 
@@ -3453,10 +3454,11 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
  * system prompt. One line per table/measurement/collection; truncated where
  * needed to stay under a reasonable token budget per connection.
  */
-export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxChars?: number } = {}): string {
+export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxChars?: number; hints?: SchemaHints } = {}): string {
   if (!schema) return ''
   if (schema.error) return `    schema: (introspection failed: ${schema.error})`
   const max = opts.maxChars ?? 2500
+  const hints = opts.hints ?? new Map<string, string>()
   const lines: string[] = []
 
   if (schema.tables?.length) {
@@ -3464,7 +3466,11 @@ export function formatSchemaForPrompt(schema: CachedSchema | null, opts: { maxCh
     for (const t of schema.tables) {
       const cols = t.columns.map(c => c.pk ? `${c.name}*:${c.type}` : `${c.name}:${c.type}`).join(', ')
       const qualified = t.schema && t.schema !== 'public' && t.schema !== schema.dialect ? `${t.schema}.${t.name}` : t.name
-      lines.push(`      ${qualified}(${cols})`)
+      // Semantic dictionary: annotate the table line and gloss any described columns,
+      // so the model knows what opaque column names mean (empty when no hints).
+      lines.push(`      ${annotateTableLine(`${qualified}(${cols})`, qualified, hints)}`)
+      const gloss = columnGloss(qualified, t.columns.map(c => c.name), hints)
+      if (gloss) lines.push(gloss)
     }
   }
   if (schema.measurements?.length) {

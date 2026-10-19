@@ -4,6 +4,7 @@ import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
 import { ObjectFields, seedConfig, type Schema } from './SpecFields'
 import { safeJson } from '@/lib/fetch'
+import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
@@ -85,6 +86,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [testing, setTesting] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, TestResult>>({})
   const [ftsLoading, setFtsLoading] = useState<Record<string,boolean>>({})
+  const [describing, setDescribing] = useState<DbConn | null>(null)
 
   async function toggleFts(connId: string, currentlyEnabled: boolean) {
     setFtsLoading(p => ({ ...p, [connId]: true }))
@@ -574,6 +576,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                     </button>
                   )}
                   <Btn size="sm" onClick={() => test(c.id)} disabled={testing === c.id}>{testing === c.id ? <Spinner size={11} /> : 'Test'}</Btn>
+                  {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}
                 </div>
@@ -581,6 +584,13 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             )
             })}
           </div>
+          {describing && (
+            <SemanticDescriptionsModal
+              sourceId={describing.id}
+              sourceLabel={describing.label}
+              onClose={() => setDescribing(null)}
+            />
+          )}
           {(
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 0 4px' }}>
               <button onClick={() => setDbPage(p => Math.max(1, p - 1))} disabled={dbPage === 1} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: dbPage === 1 ? 'not-allowed' : 'pointer', color: 'var(--text3)', fontSize: 12 }}>←</button>

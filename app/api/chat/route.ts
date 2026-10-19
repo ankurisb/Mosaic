@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
+import { getSchemaHints } from '@/lib/semantic'
 import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { sanitizeHistory } from '@/lib/chat-history'
 import { getSession } from '@/lib/auth'
@@ -206,7 +207,10 @@ export async function POST(req: Request) {
         // and refreshes in the background).
         try {
           const schema = await getOrFetchSchema(c.id as string)
-          const block = formatSchemaForPrompt(schema)
+          // Semantic dictionary: fold in plain-language table/column descriptions
+          // so the model knows what opaque columns mean. Empty map when none.
+          const hints = await getSchemaHints('database', c.id as string)
+          const block = formatSchemaForPrompt(schema, { hints })
           return block ? `${header}\n${block}` : header
         } catch {
           return header
