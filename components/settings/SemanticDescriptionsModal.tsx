@@ -17,6 +17,7 @@ export default function SemanticDescriptionsModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [msg, setMsg] = useState('')
+  const [warning, setWarning] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -32,7 +33,7 @@ export default function SemanticDescriptionsModal({
   useEffect(() => { load() }, [load])
 
   async function generate() {
-    setGenerating(true); setError(''); setMsg('')
+    setGenerating(true); setError(''); setMsg(''); setWarning('')
     try {
       const r = await fetch('/api/semantic', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -52,7 +53,8 @@ export default function SemanticDescriptionsModal({
         return Array.from(byKey.values()).sort((a, b) =>
           a.object_type === b.object_type ? a.object_key.localeCompare(b.object_key) : (a.object_type === 'table' ? -1 : 1))
       })
-      setMsg(`Proposed ${draft.length} description${draft.length === 1 ? '' : 's'} — review and save.`)
+      setMsg(d.summary ? `${d.summary} Review and save.` : `Proposed ${draft.length} description${draft.length === 1 ? '' : 's'} — review and save.`)
+      if (d.warning) setWarning(d.warning)
     } catch (e) { setError(e instanceof Error ? e.message : 'Generation failed') }
     finally { setGenerating(false) }
   }
@@ -105,6 +107,7 @@ export default function SemanticDescriptionsModal({
 
         {error && <Alert variant="error">{error}</Alert>}
         {msg && !error && <Alert variant="success">{msg}</Alert>}
+        {warning && !error && <Alert variant="warning">{warning}</Alert>}
 
         {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div> : (
           <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>

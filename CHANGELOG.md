@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.84] - 2026-10-19
+
+### Added
+- **PRISM dictionary auto-describe now validates coverage and fails with an actionable reason.** Every exit of the generate path now tells the user exactly what to fix instead of a silent empty/partial draft, and a successful draft reports its own confidence:
+  - **Instance unreachable** → "Couldn't reach PRISM to list devices: … Open Settings → PRISM and use Test connection."
+  - **Empty fleet** → "No devices found … Add or activate devices, then retry."
+  - **Devices error while listing keys** (≥ half the sample) → diagnosed as auth/connectivity, with a sample error and a pointer to Test connection — distinct from the "no data" case.
+  - **Devices present but no timeseries keys** → "…none report timeseries telemetry keys yet. Likely the devices haven't sent data, or values are stored as attributes…" (explicitly *not* blamed on auth).
+  - **Sparse** (many devices, ≤2 keys) → drafts anyway but warns the fleet may be warming up.
+  - **AI draft step fails** → says the keys were read fine and to retry / check the API key.
+  - On success the response carries **diagnostics** (fleet size, devices sampled / with keys / errored, distinct keys, keys with live values, keys described, coverage status) and a **one-line summary** shown in the dictionary editor so the user can judge confidence before saving.
+- Key/value fetches now run with **bounded concurrency** (6 in-flight) so a 50-device sample stays responsive against a laggy on-prem gateway, and **per-device errors are captured** rather than silently dropped (so an all-errors run is diagnosable).
+- New pure, unit-tested module `lib/prism-dictionary.ts` (`planPrismSample`, `assessPrismCoverage`, `summarizePrismDraft`) with 12 tests covering the union/ranking, the key cap, and every fallback branch (empty fleet, all-errors, no-keys, sparse, huge vocabulary, malformed keys).
+
+### Changed
+- `generatePrismDraft` (`app/api/semantic/route.ts`) refactored to use the new module; the dictionary editor (`SemanticDescriptionsModal`) shows the coverage summary and any warning.
+
 ## [1.3.83] - 2026-10-19
 
 ### Fixed

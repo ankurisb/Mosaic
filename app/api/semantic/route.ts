@@ -14,75 +14,115 @@ import { log } from '@/lib/logger'
 import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
 import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema'
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
+import {
+  planPrismSample, assessPrismCoverage, summarizePrismDraft,
+  PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
+} from '@/lib/prism-dictionary'
 export const runtime = 'nodejs'
 
 const SOURCE_TYPES = new Set(['database', 'api', 'file', 'prism'])
 
-interface PrismDraftResult { ok: boolean; draft?: DescribeDraftItem[]; error?: string; status?: number }
+interface PrismDraftResult {
+  ok: boolean
+  draft?: DescribeDraftItem[]
+  diagnostics?: PrismDiagnostics
+  summary?: string
+  warning?: string
+  error?: string
+  status?: number
+}
 
-// How many devices to sample for the telemetry-key vocabulary. PRISM/ThingsBoard
-// fleets routinely type every device "default" and spread the key vocabulary
-// across devices (one inverter reports kWh/kW, a meter reports v1n, a weather
-// station reports slr_rdtn). Sampling one device — or one per type — misses most
-// of the dictionary, so we union keys across a broad sample of devices instead.
-const PRISM_SAMPLE_DEVICES = 50
-const PRISM_VALUE_DEVICES = 10   // devices to pull latest values from (for units inference)
-const PRISM_MAX_KEYS = 120
+// Run an async mapper over items with bounded concurrency — keeps the describe
+// run responsive against a laggy on-prem gateway without stampeding it.
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let i = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx]) }
+  })
+  await Promise.all(workers)
+  return out
+}
+
+const PRISM_KEY_CONCURRENCY = 6   // in-flight key/value fetches against the gateway
 
 // Introspect a PRISM instance for its telemetry key vocabulary and draft a
 // description per key (units-aware). Lists devices, then UNIONS telemetry keys
 // across a broad sample of devices (keys are instance-wide but each device only
-// reports the subset it emits), pulls latest values from the richest devices for
+// reports the subset it emits — a fleet typed entirely "default" spreads the
+// vocabulary across devices), pulls latest values from the richest devices for
 // units inference, and asks the model to explain the cryptic keys (kWh_sf, v1n,
 // mb_error, …). Each key is described once (object_type 'column', object_key =
 // the bare key name).
+//
+// Every exit carries an actionable reason: an unreachable instance, an empty
+// fleet, devices erroring on key-listing (auth/connectivity), or devices with no
+// timeseries yet are each reported distinctly so the user knows what to fix. On
+// success the result carries diagnostics + a one-line summary so the user can
+// judge coverage/confidence before saving.
 async function generatePrismDraft(sourceId: string): Promise<PrismDraftResult> {
   try {
-    const dev = await runTool('query_prism', { instance_id: sourceId, operation: 'devices', page_size: 100 }) as { error?: string; devices?: Array<{ id: string; name: string; type: string }> }
-    if (!dev || dev.error) return { ok: false, error: dev?.error || 'Could not list PRISM devices', status: 400 }
+    const dev = await runTool('query_prism', { instance_id: sourceId, operation: 'devices', page_size: 100 }) as { error?: string; devices?: Array<{ id: string; name: string; type: string }>; total?: number }
+    if (!dev || dev.error) {
+      return { ok: false, status: 502,
+        error: `Couldn't reach PRISM to list devices: ${dev?.error || 'no response'}. Open Settings → PRISM and use "Test connection", then retry.` }
+    }
     const devices = (dev.devices || []).filter(d => d.id)
-    if (!devices.length) return { ok: false, error: 'No devices found on this PRISM instance', status: 400 }
+    const fleetSize = typeof dev.total === 'number' ? dev.total : devices.length
 
-    // Union telemetry keys across a broad device sample. Track per-key device
-    // frequency (how many sampled devices report it) so the model gets a hint at
-    // how core vs peripheral a key is, and remember which devices are richest so
-    // we can pull representative latest values from them.
+    // List telemetry keys for a broad device sample, capturing per-device errors
+    // (so an all-errors result can be diagnosed as auth/connectivity, not "no data").
     const sample = devices.slice(0, PRISM_SAMPLE_DEVICES)
-    const keyFreq = new Map<string, number>()
-    const deviceKeys: Array<{ id: string; name: string; keys: string[] }> = []
-    for (const d of sample) {
-      const kr = await runTool('query_prism', { instance_id: sourceId, operation: 'keys', entity_id: d.id, entity_type: 'DEVICE' }) as { keys?: string[] }
-      const keys = Array.isArray(kr?.keys) ? kr!.keys! : []
-      if (!keys.length) continue
-      deviceKeys.push({ id: d.id, name: d.name, keys })
-      for (const k of keys) keyFreq.set(k, (keyFreq.get(k) || 0) + 1)
-    }
-    if (!keyFreq.size) return { ok: false, error: 'No telemetry keys found across this instance\'s devices', status: 400 }
+    const results: DeviceKeyResult[] = await mapPool(sample, PRISM_KEY_CONCURRENCY, async (d) => {
+      try {
+        const kr = await runTool('query_prism', { instance_id: sourceId, operation: 'keys', entity_id: d.id, entity_type: 'DEVICE' }) as { keys?: string[]; error?: string }
+        if (kr?.error) return { id: d.id, name: d.name, error: kr.error }
+        return { id: d.id, name: d.name, keys: Array.isArray(kr?.keys) ? kr!.keys! : [] }
+      } catch (e) {
+        return { id: d.id, name: d.name, error: e instanceof Error ? e.message : 'keys fetch failed' }
+      }
+    })
 
-    // Keys sorted by how commonly they appear (most-reported first), capped.
-    const allKeys = [...keyFreq.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, PRISM_MAX_KEYS)
-    const keySet = new Set(allKeys)
+    const plan = planPrismSample(results)
+    const errExample = results.find(r => r.error)?.error
+    const coverage = assessPrismCoverage(fleetSize, plan, errExample)
+    if (!coverage.proceed) return { ok: false, error: coverage.message, status: 422 }
 
-    // Pull latest values from the devices that report the most keys, until every
-    // key has at least one representative value (or we run out of budget).
+    // Pull latest values from the richest devices for units inference (best-effort).
+    const keySet = new Set(plan.keys)
+    const byId = new Map(results.filter(r => r.keys?.length).map(r => [r.id, r]))
     const sampleVals: Record<string, unknown> = {}
-    const richest = [...deviceKeys].sort((a, b) => b.keys.length - a.keys.length).slice(0, PRISM_VALUE_DEVICES)
-    for (const d of richest) {
-      const want = d.keys.filter(k => keySet.has(k) && !(k in sampleVals))
+    for (const id of plan.valueDeviceIds) {
+      const want = (byId.get(id)?.keys || []).filter(k => keySet.has(k) && !(k in sampleVals))
       if (!want.length) continue
-      const lr = await runTool('query_prism', { instance_id: sourceId, operation: 'telemetry_latest', entity_id: d.id, entity_type: 'DEVICE', keys: want.slice(0, 50) }) as { telemetry?: Record<string, { value: unknown }> }
-      for (const [k, v] of Object.entries(lr?.telemetry || {})) if (keySet.has(k) && !(k in sampleVals)) sampleVals[k] = v?.value
-      if (allKeys.every(k => k in sampleVals)) break
+      try {
+        const lr = await runTool('query_prism', { instance_id: sourceId, operation: 'telemetry_latest', entity_id: id, entity_type: 'DEVICE', keys: want.slice(0, 50) }) as { telemetry?: Record<string, { value: unknown }> }
+        for (const [k, v] of Object.entries(lr?.telemetry || {})) if (keySet.has(k) && !(k in sampleVals)) sampleVals[k] = v?.value
+      } catch { /* values are optional — the model can infer from the key name */ }
+      if (plan.keys.every(k => k in sampleVals)) break
     }
 
-    const lines = allKeys.map(k => `  ${k} (reported by ${keyFreq.get(k)}/${deviceKeys.length} sampled devices)`).join('\n')
-    const schemaText = `PRISM IoT telemetry keys — describe each key (object_type "column", object_key = the key name). This is a fleet of ${dev.devices!.length} devices; the keys below are the union of telemetry channels across a sample of them. Infer units from the key name and sample value (e.g. kWh = energy, kW = power, _sf = scaling factor, v1n = phase-to-neutral voltage, slr_rdtn = solar irradiance, mb_error = Modbus error).\nkeys:\n${lines}`
-    const samples = { 'latest values': [Object.fromEntries(allKeys.filter(k => k in sampleVals).map(k => [k, sampleVals[k]]))] }
+    const lines = plan.keys.map(k => `  ${k} (reported by ${plan.keyFreq[k]}/${plan.devicesWithKeys} sampled devices)`).join('\n')
+    const schemaText = `PRISM IoT telemetry keys — describe each key (object_type "column", object_key = the key name). This is a fleet of ${fleetSize} devices; the keys below are the union of telemetry channels across a sample of them. Infer units from the key name and sample value (e.g. kWh = energy, kW = power, _sf = scaling factor, v1n = phase-to-neutral voltage, slr_rdtn = solar irradiance, mb_error = Modbus error).\nkeys:\n${lines}`
+    const samples = { 'latest values': [Object.fromEntries(plan.keys.filter(k => k in sampleVals).map(k => [k, sampleVals[k]]))] }
     const result = await describeSchema(schemaText, samples)
-    if (!result.ok) return { ok: false, error: result.reason || 'Generation failed', status: 502 }
+    if (!result.ok) {
+      return { ok: false, status: 502,
+        error: `The AI draft step failed: ${result.reason || 'unknown error'}. The telemetry keys were read successfully — retry, or check the Anthropic API key in Settings.` }
+    }
     // Keys are columns; force the type so a stray "table" from the model doesn't slip in.
     const draft = (result.items || []).map(i => ({ object_type: 'column' as const, object_key: i.object_key, description: i.description }))
-    return { ok: true, draft }
+    const diagnostics: PrismDiagnostics = {
+      fleet_size: fleetSize,
+      devices_sampled: plan.devicesAttempted,
+      devices_with_keys: plan.devicesWithKeys,
+      devices_errored: plan.devicesErrored,
+      distinct_keys: plan.keys.length,
+      keys_with_values: plan.keys.filter(k => k in sampleVals).length,
+      keys_described: draft.length,
+      coverage_status: coverage.status,
+    }
+    return { ok: true, draft, diagnostics, summary: summarizePrismDraft(diagnostics), warning: coverage.status === 'sparse' ? coverage.message : undefined }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'PRISM generate failed', status: 500 }
   }
@@ -119,7 +159,7 @@ export async function POST(req: Request) {
     if (action === 'generate') {
       if (source_type === 'prism') {
         const gen = await generatePrismDraft(source_id)
-        if (gen.ok) return Response.json({ draft: gen.draft ?? [] })
+        if (gen.ok) return Response.json({ draft: gen.draft ?? [], diagnostics: gen.diagnostics, summary: gen.summary, warning: gen.warning })
         return Response.json({ error: gen.error || 'Generation failed' }, { status: gen.status || 500 })
       }
       // database (default)
