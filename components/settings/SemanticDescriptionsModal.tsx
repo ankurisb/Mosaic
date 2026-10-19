@@ -79,9 +79,12 @@ export default function SemanticDescriptionsModal({
     setRows(cur => cur.map(r => r.object_key === key ? { ...r, description: v, _dirty: true } : r))
   }
   function addColumnRow() {
-    const key = prompt('Column key as table.column (e.g. readings.kWh_sf):')?.trim()
+    // database keys are table.column; prism telemetry keys and api fields are bare names.
+    const isDb = sourceType === 'database'
+    const key = prompt(isDb ? 'Column key as table.column (e.g. readings.kWh_sf):' : 'Field / key name (e.g. kWh_sf):')?.trim()
     if (!key) return
-    setRows(cur => cur.some(r => r.object_key === key) ? cur : [...cur, { object_type: key.includes('.') ? 'column' : 'table', object_key: key, description: '', _dirty: true }])
+    const objectType: Row['object_type'] = isDb ? (key.includes('.') ? 'column' : 'table') : 'column'
+    setRows(cur => cur.some(r => r.object_key === key) ? cur : [...cur, { object_type: objectType, object_key: key, description: '', _dirty: true }])
   }
 
   const tables = rows.filter(r => r.object_type === 'table')

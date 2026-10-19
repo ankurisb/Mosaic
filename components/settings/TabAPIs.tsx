@@ -4,6 +4,7 @@ import yaml from 'js-yaml'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, Field, Grid, Alert, Spinner } from './ui'
 import ApiBuilder from './ApiBuilder'
+import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface ApiService { id: string; label: string; base_url: string; environment: string; auth_type: string; rate_limit_rpm: number; request_timeout_ms: number; retry_count: number; auth_status?: string; last_auth_error?: string | null; status?: string }
 interface ApiConn { id: string; service_id: string; label: string; description: string; base_path: string; pagination_style: string }
@@ -564,6 +565,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [showConnForm, setShowConnForm] = useState<string | null>(null)
   const [connForm, setConnForm] = useState<Record<string, string>>(CONN_EMPTY)
   const [editingConn, setEditingConn] = useState<string | null>(null)
+  const [describing, setDescribing] = useState<ApiConn | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -1680,6 +1682,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--radius-pill)', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text4)' }}> inherits auth</span>
                       <div style={{ display: 'flex', gap: 5 }}>
                         {user.role === 'admin' && <>
+                          <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe this endpoint's fields so Mosaic's AI understands them">Describe</Btn>
                           <Btn size="sm" onClick={() => { setConnForm({ ...CONN_EMPTY, ...(c as unknown as Record<string,string>) }); setEditingConn(c.id); setShowConnForm(svc.id); setExpanded(p => new Set([...p, svc.id])) }}>Edit</Btn>
                           <Btn size="sm" variant="danger" onClick={() => delConn(c.id, c.label)}>Delete</Btn>
                         </>}
@@ -1738,6 +1741,14 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
         </>
       )}
       </>
+      )}
+      {describing && (
+        <SemanticDescriptionsModal
+          sourceId={describing.id}
+          sourceLabel={describing.label}
+          sourceType="api"
+          onClose={() => setDescribing(null)}
+        />
       )}
     </div>
   )

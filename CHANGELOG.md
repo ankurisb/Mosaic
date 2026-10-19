@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.85] - 2026-10-19
+
+### Added
+- **Semantic dictionary now covers API sources** (multi-source extension, step 2). The dictionary documented SQL tables/columns and PRISM telemetry keys; it now also describes an API connection's record fields so every AI call over that API understands opaque field names.
+  - **`/api/semantic` `generate` gained an `api` branch** — fetches a sample of records from the connection via `call_api`, normalises whatever envelope the API returns (bare array, OData V4 `{value:[]}`, OData V2 `{d:{results:[]}}`, a `{data|results|items:[]}` wrapper, any array-of-objects property, or a single object), unions the top-level fields, and asks the model to describe the non-obvious ones (`object_key` = field name). Every exit carries an actionable reason (connection unreachable, API error, no records to sample, no describable fields, AI step failed) and a success summary.
+  - **"Describe" button on each API connection** (Settings → APIs) opens the dictionary editor (`SemanticDescriptionsModal` with `source_type="api"`); admin-gated, same propose→confirm loop. The manual "+ Add entry" prompt is now source-aware (bare field name for API/PRISM, `table.column` for databases).
+  - **API field descriptions are injected into the chat prompt** — folded into each connection's line in the `## APIs` catalog as "known fields: …" (via `getSchemaHints('api', <connection id>)`).
+- New pure, unit-tested module `lib/api-dictionary.ts` (`extractApiRecords`, `collectApiFields`, `isApiMetaField`) — 13 tests covering every envelope shape, metadata filtering, null-preference, and the field cap.
+
 ## [1.3.84] - 2026-10-19
 
 ### Added

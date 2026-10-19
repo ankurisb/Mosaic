@@ -18,6 +18,7 @@ import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
 } from '@/lib/prism-dictionary'
+import { extractApiRecords, collectApiFields, API_SAMPLE_RECORDS } from '@/lib/api-dictionary'
 export const runtime = 'nodejs'
 
 const SOURCE_TYPES = new Set(['database', 'api', 'file', 'prism'])
@@ -128,6 +129,62 @@ async function generatePrismDraft(sourceId: string): Promise<PrismDraftResult> {
   }
 }
 
+// -- API source auto-describe -------------------------------------------------
+interface ApiDraftResult {
+  ok: boolean
+  draft?: DescribeDraftItem[]
+  summary?: string
+  error?: string
+  status?: number
+}
+
+// Introspect an API connection: fetch a sample of records, union their field
+// names, and ask the model to describe the non-obvious ones. object_key = the
+// field name, object_type 'column'. Every exit carries an actionable reason.
+async function generateApiDraft(connectionId: string): Promise<ApiDraftResult> {
+  let basePath = connectionId
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT base_path FROM api_connections WHERE id = ${connectionId}` as unknown as Array<{ base_path?: string }>
+    if (rows.length && rows[0].base_path) basePath = rows[0].base_path
+  } catch { /* best-effort — label only */ }
+
+  let data: unknown
+  try {
+    data = await runTool('call_api', { connection_id: connectionId, method: 'GET', path: '' })
+  } catch (e) {
+    return { ok: false, status: 502,
+      error: `Couldn't fetch a sample record from "${basePath}": ${e instanceof Error ? e.message : 'request failed'}. Open Settings → APIs and use "Test", then retry.` }
+  }
+  if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) {
+    return { ok: false, status: 502,
+      error: `The API returned an error while sampling "${basePath}": ${String((data as Record<string, unknown>).error)}. Check the connection in Settings → APIs, then retry.` }
+  }
+
+  const records = extractApiRecords(data).slice(0, API_SAMPLE_RECORDS)
+  if (!records.length) {
+    return { ok: false, status: 422,
+      error: `The API responded but returned no records to sample from "${basePath}". Point the connection at an endpoint that lists records (a collection path), then retry.` }
+  }
+
+  const { fields, sampleRow } = collectApiFields(records)
+  if (!fields.length) {
+    return { ok: false, status: 422,
+      error: `Sampled ${records.length} record(s) from "${basePath}" but found no describable fields. Retry, or point at a different endpoint.` }
+  }
+
+  const lines = fields.map(f => `  ${f}`).join('\n')
+  const schemaText = `API record fields from "${basePath}" — describe each field (object_type "column", object_key = the field name). These are the fields of one record returned by this API connection. Infer meaning and units from the field name and sample value; skip obvious ones (id, name, created_at).\nfields:\n${lines}`
+  const result = await describeSchema(schemaText, { 'sample record': [sampleRow] })
+  if (!result.ok) {
+    return { ok: false, status: 502,
+      error: `The AI draft step failed: ${result.reason || 'unknown error'}. The sample record was fetched fine — retry, or check the Anthropic API key in Settings.` }
+  }
+  const draft = (result.items || []).map(i => ({ object_type: 'column' as const, object_key: i.object_key, description: i.description }))
+  const summary = `Described ${draft.length} of ${fields.length} field(s) from a sample of ${records.length} record(s) on "${basePath}".`
+  return { ok: true, draft, summary }
+}
+
 export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
@@ -160,6 +217,11 @@ export async function POST(req: Request) {
       if (source_type === 'prism') {
         const gen = await generatePrismDraft(source_id)
         if (gen.ok) return Response.json({ draft: gen.draft ?? [], diagnostics: gen.diagnostics, summary: gen.summary, warning: gen.warning })
+        return Response.json({ error: gen.error || 'Generation failed' }, { status: gen.status || 500 })
+      }
+      if (source_type === 'api') {
+        const gen = await generateApiDraft(source_id)
+        if (gen.ok) return Response.json({ draft: gen.draft ?? [], summary: gen.summary })
         return Response.json({ error: gen.error || 'Generation failed' }, { status: gen.status || 500 })
       }
       // database (default)

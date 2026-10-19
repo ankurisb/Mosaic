@@ -234,21 +234,28 @@ export async function POST(req: Request) {
   }, {} as Record<string, typeof apiConnsCapped>)
   const apiList = apiConns.length
     ? '\n\n## APIs (call_api tool — use exact id)\n' +
-      Object.entries(apiByService).map(([svcLabel, conns]: [string, any[]]) => {
+      (await Promise.all(Object.entries(apiByService).map(async ([svcLabel, conns]: [string, any[]]) => {
         const isSap = svcLabel.startsWith('SAP')
         const isV4 = conns[0] && String(conns[0].base_path || '').includes('odata4')
         const svcHint = isSap ? ` [OData ${isV4 ? 'V4' : 'V2'} — use $filter, $select, $top, $format=json]` : ''
-        const endpointLines = conns.map((conn: Record<string,unknown>) => {
+        const endpointLines = (await Promise.all(conns.map(async (conn: Record<string,unknown>) => {
           const rawDesc = String(conn.description || '').trim()
           const label = String(conn.label || '').trim()
           const labelNote = label && label.toLowerCase() !== String(conn.base_path || '').toLowerCase() ? ` (${label})` : ''
           const desc = rawDesc && rawDesc.toLowerCase() !== label.toLowerCase()
             ? ` -- ${rawDesc.slice(0, 50)}` : ''
           // A connection is a base PATH the model can call any method/sub-path under.
-          return `  - id:"${conn.id}" | ${conn.base_path}${labelNote}${desc} (call any method + sub-path under this base)`
-        }).join('\n')
+          const line = `  - id:"${conn.id}" | ${conn.base_path}${labelNote}${desc} (call any method + sub-path under this base)`
+          // Semantic dictionary: fold in plain-language field descriptions so the
+          // model knows what opaque API fields mean. Empty map when none.
+          const hints = await getSchemaHints('api', String(conn.id))
+          const fieldGloss = hints.size
+            ? `\n    known fields: ${[...hints.entries()].slice(0, 40).map(([k, d]) => `${k} = ${d.length > 80 ? d.slice(0, 79) + '…' : d}`).join('; ')}`
+            : ''
+          return line + fieldGloss
+        }))).join('\n')
         return `### ${svcLabel}${svcHint}\n${endpointLines}`
-      }).join('\n') +
+      }))).join('\n') +
       (apiOverflow > 0 ? `\n(+${apiOverflow} more endpoints — ask to list them)` : '')
     : ''
   const prismList = (prismInstances as Record<string,unknown>[]).length
