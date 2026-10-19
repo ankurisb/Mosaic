@@ -49,10 +49,30 @@ export async function getSchemaHints(sourceType: string, sourceId: string): Prom
   }
 }
 
-// Truncate a hint so one verbose description can't blow the schema budget.
+// Storage/abuse bounds — enforced server-side at write time so neither a human
+// nor the (future) programmatic dashboard writer can bloat the table or the prompt.
+export const MAX_DESC_LEN = 500          // per description, at rest
+export const MAX_KEY_LEN = 300           // per object_key, at rest
+export const MAX_ITEMS_PER_UPSERT = 500  // per upsert call
+const MAX_GLOSS_COLS = 40                // columns glossed per table in the prompt
+
+// Neutralise and bound a description for storage: strip control characters,
+// collapse any whitespace (newlines included) to single spaces, trim, and cap
+// length. This makes stored values single-line, bounded, and free of the
+// newline/control vectors a prompt-injection attempt in sample data could carry
+// through the AI drafter. Returns '' for empty/whitespace-only input (callers
+// treat '' as "clear this entry").
+export function sanitizeDescription(s: string): string {
+  if (!s) return ''
+  const t = String(s).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return t.length > MAX_DESC_LEN ? t.slice(0, MAX_DESC_LEN) : t
+}
+
+// Truncate a hint so one verbose description can't blow the schema budget. Also
+// strips control chars as a second line of defence at prompt-build time.
 const MAX_HINT_CHARS = 120
 function clip(s: string): string {
-  const t = s.trim().replace(/\s+/g, ' ')
+  const t = s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
   return t.length > MAX_HINT_CHARS ? t.slice(0, MAX_HINT_CHARS - 1) + '…' : t
 }
 
@@ -78,6 +98,7 @@ export function columnGloss(tableName: string, columnNames: string[], hints: Sch
   for (const col of columnNames) {
     const d = hints.get(`${tableName}.${col}`)
     if (d) parts.push(`${col} = ${clip(d)}`)
+    if (parts.length >= MAX_GLOSS_COLS) break   // bound the gloss so a huge dictionary can't starve the schema
   }
   return parts.length ? `${indent}cols: ${parts.join('; ')}` : ''
 }

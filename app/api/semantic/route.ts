@@ -13,7 +13,10 @@ import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
 import { describeSchema } from '@/lib/ai/describe-schema'
+import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
 export const runtime = 'nodejs'
+
+const SOURCE_TYPES = new Set(['database', 'api', 'file', 'prism'])
 
 export async function GET(req: Request) {
   const session = await getSession()
@@ -40,6 +43,7 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { action, source_type = 'database', source_id } = body
     if (!source_id) return Response.json({ error: 'source_id required' }, { status: 400 })
+    if (!SOURCE_TYPES.has(source_type)) return Response.json({ error: `source_type must be one of: ${[...SOURCE_TYPES].join(', ')}` }, { status: 400 })
 
     // -- GENERATE: propose descriptions from real schema + samples (not saved) ----
     if (action === 'generate') {
@@ -66,11 +70,18 @@ export async function POST(req: Request) {
     // -- UPSERT: save confirmed/edited descriptions -------------------------------
     if (action === 'upsert') {
       const items = Array.isArray(body.items) ? body.items : []
+      if (items.length > MAX_ITEMS_PER_UPSERT) {
+        return Response.json({ error: `too many items (${items.length}); max ${MAX_ITEMS_PER_UPSERT} per call` }, { status: 400 })
+      }
+      // Reject an over-long key outright (a real table.column key is never this long) —
+      // surfaces a bug rather than silently storing junk.
+      const badKey = items.find((it: { object_key?: unknown }) => String(it?.object_key || '').trim().length > MAX_KEY_LEN)
+      if (badKey) return Response.json({ error: `object_key exceeds ${MAX_KEY_LEN} chars` }, { status: 400 })
       let saved = 0
       for (const it of items) {
         const objectType = it.object_type === 'column' ? 'column' : 'table'
         const objectKey = String(it.object_key || '').trim()
-        const description = String(it.description || '').trim()
+        const description = sanitizeDescription(String(it.description || ''))  // bounded, single-line, control-stripped
         if (!objectKey) continue
         if (!description) {
           // Empty description clears the entry rather than storing a blank.

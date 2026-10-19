@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.77] - 2026-10-19
+
+### Hardened
+- **Semantic dictionary made bulletproof against hostile/oversized input** — found by an adversarial test pass against the live v1.3.76 deployment before building the programmatic (chat) writer on top of it. Three real robustness gaps closed in `/api/semantic` upsert + `lib/semantic.ts`:
+  - **Description length cap** — descriptions are now sanitized and bounded to 500 chars at rest (a 20,000-char value was previously stored verbatim). `sanitizeDescription()` also strips control characters and collapses all whitespace (newlines included) to single spaces, so stored values are single-line, bounded, and free of the newline/control shape a prompt-injection attempt in sample data could otherwise carry through the AI drafter into a system prompt. `clip()` applies the same stripping again at prompt-build time (defence in depth).
+  - **Item-count cap** — an upsert of more than 500 items is rejected 400 (2,000 items were previously all accepted → table/prompt bloat).
+  - **Object-key cap** — an `object_key` over 300 chars is rejected 400 (a 5,008-char key was previously stored).
+  - **source_type allow-list** — must be one of database/api/file/prism, else 400.
+  - **Prompt-budget guard** — `columnGloss` now glosses at most 40 columns per table, so a very large dictionary cannot starve the schema block.
+  - Confirmed already-correct (unchanged): empty/whitespace description clears the entry; generate on a bad/non-SQL source returns a clean 400 / empty draft without crashing; duplicate keys in one payload are last-wins; unknown action → 400. 6 new unit tests (15 total in `lib/semantic.test.ts`).
+
 ## [1.3.76] - 2026-10-19
 
 ### Added
