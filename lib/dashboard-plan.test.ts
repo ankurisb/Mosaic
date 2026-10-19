@@ -176,6 +176,20 @@ describe('applyPrismWindow', () => {
     applyPrismWindow(input, w)
     expect('startTs' in input).toBe(false)
   })
+  it('clamps a too-fine interval so the window yields ≤ MAX buckets', () => {
+    // 30 days at 1h interval = 720 buckets > 500 → interval raised.
+    const w30 = { time_from: '2026-09-19T00:00:00.000Z', time_to: '2026-10-19T00:00:00.000Z' }
+    const out = applyPrismWindow({ operation: 'telemetry_history', entity_id: 'd1', keys: ['kWh'], agg: 'SUM', interval: 3600000 }, w30)
+    const span = Date.parse(w30.time_to) - Date.parse(w30.time_from)
+    expect(span / (out.interval as number)).toBeLessThanOrEqual(500)
+    expect(out.interval as number).toBeGreaterThan(3600000)  // raised
+  })
+  it('leaves a comfortable interval untouched', () => {
+    // 1 day at 1h = 24 buckets, well under the cap.
+    const w1 = { time_from: '2026-10-18T00:00:00.000Z', time_to: '2026-10-19T00:00:00.000Z' }
+    const out = applyPrismWindow({ operation: 'telemetry_history', entity_id: 'd1', agg: 'SUM', interval: 3600000 }, w1)
+    expect(out.interval).toBe(3600000)
+  })
 })
 
 describe('prismSeriesToRows', () => {

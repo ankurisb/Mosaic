@@ -205,8 +205,16 @@ export function parsePrismQuery(query: unknown): PrismParseResult {
 // Ops whose results depend on the dashboard time window (epoch-ms startTs/endTs).
 const PRISM_TIME_OPS = new Set(['telemetry_history'])
 
+// ThingsBoard rejects an aggregated timeseries query whose interval count exceeds
+// a server limit ("Number of intervals is too high - 721…"). The dashboard window
+// is chosen at runtime, so the model can't size the interval safely — we clamp it
+// server-side so ANY window yields at most this many buckets.
+export const MAX_PRISM_INTERVALS = 500
+
 // Inject the window as epoch-ms into a parsed params object (time-series ops
-// only). ISO window strings → ms. Returns a new object; never mutates input.
+// only). ISO window strings → ms. When an aggregation interval is present, clamp
+// it up so (window / interval) ≤ MAX_PRISM_INTERVALS, keeping the panel valid on
+// any dashboard window instead of erroring. Returns a new object; never mutates input.
 export function applyPrismWindow(params: Record<string, unknown>, w: { time_from: string; time_to: string }): Record<string, unknown> {
   if (!PRISM_TIME_OPS.has(String(params.operation || ''))) return { ...params }
   const out = { ...params }
@@ -214,6 +222,11 @@ export function applyPrismWindow(params: Record<string, unknown>, w: { time_from
   const endTs = Date.parse(w.time_to)
   if (!Number.isNaN(startTs)) out.startTs = startTs
   if (!Number.isNaN(endTs)) out.endTs = endTs
+  const interval = Number(out.interval)
+  if (interval > 0 && !Number.isNaN(startTs) && !Number.isNaN(endTs) && endTs > startTs) {
+    const span = endTs - startTs
+    if (span / interval > MAX_PRISM_INTERVALS) out.interval = Math.ceil(span / MAX_PRISM_INTERVALS)
+  }
   return out
 }
 

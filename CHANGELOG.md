@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.89] - 2026-10-19
+
+### Fixed
+- **PRISM time-series panels no longer error on wide windows** ("Incorrect TsKvQuery. Number of intervals is too high"). An aggregated `telemetry_history` query over a wide dashboard window ÷ a fine interval can exceed ThingsBoard's interval-count limit (e.g. 30 days ÷ 1h = 721 buckets). Since the dashboard window is chosen at runtime, the model can't size the interval safely — so `applyPrismWindow` now clamps the interval up so any window yields at most `MAX_PRISM_INTERVALS` (500) buckets, in both the dry-run preview and the live executor. Planner guidance also nudges the model toward a sensible interval and notes Mosaic auto-coarsens it. Caught by the live end-to-end builder test (the model aggregated at 1h over the preview window). +2 unit tests (43 in the plan module; 248 total).
+
 ## [1.3.88] - 2026-10-19
 
 ### Fixed
