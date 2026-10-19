@@ -436,16 +436,16 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
             description: { type: 'string', description: 'Optional one-line description.' },
             panels: {
               type: 'array',
-              description: '1–12 panels. One SQL SELECT per panel.',
+              description: '1–12 panels. One query per panel, in the form required by its source_type.',
               items: {
                 type: 'object',
                 properties: {
                   intent: { type: 'string', description: 'One line: what this panel shows and why (shown in the proposal card).' },
                   title: { type: 'string', description: 'Short panel title.' },
                   subtitle: { type: 'string', description: 'Optional subtitle.' },
-                  source_type: { type: 'string', enum: ['database'], description: 'Data source kind (database only for now).' },
-                  source_id: { type: 'string', description: 'The id of the connected database source (from the list above).' },
-                  query: { type: 'string', description: 'A single read-only SQL SELECT. Use {{time_from}} / {{time_to}} for time filters.' },
+                  source_type: { type: 'string', enum: ['database', 'prism'], description: 'Data source kind: "database" (SQL) or "prism" (IoT telemetry).' },
+                  source_id: { type: 'string', description: 'For database: the connected DB source id. For prism: the PRISM instance_id (from the list above).' },
+                  query: { type: 'string', description: 'database: a single read-only SQL SELECT; use {{time_from}}/{{time_to}} for time filters. prism: a JSON string of query_prism params, e.g. {"operation":"telemetry_history","entity_type":"DEVICE","entity_id":"<uuid>","keys":["kWh"],"agg":"SUM","interval":3600000} for a time series, or {"operation":"telemetry_latest","entity_type":"DEVICE","entity_id":"<uuid>","keys":["kW"]} for a current value. Do NOT put {{time_from}} in a prism query — Mosaic injects startTs/endTs from the dashboard window.' },
                   chart_type: { type: 'string', enum: ['bar','line','area','table','stat','donut','gauge','heatmap','boxplot','sankey'], description: 'How to visualise the result.' },
                   chart_config: { type: 'object', description: 'Optional field mapping for the chart (x/y/series/value columns).' },
                   suggested_grid: { type: 'object', properties: { col: { type: 'number' }, row: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, description: 'Optional grid placement.' },

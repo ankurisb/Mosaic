@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.86] - 2026-10-19
+
+### Added
+- **Chat dashboard builder now builds PRISM (IoT telemetry) panels**, not just SQL. "Build me a dashboard of solar generation" over a PRISM instance now works end-to-end: propose → dry-run preview → confirm → live panels.
+  - **`build_dashboard` accepts `source_type: "prism"`** — the panel `query` is a JSON string of `query_prism` params (e.g. `{"operation":"telemetry_history","entity_type":"DEVICE","entity_id":"<uuid>","keys":["kWh"],"agg":"SUM","interval":3600000}` for a trend, or `telemetry_latest` for a current value). The tool spec and planner guidance document the format and instruct the model to resolve a device `entity_id` (via `query_prism` `devices`) and use the instance's known telemetry keys.
+  - **Source-aware time handling** — PRISM panels don't use the `{{time_from}}` string placeholder (that's SQL/quoted). Instead the executor and dry-run inject the dashboard window as **epoch-ms** `startTs`/`endTs` into the parsed params for time-series ops (`applyPrismWindow`); `telemetry_latest` takes no window.
+  - **Telemetry → rows adapter** (`prismSeriesToRows`) — `telemetry_history` `{series:{key:[{ts,value}]}}` is merged into ts-sorted rows `[{ts, <key>}]` (numeric strings coerced to numbers); `telemetry_latest` becomes a single row; `devices`/`assets` pass through. The panel renderer consumes the same `{rows}` shape as SQL panels.
+  - **Executor + dry-run `prism` branches** (`app/api/dashboards/[id]/data`, `lib/dashboard-build`). The dry-run previews over a recent 30-day window (telemetry is recent; a 10-year window would bucket mostly-empty) and caps preview points; the saved panel runs under the dashboard's own global time window.
+  - **Plan-time validation** — a PRISM panel's JSON query is parsed and checked for an `operation` in `validatePanelShape`, so a malformed panel is caught before anything is shown. Persist path already safe: `denyNonReadonly` skips non-database sources, so the SQL write-guard never false-rejects a PRISM panel.
+- 13 new unit tests (39 in the plan module; 252 total) covering `parsePrismQuery`, `applyPrismWindow` (epoch-ms injection, latest = no window, no mutation), `prismSeriesToRows` (history merge + numeric coercion, latest, passthrough, empty), and prism panel-shape validation.
+
 ## [1.3.85] - 2026-10-19
 
 ### Added

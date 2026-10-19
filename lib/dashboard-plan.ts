@@ -16,7 +16,7 @@
 export const DASH_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey'] as const
 export type DashChartType = typeof DASH_CHART_TYPES[number]
 
-export const PANEL_SOURCE_TYPES = ['database', 'api', 'file_server'] as const
+export const PANEL_SOURCE_TYPES = ['database', 'api', 'file_server', 'prism'] as const
 export type PanelSourceType = typeof PANEL_SOURCE_TYPES[number]
 
 export interface PanelPlan {
@@ -25,7 +25,7 @@ export interface PanelPlan {
   subtitle?: string
   source_type: PanelSourceType
   source_id: string
-  query: string                   // SQL (database), path (api), or hint (file_server)
+  query: string                   // SQL (database), path (api), hint (file_server), or JSON query_prism params (prism)
   chart_type: DashChartType
   chart_config?: Record<string, unknown>
   suggested_grid?: { col: number; row: number; w: number; h: number }
@@ -168,7 +168,91 @@ export function validatePanelShape(panel: Partial<PanelPlan>): PanelShapeResult 
   if (!panel.chart_type || !DASH_CHART_TYPES.includes(panel.chart_type as DashChartType)) {
     errors.push(`chart_type must be one of ${DASH_CHART_TYPES.join(', ')}`)
   }
+  // A PRISM panel's query is a JSON object of query_prism params — validate it
+  // parses and names an operation, so a malformed panel is caught at plan time.
+  if (panel.source_type === 'prism' && panel.query) {
+    const pr = parsePrismQuery(String(panel.query))
+    if (!pr.ok) errors.push(pr.error!)
+  }
   return { ok: errors.length === 0, errors }
+}
+
+// ── PRISM panel query model ──────────────────────────────────────────────────
+// A PRISM panel stores a JSON string of query_prism params in `query`, e.g.
+//   {"operation":"telemetry_history","entity_type":"DEVICE","entity_id":"<uuid>",
+//    "keys":["kWh"],"agg":"SUM","interval":3600000}
+// The executor/dry-run parse it, inject the dashboard window as epoch-ms
+// startTs/endTs (time-series ops only), run query_prism, then normalise the
+// telemetry shape into rows the chart renderer understands. All pure here.
+
+export interface PrismParseResult { ok: boolean; params?: Record<string, unknown>; error?: string }
+
+export function parsePrismQuery(query: string): PrismParseResult {
+  let parsed: unknown
+  try { parsed = JSON.parse(String(query || '')) }
+  catch { return { ok: false, error: 'PRISM panel query must be valid JSON of query_prism params (e.g. {"operation":"telemetry_history","entity_id":"…","keys":["kWh"]})' } }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, error: 'PRISM panel query must be a JSON object of query_prism params' }
+  const p = parsed as Record<string, unknown>
+  if (!p.operation || typeof p.operation !== 'string') return { ok: false, error: 'PRISM panel query must include an "operation" (e.g. telemetry_history, telemetry_latest)' }
+  return { ok: true, params: p }
+}
+
+// Ops whose results depend on the dashboard time window (epoch-ms startTs/endTs).
+const PRISM_TIME_OPS = new Set(['telemetry_history'])
+
+// Inject the window as epoch-ms into a parsed params object (time-series ops
+// only). ISO window strings → ms. Returns a new object; never mutates input.
+export function applyPrismWindow(params: Record<string, unknown>, w: { time_from: string; time_to: string }): Record<string, unknown> {
+  if (!PRISM_TIME_OPS.has(String(params.operation || ''))) return { ...params }
+  const out = { ...params }
+  const startTs = Date.parse(w.time_from)
+  const endTs = Date.parse(w.time_to)
+  if (!Number.isNaN(startTs)) out.startTs = startTs
+  if (!Number.isNaN(endTs)) out.endTs = endTs
+  return out
+}
+
+// Telemetry values arrive as strings ("88.2"); coerce clean numerics so charts
+// plot them. Non-numeric strings (status labels, JSON) pass through unchanged.
+function coerceNum(v: unknown): unknown {
+  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v)
+  return v
+}
+
+// Normalise a query_prism result into rows the panel renderer understands:
+//  - telemetry_history {series:{key:[{ts,value}]}} → merged rows [{ts:ISO, <key>:n}] sorted ascending
+//  - telemetry_latest  {telemetry:{key:{value}}}   → one row {<key>:n}
+//  - devices/assets/etc already array-shaped        → that array
+export function prismSeriesToRows(result: unknown): unknown[] {
+  if (!result || typeof result !== 'object') return []
+  const r = result as Record<string, unknown>
+  if (r.series && typeof r.series === 'object' && !Array.isArray(r.series)) {
+    const series = r.series as Record<string, Array<{ ts: number; value: unknown }>>
+    const byTs = new Map<number, Record<string, unknown>>()
+    for (const [key, points] of Object.entries(series)) {
+      if (!Array.isArray(points)) continue
+      for (const pt of points) {
+        const ts = Number(pt?.ts)
+        if (!Number.isFinite(ts)) continue
+        let row = byTs.get(ts)
+        if (!row) { row = { ts: new Date(ts).toISOString() }; byTs.set(ts, row) }
+        row[key] = coerceNum(pt.value)
+      }
+    }
+    return [...byTs.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row)
+  }
+  if (r.telemetry && typeof r.telemetry === 'object' && !Array.isArray(r.telemetry)) {
+    const t = r.telemetry as Record<string, unknown>
+    const row: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(t)) {
+      row[k] = coerceNum(v && typeof v === 'object' && 'value' in (v as Record<string, unknown>) ? (v as Record<string, unknown>).value : v)
+    }
+    return [row]
+  }
+  for (const key of ['devices', 'assets', 'customers', 'alarms', 'rows', 'data']) {
+    if (Array.isArray(r[key])) return r[key] as unknown[]
+  }
+  return []
 }
 
 export interface PlanValidation {

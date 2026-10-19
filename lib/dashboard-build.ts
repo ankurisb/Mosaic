@@ -7,6 +7,7 @@
 import { runTool } from './tools'
 import {
   validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow,
+  parsePrismQuery, applyPrismWindow, prismSeriesToRows,
   PREVIEW_ROW_CAP, MAX_PANELS, type DashboardPlan, type PanelPlan, type PanelCls,
 } from './dashboard-plan'
 
@@ -35,6 +36,15 @@ function previewWindow() {
 }
 function substituteWindow(sql: string): string {
   return substituteTimeWindow(sql, previewWindow())
+}
+
+// PRISM telemetry is typically recent, and a time-series op with aggregation over
+// a 10-year window would bucket mostly-empty ranges and look empty. A recent
+// 30-day window reliably answers "does this device+key emit data?" for the preview.
+// The SAVED panel still runs under the dashboard's own window.
+function prismPreviewWindow() {
+  const now = Date.now()
+  return { time_from: new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString(), time_to: new Date(now + 60 * 60 * 1000).toISOString() }
 }
 
 function sampleRows(result: unknown, cap = 5): unknown[] | undefined {
@@ -70,6 +80,19 @@ async function dryRunPanel(panel: PanelPlan, dialectOf: DialectResolver, ctx: Bu
       const result = await runTool('read_file_server', { server_id: panel.source_id, file_hint: panel.query, ts_strategy: 'auto', max_rows: PREVIEW_ROW_CAP }, ctx)
       const cls = classifyPanelResult(result)
       return { ...cls, sample: cls.cls === 'data' ? sampleRows(result) : undefined }
+    }
+    if (panel.source_type === 'prism') {
+      const pr = parsePrismQuery(panel.query)
+      if (!pr.ok) return { cls: 'error', rows: 0, detail: pr.error }
+      const params = applyPrismWindow(pr.params!, prismPreviewWindow())
+      params.limit = Math.min(Number(params.limit) || PREVIEW_ROW_CAP, PREVIEW_ROW_CAP)
+      const raw = await runTool('query_prism', { instance_id: panel.source_id, ...params }, ctx)
+      if (raw && typeof raw === 'object' && 'error' in (raw as Record<string, unknown>)) {
+        return { cls: 'error', rows: 0, detail: String((raw as Record<string, unknown>).error).slice(0, 300) }
+      }
+      const rows = prismSeriesToRows(raw)
+      const cls = classifyPanelResult({ rows })
+      return { ...cls, sample: cls.cls === 'data' ? rows.slice(0, 5) : undefined }
     }
     return { cls: 'invalid', rows: 0, detail: `unsupported source_type ${panel.source_type}` }
   } catch (e) {

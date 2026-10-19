@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
-import { substituteTimeWindow } from '@/lib/dashboard-plan'
+import { substituteTimeWindow, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
 export const runtime = 'nodejs'
 
 // -- GET /api/dashboards/[id]/data -----------------------------
@@ -94,6 +94,17 @@ export async function GET(
             ts_strategy: 'auto',
             max_rows: 500,
           })
+        } else if (p.source_type === 'prism') {
+          // PRISM panel query is JSON query_prism params; inject the window as
+          // epoch-ms (time-series ops) and normalise telemetry → rows.
+          const pr = parsePrismQuery(String(p.query || ''))
+          if (!pr.ok) throw new Error(pr.error)
+          const prismParams = applyPrismWindow(pr.params!, { time_from, time_to })
+          const raw = await runTool('query_prism', { instance_id: p.source_id, ...prismParams })
+          if (raw && typeof raw === 'object' && 'error' in (raw as Record<string, unknown>)) {
+            throw new Error(String((raw as Record<string, unknown>).error))
+          }
+          data = { rows: prismSeriesToRows(raw) }
         }
         return {
           panel_id: p.id,

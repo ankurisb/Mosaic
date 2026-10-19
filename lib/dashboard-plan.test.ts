@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   readonlyGuard, withPreviewLimit, classifyPanelResult,
   validatePanelShape, validatePlan, substituteTimeWindow, PREVIEW_ROW_CAP, MAX_PANELS,
+  parsePrismQuery, applyPrismWindow, prismSeriesToRows,
   type PanelPlan,
 } from './dashboard-plan'
 
@@ -128,5 +129,76 @@ describe('validatePlan', () => {
     const many = Array.from({ length: MAX_PANELS + 3 }, (_, i) => ({ ...goodPanel, title: 'p' + i }))
     const r = validatePlan({ title: 'X', panels: many })
     expect(r.ok).toBe(false); expect(r.errors.join(' ')).toMatch(/too many panels/)
+  })
+})
+
+describe('parsePrismQuery', () => {
+  it('accepts a valid JSON params object with an operation', () => {
+    const r = parsePrismQuery('{"operation":"telemetry_history","entity_id":"d1","keys":["kWh"]}')
+    expect(r.ok).toBe(true); expect(r.params!.operation).toBe('telemetry_history')
+  })
+  it('rejects non-JSON', () => {
+    const r = parsePrismQuery('SELECT * FROM t')
+    expect(r.ok).toBe(false); expect(r.error).toMatch(/valid JSON/)
+  })
+  it('rejects a JSON array or scalar', () => {
+    expect(parsePrismQuery('[1,2]').ok).toBe(false)
+    expect(parsePrismQuery('42').ok).toBe(false)
+  })
+  it('rejects an object with no operation', () => {
+    const r = parsePrismQuery('{"entity_id":"d1"}')
+    expect(r.ok).toBe(false); expect(r.error).toMatch(/operation/)
+  })
+})
+
+describe('applyPrismWindow', () => {
+  const w = { time_from: '2026-10-01T00:00:00.000Z', time_to: '2026-10-02T00:00:00.000Z' }
+  it('injects epoch-ms startTs/endTs for a time-series op', () => {
+    const out = applyPrismWindow({ operation: 'telemetry_history', entity_id: 'd1', keys: ['kWh'] }, w)
+    expect(out.startTs).toBe(Date.parse(w.time_from))
+    expect(out.endTs).toBe(Date.parse(w.time_to))
+  })
+  it('does NOT inject a window for telemetry_latest', () => {
+    const out = applyPrismWindow({ operation: 'telemetry_latest', entity_id: 'd1', keys: ['kW'] }, w)
+    expect(out.startTs).toBeUndefined(); expect(out.endTs).toBeUndefined()
+  })
+  it('never mutates the input object', () => {
+    const input = { operation: 'telemetry_history', entity_id: 'd1' }
+    applyPrismWindow(input, w)
+    expect('startTs' in input).toBe(false)
+  })
+})
+
+describe('prismSeriesToRows', () => {
+  it('merges a telemetry_history series into ts-sorted rows, coercing numeric strings', () => {
+    const result = { series: { kWh: [{ ts: 2000, value: '5.5' }, { ts: 1000, value: '3' }], kW: [{ ts: 1000, value: '1.2' }] } }
+    const rows = prismSeriesToRows(result) as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(2)
+    expect(rows[0].ts).toBe(new Date(1000).toISOString())  // sorted ascending
+    expect(rows[0].kWh).toBe(3); expect(rows[0].kW).toBe(1.2)
+    expect(rows[1].kWh).toBe(5.5)
+  })
+  it('turns telemetry_latest into a single row', () => {
+    const rows = prismSeriesToRows({ telemetry: { kW: { ts: 1, value: '0.0' }, status: { value: 'run' } } }) as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kW).toBe(0); expect(rows[0].status).toBe('run')
+  })
+  it('passes through array-shaped results (devices/assets)', () => {
+    expect(prismSeriesToRows({ devices: [{ id: 'd1' }] })).toEqual([{ id: 'd1' }])
+  })
+  it('returns [] for an unrecognised / empty shape', () => {
+    expect(prismSeriesToRows(null)).toEqual([])
+    expect(prismSeriesToRows({ foo: 1 })).toEqual([])
+  })
+})
+
+describe('validatePanelShape — prism', () => {
+  const base: PanelPlan = { title: 'Energy', source_type: 'prism', source_id: 'inst1', query: '{"operation":"telemetry_latest","entity_id":"d1","keys":["kW"]}', chart_type: 'stat' }
+  it('accepts a well-formed prism panel', () => {
+    expect(validatePanelShape(base).ok).toBe(true)
+  })
+  it('rejects a prism panel whose query is not JSON params', () => {
+    const r = validatePanelShape({ ...base, query: 'SELECT 1' })
+    expect(r.ok).toBe(false); expect(r.errors.join(' ')).toMatch(/JSON/)
   })
 })
