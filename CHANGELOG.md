@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.80] - 2026-10-19
+
+### Added / Changed
+- **Dashboard builder — the complete loop.** Request in chat → validate in the right-side review panel → publish → appears in the Dashboards menu and leaves a link in the chat.
+  - **Proposal now opens in the resizable right-side review panel** (same chrome as file/map/research review), instead of an inline card. The chat message keeps a "Dashboard proposal — review" chip to reopen it. (`DashboardProposalPanel` in `components/ChatPage.tsx`.)
+  - **After publishing, the chat message shows a persistent "Open dashboard: <title> →" link**, so the created dashboard is reachable from the conversation for future reference (and it's listed in the Dashboards menu as before).
+- **Fixed: builder dashboards now obey the global time control.** The top-right time-window selector drives panels via `{{time_from}}`/`{{time_to}}`/`{{interval}}` placeholders, but the substitution injected a raw, unquoted timestamp — so time-filtered SQL broke and the planner dropped the filters. New shared `substituteTimeWindow` (`lib/dashboard-plan.ts`, unit-tested) injects a **quoted** timestamp and absorbs any quotes the author already wrote, used by both the dashboard data route and the builder dry-run. The planner is now instructed to add `{{time_from}}`/`{{time_to}}` filters on time-series panels, so saved dashboards respond to the global window. (No separate aggregation selector yet — the bucket interval is tied to the window via `{{interval}}`.)
+- 4 new unit tests (26 for the plan module; 201 total).
+
 ## [1.3.79] - 2026-10-19
 
 ### Hardened / Fixed

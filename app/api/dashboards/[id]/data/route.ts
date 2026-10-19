@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
+import { substituteTimeWindow } from '@/lib/dashboard-plan'
 export const runtime = 'nodejs'
 
 // -- GET /api/dashboards/[id]/data -----------------------------
@@ -74,10 +75,7 @@ export async function GET(
       try {
         let data: unknown
         if (p.source_type === 'database') {
-          const q = String(p.query || '')
-            .replace(/\{\{time_from\}\}/g, time_from)
-            .replace(/\{\{time_to\}\}/g, time_to)
-            .replace(/\{\{interval\}\}/g, interval)
+          const q = substituteTimeWindow(String(p.query || ''), { time_from, time_to, interval })
           data = await runTool('query_database', {
             connection_id: p.source_id,
             sql: q,

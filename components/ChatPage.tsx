@@ -113,7 +113,7 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
 ]
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal; dashboardSaved?: { id: string; title: string } }
 interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
 interface Folder { id: string; name: string; position?: number }
 
@@ -394,7 +394,7 @@ interface DiagCause { cause: string; confidence: number; evidence: string[] }
 interface ResearchState { mode: 'research' | 'diagnose'; question: string; phase: 'planning' | 'researching' | 'synthesizing' | 'done'; subtasks: ResearchSubtask[]; sourceCount?: number; subagentCount?: number; ms?: number; causes?: DiagCause[]; checks?: string[] }
 
 // What the right-side panel is currently showing.
-type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData } | { kind: 'research' }
+type PanelItem = { kind: 'file'; file: GenFile } | { kind: 'map'; map: MapData } | { kind: 'research' } | { kind: 'dashboard_proposal'; proposal: DashboardProposal }
 
 // Download chips + inline image previews for files produced by run_code. Each
 // file is served (owner-checked) from /api/files/<id>. Images render inline;
@@ -842,7 +842,7 @@ const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', '
 // real sample of rows. The user includes/excludes, edits the query/chart/title, then
 // saves — persisting via the existing create_dashboard / add_panel actions. Preview
 // is exactly the query that gets saved (bounded only for the dry-run).
-function DashboardProposalCard({ proposal, onOpen }: { proposal: DashboardProposal; onOpen: (id: string) => void }) {
+function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { proposal: DashboardProposal; onOpen: (id: string) => void; onSaved?: (id: string, title: string) => void; embedded?: boolean }) {
   const [panels, setPanels] = useState(() => proposal.panels.map(p => ({
     ...p, include: p.validation.cls === 'data' || p.validation.cls === 'empty', expanded: false,
   })))
@@ -881,13 +881,14 @@ function DashboardProposalCard({ proposal, onOpen }: { proposal: DashboardPropos
         order++
       }
       setSaved(id)
+      onSaved?.(id, title.trim() || 'New dashboard')
     } catch (e) { setErr(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
   }
 
   if (saved) {
     return (
-      <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 12, padding: 16, background: 'var(--surface)' }}>
+      <div style={{ marginTop: embedded ? 0 : 10, border: embedded ? 'none' : '1px solid var(--border)', borderRadius: embedded ? 0 : 12, padding: 16, background: embedded ? 'transparent' : 'var(--surface)' }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Dashboard “{title}” saved — {includedCount} panel{includedCount === 1 ? '' : 's'}.</div>
         <button onClick={() => onOpen(saved)} style={{ padding: '7px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Open dashboard →</button>
       </div>
@@ -895,7 +896,7 @@ function DashboardProposalCard({ proposal, onOpen }: { proposal: DashboardPropos
   }
 
   return (
-    <div style={{ marginTop: 10, border: '1px solid var(--border2)', borderRadius: 12, background: 'var(--surface)', overflow: 'hidden' }}>
+    <div style={{ marginTop: embedded ? 0 : 10, border: embedded ? 'none' : '1px solid var(--border2)', borderRadius: embedded ? 0 : 12, background: embedded ? 'transparent' : 'var(--surface)', overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <input value={title} onChange={e => setTitle(e.target.value)} style={{ flex: 1, minWidth: 160, fontSize: 14, fontWeight: 600, color: 'var(--text)', background: 'transparent', border: 'none', borderBottom: '1px dashed var(--border2)', outline: 'none', padding: '2px 0', fontFamily: 'inherit' }} />
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>{proposal.summary.data} data · {proposal.summary.empty} empty · {proposal.summary.error + proposal.summary.invalid} issue</span>
@@ -937,6 +938,33 @@ function DashboardProposalCard({ proposal, onOpen }: { proposal: DashboardPropos
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// Right-side review panel for a dashboard proposal — same resizable chrome as the
+// file/map panels. Holds the proposal card (validate → edit → save).
+function DashboardProposalPanel({ proposal, onClose, panelW, setPanelW, mobile, onOpen, onSaved }: { proposal: DashboardProposal; onClose: () => void; panelW: number; setPanelW: (v: number) => void; mobile: boolean; onOpen: (id: string) => void; onSaved: (id: string, title: string) => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div style={mobile
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
+      {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Review dashboard</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Validate the panels, then save</div>
+        </div>
+        <button onClick={onClose} title="Close (Esc)" style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: 12 }}>
+        <DashboardProposalCard proposal={proposal} onOpen={onOpen} onSaved={onSaved} embedded />
       </div>
     </div>
   )
@@ -1496,8 +1524,9 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               // Auto-open a produced map in the right panel.
               if (e.name === 'render_map' && e.result && (e.result as { kind?: string }).kind === 'map_artifact') setPanel({ kind: 'map', map: e.result as MapData })
             }
-            // Dashboard builder proposal — attach to the message so the proposal card renders.
-            else if (e.type === 'dashboard_proposal' && e.proposal) updateLast(cid, m => ({ ...m, dashboardProposal: e.proposal as DashboardProposal }))
+            // Dashboard builder proposal — attach to the message (for a reopen chip)
+            // and open it in the right-side review panel, same as file/map review.
+            else if (e.type === 'dashboard_proposal' && e.proposal) { const prop = e.proposal as DashboardProposal; updateLast(cid, m => ({ ...m, dashboardProposal: prop })); setPanel({ kind: 'dashboard_proposal', proposal: prop }) }
             // -- Deep research live events --
             else if (e.type === 'research_started') { setResearch({ mode: e.mode === 'diagnose' ? 'diagnose' : 'research', question: String(e.question || ''), phase: 'planning', subtasks: [] }); setPanel({ kind: 'research' }) }
             else if (e.type === 'research_plan') {
@@ -1843,7 +1872,21 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
                   {/* Files produced by run_code — download chips + inline images */}
                   {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
-                  {msg.role === 'assistant' && msg.dashboardProposal && <DashboardProposalCard proposal={msg.dashboardProposal} onOpen={id => router.push(`/dashboards/${id}`)} />}
+                  {msg.role === 'assistant' && msg.dashboardProposal && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                      <button onClick={() => setPanel({ kind: 'dashboard_proposal', proposal: msg.dashboardProposal! })}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1.5" y="1.5" width="11" height="11" rx="1.5"/><path d="M1.5 5.5h11M6 5.5v7"/></svg>
+                        Dashboard proposal — review
+                      </button>
+                      {msg.dashboardSaved && (
+                        <button onClick={() => router.push(`/dashboards/${msg.dashboardSaved!.id}`)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 'var(--radius-pill)', border: 'none', background: 'var(--accent-bg)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Open dashboard: {msg.dashboardSaved.title} →
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
                   {msg.role === 'assistant' && (() => {
                     // Reopen from the message's own persisted snapshot. While a run is
@@ -2271,6 +2314,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       {panel?.kind === 'file' && <FilePreviewPanel file={panel.file} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
       {panel?.kind === 'map' && <MapPanel map={panel.map} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
       {panel?.kind === 'research' && research && <ResearchPanel research={research} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} />}
+      {panel?.kind === 'dashboard_proposal' && <DashboardProposalPanel proposal={panel.proposal} onClose={() => setPanel(null)} panelW={panelWidth} setPanelW={setPanelWidth} mobile={isMobile} onOpen={id => router.push(`/dashboards/${id}`)} onSaved={(id, title) => { const prop = panel.proposal; setConvs(ps => ps.map(c => ({ ...c, messages: c.messages.map(m => m.dashboardProposal === prop ? { ...m, dashboardSaved: { id, title } } : m) }))) }} />}
     </div>
   )
 }

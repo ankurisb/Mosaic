@@ -110,6 +110,21 @@ export function withPreviewLimit(rawSql: string, dialect: string, cap = PREVIEW_
   return sql // influxdb / non-SQL: leave as-is
 }
 
+// ── Time-window substitution ─────────────────────────────────────────────────
+// Replace {{time_from}} / {{time_to}} / {{interval}} placeholders in a panel query
+// with concrete values from the dashboard's global time control. Timestamps are
+// injected as QUOTED SQL string literals (and any quotes the author already wrote
+// around the placeholder are absorbed, so both `{{time_from}}` and `'{{time_from}}'`
+// produce exactly one pair of quotes). This is what lets a builder-made panel honour
+// the dashboard's top-right time window instead of failing on an unquoted timestamp.
+export interface TimeWindow { time_from: string; time_to: string; interval: string }
+export function substituteTimeWindow(sql: string, w: TimeWindow): string {
+  return String(sql || '')
+    .replace(/'?\{\{\s*time_from\s*\}\}'?/g, `'${w.time_from}'`)
+    .replace(/'?\{\{\s*time_to\s*\}\}'?/g, `'${w.time_to}'`)
+    .replace(/\{\{\s*interval\s*\}\}/g, w.interval)
+}
+
 // ── Result classification ────────────────────────────────────────────────────
 // Mirrors api-probe's classifyProbe: turn an execution outcome into a verdict the
 // proposal card renders as green/amber/red. `error` wins; otherwise count rows.

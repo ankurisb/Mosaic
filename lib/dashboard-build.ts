@@ -6,7 +6,7 @@
 // the user confirms in the proposal card, which saves via create_dashboard/add_panel.
 import { runTool } from './tools'
 import {
-  validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult,
+  validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow,
   PREVIEW_ROW_CAP, MAX_PANELS, type DashboardPlan, type PanelPlan, type PanelCls,
 } from './dashboard-plan'
 
@@ -31,8 +31,7 @@ function previewWindow() {
   return { time_from: from.toISOString(), time_to: to.toISOString(), interval: '1 day' }
 }
 function substituteWindow(sql: string): string {
-  const w = previewWindow()
-  return sql.replace(/\{\{time_from\}\}/g, w.time_from).replace(/\{\{time_to\}\}/g, w.time_to).replace(/\{\{interval\}\}/g, w.interval)
+  return substituteTimeWindow(sql, previewWindow())
 }
 
 function sampleRows(result: unknown, cap = 5): unknown[] | undefined {

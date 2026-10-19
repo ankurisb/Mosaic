@@ -1,9 +1,27 @@
 import { describe, it, expect } from 'vitest'
 import {
   readonlyGuard, withPreviewLimit, classifyPanelResult,
-  validatePanelShape, validatePlan, PREVIEW_ROW_CAP, MAX_PANELS,
+  validatePanelShape, validatePlan, substituteTimeWindow, PREVIEW_ROW_CAP, MAX_PANELS,
   type PanelPlan,
 } from './dashboard-plan'
+
+describe('substituteTimeWindow', () => {
+  const w = { time_from: '2026-09-19T00:00:00.000Z', time_to: '2026-10-19T00:00:00.000Z', interval: '1 day' }
+  it('injects quoted timestamps for an unquoted placeholder', () => {
+    expect(substituteTimeWindow('SELECT * FROM t WHERE ts >= {{time_from}} AND ts <= {{time_to}}', w))
+      .toBe(`SELECT * FROM t WHERE ts >= '2026-09-19T00:00:00.000Z' AND ts <= '2026-10-19T00:00:00.000Z'`)
+  })
+  it('absorbs quotes the author already wrote (no double-quoting)', () => {
+    expect(substituteTimeWindow("WHERE ts >= '{{time_from}}'", w))
+      .toBe(`WHERE ts >= '2026-09-19T00:00:00.000Z'`)
+  })
+  it('substitutes interval unquoted', () => {
+    expect(substituteTimeWindow('GROUP BY {{interval}}', w)).toBe('GROUP BY 1 day')
+  })
+  it('leaves a query with no placeholders unchanged', () => {
+    expect(substituteTimeWindow('SELECT 1', w)).toBe('SELECT 1')
+  })
+})
 
 describe('readonlyGuard', () => {
   it('allows SELECT / WITH / EXPLAIN', () => {
