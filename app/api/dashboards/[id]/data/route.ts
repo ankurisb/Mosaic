@@ -97,7 +97,7 @@ export async function GET(
         } else if (p.source_type === 'prism') {
           // PRISM panel query is JSON query_prism params; inject the window as
           // epoch-ms (time-series ops) and normalise telemetry → rows.
-          const pr = parsePrismQuery(String(p.query || ''))
+          const pr = parsePrismQuery(p.query)
           if (!pr.ok) throw new Error(pr.error)
           const prismParams = applyPrismWindow(pr.params!, { time_from, time_to })
           const raw = await runTool('query_prism', { instance_id: p.source_id, ...prismParams })

@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.87] - 2026-10-19
+
+### Fixed
+- **PRISM dashboard panels failed to execute** ("PRISM panel query must be valid JSON…") even with a perfectly valid stored query. Root cause: the SQLite layer (`lib/db.ts`) auto-parses any TEXT column whose value starts with `{`/`[` into JSON to mimic Postgres's row shape — so a PRISM panel's JSON `query` came back from the DB as an **object**, and `String(obj)` → `"[object Object]"` → parse failure. (Database/API panels never hit this; their queries aren't JSON.) But Postgres/Neon return a TEXT column as a string, so this was a SQLite-only inconsistency. Fix: exclude the `query` column from JSON auto-parse (it is always a query string, never a JSON value to rehydrate), matching Postgres. Belt-and-suspenders: `parsePrismQuery` now also accepts an already-parsed object, so the builder dry-run and the executor behave identically on any DB driver. Caught by the live extreme test before sign-off; 2 new unit tests (41 in the plan module).
+
 ## [1.3.86] - 2026-10-19
 
 ### Added

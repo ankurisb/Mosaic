@@ -60,6 +60,9 @@ export function intervalAgo(amount: number, unit: 'days' | 'hours' | 'minutes' |
 const SKIP_AUTO_PARSE = new Set([
   'content',          // messages.content — chat message bodies
   'message_template', // rule_groups / integration_rules — notification templates
+  'query',            // dashboard_panels.query — always a query string (SQL / API path /
+                      // PRISM JSON-params); Postgres returns TEXT as a string, so a PRISM
+                      // panel's JSON query must NOT be auto-parsed into an object here.
 ])
 
 let _client: SqlQuery | null = null

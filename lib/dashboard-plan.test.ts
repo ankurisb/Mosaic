@@ -149,6 +149,15 @@ describe('parsePrismQuery', () => {
     const r = parsePrismQuery('{"entity_id":"d1"}')
     expect(r.ok).toBe(false); expect(r.error).toMatch(/operation/)
   })
+  it('accepts an already-parsed object (SQLite JSON auto-parse / any driver)', () => {
+    const r = parsePrismQuery({ operation: 'telemetry_latest', entity_id: 'd1', keys: ['kW'] })
+    expect(r.ok).toBe(true); expect(r.params!.operation).toBe('telemetry_latest')
+  })
+  it('rejects a parsed array or scalar object-input', () => {
+    expect(parsePrismQuery([1, 2]).ok).toBe(false)
+    expect(parsePrismQuery(42).ok).toBe(false)
+    expect(parsePrismQuery(null).ok).toBe(false)
+  })
 })
 
 describe('applyPrismWindow', () => {

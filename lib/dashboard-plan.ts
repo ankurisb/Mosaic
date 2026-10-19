@@ -187,10 +187,15 @@ export function validatePanelShape(panel: Partial<PanelPlan>): PanelShapeResult 
 
 export interface PrismParseResult { ok: boolean; params?: Record<string, unknown>; error?: string }
 
-export function parsePrismQuery(query: string): PrismParseResult {
-  let parsed: unknown
-  try { parsed = JSON.parse(String(query || '')) }
-  catch { return { ok: false, error: 'PRISM panel query must be valid JSON of query_prism params (e.g. {"operation":"telemetry_history","entity_id":"…","keys":["kWh"]})' } }
+// Accepts the query as a JSON string (the model's plan, and Postgres/Neon TEXT) or
+// as an already-parsed object (SQLite's JSON auto-parse could hand us one), so the
+// builder dry-run and the executor behave identically regardless of the DB driver.
+export function parsePrismQuery(query: unknown): PrismParseResult {
+  let parsed: unknown = query
+  if (typeof query === 'string') {
+    try { parsed = JSON.parse(query) }
+    catch { return { ok: false, error: 'PRISM panel query must be valid JSON of query_prism params (e.g. {"operation":"telemetry_history","entity_id":"…","keys":["kWh"]})' } }
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, error: 'PRISM panel query must be a JSON object of query_prism params' }
   const p = parsed as Record<string, unknown>
   if (!p.operation || typeof p.operation !== 'string') return { ok: false, error: 'PRISM panel query must include an "operation" (e.g. telemetry_history, telemetry_latest)' }
