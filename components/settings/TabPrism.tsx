@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Field, Alert } from './ui'
 import { safeJson } from '@/lib/fetch'
+import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface PrismInstance {
   id: string; label: string; base_url: string; ui_url?: string
@@ -13,6 +14,7 @@ const EMPTY = { label: '', base_url: '', ui_url: '', environment: 'production', 
 
 export default function TabPrism({ user }: { user: SessionUser }) {
   const [instances, setInstances] = useState<PrismInstance[]>([])
+  const [describing, setDescribing] = useState<PrismInstance | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -207,12 +209,21 @@ export default function TabPrism({ user }: { user: SessionUser }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(inst)} title="Describe telemetry keys so Mosaic's AI understands this source">Describe</Btn>}
                 <Btn size="sm" variant="ghost" onClick={() => openEdit(inst)}>Edit</Btn>
                 <Btn size="sm" variant="ghost" onClick={() => remove(inst.id, inst.label)} style={{ color: 'var(--red)' }}>Remove</Btn>
               </div>
             </div>
           ))}
         </div>
+      )}
+      {describing && (
+        <SemanticDescriptionsModal
+          sourceId={describing.id}
+          sourceLabel={describing.label}
+          sourceType="prism"
+          onClose={() => setDescribing(null)}
+        />
       )}
     </div>
   )

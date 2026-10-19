@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.82] - 2026-10-19
+
+### Added
+- **Semantic dictionary now covers PRISM sources** (multi-source extension, step 1 — the solar/energy win). The dictionary previously only described SQL database tables/columns; it now documents a PRISM instance's cryptic telemetry keys (`kWh_sf`, `v1n`, `mb_error`, `machine_status`, …) so every AI query over PRISM understands them.
+  - **New `keys` operation on `query_prism`** — lists the available telemetry key names for a device/asset (ThingsBoard `keys/timeseries`).
+  - **`/api/semantic` `generate` gained a PRISM branch** — lists devices, samples one representative device per type for its key list + latest values, and asks the model to draft a units-aware description per key (`lib/ai/describe-schema` generalised from SQL-only to "tables/columns, telemetry keys, or API fields").
+  - **"Describe" button on each PRISM instance** (Settings → PRISM) opens the same dictionary editor (`SemanticDescriptionsModal` with `source_type="prism"`); admin-gated, same propose→confirm loop.
+  - **PRISM key descriptions are injected into the chat prompt** — folded into the `query_prism` instance catalog so the agent sees "known telemetry keys: kWh_sf = …; v1n = …" alongside each instance.
+  - (API-source dictionary and the builder generation for PRISM/API follow in v1.3.83; design in `claude/mosaic-dashboard-multisource-design.md`.)
+
 ## [1.3.81] - 2026-10-19
 
 ### Changed

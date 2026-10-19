@@ -266,7 +266,7 @@ For time ranges use Unix ms timestamps (startTs/endTs). If not given, default to
       type: 'object',
       properties: {
         instance_id: { type: 'string', description: 'Prism instance ID from settings. If only one is configured, omit this and the tool will use it automatically.' },
-        operation: { type: 'string', enum: ['telemetry_latest', 'telemetry_history', 'attributes', 'devices', 'assets', 'customers', 'alarms', 'dashboards'], description: 'What to fetch.' },
+        operation: { type: 'string', enum: ['telemetry_latest', 'telemetry_history', 'keys', 'attributes', 'devices', 'assets', 'customers', 'alarms', 'dashboards'], description: 'What to fetch. "keys" lists the available telemetry key names for a device/asset.' },
         entity_id: { type: 'string', description: 'Device or asset UUID. Required for telemetry_latest, telemetry_history, attributes, alarms.' },
         entity_type: { type: 'string', enum: ['DEVICE', 'ASSET'], description: 'Entity type. Defaults to DEVICE for telemetry operations.' },
         keys: { type: 'array', items: { type: 'string' }, description: 'Telemetry keys to fetch, e.g. ["stack_soc", "stack_power"]. For telemetry_latest and telemetry_history.' },
@@ -3720,6 +3720,13 @@ async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
       if ('error' in (data as Record<string,unknown>)) return data
       // Return condensed series: { key: [{ts, value},...] }
       return { entity_id: entityId, entity_type: entityType, startTs, endTs, series: data }
+    }
+
+    case 'keys': {
+      if (!entityId) return { error: 'entity_id required for keys' }
+      const data = await tbGet(`/api/plugins/telemetry/${entityType}/${entityId}/keys/timeseries`)
+      if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) return data
+      return { entity_id: entityId, entity_type: entityType, keys: Array.isArray(data) ? data as string[] : [] }
     }
 
     case 'attributes': {

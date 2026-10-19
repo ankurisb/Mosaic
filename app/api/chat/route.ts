@@ -253,12 +253,18 @@ export async function POST(req: Request) {
     : ''
   const prismList = (prismInstances as Record<string,unknown>[]).length
     ? '\n\n## Prism IoT (query_prism tool — use instance_id)\n' +
-      (prismInstances as Record<string,unknown>[]).map((p: Record<string,unknown>) =>
-        `- id:"${p.id}" | "${p.label}" | ${p.base_url} | ${p.environment}\n` +
-        `  operations: telemetry_latest, telemetry_history, attributes, devices, assets, customers, alarms, dashboards\n` +
-        `  Use query_prism with operation + entity_id (device/asset UUID) for telemetry and attributes.\n` +
-        `  Use devices/assets/customers operations first to discover entity IDs if unknown.`
-      ).join('\n')
+      (await Promise.all((prismInstances as Record<string,unknown>[]).map(async (p: Record<string,unknown>) => {
+        // Semantic dictionary: fold in plain-language telemetry-key descriptions so
+        // the model knows what cryptic keys (kWh_sf, v1n, …) mean. Empty when none.
+        const hints = await getSchemaHints('prism', String(p.id))
+        const keyGloss = hints.size
+          ? `\n  known telemetry keys: ${[...hints.entries()].slice(0, 60).map(([k, d]) => `${k} = ${d.length > 80 ? d.slice(0, 79) + '…' : d}`).join('; ')}`
+          : ''
+        return `- id:"${p.id}" | "${p.label}" | ${p.base_url} | ${p.environment}\n` +
+          `  operations: telemetry_latest, telemetry_history, keys, attributes, devices, assets, customers, alarms, dashboards\n` +
+          `  Use query_prism with operation + entity_id (device/asset UUID) for telemetry and attributes.\n` +
+          `  Use devices/assets/customers operations first to discover entity IDs if unknown.${keyGloss}`
+      }))).join('\n')
     : ''
   // MCP connections: list each server and the tools it exposes, so the AI can
   // call query_mcp with the right connection_id + tool_name. Tool discovery is

@@ -12,11 +12,52 @@ import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
-import { describeSchema } from '@/lib/ai/describe-schema'
+import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema'
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
 export const runtime = 'nodejs'
 
 const SOURCE_TYPES = new Set(['database', 'api', 'file', 'prism'])
+
+interface PrismDraftResult { ok: boolean; draft?: DescribeDraftItem[]; error?: string; status?: number }
+
+// Introspect a PRISM instance for its telemetry key vocabulary and draft a
+// description per key (units-aware). Lists devices, samples one representative
+// device per type for its key list + latest values, then asks the model to
+// explain the cryptic keys (kWh_sf, v1n, …). Keys are instance-wide, so each is
+// described once (object_type 'column', object_key = the bare key name).
+async function generatePrismDraft(sourceId: string): Promise<PrismDraftResult> {
+  try {
+    const dev = await runTool('query_prism', { instance_id: sourceId, operation: 'devices', page_size: 100 }) as { error?: string; devices?: Array<{ id: string; name: string; type: string }> }
+    if (!dev || dev.error) return { ok: false, error: dev?.error || 'Could not list PRISM devices', status: 400 }
+    const devices = dev.devices || []
+    if (!devices.length) return { ok: false, error: 'No devices found on this PRISM instance', status: 400 }
+    // One representative device per type (up to 6 types).
+    const reps = new Map<string, { id: string; name: string }>()
+    for (const d of devices) { if (d.id && !reps.has(d.type)) reps.set(d.type, { id: d.id, name: d.name }); if (reps.size >= 6) break }
+    const keyToTypes = new Map<string, Set<string>>()
+    const sampleVals: Record<string, unknown> = {}
+    for (const [type, rep] of reps) {
+      const kr = await runTool('query_prism', { instance_id: sourceId, operation: 'keys', entity_id: rep.id, entity_type: 'DEVICE' }) as { keys?: string[] }
+      const keys = kr?.keys || []
+      if (!keys.length) continue
+      for (const k of keys) { if (!keyToTypes.has(k)) keyToTypes.set(k, new Set()); keyToTypes.get(k)!.add(type) }
+      const lr = await runTool('query_prism', { instance_id: sourceId, operation: 'telemetry_latest', entity_id: rep.id, entity_type: 'DEVICE', keys: keys.slice(0, 40) }) as { telemetry?: Record<string, { value: unknown }> }
+      for (const [k, v] of Object.entries(lr?.telemetry || {})) if (!(k in sampleVals)) sampleVals[k] = v?.value
+    }
+    const allKeys = [...keyToTypes.keys()].slice(0, 80)
+    if (!allKeys.length) return { ok: false, error: 'No telemetry keys found on this instance\'s devices', status: 400 }
+    const lines = allKeys.map(k => `  ${k} (device types: ${[...(keyToTypes.get(k) || [])].join(', ')})`).join('\n')
+    const schemaText = `PRISM IoT telemetry keys — describe each key (object_type "column", object_key = the key name). Infer units from the key name and sample value.\nkeys:\n${lines}`
+    const samples = { 'latest values': [Object.fromEntries(allKeys.filter(k => k in sampleVals).map(k => [k, sampleVals[k]]))] }
+    const result = await describeSchema(schemaText, samples)
+    if (!result.ok) return { ok: false, error: result.reason || 'Generation failed', status: 502 }
+    // Keys are columns; force the type so a stray "table" from the model doesn't slip in.
+    const draft = (result.items || []).map(i => ({ object_type: 'column' as const, object_key: i.object_key, description: i.description }))
+    return { ok: true, draft }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'PRISM generate failed', status: 500 }
+  }
+}
 
 export async function GET(req: Request) {
   const session = await getSession()
@@ -47,6 +88,12 @@ export async function POST(req: Request) {
 
     // -- GENERATE: propose descriptions from real schema + samples (not saved) ----
     if (action === 'generate') {
+      if (source_type === 'prism') {
+        const gen = await generatePrismDraft(source_id)
+        if (gen.ok) return Response.json({ draft: gen.draft ?? [] })
+        return Response.json({ error: gen.error || 'Generation failed' }, { status: gen.status || 500 })
+      }
+      // database (default)
       const schema = await getOrFetchSchema(source_id)
       if (!schema || schema.error) {
         return Response.json({ error: schema?.error || 'Schema not available for this source' }, { status: 400 })

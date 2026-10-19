@@ -20,18 +20,22 @@ export interface DescribeResult {
 }
 
 const SYSTEM = `You are a data-dictionary assistant for an industrial analytics platform.
-Given a database schema and a few sample rows, write SHORT plain-language descriptions
-so a text-to-SQL model understands what each table and column means.
+Given a data source's schema (SQL tables/columns, IoT telemetry keys, or API record
+fields) and a few sample values, write SHORT plain-language descriptions so an AI that
+queries this source understands what each object means.
 
 Rules:
-- Describe every table (one clause each: what one row represents).
-- Describe only columns whose meaning is NOT obvious from the name. Skip plain ones
-  like id, name, created_at. ALWAYS describe cryptic/industrial columns (e.g. kWh_sf,
-  v1n, mb_error, machine_status) — infer meaning from the name and sample values.
+- Describe every table/entity (one clause each: what one row/record represents).
+- Describe every object whose meaning is NOT obvious from the name. Skip plain ones
+  like id, name, created_at. ALWAYS describe cryptic/industrial names (e.g. kWh_sf,
+  v1n, mb_error, machine_status, stack_soc) — infer meaning from the name and sample values.
 - Each description <= 15 words, concrete, no filler. State units where inferable
-  (kWh, seconds, volts, %). Do NOT invent facts not supported by name or samples.
-- Output ONLY a JSON object: {"items":[{"object_type":"table"|"column","object_key":"<table or table.column>","description":"..."}]}
-  object_key must use the exact table names given (and table.column for columns). No markdown, no prose.`
+  (kWh, kW, seconds, volts, %, °C). A trailing _sf usually means "scaling factor".
+  Do NOT invent facts not supported by the name or the samples.
+- Output ONLY a JSON object: {"items":[{"object_type":"table"|"column","object_key":"<name>","description":"..."}]}
+  Use object_type "table" for a table/entity/device-type and "column" for a column/telemetry-key/field.
+  object_key must be the exact name given (use "table.column" form only when the schema shows it that way).
+  No markdown, no prose.`
 
 function extractJson(text: string): { items?: DescribeDraftItem[] } {
   const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
