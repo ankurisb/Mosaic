@@ -1,7 +1,27 @@
 import { getSession } from '@/lib/auth'
 import { log } from '@/lib/logger'
 import { getDb, nowExpr } from '@/lib/db'
+import { readonlyGuard } from '@/lib/dashboard-plan'
 export const runtime = 'nodejs'
+
+const MAX_PANELS_PER_DASHBOARD = 50
+
+// Reject a non-read-only panel query at write time (defence in depth — the panel
+// executor also guards at run time). Database sources only; api/file defer.
+async function denyNonReadonly(sql: ReturnType<typeof getDb>, source_type: string | undefined, source_id: string | undefined, query: string | undefined): Promise<string | null> {
+  if ((source_type ?? 'database') !== 'database' || !source_id || !query) return null
+  let dialect = 'postgres'
+  try { const r = await sql`SELECT dialect FROM db_connections WHERE id=${source_id}` as Array<{ dialect?: string }>; if (r[0]?.dialect) dialect = r[0].dialect } catch { /* default dialect */ }
+  const g = readonlyGuard(query, dialect)
+  return g.ok ? null : (g.reason || 'only read-only SELECT queries are allowed')
+}
+
+// Ownership check for a single panel (via its dashboard) — prevents cross-user
+// panel edits/deletes by guessed id (IDOR).
+async function ownsPanel(sql: ReturnType<typeof getDb>, id: string, userId: string): Promise<boolean> {
+  const r = await sql`SELECT p.id FROM dashboard_panels p JOIN dashboards d ON d.id = p.dashboard_id WHERE p.id = ${id} AND d.owner_id = ${userId}`
+  return r.length > 0
+}
 
 // -- GET -- list dashboards visible to the user -----------------
 export async function GET() {
@@ -78,6 +98,11 @@ export async function POST(req: Request) {
     // Verify ownership
     const owns = await sql`SELECT id FROM dashboards WHERE id = ${dashboard_id} AND owner_id = ${session.id}`
     if (!owns.length) return Response.json({ error: 'Not found' }, { status: 404 })
+    const cnt = await sql`SELECT COUNT(*) AS c FROM dashboard_panels WHERE dashboard_id = ${dashboard_id}`
+    if (Number((cnt[0] as { c: number }).c) >= MAX_PANELS_PER_DASHBOARD)
+      return Response.json({ error: `dashboard already has the maximum ${MAX_PANELS_PER_DASHBOARD} panels` }, { status: 400 })
+    const roErr = await denyNonReadonly(sql, source_type, source_id, query)
+    if (roErr) return Response.json({ error: `panel query rejected: ${roErr}` }, { status: 400 })
     const rows = await sql`
       INSERT INTO dashboard_panels
         (dashboard_id, title, subtitle, source_type, source_id,
@@ -103,6 +128,9 @@ export async function POST(req: Request) {
       col, row, w, h,
     } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
+    if (!(await ownsPanel(sql, id, session.id))) return Response.json({ error: 'Not found' }, { status: 404 })
+    const roErr = await denyNonReadonly(sql, source_type, source_id, query)
+    if (roErr) return Response.json({ error: `panel query rejected: ${roErr}` }, { status: 400 })
     await sql`
       UPDATE dashboard_panels
       SET    title        = ${title?.trim() ?? ''},
@@ -125,7 +153,8 @@ export async function POST(req: Request) {
   if (action === 'delete_panel') {
     const { id } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
-    await sql`DELETE FROM dashboard_panels WHERE id = ${id}`
+    // Scope the delete to panels on the caller's own dashboards (IDOR guard).
+    await sql`DELETE FROM dashboard_panels WHERE id = ${id} AND dashboard_id IN (SELECT id FROM dashboards WHERE owner_id = ${session.id})`
     return Response.json({ ok: true })
   }
 
@@ -137,7 +166,7 @@ export async function POST(req: Request) {
       await sql`
         UPDATE dashboard_panels
         SET col = ${p.col}, row = ${p.row}, w = ${p.w}, h = ${p.h}
-        WHERE id = ${p.id}`
+        WHERE id = ${p.id} AND dashboard_id IN (SELECT id FROM dashboards WHERE owner_id = ${session.id})`
     }
     return Response.json({ ok: true })
   }

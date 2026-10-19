@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.79] - 2026-10-19
+
+### Hardened / Fixed
+- **Dashboard write boundary (`/api/dashboards`) hardened** — found by an adversarial pass against the live v1.3.78 deployment (the Save path the chat builder's proposal card uses). The chat builder itself passed its end-to-end security test: a plan containing `DELETE FROM machines` was classified `error` and never executed (blocked by the read-only guard before run). But the persist API underneath had gaps, now closed:
+  - **IDOR on panels** — `update_panel`, `delete_panel` and `reorder_panels` modified/deleted a panel by id with **no ownership check**, so any signed-in user could alter another user's panels by guessing ids. All three are now scoped to panels on the caller's own dashboards (`update_panel` returns 404 for a panel the caller doesn't own; delete/reorder are owner-scoped in the WHERE clause).
+  - **No panel cap** — `add_panel` accepted unlimited panels per dashboard (60 added freely in the test), and the dashboard data route runs every panel query on load. Capped at `MAX_PANELS_PER_DASHBOARD = 50`.
+  - **Non-read-only panel queries could be stored** — `add_panel`/`update_panel` now reject a non-SELECT query for database panels at write time (`readonlyGuard`, dialect-aware), defence-in-depth on top of the executor's run-time guard.
+  - Confirmed already-correct: `add_panel` required-field validation (400), cross-user `add_panel` blocked (404 via dashboard ownership), non-owner `delete_dashboard` deletes nothing.
+
 ## [1.3.78] - 2026-10-19
 
 ### Added
