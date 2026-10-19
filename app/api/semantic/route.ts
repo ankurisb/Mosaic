@@ -20,34 +20,63 @@ const SOURCE_TYPES = new Set(['database', 'api', 'file', 'prism'])
 
 interface PrismDraftResult { ok: boolean; draft?: DescribeDraftItem[]; error?: string; status?: number }
 
+// How many devices to sample for the telemetry-key vocabulary. PRISM/ThingsBoard
+// fleets routinely type every device "default" and spread the key vocabulary
+// across devices (one inverter reports kWh/kW, a meter reports v1n, a weather
+// station reports slr_rdtn). Sampling one device — or one per type — misses most
+// of the dictionary, so we union keys across a broad sample of devices instead.
+const PRISM_SAMPLE_DEVICES = 50
+const PRISM_VALUE_DEVICES = 10   // devices to pull latest values from (for units inference)
+const PRISM_MAX_KEYS = 120
+
 // Introspect a PRISM instance for its telemetry key vocabulary and draft a
-// description per key (units-aware). Lists devices, samples one representative
-// device per type for its key list + latest values, then asks the model to
-// explain the cryptic keys (kWh_sf, v1n, …). Keys are instance-wide, so each is
-// described once (object_type 'column', object_key = the bare key name).
+// description per key (units-aware). Lists devices, then UNIONS telemetry keys
+// across a broad sample of devices (keys are instance-wide but each device only
+// reports the subset it emits), pulls latest values from the richest devices for
+// units inference, and asks the model to explain the cryptic keys (kWh_sf, v1n,
+// mb_error, …). Each key is described once (object_type 'column', object_key =
+// the bare key name).
 async function generatePrismDraft(sourceId: string): Promise<PrismDraftResult> {
   try {
     const dev = await runTool('query_prism', { instance_id: sourceId, operation: 'devices', page_size: 100 }) as { error?: string; devices?: Array<{ id: string; name: string; type: string }> }
     if (!dev || dev.error) return { ok: false, error: dev?.error || 'Could not list PRISM devices', status: 400 }
-    const devices = dev.devices || []
+    const devices = (dev.devices || []).filter(d => d.id)
     if (!devices.length) return { ok: false, error: 'No devices found on this PRISM instance', status: 400 }
-    // One representative device per type (up to 6 types).
-    const reps = new Map<string, { id: string; name: string }>()
-    for (const d of devices) { if (d.id && !reps.has(d.type)) reps.set(d.type, { id: d.id, name: d.name }); if (reps.size >= 6) break }
-    const keyToTypes = new Map<string, Set<string>>()
-    const sampleVals: Record<string, unknown> = {}
-    for (const [type, rep] of reps) {
-      const kr = await runTool('query_prism', { instance_id: sourceId, operation: 'keys', entity_id: rep.id, entity_type: 'DEVICE' }) as { keys?: string[] }
-      const keys = kr?.keys || []
+
+    // Union telemetry keys across a broad device sample. Track per-key device
+    // frequency (how many sampled devices report it) so the model gets a hint at
+    // how core vs peripheral a key is, and remember which devices are richest so
+    // we can pull representative latest values from them.
+    const sample = devices.slice(0, PRISM_SAMPLE_DEVICES)
+    const keyFreq = new Map<string, number>()
+    const deviceKeys: Array<{ id: string; name: string; keys: string[] }> = []
+    for (const d of sample) {
+      const kr = await runTool('query_prism', { instance_id: sourceId, operation: 'keys', entity_id: d.id, entity_type: 'DEVICE' }) as { keys?: string[] }
+      const keys = Array.isArray(kr?.keys) ? kr!.keys! : []
       if (!keys.length) continue
-      for (const k of keys) { if (!keyToTypes.has(k)) keyToTypes.set(k, new Set()); keyToTypes.get(k)!.add(type) }
-      const lr = await runTool('query_prism', { instance_id: sourceId, operation: 'telemetry_latest', entity_id: rep.id, entity_type: 'DEVICE', keys: keys.slice(0, 40) }) as { telemetry?: Record<string, { value: unknown }> }
-      for (const [k, v] of Object.entries(lr?.telemetry || {})) if (!(k in sampleVals)) sampleVals[k] = v?.value
+      deviceKeys.push({ id: d.id, name: d.name, keys })
+      for (const k of keys) keyFreq.set(k, (keyFreq.get(k) || 0) + 1)
     }
-    const allKeys = [...keyToTypes.keys()].slice(0, 80)
-    if (!allKeys.length) return { ok: false, error: 'No telemetry keys found on this instance\'s devices', status: 400 }
-    const lines = allKeys.map(k => `  ${k} (device types: ${[...(keyToTypes.get(k) || [])].join(', ')})`).join('\n')
-    const schemaText = `PRISM IoT telemetry keys — describe each key (object_type "column", object_key = the key name). Infer units from the key name and sample value.\nkeys:\n${lines}`
+    if (!keyFreq.size) return { ok: false, error: 'No telemetry keys found across this instance\'s devices', status: 400 }
+
+    // Keys sorted by how commonly they appear (most-reported first), capped.
+    const allKeys = [...keyFreq.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, PRISM_MAX_KEYS)
+    const keySet = new Set(allKeys)
+
+    // Pull latest values from the devices that report the most keys, until every
+    // key has at least one representative value (or we run out of budget).
+    const sampleVals: Record<string, unknown> = {}
+    const richest = [...deviceKeys].sort((a, b) => b.keys.length - a.keys.length).slice(0, PRISM_VALUE_DEVICES)
+    for (const d of richest) {
+      const want = d.keys.filter(k => keySet.has(k) && !(k in sampleVals))
+      if (!want.length) continue
+      const lr = await runTool('query_prism', { instance_id: sourceId, operation: 'telemetry_latest', entity_id: d.id, entity_type: 'DEVICE', keys: want.slice(0, 50) }) as { telemetry?: Record<string, { value: unknown }> }
+      for (const [k, v] of Object.entries(lr?.telemetry || {})) if (keySet.has(k) && !(k in sampleVals)) sampleVals[k] = v?.value
+      if (allKeys.every(k => k in sampleVals)) break
+    }
+
+    const lines = allKeys.map(k => `  ${k} (reported by ${keyFreq.get(k)}/${deviceKeys.length} sampled devices)`).join('\n')
+    const schemaText = `PRISM IoT telemetry keys — describe each key (object_type "column", object_key = the key name). This is a fleet of ${dev.devices!.length} devices; the keys below are the union of telemetry channels across a sample of them. Infer units from the key name and sample value (e.g. kWh = energy, kW = power, _sf = scaling factor, v1n = phase-to-neutral voltage, slr_rdtn = solar irradiance, mb_error = Modbus error).\nkeys:\n${lines}`
     const samples = { 'latest values': [Object.fromEntries(allKeys.filter(k => k in sampleVals).map(k => [k, sampleVals[k]]))] }
     const result = await describeSchema(schemaText, samples)
     if (!result.ok) return { ok: false, error: result.reason || 'Generation failed', status: 502 }

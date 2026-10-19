@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.83] - 2026-10-19
+
+### Fixed
+- **PRISM dictionary auto-describe now captures the whole telemetry vocabulary** instead of a single key. The v1.3.82 generator sampled *one representative device per device type* — but real PRISM/ThingsBoard solar fleets type every device `default` and spread the key vocabulary across devices (one unit reports `kWh`/`kW`, another `v1n`, a weather station `slr_rdtn`). On the live Ornate NTPC instance (101 devices, all type `default`) that collapsed to a single device exposing only `v1n`, so "Describe" drafted one useless entry. The generator now **unions telemetry keys across a broad device sample** (up to 50 devices), ranks them by how many devices report each key, and pulls latest values from the richest devices for units inference. Verified live: 17 distinct keys recovered (`mb_error`, `machine_status`, `total_energy`, `kWh`, `kWh_today`, `kWh_sf`, `kW`, `total_power`, `kW_sf`, `v1n`, `kWh_in`, `kWh_out`, `slr_rdtn`, …) vs 1 before. (`app/api/semantic/route.ts` `generatePrismDraft`.)
+
 ## [1.3.82] - 2026-10-19
 
 ### Added
