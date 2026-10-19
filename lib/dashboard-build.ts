@@ -23,11 +23,14 @@ export interface DashboardProposal {
 export type DialectResolver = (sourceType: string, sourceId: string) => string | undefined
 export interface BuildCtx { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[] }
 
-// A generous default preview window so {{time_from}}/{{time_to}} panels run during
-// dry-run. The SAVED panel uses the live dashboard time window instead.
+// DRY-RUN ONLY: a deliberately WIDE preview window (≈10 years) so a time-filtered
+// panel still shows whether it returns data even when the source's data is sparse
+// or old — the preview answers "does this panel work and return rows?", not "what
+// will the default view show". The SAVED panel always runs under the dashboard's
+// own top-right time window instead.
 function previewWindow() {
-  const to = new Date()
-  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const to = new Date(Date.now() + 24 * 60 * 60 * 1000)              // +1 day, so "today" data is included
+  const from = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000) // ~10 years back
   return { time_from: from.toISOString(), time_to: to.toISOString(), interval: '1 day' }
 }
 function substituteWindow(sql: string): string {

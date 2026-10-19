@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.81] - 2026-10-19
+
+### Changed
+- **Dashboard builder dry-run now previews time-filtered panels over a wide (~10-year) window** instead of a fixed last-30-days. A panel that filters on `{{time_from}}`/`{{time_to}}` was correctly reported "empty" whenever the source's data fell outside the last 30 days (e.g. the sandbox's April data checked in October), making a valid panel look broken in the proposal. The preview now answers "does this panel return data?" regardless of how old the data is; the saved dashboard still runs under its own top-right time window. (`lib/dashboard-build.ts` `previewWindow`.)
+
 ## [1.3.80] - 2026-10-19
 
 ### Added / Changed
