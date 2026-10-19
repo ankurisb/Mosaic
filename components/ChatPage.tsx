@@ -113,7 +113,7 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
 ]
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal }
 interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
 interface Folder { id: string; name: string; position?: number }
 
@@ -823,6 +823,125 @@ function workspaceFromMsg(tools?: ToolCall[]): ResearchState | null {
   return null
 }
 
+// ── Dashboard proposal (chat-native builder) ────────────────────────────────
+interface ProposalPanel {
+  intent?: string; title: string; subtitle?: string
+  source_type: string; source_id: string; query: string
+  chart_type: string; chart_config?: Record<string, unknown>
+  suggested_grid?: { col: number; row: number; w: number; h: number }
+  validation: { cls: 'data' | 'empty' | 'error' | 'invalid'; rows: number; detail?: string; sample?: unknown[] }
+}
+interface DashboardProposal {
+  title: string; description?: string
+  panels: ProposalPanel[]
+  summary: { data: number; empty: number; error: number; invalid: number; total: number }
+}
+const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey']
+
+// Live-preview proposal card: each tile shows the panel's validation verdict and a
+// real sample of rows. The user includes/excludes, edits the query/chart/title, then
+// saves — persisting via the existing create_dashboard / add_panel actions. Preview
+// is exactly the query that gets saved (bounded only for the dry-run).
+function DashboardProposalCard({ proposal, onOpen }: { proposal: DashboardProposal; onOpen: (id: string) => void }) {
+  const [panels, setPanels] = useState(() => proposal.panels.map(p => ({
+    ...p, include: p.validation.cls === 'data' || p.validation.cls === 'empty', expanded: false,
+  })))
+  const [title, setTitle] = useState(proposal.title)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+
+  const clsStyle = (cls: string): { bg: string; fg: string; label: string } => {
+    if (cls === 'data') return { bg: 'var(--pass-bg, rgba(31,138,82,.12))', fg: 'var(--green-t, #1f8a52)', label: 'data' }
+    if (cls === 'empty') return { bg: 'var(--amber-bg, rgba(180,105,14,.12))', fg: 'var(--amber-t, #b4690e)', label: 'empty' }
+    if (cls === 'invalid') return { bg: 'var(--bg3)', fg: 'var(--text3)', label: 'invalid' }
+    return { bg: 'var(--red-bg, rgba(220,38,38,.1))', fg: 'var(--red-t, #dc2626)', label: 'error' }
+  }
+  const set = (i: number, patch: Partial<(typeof panels)[number]>) => setPanels(ps => ps.map((p, j) => j === i ? { ...p, ...patch } : p))
+  const includedCount = panels.filter(p => p.include).length
+
+  async function save() {
+    setSaving(true); setErr('')
+    try {
+      const chosen = panels.filter(p => p.include)
+      if (!chosen.length) throw new Error('Include at least one panel')
+      const cr = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_dashboard', name: title.trim() || 'New dashboard', description: proposal.description || '' }) })
+      const cd = await cr.json()
+      if (!cr.ok) throw new Error(cd.error || 'Could not create dashboard')
+      const id = cd.id as string
+      let order = 0
+      for (const p of chosen) {
+        const g = p.suggested_grid || { col: (order % 2) * 2, row: Math.floor(order / 2), w: 2, h: 1 }
+        const r = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          action: 'add_panel', dashboard_id: id, title: p.title, subtitle: p.subtitle || '',
+          source_type: p.source_type, source_id: p.source_id, query: p.query, chart_type: p.chart_type,
+          chart_config: p.chart_config || {}, col: g.col, row: g.row, w: g.w, h: g.h, sort_order: order,
+        }) })
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Failed to add panel "${p.title}"`) }
+        order++
+      }
+      setSaved(id)
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Save failed') }
+    finally { setSaving(false) }
+  }
+
+  if (saved) {
+    return (
+      <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 12, padding: 16, background: 'var(--surface)' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Dashboard “{title}” saved — {includedCount} panel{includedCount === 1 ? '' : 's'}.</div>
+        <button onClick={() => onOpen(saved)} style={{ padding: '7px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Open dashboard →</button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10, border: '1px solid var(--border2)', borderRadius: 12, background: 'var(--surface)', overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} style={{ flex: 1, minWidth: 160, fontSize: 14, fontWeight: 600, color: 'var(--text)', background: 'transparent', border: 'none', borderBottom: '1px dashed var(--border2)', outline: 'none', padding: '2px 0', fontFamily: 'inherit' }} />
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{proposal.summary.data} data · {proposal.summary.empty} empty · {proposal.summary.error + proposal.summary.invalid} issue</span>
+        <button onClick={save} disabled={saving || includedCount === 0} style={{ padding: '7px 14px', background: includedCount ? 'var(--accent-bg)' : 'var(--bg4)', color: includedCount ? 'var(--accent-fg)' : 'var(--text4)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: saving || !includedCount ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : `Save dashboard (${includedCount})`}</button>
+      </div>
+      {err && <div style={{ padding: '8px 16px', color: 'var(--red-t, #dc2626)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{err}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10, padding: 14 }}>
+        {panels.map((p, i) => {
+          const c = clsStyle(p.validation.cls)
+          return (
+            <div key={i} style={{ border: `1px solid ${p.include ? 'var(--border2)' : 'var(--border)'}`, borderRadius: 10, padding: 12, background: p.include ? 'var(--bg)' : 'var(--bg3)', opacity: p.include ? 1 : 0.6, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <input type="checkbox" checked={p.include} onChange={e => set(i, { include: e.target.checked })} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.title}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: c.bg, color: c.fg }}>{c.label}{p.validation.cls === 'data' ? ` · ${p.validation.rows}` : ''}</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>{p.chart_type}{p.intent ? ` — ${p.intent}` : ''}</div>
+              {p.validation.detail && p.validation.cls !== 'data' && (
+                <div style={{ fontSize: 11, color: c.fg, marginBottom: 6 }}>{p.validation.detail}</div>
+              )}
+              {p.validation.sample && p.validation.sample.length > 0 && (
+                <div style={{ overflowX: 'auto', marginBottom: 6 }}>
+                  <pre style={{ margin: 0, fontSize: 10, color: 'var(--text2)', fontFamily: 'ui-monospace, monospace', whiteSpace: 'pre', maxHeight: 90, overflowY: 'auto' }}>{JSON.stringify(p.validation.sample.slice(0, 3), null, 0).slice(0, 400)}</pre>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => set(i, { expanded: !p.expanded })} style={{ background: 'none', border: 'none', color: 'var(--accent-fg, var(--text2))', fontSize: 11, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>{p.expanded ? 'Hide' : 'Edit'}</button>
+              </div>
+              {p.expanded && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <input value={p.title} onChange={e => set(i, { title: e.target.value })} placeholder="Title" style={{ fontSize: 12, padding: '5px 8px', border: '1px solid var(--border2)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit' }} />
+                  <select value={p.chart_type} onChange={e => set(i, { chart_type: e.target.value })} style={{ fontSize: 12, padding: '5px 8px', border: '1px solid var(--border2)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit' }}>
+                    {PROPOSAL_CHART_TYPES.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                  </select>
+                  <textarea value={p.query} onChange={e => set(i, { query: e.target.value })} rows={3} style={{ fontSize: 11, padding: '6px 8px', border: '1px solid var(--border2)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} />
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>Edits are saved as-is; re-run by asking in chat if you want them re-previewed.</div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function ChatPage({ user }: { user: SessionUser }) {
   const router = useRouter()
   const [convs, setConvs] = useState<Conv[]>([{ id: 'local-1', title: 'New conversation', messages: [] }])
@@ -1377,6 +1496,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               // Auto-open a produced map in the right panel.
               if (e.name === 'render_map' && e.result && (e.result as { kind?: string }).kind === 'map_artifact') setPanel({ kind: 'map', map: e.result as MapData })
             }
+            // Dashboard builder proposal — attach to the message so the proposal card renders.
+            else if (e.type === 'dashboard_proposal' && e.proposal) updateLast(cid, m => ({ ...m, dashboardProposal: e.proposal as DashboardProposal }))
             // -- Deep research live events --
             else if (e.type === 'research_started') { setResearch({ mode: e.mode === 'diagnose' ? 'diagnose' : 'research', question: String(e.question || ''), phase: 'planning', subtasks: [] }); setPanel({ kind: 'research' }) }
             else if (e.type === 'research_plan') {
@@ -1722,6 +1843,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
                   {/* Files produced by run_code — download chips + inline images */}
                   {msg.role === 'assistant' && <GeneratedFiles files={collectGeneratedFiles(msg.tools)} onOpen={f => setPanel({ kind: 'file', file: f })} />}
+                  {msg.role === 'assistant' && msg.dashboardProposal && <DashboardProposalCard proposal={msg.dashboardProposal} onOpen={id => router.push(`/dashboards/${id}`)} />}
                   {msg.role === 'assistant' && <MapChips maps={collectMapArtifacts(msg.tools)} onOpen={m => setPanel({ kind: 'map', map: m })} />}
                   {msg.role === 'assistant' && (() => {
                     // Reopen from the message's own persisted snapshot. While a run is

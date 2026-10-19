@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.78] - 2026-10-19
+
+### Added
+- **Chat-native dashboard builder (Phase 1B)** — ask in chat ("build a dashboard for plant performance: daily generation, availability by inverter, top 5 underperformers") and Mosaic proposes a whole multi-panel dashboard with **live sample data**, which you confirm/edit/drop before anything is saved. Design: `claude/mosaic-dashboard-chat-builder-design.md`.
+  - **`build_dashboard` tool** (lib/tools.ts spec; handled inline in the chat route like deep_research). The model emits a typed plan — title + up to 12 panels, each `{source_type, source_id, SQL SELECT, chart_type, …}`.
+  - **Server dry-run + validate** (`lib/dashboard-build.ts` + pure, unit-tested `lib/dashboard-plan.ts`): every panel is shape-checked, its query passed through the same read-only whitelist as `query_database` (rejects non-SELECT, stacked statements), bounded with a preview `LIMIT`/`TOP`, executed read-only via the existing panel executor path, and classified `data | empty | error | invalid` with a real row sample. `{{time_from}}/{{time_to}}` panels run against a default 30-day preview window.
+  - **Proposal card in chat** (`DashboardProposalCard`): a grid of live-preview tiles, each with a green/amber/red verdict, the reason when empty/error, and a sample of real rows. Per tile: include/exclude, edit title/chart/SQL. **Save** persists the included panels via the existing `create_dashboard` / `add_panel` actions and opens the new dashboard. Nothing is written until you save.
+  - 22 unit tests for the plan logic (read-only guard, preview-limit for every dialect, result classifier, plan/panel validation); `build_dashboard` added to the build-phase tool set so it's never starved by the tool budget. Database (SQL) sources this phase; API/PRISM planning is a later phase.
+
 ## [1.3.77] - 2026-10-19
 
 ### Hardened

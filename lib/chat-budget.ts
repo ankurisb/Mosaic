@@ -17,7 +17,7 @@ export type TurnMode = 'normal' | 'approaching' | 'build' | 'synthesis'
 
 /** Tools allowed to run during the 'build' phase — they produce deliverables,
  *  they don't gather new source data. */
-export const BUILD_TOOL_NAMES: ReadonlySet<string> = new Set(['run_code', 'render_chart', 'render_map'])
+export const BUILD_TOOL_NAMES: ReadonlySet<string> = new Set(['run_code', 'render_chart', 'render_map', 'build_dashboard'])
 
 /** Parse CHAT_TOOL_CALL_BUDGET from env, clamped to [4, 200], default 40. */
 export function parseToolBudget(env: string | undefined, def = 40): number {

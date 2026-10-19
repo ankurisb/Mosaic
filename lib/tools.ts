@@ -423,6 +423,45 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
     },
   },
   {
+    name: 'build_dashboard',
+    description: `Build a multi-panel dashboard from a natural-language request (e.g. "a dashboard for plant performance: daily generation, availability by inverter, top 5 underperformers"). Produce a COMPLETE plan: for each panel pick the most relevant connected data source, write ONE read-only SQL SELECT using the real schema shown above (use {{time_from}} / {{time_to}} placeholders for time-filtered panels), choose a chart_type, and give it a short title. Do NOT run the queries yourself first — build_dashboard dry-runs every panel read-only (bounded row count), previews real sample data, and streams a proposal card for the user to confirm/edit before anything is saved. After it returns, tell the user the dashboard is proposed and summarise which panels returned data vs came back empty/error so they can fix those. Database sources only for now (SQL dialects). Use at most 12 panels.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan: {
+          type: 'object',
+          description: 'The dashboard plan.',
+          properties: {
+            title: { type: 'string', description: 'Short dashboard title.' },
+            description: { type: 'string', description: 'Optional one-line description.' },
+            panels: {
+              type: 'array',
+              description: '1–12 panels. One SQL SELECT per panel.',
+              items: {
+                type: 'object',
+                properties: {
+                  intent: { type: 'string', description: 'One line: what this panel shows and why (shown in the proposal card).' },
+                  title: { type: 'string', description: 'Short panel title.' },
+                  subtitle: { type: 'string', description: 'Optional subtitle.' },
+                  source_type: { type: 'string', enum: ['database'], description: 'Data source kind (database only for now).' },
+                  source_id: { type: 'string', description: 'The id of the connected database source (from the list above).' },
+                  query: { type: 'string', description: 'A single read-only SQL SELECT. Use {{time_from}} / {{time_to}} for time filters.' },
+                  chart_type: { type: 'string', enum: ['bar','line','area','table','stat','donut','gauge','heatmap','boxplot','sankey'], description: 'How to visualise the result.' },
+                  chart_config: { type: 'object', description: 'Optional field mapping for the chart (x/y/series/value columns).' },
+                  suggested_grid: { type: 'object', properties: { col: { type: 'number' }, row: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, description: 'Optional grid placement.' },
+                  confidence: { type: 'number', description: 'Your confidence 0..1 that this panel is right.' },
+                },
+                required: ['title', 'source_type', 'source_id', 'query', 'chart_type']
+              }
+            },
+          },
+          required: ['title', 'panels']
+        }
+      },
+      required: ['plan']
+    },
+  },
+  {
     name: 'fetch_url',
     description: `Fetch the text content of a specific public web page by URL. Use this to read a named page you already know or found via web_search — docs, an article, a competitor/vendor page, a spec. Returns the page title and readable text (HTML stripped, truncated). For discovery use web_search; use fetch_url when you have a concrete URL to read. Public web only — internal/private addresses are refused.`,
     input_schema: {

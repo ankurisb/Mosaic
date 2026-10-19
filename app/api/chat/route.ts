@@ -3,6 +3,8 @@ import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
 import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
 import { getSchemaHints } from '@/lib/semantic'
+import { enrichPlan } from '@/lib/dashboard-build'
+import type { DashboardPlan } from '@/lib/dashboard-plan'
 import { buildUserContent, type IncomingAttachment } from '@/lib/attachments'
 import { sanitizeHistory } from '@/lib/chat-history'
 import { getSession } from '@/lib/auth'
@@ -475,7 +477,12 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   let memoryBlock = ''
   try { const { formatMemoryForPrompt } = await import('@/lib/memory'); memoryBlock = await formatMemoryForPrompt(session.id) } catch { }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock
+  // Dashboard builder guidance — only when database sources exist (the builder
+  // supports SQL database sources in this phase).
+  const dashboardBlock = dbConns.length > 0
+    ? '\n\n## Building dashboards\nWhen the user asks to build, create, or set up a dashboard (or "a dashboard for X"), call build_dashboard with a COMPLETE plan rather than writing panels yourself: for each panel pick the most relevant database source above, write ONE read-only SQL SELECT against its real schema (use {{time_from}} / {{time_to}} placeholders for time-filtered panels), choose a chart_type, and give a short title. Do NOT run the panel queries first — build_dashboard dry-runs and previews them and shows the user a proposal card to confirm. Keep it to the panels the user actually asked for (max 12).'
+    : ''
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock + dashboardBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
@@ -840,6 +847,29 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                   const msg = e instanceof Error ? e.message : 'diagnosis failed'
                   send({ type: 'tool_result', name: 'deep_diagnose', result: { error: msg } })
                   return { type: 'tool_result' as const, tool_use_id: block.id, content: `Diagnosis could not complete: ${msg}` }
+                }
+              }
+              // Dashboard builder — dry-runs every panel read-only, previews real
+              // sample data, and streams a proposal card. Nothing is saved here;
+              // the user confirms in the card (persists via create_dashboard/add_panel).
+              if (block.name === 'build_dashboard') {
+                const plan = (block.input as { plan?: DashboardPlan }).plan
+                if (!plan || !Array.isArray(plan.panels) || plan.panels.length === 0) {
+                  send({ type: 'tool_result', name: 'build_dashboard', result: { error: 'empty plan' } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: 'The dashboard plan was empty — propose at least one panel with a source and a SQL SELECT.' }
+                }
+                try {
+                  const dialectOf = (_st: string, id: string) => (dbConns as Array<Record<string, unknown>>).find(c => c.id === id)?.dialect as string | undefined
+                  const proposal = await enrichPlan(plan, dialectOf, { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources })
+                  send({ type: 'dashboard_proposal', proposal })
+                  finalToolCalls.push({ name: 'build_dashboard', input: block.input, result: { title: proposal.title, summary: proposal.summary } })
+                  const s = proposal.summary
+                  const content = `Dashboard "${proposal.title}" proposed: ${s.total} panel(s) — ${s.data} returned data, ${s.empty} empty, ${s.error} query error(s), ${s.invalid} invalid. The proposal card is shown for the user to confirm/edit/drop panels before saving. Briefly summarise and call out any empty/error panels (with the reason) that need fixing.`
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content }
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : 'dashboard build failed'
+                  send({ type: 'tool_result', name: 'build_dashboard', result: { error: msg } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Could not build the dashboard: ${msg}` }
                 }
               }
               const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources }
