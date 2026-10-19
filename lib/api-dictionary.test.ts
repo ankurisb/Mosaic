@@ -23,6 +23,25 @@ describe('extractApiRecords — envelope variety', () => {
   it('single plain object', () => {
     expect(extractApiRecords({ id: 1, name: 'x' })).toEqual([{ id: 1, name: 'x' }])
   })
+  it('FactoryOS envelope: data is a JSON STRING wrapping {records:[…],pagination}', () => {
+    const body = { status: true, message: 'Fetched', data: JSON.stringify({ records: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }], page: 1, total_pages: 3 }) }
+    const recs = extractApiRecords(body)
+    expect(recs).toHaveLength(2)
+    expect(recs[0]).toEqual({ id: 1, title: 'A' })   // the records, not status/message/data
+  })
+  it('envelope with data as a direct array', () => {
+    expect(extractApiRecords({ status: true, data: [{ a: 1 }] })).toEqual([{ a: 1 }])
+  })
+  it('envelope with a single record object under data', () => {
+    expect(extractApiRecords({ success: true, data: { id: 9, name: 'z' } })).toEqual([{ id: 9, name: 'z' }])
+  })
+  it('bare envelope with no records → [] (does not describe the wrapper)', () => {
+    expect(extractApiRecords({ status: false, message: 'no access' })).toEqual([])
+  })
+  it('a genuine record that merely has a data field is NOT treated as an envelope', () => {
+    // No status/message/pagination sibling → stays a single record.
+    expect(extractApiRecords({ id: 1, data: { nested: true } })).toEqual([{ id: 1, data: { nested: true } }])
+  })
   it('non-object / empty inputs', () => {
     expect(extractApiRecords(null)).toEqual([])
     expect(extractApiRecords('text')).toEqual([])

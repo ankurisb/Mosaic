@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.88] - 2026-10-19
+
+### Fixed
+- **API dictionary now unwraps nested / JSON-stringified response envelopes** (the FactoryOS shape). The live extreme test showed the describer drafting an endpoint's *wrapper* fields (`status`, `message`, `data`) instead of the real record fields, because FactoryOS returns `{status, message, data: "<JSON string of {records:[…], page, …}>"}` — the records are JSON-stringified one level down. `extractApiRecords` now (1) parses a JSON-stringified payload field (`data`/`result`/`payload`/`response`/`body`) in place, (2) recurses one level into an envelope wrapper to find the records array when the object looks like a wrapper (has a `status`/`message`/pagination sibling), and (3) returns `[]` for a bare envelope with no discoverable records rather than describing the wrapper. A genuine record that merely has a `data` field is left untouched. +5 unit tests (18 in the module; 246 total).
+
 ## [1.3.87] - 2026-10-19
 
 ### Fixed
