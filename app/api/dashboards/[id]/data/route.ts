@@ -18,13 +18,22 @@ function getTimeWindow(tw: string): { time_from: string; time_to: string; interv
     'today': 0, '15m': 15 * 60 * 1000, '1h': 60 * 60 * 1000,
     '6h': 6 * 60 * 60 * 1000, '24h': 24 * 60 * 60 * 1000,
     '7d': 7 * 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000,
+    '90d': 90 * 24 * 60 * 60 * 1000, '1y': 365 * 24 * 60 * 60 * 1000,
   }
   const intervalLabels: Record<string, string> = {
     'today': '1 day', '15m': '15 minutes', '1h': '1 hour',
     '6h': '6 hours', '24h': '24 hours', '7d': '7 days', '30d': '30 days',
+    '90d': '90 days', '1y': '1 year',
   }
   if (tw === 'today') {
     return { time_from: fmt(today), time_to: fmt(now), interval: '1 day' }
+  }
+  // "All time": a window wide enough to include any historical or future-dated
+  // data, so a dashboard over old data (e.g. imported/demo) is never blank.
+  if (tw === 'all') {
+    const from = new Date(now.getTime() - 20 * 365 * 24 * 60 * 60 * 1000) // ~20 years back
+    const to = new Date(now.getTime() + 24 * 60 * 60 * 1000)             // +1 day
+    return { time_from: fmt(from), time_to: fmt(to), interval: '30 days' }
   }
   const ms = presets[tw]
   if (ms) {

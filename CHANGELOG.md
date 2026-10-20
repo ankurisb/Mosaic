@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.90] - 2026-10-20
+
+### Added
+- **Dashboard time control: "All time", "Last 90d" and "Last 1y" windows.** A freshly built dashboard over historical data (e.g. the Sandbox demo data, all stamped one day in April) opened blank on the default "Today" window, and no preset reached back far enough — so it *looked* broken when the build and data were fine (confirmed: the same panels return full data over a window that covers the data). "All time" (a ~20-year window) is a one-click way to see everything regardless of data age; 90d/1y fill the gap below it. (`DashboardView` presets + `getTimeWindow` in the panel executor.) A smarter per-dashboard default window (auto-detected from the data during the build) is the planned follow-up.
+
 ## [1.3.89] - 2026-10-19
 
 ### Fixed

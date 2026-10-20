@@ -27,6 +27,9 @@ const TIME_WINDOW_OPTS = [
   { label: "Last 24h", value: "24h" },
   { label: "Last 7d", value: "7d" },
   { label: "Last 30d", value: "30d" },
+  { label: "Last 90d", value: "90d" },
+  { label: "Last 1y", value: "1y" },
+  { label: "All time", value: "all" },
   { label: "Custom range…", value: "custom" },
 ]
 const REFRESH_OPTS = [
