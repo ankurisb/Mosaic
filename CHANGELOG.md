@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.96] - 2026-10-20
+
+### Added
+- **Resize and reorder dashboard panels.** The resize affordance was plumbed but never rendered (no handle element existed, even in the earliest version), so resizing never actually worked. Added a **resize handle** (bottom-right corner) that drives the existing resize logic, and **drag-to-reorder** — grab a panel by its header (a grip appears) and drop it on another to reorder; the new order persists (`reorder_panels` now writes `sort_order`, which is what the auto-flow grid follows). (`PanelChart`, `DashboardView`, `app/api/dashboards/route.ts`.)
+
+### Changed
+- **Sandbox demo data now spans the last 14 days** (deterministic) instead of a single historical day. Each day uses the same fixed profile, so time windows genuinely apply and trends have one point per day — and totals stay trivially checkable (N days in the window → N × the per-day value, e.g. 7d → 7 × 629 = 4,403 units). This makes time-window + aggregation behaviour validatable end to end on the built-in source, and preset windows (Today / 7d / 30d) now return data without a custom range. (`lib/tools.ts` sandbox seed.)
+
 ## [1.3.95] - 2026-10-20
 
 ### Changed

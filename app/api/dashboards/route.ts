@@ -163,10 +163,13 @@ export async function POST(req: Request) {
   if (action === 'reorder_panels') {
     const panels = body.panels as { id: string; col: number; row: number; w: number; h: number }[]
     if (!Array.isArray(panels)) return Response.json({ error: 'panels must be array' }, { status: 400 })
-    for (const p of panels) {
+    // Persist sort_order by array position (the grid auto-flows by sort_order), plus
+    // any col/row/w/h the client sends.
+    for (let i = 0; i < panels.length; i++) {
+      const p = panels[i]
       await sql`
         UPDATE dashboard_panels
-        SET col = ${p.col}, row = ${p.row}, w = ${p.w}, h = ${p.h}
+        SET col = ${p.col ?? 0}, row = ${p.row ?? 0}, w = ${p.w ?? 2}, h = ${p.h ?? 1}, sort_order = ${i}
         WHERE id = ${p.id} AND dashboard_id IN (SELECT id FROM dashboards WHERE owner_id = ${session.id})`
     }
     return Response.json({ ok: true })

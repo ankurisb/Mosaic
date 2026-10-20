@@ -1414,23 +1414,39 @@ async function queryDatabase(connectionId: string, queryInput: string) {
             CREATE TABLE quality_checks(id INTEGER PRIMARY KEY, machine_id INTEGER, check_date TEXT, defect_rate_pct REAL, inspector TEXT);
 
             INSERT INTO machines VALUES(1,'CNC-01','CNC','Line A','active'),(2,'CNC-02','CNC','Line A','active'),(3,'LATHE-01','Lathe','Line B','active'),(4,'PRESS-01','Press','Line B','maintenance'),(5,'MILL-01','Milling','Line C','active');
-
-            INSERT INTO production_logs VALUES
-            (1,1,'2026-04-12','Shift 1',58,64,36.4,82.1),(2,1,'2026-04-12','Shift 2',48,64,41.1,71.2),(3,1,'2026-04-12','Shift 3',36,48,37.2,81.9),
-            (4,2,'2026-04-12','Shift 1',61,64,35.1,88.4),(5,2,'2026-04-12','Shift 2',59,64,36.0,85.2),(6,2,'2026-04-12','Shift 3',44,48,37.5,84.1),
-            (7,3,'2026-04-12','Shift 1',42,48,52.1,79.4),(8,3,'2026-04-12','Shift 2',38,48,57.3,71.8),(9,3,'2026-04-12','Shift 3',31,40,54.2,72.1),
-            (10,5,'2026-04-12','Shift 1',78,80,28.4,91.2),(11,5,'2026-04-12','Shift 2',74,80,29.1,88.6),(12,5,'2026-04-12','Shift 3',60,64,30.2,87.4);
-
-            INSERT INTO downtime_events VALUES
-            (1,1,'2026-04-12 09:14',42,'Tool change','Planned'),(2,1,'2026-04-12 14:30',28,'Material shortage','Unplanned'),
-            (3,2,'2026-04-12 10:00',15,'Preventive maintenance','Planned'),
-            (4,3,'2026-04-12 08:45',35,'Conveyor jam','Unplanned'),(5,3,'2026-04-12 15:20',20,'Tool breakage','Unplanned'),
-            (6,4,'2026-04-12 07:00',480,'Scheduled maintenance','Planned');
-
-            INSERT INTO quality_checks VALUES
-            (1,1,'2026-04-12',1.8,'Ravi Kumar'),(2,2,'2026-04-12',0.9,'Ravi Kumar'),
-            (3,3,'2026-04-12',2.4,'Priya Singh'),(4,5,'2026-04-12',0.6,'Priya Singh');
           `)
+          // Deterministic demo data spanning the last SANDBOX_DAYS days ending TODAY,
+          // so time windows (Today / 7d / 30d / custom) genuinely apply and trends
+          // have one point per day. Each day uses the SAME fixed profile, so totals
+          // are trivially checkable: N days in the window → N × the per-day value.
+          const SANDBOX_DAYS = 14
+          const prod: Array<[number, string, number, number, number, number]> = [
+            [1, 'Shift 1', 58, 64, 36.4, 82.1], [1, 'Shift 2', 48, 64, 41.1, 71.2], [1, 'Shift 3', 36, 48, 37.2, 81.9],
+            [2, 'Shift 1', 61, 64, 35.1, 88.4], [2, 'Shift 2', 59, 64, 36.0, 85.2], [2, 'Shift 3', 44, 48, 37.5, 84.1],
+            [3, 'Shift 1', 42, 48, 52.1, 79.4], [3, 'Shift 2', 38, 48, 57.3, 71.8], [3, 'Shift 3', 31, 40, 54.2, 72.1],
+            [5, 'Shift 1', 78, 80, 28.4, 91.2], [5, 'Shift 2', 74, 80, 29.1, 88.6], [5, 'Shift 3', 60, 64, 30.2, 87.4],
+          ]
+          const down: Array<[number, string, number, string, string]> = [
+            [1, '09:14', 42, 'Tool change', 'Planned'], [1, '14:30', 28, 'Material shortage', 'Unplanned'],
+            [2, '10:00', 15, 'Preventive maintenance', 'Planned'],
+            [3, '08:45', 35, 'Conveyor jam', 'Unplanned'], [3, '15:20', 20, 'Tool breakage', 'Unplanned'],
+            [4, '07:00', 480, 'Scheduled maintenance', 'Planned'],
+          ]
+          const qual: Array<[number, number, string]> = [
+            [1, 1.8, 'Ravi Kumar'], [2, 0.9, 'Ravi Kumar'], [3, 2.4, 'Priya Singh'], [5, 0.6, 'Priya Singh'],
+          ]
+          const insP = d.prepare('INSERT INTO production_logs(machine_id,shift_date,shift,units_produced,units_target,cycle_time_s,oee_pct) VALUES (?,?,?,?,?,?,?)')
+          const insD = d.prepare('INSERT INTO downtime_events(machine_id,started_at,duration_min,reason,category) VALUES (?,?,?,?,?)')
+          const insQ = d.prepare('INSERT INTO quality_checks(machine_id,check_date,defect_rate_pct,inspector) VALUES (?,?,?,?)')
+          const pad = (n: number) => String(n).padStart(2, '0')
+          const now = new Date()
+          for (let off = SANDBOX_DAYS - 1; off >= 0; off--) {
+            const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - off)
+            const ds = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+            for (const [mid, sh, u, t, c, o] of prod) insP.run(mid, ds, sh, u, t, c, o)
+            for (const [mid, hm, dur, rsn, cat] of down) insD.run(mid, `${ds} ${hm}`, dur, rsn, cat)
+            for (const [mid, dr, insp] of qual) insQ.run(mid, ds, dr, insp)
+          }
           return d
         })()
       : new Database(rawPath, { readonly: true })

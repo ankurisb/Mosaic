@@ -16,6 +16,10 @@ interface Props {
   onDelete: () => void
   onRefresh: () => void
   onResizeStart?: (e: React.MouseEvent) => void
+  onReorderStart?: () => void              // drag this panel (from its header) to reorder
+  onReorderOver?: (e: React.DragEvent) => void
+  onReorderDrop?: () => void
+  isDropTarget?: boolean
 }
 
 // -- Colour palette --------------------------------------------
@@ -561,18 +565,25 @@ function ChartBody({ type, data, config, width, height }: { type: string; data: 
 }
 
 // -- Panel card ------------------------------------------------
-export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart }: Props) {
+export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onReorderStart, onReorderOver, onReorderDrop, isDropTarget }: Props) {
   const colSpan = Math.min(Math.max(panel.w, 1), 4)
   const rowSpan = panel.h >= 2 ? 2 : 1
   const [bodyRef, bodyW] = useMeasure()
   const chartH = rowSpan === 2 ? 340 : 200
+  const canDrag = isOwner && !!onReorderStart
   return (
-    <div className="fade-in" data-panel-id={panel.id} style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}`, position: 'relative', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-      {/* Panel header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '12px 14px 8px' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{panel.title}</div>
-          {panel.subtitle && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{panel.subtitle}</div>}
+    <div className="fade-in" data-panel-id={panel.id}
+      onDragOver={onReorderOver} onDrop={onReorderDrop}
+      style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}`, position: 'relative', background: 'var(--surface)', border: isDropTarget ? '1px solid var(--accent-bg)' : '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: isDropTarget ? '0 0 0 2px var(--accent-bg) inset' : 'var(--shadow)', overflow: 'hidden' }}>
+      {/* Panel header (drag handle for reordering) */}
+      <div draggable={canDrag} onDragStart={canDrag ? onReorderStart : undefined}
+        style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '12px 14px 8px', cursor: canDrag ? 'grab' : 'default' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          {canDrag && <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--text4)" style={{ flexShrink: 0, marginTop: 3 }}><circle cx="2" cy="2" r="1"/><circle cx="2" cy="5" r="1"/><circle cx="2" cy="8" r="1"/><circle cx="6" cy="2" r="1"/><circle cx="6" cy="5" r="1"/><circle cx="6" cy="8" r="1"/></svg>}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{panel.title}</div>
+            {panel.subtitle && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{panel.subtitle}</div>}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 4, marginLeft: 8, flexShrink: 0 }}>
           <button onClick={onRefresh} title="Refresh panel"
@@ -614,6 +625,13 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
           </div>
         )}
       </div>
+      {/* Resize handle (owner only) — drag the corner to change the panel's size */}
+      {isOwner && onResizeStart && (
+        <div onMouseDown={onResizeStart} title="Drag to resize"
+          style={{ position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, cursor: 'nwse-resize', color: 'var(--text4)', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 2 }}>
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round"><path d="M8 2L2 8M8 5L5 8"/></svg>
+        </div>
+      )}
     </div>
   )
 }

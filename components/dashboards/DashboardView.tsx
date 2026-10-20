@@ -92,6 +92,20 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [rightMode, setRightMode] = useState<'closed' | 'chat' | 'edit'>('closed')
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
   const openEdit = (panel: Panel | null) => { setEditingPanel(panel); setRightMode('edit') }
+  // Drag-to-reorder panels
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropId, setDropId] = useState<string | null>(null)
+  const reorderPanels = (from: string | null, to: string) => {
+    if (!from || from === to) return
+    setPanels(prev => {
+      const arr = [...prev]
+      const fi = arr.findIndex(p => p.id === from), ti = arr.findIndex(p => p.id === to)
+      if (fi < 0 || ti < 0) return prev
+      const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m)
+      fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reorder_panels', panels: arr.map(p => ({ id: p.id, col: p.col, row: p.row, w: p.w, h: p.h })) }) }).catch(() => {})
+      return arr
+    })
+  }
   const [timeWindow, setTimeWindow] = useState('today')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo,   setCustomTo]   = useState('')
@@ -398,6 +412,10 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 isOwner={isOwner}
                 onEdit={() => openEdit(panel)}
                 onDelete={() => deletePanel(panel.id, panel.title)}
+                onReorderStart={() => setDragId(panel.id)}
+                onReorderOver={(e: React.DragEvent) => { if (dragId && dragId !== panel.id) { e.preventDefault(); if (dropId !== panel.id) setDropId(panel.id) } }}
+                onReorderDrop={() => { reorderPanels(dragId, panel.id); setDragId(null); setDropId(null) }}
+                isDropTarget={dropId === panel.id && dragId !== panel.id}
                 onResizeStart={(e: React.MouseEvent) => {
                   const grid = e.currentTarget.closest('[data-panel-grid]') as HTMLElement
                   if (!grid) return
