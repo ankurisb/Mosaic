@@ -125,6 +125,17 @@ export function substituteTimeWindow(sql: string, w: TimeWindow): string {
     .replace(/\{\{\s*interval\s*\}\}/g, w.interval)
 }
 
+// API/OData variant: inject the timestamp UNQUOTED. OData $filter expects a bare
+// ISO datetime (e.g. `ts ge 2026-04-01T00:00:00Z`), not a quoted string — quoting
+// it (as the SQL variant does) produces an invalid $filter. Any quotes the author
+// wrote around the placeholder are stripped so the result is always unquoted.
+export function substituteTimeWindowApi(path: string, w: TimeWindow): string {
+  return String(path || '')
+    .replace(/'?\{\{\s*time_from\s*\}\}'?/g, w.time_from)
+    .replace(/'?\{\{\s*time_to\s*\}\}'?/g, w.time_to)
+    .replace(/\{\{\s*interval\s*\}\}/g, w.interval)
+}
+
 // ── Result classification ────────────────────────────────────────────────────
 // Mirrors api-probe's classifyProbe: turn an execution outcome into a verdict the
 // proposal card renders as green/amber/red. `error` wins; otherwise count rows.
@@ -271,6 +282,62 @@ export function prismSeriesToRows(result: unknown): unknown[] {
     if (Array.isArray(r[key])) return r[key] as unknown[]
   }
   return []
+}
+
+// ── Auto-default time window ──────────────────────────────────────────────────
+// Detect the time span of a built dashboard's data (from the dry-run samples) and
+// pick a default window that actually covers it — so a dashboard over historical
+// data opens populated instead of blank on "Today".
+
+// A value is time-like if it's an ISO date/datetime string or an epoch-ms number.
+function valueToTs(v: unknown): number | null {
+  if (typeof v === 'number') {
+    // plausible epoch-ms (2001-09 .. 2286) or epoch-s
+    if (v > 1e12 && v < 1e13) return v
+    if (v > 1e9 && v < 1e10) return v * 1000
+    return null
+  }
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    const t = Date.parse(v)
+    return Number.isNaN(t) ? null : t
+  }
+  return null
+}
+
+// Scan sample rows (arrays of row objects, one array per panel) for time-like
+// values and return the overall min/max timestamp, or null if none found.
+export function detectSampleTimeRange(samples: Array<unknown[] | undefined>): { min: number; max: number } | null {
+  let min = Infinity, max = -Infinity
+  for (const rows of samples) {
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      for (const v of Object.values(row as Record<string, unknown>)) {
+        const t = valueToTs(v)
+        if (t === null) continue
+        if (t < min) min = t
+        if (t > max) max = t
+      }
+    }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+  return { min, max }
+}
+
+// Choose the smallest standard window that still includes the oldest data point,
+// so everything shows. Recent data → a tight window; old data → a wide one or
+// "all". Returns a window token the executor + DashboardView understand, or null
+// to leave the default ("today") when there's no detectable time data.
+const DAY = 24 * 60 * 60 * 1000
+export function suggestDefaultWindow(range: { min: number; max: number } | null, nowMs: number): string | null {
+  if (!range) return null
+  const age = nowMs - range.min      // how far back the oldest point is
+  if (age <= 1 * DAY) return '24h'
+  if (age <= 7 * DAY) return '7d'
+  if (age <= 30 * DAY) return '30d'
+  if (age <= 90 * DAY) return '90d'
+  if (age <= 365 * DAY) return '1y'
+  return 'all'
 }
 
 export interface PlanValidation {

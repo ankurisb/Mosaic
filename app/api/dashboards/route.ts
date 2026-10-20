@@ -53,12 +53,13 @@ export async function POST(req: Request) {
 
   // -- CREATE DASHBOARD ------------------------------------------
   if (action === 'create_dashboard') {
-    const { name, description, is_public, refresh_sec } = body
+    const { name, description, is_public, refresh_sec, default_time_window } = body
     if (!name?.trim()) return Response.json({ error: 'Name required' }, { status: 400 })
+    const dtw = typeof default_time_window === 'string' && default_time_window.trim() ? default_time_window.trim() : null
     const rows = await sql`
-      INSERT INTO dashboards (name, description, owner_id, is_public, refresh_sec)
+      INSERT INTO dashboards (name, description, owner_id, is_public, refresh_sec, default_time_window)
       VALUES (${name.trim()}, ${description ?? ''}, ${session.id},
-              ${is_public ?? false}, ${refresh_sec ?? 300})
+              ${is_public ?? false}, ${refresh_sec ?? 300}, ${dtw})
       RETURNING id`
     return Response.json({ id: rows[0].id })
   }

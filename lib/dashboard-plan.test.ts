@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   readonlyGuard, withPreviewLimit, classifyPanelResult,
-  validatePanelShape, validatePlan, substituteTimeWindow, PREVIEW_ROW_CAP, MAX_PANELS,
+  validatePanelShape, validatePlan, substituteTimeWindow, substituteTimeWindowApi, PREVIEW_ROW_CAP, MAX_PANELS,
   parsePrismQuery, applyPrismWindow, prismSeriesToRows,
+  detectSampleTimeRange, suggestDefaultWindow,
   type PanelPlan,
 } from './dashboard-plan'
 
@@ -223,5 +224,54 @@ describe('validatePanelShape — prism', () => {
   it('rejects a prism panel whose query is not JSON params', () => {
     const r = validatePanelShape({ ...base, query: 'SELECT 1' })
     expect(r.ok).toBe(false); expect(r.errors.join(' ')).toMatch(/JSON/)
+  })
+})
+
+describe('substituteTimeWindowApi (OData, unquoted)', () => {
+  const w = { time_from: '2026-04-01T00:00:00.000Z', time_to: '2026-04-30T00:00:00.000Z', interval: '1 day' }
+  it('injects a BARE (unquoted) ISO timestamp for an OData $filter', () => {
+    expect(substituteTimeWindowApi('/Report?$filter=ts ge {{time_from}} and ts le {{time_to}}&$top=50', w))
+      .toBe('/Report?$filter=ts ge 2026-04-01T00:00:00.000Z and ts le 2026-04-30T00:00:00.000Z&$top=50')
+  })
+  it('strips quotes the author mistakenly wrote around the placeholder', () => {
+    expect(substituteTimeWindowApi("ts ge '{{time_from}}'", w)).toBe('ts ge 2026-04-01T00:00:00.000Z')
+  })
+})
+
+describe('detectSampleTimeRange', () => {
+  it('finds min/max across ISO date strings in sample rows', () => {
+    const samples = [
+      [{ shift_date: '2026-04-12', oee: 82 }, { shift_date: '2026-04-15', oee: 79 }],
+      [{ day: '2026-04-10' }],
+    ]
+    const r = detectSampleTimeRange(samples)!
+    expect(new Date(r.min).toISOString().slice(0, 10)).toBe('2026-04-10')
+    expect(new Date(r.max).toISOString().slice(0, 10)).toBe('2026-04-15')
+  })
+  it('handles epoch-ms timestamps', () => {
+    const r = detectSampleTimeRange([[{ ts: 1700000000000 }]])!
+    expect(r.min).toBe(1700000000000)
+  })
+  it('returns null when no time-like values present', () => {
+    expect(detectSampleTimeRange([[{ name: 'A', count: 3 }]])).toBeNull()
+    expect(detectSampleTimeRange([undefined, []])).toBeNull()
+  })
+})
+
+describe('suggestDefaultWindow', () => {
+  const now = Date.parse('2026-10-20T00:00:00Z')
+  const daysAgo = (d: number) => now - d * 24 * 60 * 60 * 1000
+  it('recent data → a tight window', () => {
+    expect(suggestDefaultWindow({ min: daysAgo(0.5), max: now }, now)).toBe('24h')
+    expect(suggestDefaultWindow({ min: daysAgo(5), max: now }, now)).toBe('7d')
+  })
+  it('data from ~6 months ago (e.g. April) → 1y', () => {
+    expect(suggestDefaultWindow({ min: daysAgo(190), max: daysAgo(190) }, now)).toBe('1y')
+  })
+  it('very old data → all', () => {
+    expect(suggestDefaultWindow({ min: daysAgo(800), max: daysAgo(800) }, now)).toBe('all')
+  })
+  it('no range → null (keep default)', () => {
+    expect(suggestDefaultWindow(null, now)).toBeNull()
   })
 })

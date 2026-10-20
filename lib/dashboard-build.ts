@@ -6,8 +6,8 @@
 // the user confirms in the proposal card, which saves via create_dashboard/add_panel.
 import { runTool } from './tools'
 import {
-  validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow,
-  parsePrismQuery, applyPrismWindow, prismSeriesToRows,
+  validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow, substituteTimeWindowApi,
+  parsePrismQuery, applyPrismWindow, prismSeriesToRows, detectSampleTimeRange, suggestDefaultWindow,
   PREVIEW_ROW_CAP, MAX_PANELS, type DashboardPlan, type PanelPlan, type PanelCls,
 } from './dashboard-plan'
 
@@ -19,6 +19,7 @@ export interface DashboardProposal {
   description?: string
   panels: EnrichedPanel[]
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
+  suggested_window?: string    // default time window that covers the data (auto-detected)
 }
 
 export type DialectResolver = (sourceType: string, sourceId: string) => string | undefined
@@ -36,6 +37,10 @@ function previewWindow() {
 }
 function substituteWindow(sql: string): string {
   return substituteTimeWindow(sql, previewWindow())
+}
+// API/OData preview substitution: unquoted ISO (quoted breaks an OData $filter).
+function substituteWindowApi(path: string): string {
+  return substituteTimeWindowApi(path, previewWindow())
 }
 
 // PRISM telemetry is typically recent, and a time-series op with aggregation over
@@ -72,7 +77,7 @@ async function dryRunPanel(panel: PanelPlan, dialectOf: DialectResolver, ctx: Bu
       return { ...cls, sample: cls.cls === 'data' ? sampleRows(result) : undefined }
     }
     if (panel.source_type === 'api') {
-      const result = await runTool('call_api', { connection_id: panel.source_id, method: 'GET', path: substituteWindow(panel.query) }, ctx)
+      const result = await runTool('call_api', { connection_id: panel.source_id, method: 'GET', path: substituteWindowApi(panel.query) }, ctx)
       const cls = classifyPanelResult(result)
       return { ...cls, sample: cls.cls === 'data' ? sampleRows(result) : undefined }
     }
@@ -113,5 +118,9 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
   }
   const summary = { data: 0, empty: 0, error: 0, invalid: 0, total: enriched.length }
   for (const p of enriched) summary[p.validation.cls as keyof typeof summary]++
-  return { title: plan.title, description: plan.description, panels: enriched, summary }
+  // Auto-detect a default time window from the previewed data so the saved
+  // dashboard opens populated (e.g. historical data → a wide enough window).
+  const range = detectSampleTimeRange(enriched.map(p => p.validation.sample))
+  const suggested_window = suggestDefaultWindow(range, Date.now()) ?? undefined
+  return { title: plan.title, description: plan.description, panels: enriched, summary, suggested_window }
 }

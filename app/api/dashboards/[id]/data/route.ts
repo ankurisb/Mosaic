@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
-import { substituteTimeWindow, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
+import { substituteTimeWindow, substituteTimeWindowApi, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
 export const runtime = 'nodejs'
 
 // -- GET /api/dashboards/[id]/data -----------------------------
@@ -62,7 +62,7 @@ export async function GET(
 
   // Verify the user can see this dashboard
   const dash = await sql`
-    SELECT id, name, refresh_sec
+    SELECT id, name, refresh_sec, default_time_window
     FROM   dashboards
     WHERE  id = ${id} AND (owner_id = ${session.id} OR is_public = true)`
   if (!dash.length) return Response.json({ error: 'Not found' }, { status: 404 })
@@ -90,11 +90,13 @@ export async function GET(
             sql: q,
           })
         } else if (p.source_type === 'api') {
-          // For API panels, query is the path (e.g. /odata/OEEReport?$top=20)
+          // API panel query is the path (e.g. /odata/OEEReport?$filter=ts ge {{time_from}}).
+          // Time placeholders are injected UNQUOTED (OData $filter wants a bare ISO).
+          const apiPath = substituteTimeWindowApi(String(p.query || ''), { time_from, time_to, interval })
           data = await runTool('call_api', {
             connection_id: p.source_id,
             method: 'GET',
-            path: String(p.query),
+            path: apiPath,
           })
         } else if (p.source_type === 'file_server') {
           data = await runTool('read_file_server', {

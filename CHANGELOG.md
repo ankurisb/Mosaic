@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.92] - 2026-10-20
+
+### Added
+- **Dashboards built from chat now open on a time window that covers their data.** The builder's dry-run already samples each panel's rows; it now detects the data's actual time span and stores a per-dashboard default window (`detectSampleTimeRange` + `suggestDefaultWindow` pick the smallest of 24h/7d/30d/90d/1y/all that includes the oldest point). The proposal carries `suggested_window`, the confirm step saves it (new `dashboards.default_time_window` column, migration 019), and `DashboardView` applies it on first load before fetching — so a dashboard over historical data (e.g. the Sandbox demo's April data → "1y") is populated on open instead of blank on "Today". Live data still resolves to a tight recent window.
+- **The chat dashboard builder now builds API / OData panels** (multi-source builder complete: database + PRISM + API). `build_dashboard` accepts `source_type: "api"` with the connection id and a request path as the query (e.g. `/A_InspectionResult?$filter=InspectionDate ge {{time_from}}&$top=100&$format=json`).
+  - **Source-aware time substitution** — API panels use a new `substituteTimeWindowApi` that injects the window timestamp **unquoted** (an OData `$filter` needs a bare ISO datetime; the SQL variant's quoting would make the filter invalid). Applied in both the dry-run preview and the live executor (which previously did no time substitution for API panels at all).
+  - Planner guidance documents the API panel format and the unquoted `{{time_from}}`/`{{time_to}}` convention, and tells the model to use the connection's known fields (from the API dictionary) for filter/select columns.
+
+### Notes
+- 9 new unit tests (52 in the plan module; 257 total) covering the OData substitution, time-range detection, and window suggestion.
+
 ## [1.3.91] - 2026-10-20
 
 ### Fixed

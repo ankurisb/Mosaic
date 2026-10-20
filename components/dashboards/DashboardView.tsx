@@ -147,10 +147,21 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     } finally { setRefreshing(false) }
   }, [id, timeWindow, customFrom, customTo])
 
+  const appliedDefaultWindow = useRef(false)
   useEffect(() => {
     setLoading(true)
     loadStructure().then(dash => {
       if (!dash) return
+      // Apply the dashboard's auto-detected default time window once, before the
+      // first data fetch, so a dashboard built over historical data opens on a
+      // window that covers it instead of blank on "Today". Changing timeWindow
+      // re-runs this effect (fetchData depends on it); the guard prevents a loop.
+      const KNOWN = ['today','15m','1h','6h','24h','7d','30d','90d','1y','all']
+      if (!appliedDefaultWindow.current) {
+        appliedDefaultWindow.current = true
+        const dw = dash.default_time_window as string | undefined
+        if (dw && KNOWN.includes(dw) && dw !== timeWindow) { setTimeWindow(dw); return }
+      }
       // Only take the Superset-embed path when Superset is actually configured.
       // A dashboard may carry a stale superset_embed_uuid from an edition/env that
       // had Superset; without it (e.g. desktop), fall through to Mosaic's own

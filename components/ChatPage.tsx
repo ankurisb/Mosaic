@@ -835,6 +835,7 @@ interface DashboardProposal {
   title: string; description?: string
   panels: ProposalPanel[]
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
+  suggested_window?: string
 }
 const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey']
 
@@ -865,7 +866,7 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
     try {
       const chosen = panels.filter(p => p.include)
       if (!chosen.length) throw new Error('Include at least one panel')
-      const cr = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_dashboard', name: title.trim() || 'New dashboard', description: proposal.description || '' }) })
+      const cr = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_dashboard', name: title.trim() || 'New dashboard', description: proposal.description || '', default_time_window: proposal.suggested_window }) })
       const cd = await cr.json()
       if (!cr.ok) throw new Error(cd.error || 'Could not create dashboard')
       const id = cd.id as string
