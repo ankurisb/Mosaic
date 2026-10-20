@@ -1,5 +1,5 @@
 'use client'
-import React from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 
 interface Panel {
   id: string; title: string; subtitle: string; source_type?: string; source_id?: string; query?: string; refresh_sec?: number | null
@@ -21,6 +21,44 @@ interface Props {
 // -- Colour palette --------------------------------------------
 const COLOURS = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3']
 
+// -- Shared chart helpers --------------------------------------
+// Compact number for axis ticks: 323440 → "323k", 1_250_000 → "1.3M".
+function fmtCompact(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  const a = Math.abs(n)
+  if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + 'B'
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M'
+  if (a >= 1e3) return (n / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'k'
+  if (Number.isInteger(n)) return String(n)
+  return n.toFixed(a < 1 ? 2 : 1)
+}
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+// Format an axis label: ISO date/datetime → "13 Oct" or "13 Oct 00:27"; else truncate.
+function fmtAxis(v: unknown): string {
+  const s = String(v ?? '')
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
+      const dm = `${d.getDate()} ${MONTHS[d.getMonth()]}`
+      return s.includes('T') ? `${dm} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` : dm
+    }
+  }
+  return s.length > 14 ? s.slice(0, 13) + '…' : s
+}
+// Measure a container's content width so charts can render at native pixels
+// (viewBox == px), keeping font sizes true-size regardless of panel width.
+function useMeasure(): [React.RefObject<HTMLDivElement>, number] {
+  const ref = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    const el = ref.current; if (!el) return
+    const ro = new ResizeObserver(entries => { for (const e of entries) setW(Math.round(e.contentRect.width)) })
+    ro.observe(el); setW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+  return [ref, w]
+}
+
 // -- Data normaliser -------------------------------------------
 function normalise(raw: unknown): { rows: Record<string, unknown>[]; keys: string[] } {
   if (!raw) return { rows: [], keys: [] }
@@ -34,79 +72,80 @@ function normalise(raw: unknown): { rows: Record<string, unknown>[]; keys: strin
 }
 
 // -- SVG bar chart ---------------------------------------------
-function BarChart({ rows, keys, config }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown> }) {
+// Rendered at native pixels (viewBox == width×height) so axis fonts stay true-size
+// at any panel width. Compact y-axis numbers; x labels thinned to avoid overlap.
+function BarChart({ rows, keys, config, width = 600, height = 190 }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number }) {
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
-  const labelKey = config.label_key as string || keys[0]
-  const valueKey = config.value_key as string || keys[1]
+  const labelKey = (config.label_key as string) || (config.x as string) || keys[0]
+  const valueKey = (config.value_key as string) || (config.y as string) || keys.find(k => k !== labelKey) || keys[1]
+  const unit = (config.unit as string) || ''
   const vals = rows.map(r => Number(r[valueKey]) || 0)
-  const max = Math.max(...vals) || 1
-  const W = 400, H = 160, pL = 40, pB = 28, pT = 10, pR = 8
+  const max = Math.max(...vals, 0) || 1
+  const W = Math.max(width, 240), H = height, pL = 52, pB = 30, pT = 12, pR = 12
   const cW = W - pL - pR, cH = H - pT - pB
-  const bW = Math.max(4, (cW / rows.length) * 0.65)
-  const gap = (cW / rows.length)
+  const gap = cW / rows.length
+  const bW = Math.max(1, gap * 0.68)
+  const step = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(cW / 64))))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-      {[0, 0.25, 0.5, 0.75, 1].map(f => (
-        <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)}
-          stroke="var(--border)" strokeWidth="1" />
-      ))}
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+      {[0, 0.25, 0.5, 0.75, 1].map(f => <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)} stroke="var(--border)" strokeWidth="1" />)}
       {rows.map((row, i) => {
         const v = Number(row[valueKey]) || 0
-        const bH = Math.max(2, (v / max) * cH)
-        const x = pL + gap * i + gap * 0.175
-        return (
-          <g key={i}>
-            <rect x={x} y={pT + cH - bH} width={bW} height={bH}
-              fill={COLOURS[i % COLOURS.length]} rx="2" opacity="0.85" />
-            <text x={x + bW / 2} y={H - 6} textAnchor="middle"
-              fontFamily="var(--font-sans)" fontSize="9" fill="var(--text3)">
-              {String(row[labelKey] || '').slice(0, 8)}
-            </text>
-          </g>
-        )
+        const bH = Math.max(1, (v / max) * cH)
+        const x = pL + gap * i + (gap - bW) / 2
+        return <rect key={i} x={x} y={pT + cH - bH} width={bW} height={bH} fill={COLOURS[rows.length <= 8 ? i % COLOURS.length : 0]} rx={bW > 3 ? 2 : 0} opacity="0.85" />
       })}
-      {[0, 0.5, 1].map(f => (
-        <text key={f} x={pL - 4} y={pT + cH * (1 - f) + 3}
-          textAnchor="end" fontFamily="var(--font-mono)" fontSize="8" fill="var(--text3)">
-          {Math.round(max * f)}
-        </text>
+      {rows.map((row, i) => i % step === 0 && (
+        <text key={'l' + i} x={pL + gap * i + gap / 2} y={H - 10} textAnchor="middle" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{fmtAxis(row[labelKey])}</text>
       ))}
+      {[0, 0.5, 1].map(f => <text key={'y' + f} x={pL - 6} y={pT + cH * (1 - f) + 3.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text3)">{fmtCompact(max * f)}{unit}</text>)}
     </svg>
   )
 }
 
-// -- SVG line chart --------------------------------------------
-function LineChart({ rows, keys, config }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown> }) {
+// -- SVG line / area chart -------------------------------------
+// Native-pixel rendering; multi-series; compact y-axis and formatted x-axis
+// (ISO timestamps → "13 Oct 00:27"), with labels thinned to the available width.
+function LineChart({ rows, keys, config, width = 600, height = 190, fill = false }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; fill?: boolean }) {
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
-  const labelKey = config.label_key as string || keys[0]
-  const valueKeys = (config.value_keys as string[]) || [keys[1]]
-  const W = 400, H = 150, pL = 38, pB = 24, pT = 10, pR = 8
+  const labelKey = (config.x as string) || (config.label_key as string) || keys[0]
+  let valueKeys = (config.value_keys as string[]) || (config.y ? [config.y as string] : keys.filter(k => k !== labelKey))
+  if (!valueKeys || !valueKeys.length) valueKeys = [keys[1]]
+  valueKeys = valueKeys.slice(0, 6)
+  const unit = (config.unit as string) || ''
+  const W = Math.max(width, 240), H = height, pL = 54, pB = 30, pT = valueKeys.length > 1 ? 24 : 12, pR = 14
   const cW = W - pL - pR, cH = H - pT - pB
   const n = rows.length
-  const xf = (i: number) => pL + (i / (n - 1)) * cW
+  const xf = (i: number) => n <= 1 ? pL + cW / 2 : pL + (i / (n - 1)) * cW
+  let gmax = 0
+  for (const vk of valueKeys) for (const r of rows) { const v = Number(r[vk]); if (Number.isFinite(v) && v > gmax) gmax = v }
+  gmax = gmax || 1
+  const yf = (v: number) => pT + cH - (v / gmax) * cH
+  const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(cW / 92))))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-      {[0, 0.25, 0.5, 0.75, 1].map(f => (
-        <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)}
-          stroke="var(--border)" strokeWidth="1" />
-      ))}
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+      {[0, 0.25, 0.5, 0.75, 1].map(f => <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)} stroke="var(--border)" strokeWidth="1" />)}
       {valueKeys.map((vk, vi) => {
+        const col = COLOURS[vi % COLOURS.length]
         const vals = rows.map(r => Number(r[vk]) || 0)
-        const max = Math.max(...vals) || 1, min = 0
-        const yf = (v: number) => pT + cH - ((v - min) / (max - min)) * cH
         const pts = vals.map((v, i) => `${xf(i).toFixed(1)},${yf(v).toFixed(1)}`).join(' ')
         return (
           <g key={vk}>
-            <polyline points={pts} fill="none" stroke={COLOURS[vi % COLOURS.length]} strokeWidth="2" strokeLinejoin="round" />
-            {vals.map((v, i) => <circle key={i} cx={xf(i)} cy={yf(v)} r="3" fill={COLOURS[vi % COLOURS.length]} stroke="var(--surface)" strokeWidth="1.5" />)}
+            {fill && <polygon points={`${xf(0).toFixed(1)},${(pT + cH).toFixed(1)} ${pts} ${xf(n - 1).toFixed(1)},${(pT + cH).toFixed(1)}`} fill={col} opacity="0.12" />}
+            <polyline points={pts} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {n <= 50 && vals.map((v, i) => <circle key={i} cx={xf(i)} cy={yf(v)} r="2.5" fill={col} stroke="var(--surface)" strokeWidth="1" />)}
           </g>
         )
       })}
-      {rows.map((row, i) => (i === 0 || i === Math.floor(n/2) || i === n-1) && (
-        <text key={i} x={xf(i)} y={H - 6} textAnchor="middle"
-          fontFamily="var(--font-mono)" fontSize="8" fill="var(--text3)">
-          {String(row[labelKey] || '').slice(0, 10)}
-        </text>
+      {rows.map((row, i) => i % step === 0 && (
+        <text key={'x' + i} x={xf(i)} y={H - 10} textAnchor="middle" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{fmtAxis(row[labelKey])}</text>
+      ))}
+      {[0, 0.5, 1].map(f => <text key={'y' + f} x={pL - 6} y={pT + cH * (1 - f) + 3.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text3)">{fmtCompact(gmax * f)}{unit}</text>)}
+      {valueKeys.length > 1 && valueKeys.map((vk, vi) => (
+        <g key={'lg' + vk} transform={`translate(${pL + vi * 110}, 10)`}>
+          <rect width="9" height="9" y="-7" fill={COLOURS[vi % COLOURS.length]} rx="1.5" />
+          <text x="13" y="1" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{vk.length > 14 ? vk.slice(0, 13) + '…' : vk}</text>
+        </g>
       ))}
     </svg>
   )
@@ -501,20 +540,23 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
 }
 
 
-function ChartBody({ type, data, config }: { type: string; data: unknown; config: Record<string, unknown> }) {
+function ChartBody({ type, data, config, width, height }: { type: string; data: unknown; config: Record<string, unknown>; width: number; height: number }) {
   const { rows, keys } = normalise(data)
   if (!rows.length) return <EmptyChart label="No data" />
+  const w = width || 600
   switch (type) {
-    case 'bar':    return <BarChart    rows={rows} keys={keys} config={config} />
-    case 'line':   return <LineChart   rows={rows} keys={keys} config={config} />
+    case 'bar':    return <BarChart    rows={rows} keys={keys} config={config} width={w} height={height} />
+    case 'line':   return <LineChart   rows={rows} keys={keys} config={config} width={w} height={height} />
+    case 'area':   return <LineChart   rows={rows} keys={keys} config={config} width={w} height={height} fill />
     case 'number': return <NumberCard  rows={rows} keys={keys} config={config} />
+    case 'stat':   return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'table':  return <TableView   rows={rows} keys={keys} />
     case 'donut':  return <DonutChart  rows={rows} keys={keys} config={config} />
     case 'gauge':   return <Gauge        rows={rows} keys={keys} config={config} />
     case 'heatmap': return <HeatmapChart data={data} />
     case 'boxplot': return <BoxplotChart rows={rows} keys={keys} config={config} />
     case 'sankey':  return <SankeyChart  rows={rows} keys={keys} config={config} />
-    default:        return <BarChart     rows={rows} keys={keys} config={config} />
+    default:        return <BarChart     rows={rows} keys={keys} config={config} width={w} height={height} />
   }
 }
 
@@ -522,6 +564,8 @@ function ChartBody({ type, data, config }: { type: string; data: unknown; config
 export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart }: Props) {
   const colSpan = Math.min(Math.max(panel.w, 1), 4)
   const rowSpan = panel.h >= 2 ? 2 : 1
+  const [bodyRef, bodyW] = useMeasure()
+  const chartH = rowSpan === 2 ? 340 : 200
   return (
     <div className="fade-in" data-panel-id={panel.id} style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}`, position: 'relative', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
       {/* Panel header */}
@@ -549,7 +593,7 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
       </div>
 
       {/* Panel body */}
-      <div style={{ padding: '4px 14px 12px' }}>
+      <div style={{ padding: '4px 14px 12px' }} ref={bodyRef}>
         {!result ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text4)', fontSize: 12 }}>
             <span style={{ display: 'inline-block', width: 14, height: 14, border: '1.5px solid var(--border2)', borderTopColor: 'var(--text3)', borderRadius: '50%', animation: 'spin .7s linear infinite', marginRight: 6 }} />
@@ -561,7 +605,7 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
             {result.error}
           </div>
         ) : (
-          <ChartBody type={panel.chart_type} data={result.data} config={panel.chart_config} />
+          <ChartBody type={panel.chart_type} data={result.data} config={panel.chart_config} width={bodyW} height={chartH} />
         )}
         {result && (
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>

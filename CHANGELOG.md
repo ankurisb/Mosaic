@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.91] - 2026-10-20
+
+### Fixed
+- **Dashboard chart rendering: oversized axis fonts, broken time axis, missing area/stat charts.** On a wide panel the hand-rolled SVG charts rendered at a fixed 400-wide viewBox stretched to the panel width (~1900px), magnifying every 8px label ~5× (the "323440 / 2026-10-" giant text). Fixes:
+  - **Native-pixel rendering** — line/area/bar charts now measure their container (`ResizeObserver`) and render the SVG at true pixels (viewBox == width×height), so axis fonts stay ~10px at any panel width.
+  - **Axis formatting** — y-axis ticks are compacted (`323440` → `323k`, `1.3M`); x-axis ISO timestamps are formatted (`2026-10-13T00:27…` → `13 Oct 00:27`) and thinned to the available width so they no longer overlap or truncate to "2026-10-".
+  - **`area` chart implemented** — it previously fell through to a bar chart, so an area panel over a long series rendered as a solid block of thin bars. `area` now renders a filled line; `line` supports multiple series with a legend.
+  - **`stat` chart implemented** — `stat` also fell through to a bar chart; it now renders the KPI number card (same as `number`).
+  - Bar chart made responsive too, with compact y-axis and thinned x-labels.
+
+### Notes
+- A cumulative counter like PRISM `kWh` (a running meter total) plotted with `agg: SUM` shows a near-flat high line — that's the cumulative value, not per-interval generation. For "energy generated per hour/day", query the per-bucket delta (or plot the raw counter). A planner refinement to prefer deltas for cumulative keys is a candidate follow-up.
+
 ## [1.3.90] - 2026-10-20
 
 ### Added
