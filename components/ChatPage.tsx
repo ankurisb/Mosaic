@@ -11,6 +11,7 @@ import ThemeToggle from './ThemeToggle'
 import { APP_VERSION } from '@/lib/version'
 import { UpdateModal } from '@/components/UpdateModal'
 import RcaRenderer from './rca/RcaRenderer'
+import PanelChart from './dashboards/PanelChart'
 import ReactMarkdown from 'react-markdown'
 import * as XLSX from 'xlsx'
 import SetupBanner from './SetupBanner'
@@ -839,6 +840,46 @@ interface DashboardProposal {
 }
 const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey']
 
+// Read-only live render of a saved dashboard, shown inside the review drawer so the
+// user sees the actual charts (not just a "saved" line) alongside "Open dashboard".
+// Fetches the same /data endpoint the full dashboard uses and stacks each panel in a
+// single column sized to the drawer; no edit/resize/reorder affordances.
+function ProposalSavedPreview({ id, window }: { id: string; window?: string }) {
+  const [panels, setPanels] = useState<Array<Record<string, unknown>>>([])
+  const [results, setResults] = useState<Record<string, { ok: boolean; data?: unknown; error?: string; latency_ms: number }>>({})
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/dashboards/${id}/data?time_window=${window || 'all'}`)
+        const d = await r.json()
+        if (cancelled) return
+        if (!r.ok) { setErr(d.error || 'Could not load preview'); return }
+        setPanels(d.panels || [])
+        const map: Record<string, { ok: boolean; data?: unknown; error?: string; latency_ms: number }> = {}
+        for (const res of (d.results || [])) map[res.panel_id] = res
+        setResults(map)
+      } catch (e) { if (!cancelled) setErr(e instanceof Error ? e.message : 'Preview failed') }
+      finally { if (!cancelled) setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [id, window])
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--text3)', padding: '8px 0' }}>Loading preview…</div>
+  if (err) return <div style={{ fontSize: 12, color: 'var(--amber-t, #b4690e)', padding: '8px 0' }}>Preview unavailable: {err}</div>
+  if (!panels.length) return null
+  const noop = () => {}
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+      {panels.map(p => (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <PanelChart key={String(p.id)} panel={p as any} result={results[String(p.id)]} isOwner={false} onEdit={noop} onDelete={noop} onRefresh={noop} />
+      ))}
+    </div>
+  )
+}
+
 // Live-preview proposal card: each tile shows the panel's validation verdict and a
 // real sample of rows. The user includes/excludes, edits the query/chart/title, then
 // saves — persisting via the existing create_dashboard / add_panel actions. Preview
@@ -893,8 +934,11 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
   if (saved) {
     return (
       <div style={{ marginTop: embedded ? 0 : 10, border: embedded ? 'none' : '1px solid var(--border)', borderRadius: embedded ? 0 : 12, padding: 16, background: embedded ? 'transparent' : 'var(--surface)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Dashboard “{title}” saved — {includedCount} panel{includedCount === 1 ? '' : 's'}.</div>
-        <button onClick={() => onOpen(saved)} style={{ padding: '7px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Open dashboard →</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Dashboard “{title}” saved — {includedCount} panel{includedCount === 1 ? '' : 's'}.</div>
+          <button onClick={() => onOpen(saved)} style={{ padding: '7px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Open dashboard →</button>
+        </div>
+        <ProposalSavedPreview id={saved} window={proposal.suggested_window} />
       </div>
     )
   }

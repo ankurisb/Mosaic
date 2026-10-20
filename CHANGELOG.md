@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.99] - 2026-10-20
+
+### Added
+- **The "Review dashboard" drawer now renders the saved dashboard inline.** After a chat-built dashboard is saved, the drawer previously showed only a "saved — N panels" line and an "Open dashboard →" button. It now also renders the actual panels live (read-only) beneath that line, using the same data endpoint and `PanelChart` renderer as the full dashboard, stacked in a single column sized to the drawer and loaded at the dashboard's auto-detected default window. "Open dashboard →" is unchanged. (`ChatPage` — new `ProposalSavedPreview`.)
+
 ## [1.3.98] - 2026-10-20
 
 Re-release of 1.3.97 under a clean tag — the `v1.3.97` tag was accidentally
