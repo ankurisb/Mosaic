@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
 import { substituteTimeWindow, substituteTimeWindowApi, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
-import { extractApiRecords } from '@/lib/api-dictionary'
+import { fetchApiRows } from '@/lib/api-paginate'
 import { capPanelRows, extractRows } from '@/lib/dashboard-rows'
 export const runtime = 'nodejs'
 
@@ -92,6 +92,7 @@ export async function GET(
       const start = Date.now()
       try {
         let data: unknown
+        let apiSourceCapped = false
         if (p.source_type === 'database') {
           const q = substituteTimeWindow(String(p.query || ''), { time_from, time_to, interval })
           data = await runTool('query_database', {
@@ -103,17 +104,24 @@ export async function GET(
           // API panel query is the path (e.g. /odata/OEEReport?$filter=ts ge {{time_from}}).
           // Time placeholders are injected UNQUOTED (OData $filter wants a bare ISO).
           const apiPath = substituteTimeWindowApi(String(p.query || ''), { time_from, time_to, interval })
-          const apiRaw = await runTool('call_api', {
-            connection_id: p.source_id,
-            method: 'GET',
-            path: apiPath,
-          })
-          if (apiRaw && typeof apiRaw === 'object' && 'error' in (apiRaw as Record<string, unknown>)) {
-            throw new Error(String((apiRaw as Record<string, unknown>).error))
-          }
-          // Normalise whatever envelope the API returned (OData / REST / FactoryOS
-          // {status,message,data:"<json>"}) into rows the panel renderer understands.
-          data = { rows: extractApiRecords(apiRaw) }
+          // Follow the connection's pagination (if configured) so the panel sees past
+          // page 1, and extract records at the connection's configured data path when
+          // set (parity with reports) — otherwise auto-detect the envelope.
+          const pcRows = await sql`SELECT pagination_style, pagination_limit_param, pagination_cursor_param, pagination_data_path FROM api_connections WHERE id = ${p.source_id}`
+          const pc = (pcRows[0] || {}) as Record<string, unknown>
+          const page = await fetchApiRows(
+            (pth: string) => runTool('call_api', { connection_id: p.source_id, method: 'GET', path: pth }),
+            apiPath,
+            {
+              style: pc.pagination_style as string | null,
+              limitParam: pc.pagination_limit_param as string | null,
+              cursorParam: pc.pagination_cursor_param as string | null,
+              dataPath: pc.pagination_data_path as string | null,
+            },
+            DASH_SQL_FETCH,
+          )
+          apiSourceCapped = page.source_capped
+          data = { rows: page.rows }
         } else if (p.source_type === 'file_server') {
           data = await runTool('read_file_server', {
             server_id: p.source_id,
@@ -138,7 +146,7 @@ export async function GET(
         // row-shaped data — text/other shapes (e.g. a file-server document) pass
         // through untouched.
         if (extractRows(data).length) {
-          const srcCapped = !!(data && typeof data === 'object' && (data as Record<string, unknown>).truncated)
+          const srcCapped = apiSourceCapped || !!(data && typeof data === 'object' && (data as Record<string, unknown>).truncated)
           const cfg = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : undefined
           const { rows, meta } = capPanelRows(data, String(p.chart_type || ''), cfg, {
             maxPoints: DASH_MAX_POINTS, maxRows: DASH_MAX_TABLE_ROWS, sourceCapped: srcCapped,

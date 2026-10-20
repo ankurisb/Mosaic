@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.103] - 2026-10-20
+
+### Changed
+- **API dashboards #6 (part 1) — pagination following + data-path parity.** API panels previously made a single GET (page 1 only) and always auto-detected the records array. Now a panel follows the connection's configured pagination up to the 5,000-row dashboard ceiling and extracts at the connection's configured `pagination_data_path` when set (matching reports), auto-detecting otherwise:
+  - **Styles**: `odata` (`$top`/`$skip`), `offset` (`<limit_param>`/`offset`), `page` (`<limit_param>`/`page`, 1-based), and best-effort `cursor` (follows a common next-cursor key); `none` keeps the single-call behaviour. Paging stops on a short page, at the row ceiling, or at a 40-page safety cap.
+  - **Visible**: when it stops with more rows at the source, the panel's `source_capped` flag fires (same footer note as the DB path), so a partial API view is never silently misleading.
+  - The dry-run proposal preview still fetches a single bounded page (it only answers "does this panel return data?"). (`lib/api-paginate` + 9 unit tests, `app/api/dashboards/[id]/data`.)
+
 ## [1.3.102] - 2026-10-20
 
 ### Fixed
