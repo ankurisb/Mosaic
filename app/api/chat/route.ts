@@ -924,7 +924,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                   send({ type: 'dashboard_proposal', proposal })
                   finalToolCalls.push({ name: 'build_dashboard', input: block.input, result: { title: proposal.title, summary: proposal.summary } })
                   const s = proposal.summary
-                  const content = `Dashboard "${proposal.title}" proposed: ${s.total} panel(s) — ${s.data} returned data, ${s.empty} empty, ${s.error} query error(s), ${s.invalid} invalid. The proposal card is shown for the user to confirm/edit/drop panels before saving. Briefly summarise and call out any empty/error panels (with the reason) that need fixing.`
+                  const content = dashEditId
+                    ? `Dashboard "${proposal.title}": ${s.total} panel(s) — ${s.data} returned data, ${s.empty} empty, ${s.error} query error(s), ${s.invalid} invalid. These panels are being ADDED DIRECTLY to the dashboard now (the user can delete any that aren't right). Do NOT tell the user to confirm on a card. Briefly summarise what was added, and call out any empty/error panels (with the reason) they may want to remove or fix.`
+                    : `Dashboard "${proposal.title}" proposed: ${s.total} panel(s) — ${s.data} returned data, ${s.empty} empty, ${s.error} query error(s), ${s.invalid} invalid. The proposal card is shown for the user to confirm/edit/drop panels before saving. Briefly summarise and call out any empty/error panels (with the reason) that need fixing.`
                   return { type: 'tool_result' as const, tool_use_id: block.id, content }
                 } catch (e) {
                   const msg = e instanceof Error ? e.message : 'dashboard build failed'

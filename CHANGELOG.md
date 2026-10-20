@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.100] - 2026-10-20
+
+### Changed
+- **"Edit with AI" dock now adds proposed panels straight to the dashboard** instead of a propose-then-confirm step. When you ask the dock to add/split panels, they're created immediately (and appear live in the grid) — you delete any that aren't right via the panel's × control. The proposal card still lists what was added ("Added to dashboard ✓"); the manual "Add N to dashboard" button only appears as a fallback if the auto-add fails. The assistant's narration no longer says "confirm on the proposal card" in this context. (`DashboardChatDock`, `app/api/chat/route.ts` — the main-chat new-dashboard builder still uses the review-and-save card, since there's no dashboard to delete from yet.)
+
 ## [1.3.99] - 2026-10-20
 
 ### Added

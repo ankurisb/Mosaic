@@ -37,6 +37,7 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
       })
       if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`)
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; let changed = false
+      let pendingProposal: Proposal | null = null
       const patchLast = (patch: (m: Msg) => Msg) => setMessages(ms => ms.map((m, i) => i === ms.length - 1 ? patch(m) : m))
       while (true) {
         const { done, value } = await reader.read(); if (done) break
@@ -46,12 +47,23 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
           const line = part.split('\n').find(l => l.startsWith('data: ')); if (!line) continue
           let e: Record<string, unknown>; try { e = JSON.parse(line.slice(6)) } catch { continue }
           if (e.type === 'text' && typeof e.text === 'string') patchLast(m => ({ ...m, content: m.content + (e.text as string) }))
-          else if (e.type === 'dashboard_proposal' && e.proposal) patchLast(m => ({ ...m, proposal: e.proposal as Proposal }))
+          else if (e.type === 'dashboard_proposal' && e.proposal) { pendingProposal = e.proposal as Proposal; patchLast(m => ({ ...m, proposal: e.proposal as Proposal })) }
           else if (e.type === 'dashboard_changed') changed = true
           else if (e.type === 'error') setErr(String(e.message || e.error || 'error'))
         }
       }
       if (changed) onChanged()
+      // Auto-add proposed panels straight to the dashboard (they're trivially
+      // deletable), so the user sees the real panels instead of a confirm step.
+      // On failure the proposal card still renders its manual "Add" button.
+      if (pendingProposal) {
+        setBusy('applying')
+        try {
+          await applyPanels(pendingProposal)
+          patchLast(m => ({ ...m, applied: true }))
+          onChanged()
+        } catch (e) { setErr(e instanceof Error ? e.message : 'Could not add panels') }
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Something went wrong')
       patchLastSafe()
@@ -59,26 +71,33 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
   }
   function patchLastSafe() { setMessages(ms => ms.map((m, i) => i === ms.length - 1 && m.role === 'assistant' && !m.content && !m.proposal ? { ...m, content: '(no response)' } : m)) }
 
-  // Append a proposal's panels to THIS dashboard (additive), then reload the grid.
+  // Append a proposal's addable panels to THIS dashboard (additive). Throws on the
+  // first failure. Used by the auto-add after a proposal streams in, and by the
+  // manual fallback button.
+  async function applyPanels(proposal: Proposal) {
+    const chosen = proposal.panels.filter(p => p.validation.cls === 'data' || p.validation.cls === 'empty')
+    if (!chosen.length) throw new Error('No addable panels (all errored)')
+    let order = 1000 + Math.floor(Date.now() / 1000) % 1000
+    for (let i = 0; i < chosen.length; i++) {
+      const p = chosen[i]
+      const r = await fetch('/api/dashboards', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add_panel', dashboard_id: dashboardId, title: p.title, subtitle: p.subtitle || '',
+          source_type: p.source_type, source_id: p.source_id, query: p.query, chart_type: p.chart_type,
+          chart_config: p.chart_config || {}, col: (i % 2) * 6, row: 500 + i, w: 6, h: 1, sort_order: order + i,
+        }),
+      })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `Failed to add "${p.title}"`) }
+    }
+  }
+
+  // Manual fallback (only shown if the auto-add failed): add a proposal's panels.
   async function addPanels(idx: number, proposal: Proposal) {
     if (busy) return
     setBusy('applying'); setErr('')
     try {
-      const chosen = proposal.panels.filter(p => p.validation.cls === 'data' || p.validation.cls === 'empty')
-      if (!chosen.length) throw new Error('No addable panels (all errored)')
-      let order = 1000 + Math.floor(Date.now() / 1000) % 1000
-      for (let i = 0; i < chosen.length; i++) {
-        const p = chosen[i]
-        const r = await fetch('/api/dashboards', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'add_panel', dashboard_id: dashboardId, title: p.title, subtitle: p.subtitle || '',
-            source_type: p.source_type, source_id: p.source_id, query: p.query, chart_type: p.chart_type,
-            chart_config: p.chart_config || {}, col: (i % 2) * 6, row: 500 + i, w: 6, h: 1, sort_order: order + i,
-          }),
-        })
-        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `Failed to add "${p.title}"`) }
-      }
+      await applyPanels(proposal)
       setMessages(ms => ms.map((m, i) => i === idx ? { ...m, applied: true } : m))
       onChanged()
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not add panels') }
