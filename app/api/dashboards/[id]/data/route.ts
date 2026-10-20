@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
 import { substituteTimeWindow, substituteTimeWindowApi, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
+import { extractApiRecords } from '@/lib/api-dictionary'
 export const runtime = 'nodejs'
 
 // -- GET /api/dashboards/[id]/data -----------------------------
@@ -93,11 +94,17 @@ export async function GET(
           // API panel query is the path (e.g. /odata/OEEReport?$filter=ts ge {{time_from}}).
           // Time placeholders are injected UNQUOTED (OData $filter wants a bare ISO).
           const apiPath = substituteTimeWindowApi(String(p.query || ''), { time_from, time_to, interval })
-          data = await runTool('call_api', {
+          const apiRaw = await runTool('call_api', {
             connection_id: p.source_id,
             method: 'GET',
             path: apiPath,
           })
+          if (apiRaw && typeof apiRaw === 'object' && 'error' in (apiRaw as Record<string, unknown>)) {
+            throw new Error(String((apiRaw as Record<string, unknown>).error))
+          }
+          // Normalise whatever envelope the API returned (OData / REST / FactoryOS
+          // {status,message,data:"<json>"}) into rows the panel renderer understands.
+          data = { rows: extractApiRecords(apiRaw) }
         } else if (p.source_type === 'file_server') {
           data = await runTool('read_file_server', {
             server_id: p.source_id,

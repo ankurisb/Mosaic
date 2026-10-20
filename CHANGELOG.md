@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.93] - 2026-10-20
+
+### Fixed
+- **API dashboard panels showed "No data" despite returning records.** The panel executor returned the raw `call_api` result for API panels, but the chart renderer's `normalise()` only understands `{rows}` or a bare array — so a wrapped response (OData, or FactoryOS's `{status,message,data:"<json>"}`) was never parsed and every API panel rendered empty. The dry-run had the same blind spot: it classified any truthy response object as "data" (rows 0), so the proposal looked green while the saved panel was blank. Both now run the API result through `extractApiRecords` (the envelope unwrapper built for the dictionary) → the executor returns real `{rows}` and the dry-run verdict/sample reflect the actual records. API errors are now surfaced instead of silently empty.
+
 ## [1.3.92] - 2026-10-20
 
 ### Added

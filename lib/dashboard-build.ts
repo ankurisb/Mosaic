@@ -5,6 +5,7 @@
 // enriched proposal the chat route streams to the UI. Nothing is persisted here —
 // the user confirms in the proposal card, which saves via create_dashboard/add_panel.
 import { runTool } from './tools'
+import { extractApiRecords } from './api-dictionary'
 import {
   validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow, substituteTimeWindowApi,
   parsePrismQuery, applyPrismWindow, prismSeriesToRows, detectSampleTimeRange, suggestDefaultWindow,
@@ -78,8 +79,14 @@ async function dryRunPanel(panel: PanelPlan, dialectOf: DialectResolver, ctx: Bu
     }
     if (panel.source_type === 'api') {
       const result = await runTool('call_api', { connection_id: panel.source_id, method: 'GET', path: substituteWindowApi(panel.query) }, ctx)
-      const cls = classifyPanelResult(result)
-      return { ...cls, sample: cls.cls === 'data' ? sampleRows(result) : undefined }
+      if (result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)) {
+        return { cls: 'error', rows: 0, detail: String((result as Record<string, unknown>).error).slice(0, 300) }
+      }
+      // Unwrap the API envelope into rows so the verdict reflects real records
+      // (not a truthy wrapper) and the sample shown is the records themselves.
+      const rows = extractApiRecords(result)
+      const cls = classifyPanelResult({ rows })
+      return { ...cls, sample: cls.cls === 'data' ? rows.slice(0, 5) : undefined }
     }
     if (panel.source_type === 'file_server') {
       const result = await runTool('read_file_server', { server_id: panel.source_id, file_hint: panel.query, ts_strategy: 'auto', max_rows: PREVIEW_ROW_CAP }, ctx)
