@@ -94,8 +94,12 @@ export async function POST(req: Request) {
       query, chart_type, chart_config, refresh_sec,
       col, row, w, h, sort_order,
     } = body
-    if (!dashboard_id || !title?.trim() || !source_id || !query?.trim())
-      return Response.json({ error: 'dashboard_id, title, source_id and query are required' }, { status: 400 })
+    // Database panels need a query (the SQL). API/prism/file panels may have an
+    // empty query — the connection's base path/endpoint IS the target, so an
+    // endpoint-level API connection is usable as a panel without a dummy path.
+    const dbNeedsQuery = (source_type ?? 'database') === 'database'
+    if (!dashboard_id || !title?.trim() || !source_id || (dbNeedsQuery && !query?.trim()))
+      return Response.json({ error: dbNeedsQuery ? 'dashboard_id, title, source_id and query are required' : 'dashboard_id, title and source_id are required' }, { status: 400 })
     // Verify ownership
     const owns = await sql`SELECT id FROM dashboards WHERE id = ${dashboard_id} AND owner_id = ${session.id}`
     if (!owns.length) return Response.json({ error: 'Not found' }, { status: 404 })
@@ -112,7 +116,7 @@ export async function POST(req: Request) {
       VALUES
         (${dashboard_id}, ${title.trim()}, ${subtitle ?? ''},
          ${source_type ?? 'database'}, ${source_id},
-         ${query.trim()}, ${chart_type ?? 'bar'},
+         ${(query ?? '').trim()}, ${chart_type ?? 'bar'},
          ${JSON.stringify(chart_config ?? {})}, ${refresh_sec ?? null},
          ${col ?? 0}, ${row ?? 0}, ${w ?? 6}, ${h ?? 1},
          ${sort_order ?? 0})

@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.104] - 2026-10-20
+
+### Changed
+- **API dashboards #6 (part 2) — response-driven pagination (any API, no config).** The paginator now detects the paging scheme from the response body itself, so multi-page APIs are followed with **no per-connection setup** — covering every existing connection (all previously `pagination_style: none`), not just one vendor:
+  - **OData** `@odata.nextLink` (absolute URLs are relativized so the same authenticated connection is reused).
+  - **Page envelopes** — `{…, pagination: { page, total_pages, total_records }}` (the FactoryOS shape) and common variants (`meta`/`paging`/`page_info`, `current_page`/`total_pages`/`pages`/`last_page`) → follows `?page=n` until the last page.
+  - **Cursor tokens** — `next_cursor`/`nextCursor`/`nextPageToken`/`continuationToken` → follows via the cursor param.
+  - **Offset envelopes** — `total` + `page_size`/`per_page`/`limit` → follows by `offset`.
+  - **`next` URL** and **`has_more`** booleans.
+  - A stored `pagination_style` (odata/offset/page/cursor) remains a **fallback** for "dumb" APIs that return a bare array with no metadata. Bounded at the 5,000-row ceiling and 50 pages, with `source_capped` when it stops early.
+- **API/prism/file panels no longer require a query.** `add_panel` required a non-empty `query` for every source, but for a non-database source the connection's base path/endpoint *is* the target — so an endpoint-level API connection (e.g. `base_path: /mes/shifts`) is now usable as a panel without a dummy path. Database panels still require their SQL. (`lib/api-paginate` rewritten, +17 unit tests; `app/api/dashboards/route.ts`.)
+
 ## [1.3.103] - 2026-10-20
 
 ### Changed

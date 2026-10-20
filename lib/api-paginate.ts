@@ -1,25 +1,26 @@
-// Follow an API connection's pagination so a dashboard API panel sees more than the
-// first page. Styles come from the connection config (api_connections.pagination_*).
-// The page-fetcher is injected, so this is pure and unit-testable (no DB/network).
+// Follow an API's pagination so a dashboard panel sees more than the first page.
 //
-// Supported styles: 'none' (one call), 'odata' ($top/$skip), 'offset' (<limit>/offset),
-// 'page' (<limit>/page, 1-based). 'cursor' is best-effort (follows a common next-cursor
-// key) since the cursor location isn't configured. Stops at maxRows, at a short page,
-// or at a hard page cap — and reports source_capped when it stopped with more to fetch.
+// RESPONSE-DRIVEN first: most well-behaved APIs describe their own paging in the
+// response — OData `@odata.nextLink`, a cursor/next token, or a page/offset envelope
+// ({pagination:{page,total_pages}}, {meta:{total,page_size}}, …). We detect that from
+// the body and follow it, so NO per-connection config is needed and it works for any
+// such API, not just one vendor. For "dumb" APIs that return bare arrays with no
+// metadata, we fall back to the connection's stored pagination_style.
+//
+// The page-fetcher is injected, so this module is pure and unit-testable.
 
 import { extractRows as extractByPath } from './condition-eval'
 import { extractApiRecords } from './api-dictionary'
 
 export interface PageConfig {
-  style?: string | null
+  style?: string | null          // fallback only: none|odata|offset|page|cursor
   limitParam?: string | null
   cursorParam?: string | null
   dataPath?: string | null
 }
 
 const PAGE_SIZE = 500
-const MAX_PAGES = 40
-const COMMON_NEXT_KEYS = ['next_cursor', 'nextCursor', 'next', 'nextPageToken', 'continuationToken']
+const MAX_PAGES = 50
 
 // Extract one page's records: the configured data path if set (exact), else the
 // richer envelope auto-detect used elsewhere for dashboards.
@@ -38,20 +39,100 @@ export function withParams(path: string, params: Record<string, string>): string
   return qs ? `${head}?${qs}` : head
 }
 
-// Dig a likely next-cursor value out of a response for best-effort cursor paging.
-function findNextCursor(data: unknown): string | null {
-  if (!data || typeof data !== 'object') return null
-  const obj = data as Record<string, unknown>
-  for (const k of COMMON_NEXT_KEYS) {
-    const v = obj[k]
-    if (typeof v === 'string' && v) return v
-    if (v && typeof v === 'object') { const inner = findNextCursor(v); if (inner) return inner }
-  }
-  // Common nested spot: { paging: { next: "..." } } / { meta: { next_cursor } }
-  for (const wrap of ['paging', 'meta', 'pagination', 'page_info']) {
-    if (obj[wrap] && typeof obj[wrap] === 'object') { const inner = findNextCursor(obj[wrap]); if (inner) return inner }
-  }
+// Strip scheme+host from an absolute URL so it can be re-fetched through the same
+// authenticated connection (call_api prepends the base). Relative URLs pass through.
+function relativize(u: string): string {
+  const m = u.match(/^https?:\/\/[^/]+(\/.*)$/i)
+  return m ? m[1] : (u.startsWith('/') || u.startsWith('?') ? u : '/' + u)
+}
+
+function num(v: unknown): number | null {
+  if (typeof v === 'number' && isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v))) return Number(v)
   return null
+}
+
+const NEXT_URL_KEYS = ['next', 'nextLink', 'next_url', 'nextPage', 'next_page']
+const NEXT_TOKEN_KEYS = ['next_cursor', 'nextCursor', 'nextPageToken', 'continuationToken', 'cursor']
+const PAGE_KEYS = ['page', 'current_page', 'currentPage', 'pageNumber', 'page_number']
+const TOTAL_PAGE_KEYS = ['total_pages', 'totalPages', 'pages', 'page_count', 'pageCount', 'last_page']
+const TOTAL_KEYS = ['total', 'total_records', 'totalRecords', 'total_count', 'totalCount', 'count']
+const SIZE_KEYS = ['page_size', 'pageSize', 'per_page', 'perPage', 'limit', 'size']
+
+function pick(obj: Record<string, unknown>, keys: string[]): unknown {
+  for (const k of keys) if (k in obj && obj[k] != null) return obj[k]
+  return undefined
+}
+
+export type NextStep =
+  | { kind: 'next'; path: string }  // follow this path
+  | { kind: 'stop' }                // pagination understood, no more pages
+  | { kind: 'unknown' }             // no pagination metadata found
+
+// Decide the next request from a response body. rowsSoFar is the count accumulated
+// before this page is counted toward offset maths.
+export function detectNext(data: unknown, basePath: string, cfg: PageConfig, rowsSoFar: number): NextStep {
+  if (!data || typeof data !== 'object') return { kind: 'unknown' }
+  const top = data as Record<string, unknown>
+  const limitParam = cfg.limitParam || 'limit'
+  const cursorParam = cfg.cursorParam || 'cursor'
+
+  // 1. OData.
+  const odata = top['@odata.nextLink']
+  if (typeof odata === 'string' && odata) return { kind: 'next', path: relativize(odata) }
+
+  // 2. Look in the body and its common paging containers.
+  const containers: Record<string, unknown>[] = [top]
+  for (const w of ['pagination', 'meta', 'paging', 'page_info', 'pageInfo', '_meta']) {
+    if (top[w] && typeof top[w] === 'object') containers.push(top[w] as Record<string, unknown>)
+  }
+  for (const c of containers) {
+    // 2a. Explicit next URL (absolute or relative).
+    const nextUrl = pick(c, NEXT_URL_KEYS)
+    if (typeof nextUrl === 'string' && nextUrl) {
+      return { kind: 'next', path: relativize(nextUrl) }
+    }
+    // 2b. Cursor token (not a URL).
+    const token = pick(c, NEXT_TOKEN_KEYS)
+    if (typeof token === 'string' && token) {
+      return { kind: 'next', path: withParams(basePath, { [cursorParam]: token }) }
+    }
+    // 2c. page / total_pages.
+    const page = num(pick(c, PAGE_KEYS))
+    const totalPages = num(pick(c, TOTAL_PAGE_KEYS))
+    if (page != null && totalPages != null) {
+      return page < totalPages
+        ? { kind: 'next', path: withParams(basePath, { page: String(page + 1) }) }
+        : { kind: 'stop' }
+    }
+    // 2d. total (records) + offset maths.
+    const total = num(pick(c, TOTAL_KEYS))
+    if (total != null) {
+      if (rowsSoFar < total) {
+        const size = num(pick(c, SIZE_KEYS)) || PAGE_SIZE
+        return { kind: 'next', path: withParams(basePath, { [limitParam]: String(size), offset: String(rowsSoFar) }) }
+      }
+      return { kind: 'stop' }
+    }
+    // 2e. has_more / hasMore boolean.
+    const more = c['has_more'] ?? c['hasMore'] ?? c['more']
+    if (typeof more === 'boolean') {
+      if (!more) return { kind: 'stop' }
+      // more:true but no token/page — best we can do is offset.
+      return { kind: 'next', path: withParams(basePath, { [limitParam]: String(PAGE_SIZE), offset: String(rowsSoFar) }) }
+    }
+  }
+  return { kind: 'unknown' }
+}
+
+// Config-based stepping for APIs that return NO paging metadata (fallback only).
+function configNext(style: string, basePath: string, cfg: PageConfig, pageIndex: number, lastCount: number): NextStep {
+  const limitParam = cfg.limitParam || 'limit'
+  if (lastCount < PAGE_SIZE) return { kind: 'stop' }  // short page = end
+  if (style === 'odata') return { kind: 'next', path: withParams(basePath, { $top: String(PAGE_SIZE), $skip: String((pageIndex + 1) * PAGE_SIZE) }) }
+  if (style === 'offset') return { kind: 'next', path: withParams(basePath, { [limitParam]: String(PAGE_SIZE), offset: String((pageIndex + 1) * PAGE_SIZE) }) }
+  if (style === 'page') return { kind: 'next', path: withParams(basePath, { [limitParam]: String(PAGE_SIZE), page: String(pageIndex + 2) }) }
+  return { kind: 'stop' }
 }
 
 export interface PageResult { rows: Record<string, unknown>[]; source_capped: boolean; pages: number }
@@ -63,53 +144,33 @@ export async function fetchApiRows(
   maxRows: number,
 ): Promise<PageResult> {
   const style = (cfg.style || 'none').toLowerCase()
-  const limitParam = cfg.limitParam || 'limit'
-  const cursorParam = cfg.cursorParam || 'cursor'
   const checkErr = (d: unknown) => {
     if (d && typeof d === 'object' && 'error' in (d as Record<string, unknown>)) {
       throw new Error(String((d as Record<string, unknown>).error))
     }
   }
 
-  // Single page (default): no pagination configured.
-  if (style === 'none') {
-    const data = await callOnePage(basePath)
-    checkErr(data)
-    const rows = extractPage(data, cfg.dataPath)
-    const capped = rows.length > maxRows
-    return { rows: capped ? rows.slice(0, maxRows) : rows, source_capped: capped, pages: 1 }
-  }
-
   const rows: Record<string, unknown>[] = []
-  let page = 0
-  let cursor: string | null = null
-  for (; page < MAX_PAGES; page++) {
-    let pagePath = basePath
-    if (style === 'odata') {
-      pagePath = withParams(basePath, { $top: String(PAGE_SIZE), $skip: String(page * PAGE_SIZE) })
-    } else if (style === 'offset') {
-      pagePath = withParams(basePath, { [limitParam]: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
-    } else if (style === 'page') {
-      pagePath = withParams(basePath, { [limitParam]: String(PAGE_SIZE), page: String(page + 1) })
-    } else if (style === 'cursor') {
-      pagePath = cursor
-        ? withParams(basePath, { [limitParam]: String(PAGE_SIZE), [cursorParam]: cursor })
-        : withParams(basePath, { [limitParam]: String(PAGE_SIZE) })
-    }
-    const data = await callOnePage(pagePath)
+  let path = basePath
+  let usedResponseDriven = false
+  for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex++) {
+    const data = await callOnePage(path)
     checkErr(data)
     const pageRows = extractPage(data, cfg.dataPath)
     rows.push(...pageRows)
+    if (rows.length >= maxRows) return { rows: rows.slice(0, maxRows), source_capped: true, pages: pageIndex + 1 }
 
-    if (rows.length >= maxRows) return { rows: rows.slice(0, maxRows), source_capped: true, pages: page + 1 }
-    if (style === 'cursor') {
-      cursor = findNextCursor(data)
-      if (!cursor) return { rows, source_capped: false, pages: page + 1 }
-    } else {
-      // Offset/page/odata: a short page means we've reached the end.
-      if (pageRows.length < PAGE_SIZE) return { rows, source_capped: false, pages: page + 1 }
-    }
+    // Response-driven first.
+    const step = detectNext(data, basePath, cfg, rows.length)
+    if (step.kind === 'next') { usedResponseDriven = true; path = step.path; continue }
+    if (step.kind === 'stop') return { rows, source_capped: false, pages: pageIndex + 1 }
+
+    // Unknown: on the first page, fall back to the stored style (if any). Once we've
+    // been following response-driven links, an unknown just means we're done.
+    if (usedResponseDriven || style === 'none') return { rows, source_capped: false, pages: pageIndex + 1 }
+    const cstep = configNext(style, basePath, cfg, pageIndex, pageRows.length)
+    if (cstep.kind === 'next') { path = cstep.path; continue }
+    return { rows, source_capped: false, pages: pageIndex + 1 }
   }
-  // Hit the hard page cap with pages still coming.
   return { rows, source_capped: true, pages: MAX_PAGES }
 }
