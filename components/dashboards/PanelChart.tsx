@@ -618,12 +618,24 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
         ) : (
           <ChartBody type={panel.chart_type} data={result.data} config={panel.chart_config} width={bodyW} height={chartH} />
         )}
-        {result && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-            <span style={{ fontSize: 9, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{panel.source_type}</span>
-            <span style={{ fontSize: 9, color: 'var(--text4)', fontFamily: 'var(--font-mono)' }}>{result.latency_ms}ms</span>
-          </div>
-        )}
+        {result && (() => {
+          // Row-policy note: shown when the server downsampled a time-series or capped
+          // a large result, so a trimmed chart is never silently misleading.
+          const meta = (result.data && typeof result.data === 'object' && !Array.isArray(result.data)
+            ? (result.data as Record<string, unknown>).meta as { total_rows: number; returned_rows: number; downsampled: boolean; truncated: boolean; source_capped?: boolean } | undefined
+            : undefined)
+          let note: string | null = null, tip = ''
+          if (meta?.downsampled) { note = `↓ ${fmtCompact(meta.returned_rows)} of ${fmtCompact(meta.total_rows)} pts`; tip = `Downsampled from ${meta.total_rows.toLocaleString()} points for display; shape and endpoints preserved.` }
+          else if (meta?.source_capped) { note = `first ${fmtCompact(meta.returned_rows)}+ rows`; tip = `The source returned more than ${meta.returned_rows.toLocaleString()} rows; showing the first ${meta.returned_rows.toLocaleString()}. Aggregate in SQL for a complete view.` }
+          else if (meta?.truncated) { note = `first ${fmtCompact(meta.returned_rows)} of ${fmtCompact(meta.total_rows)}`; tip = `Showing the first ${meta.returned_rows.toLocaleString()} of ${meta.total_rows.toLocaleString()} rows.` }
+          return (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <span style={{ fontSize: 9, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{panel.source_type}</span>
+              {note && <span title={tip} style={{ fontSize: 9, color: 'var(--amber-t, #b4690e)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</span>}
+              <span style={{ fontSize: 9, color: 'var(--text4)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{result.latency_ms}ms</span>
+            </div>
+          )
+        })()}
       </div>
       {/* Resize handle (owner only) — drag the corner to change the panel's size */}
       {isOwner && onResizeStart && (

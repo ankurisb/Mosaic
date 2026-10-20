@@ -3,7 +3,15 @@ import { getDb } from '@/lib/db'
 import { runTool } from '@/lib/tools'
 import { substituteTimeWindow, substituteTimeWindowApi, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
 import { extractApiRecords } from '@/lib/api-dictionary'
+import { capPanelRows, extractRows } from '@/lib/dashboard-rows'
 export const runtime = 'nodejs'
+
+// Row policy for dashboard panels (see lib/dashboard-rows). Dashboards fetch more
+// than the chat default (200) so multi-point charts aren't clipped, then the route
+// downsamples time-series and caps tables before anything reaches the browser.
+const DASH_SQL_FETCH = 5000       // rows a DB panel may pull (source-side cap)
+const DASH_MAX_POINTS = 1000      // time-series points shipped to the client
+const DASH_MAX_TABLE_ROWS = 1000  // non-time-series rows shipped to the client
 
 // -- GET /api/dashboards/[id]/data -----------------------------
 // Executes all panel queries for a dashboard and returns results.
@@ -89,6 +97,7 @@ export async function GET(
           data = await runTool('query_database', {
             connection_id: p.source_id,
             sql: q,
+            max_rows: DASH_SQL_FETCH,
           })
         } else if (p.source_type === 'api') {
           // API panel query is the path (e.g. /odata/OEEReport?$filter=ts ge {{time_from}}).
@@ -123,6 +132,18 @@ export async function GET(
             throw new Error(String((raw as Record<string, unknown>).error))
           }
           data = { rows: prismSeriesToRows(raw) }
+        }
+        // Uniform row policy (all sources): downsample large time-series, cap large
+        // tables, and attach meta so the panel can show what was trimmed. Only touch
+        // row-shaped data — text/other shapes (e.g. a file-server document) pass
+        // through untouched.
+        if (extractRows(data).length) {
+          const srcCapped = !!(data && typeof data === 'object' && (data as Record<string, unknown>).truncated)
+          const cfg = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : undefined
+          const { rows, meta } = capPanelRows(data, String(p.chart_type || ''), cfg, {
+            maxPoints: DASH_MAX_POINTS, maxRows: DASH_MAX_TABLE_ROWS, sourceCapped: srcCapped,
+          })
+          data = { rows, meta }
         }
         return {
           panel_id: p.id,

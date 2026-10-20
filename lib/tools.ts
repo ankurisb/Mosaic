@@ -579,8 +579,8 @@ export async function runTool(
         if (!accessCheck.allowed) return { error: accessCheck.reason, blocked: true }
         if (accessCheck.modified && accessCheck.modifiedQuery) input = { ...input, sql: accessCheck.modifiedQuery }
       } catch { }
-      // Execute
-      const result = await queryDatabase(srcId, String(input.sql))
+      // Execute (dashboards pass a higher max_rows than the chat default of 200)
+      const result = await queryDatabase(srcId, String(input.sql), { maxRows: input.max_rows as number | undefined })
       // Post-query: strip any blocked columns from returned results (defence-in-depth)
       try { return await stripBlockedColumnsFromResult(result, srcId, 'database', role) } catch { return result }
     }
@@ -1285,11 +1285,22 @@ function sanitiseRows(rows: Record<string, unknown>[]): Record<string, unknown>[
   })
 }
 
-async function queryDatabase(connectionId: string, queryInput: string) {
+async function queryDatabase(connectionId: string, queryInput: string, opts: { maxRows?: number } = {}) {
+  // Row ceiling for the wrap. Default 200 (chat); dashboards pass a higher value so
+  // multi-point charts aren't silently clipped. We fetch cap+1 to DETECT truncation
+  // (more rows existed at the source) and report it, instead of capping invisibly.
+  const cap = Math.max(1, opts.maxRows ?? 200)
+  const fetchN = cap + 1
   // Bug 4.6: strip trailing semicolons (and any whitespace after them) so they
-  // don't break the `SELECT * FROM (${q}) _q LIMIT 200` wrap below.
+  // don't break the `SELECT * FROM (${q}) _q LIMIT N` wrap below.
   const trimmed = queryInput.trim().replace(/;+\s*$/, '')
   if (!trimmed) throw new Error('SQL query is empty. Please provide a valid SELECT statement.')
+  // Slice to the cap and flag whether the source had more rows than we kept.
+  const capResult = (raw: Record<string, unknown>[], fields: string[]) => {
+    const truncated = raw.length > cap
+    const rows = truncated ? raw.slice(0, cap) : raw
+    return { rows, rowCount: rows.length, fields, truncated }
+  }
   const db = getDb()
   const rows = await db`SELECT * FROM db_connections WHERE id=${connectionId}`
   if (!rows.length) throw new Error(`Database connection "${connectionId}" not found. Check Settings → Databases.`)
@@ -1349,19 +1360,18 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       pgPools.set(connectionId, entry)
     }
     entry.lastUsed = Date.now()
-    const result = await entry.pool.query(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
-    return { rows: sanitiseRows(result.rows), rowCount: result.rowCount, fields: result.fields.map(f => f.name) }
+    const result = await entry.pool.query(`SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}`)
+    return capResult(sanitiseRows(result.rows), result.fields.map(f => f.name))
   }
 
   // -- MySQL ----------------------------------------------------
   if (dialect === 'mysql') {
     const pool = await getMysqlPool(connectionId, conn)
-    const [results, fields] = await pool.execute(`SELECT * FROM (${trimmed}) _q LIMIT 200`)
-    return {
-      rows: sanitiseRows(results as Record<string,unknown>[]),
-      rowCount: (results as unknown[]).length,
-      fields: (fields as Array<{ name: string }>).map(f => f.name),
-    }
+    const [results, fields] = await pool.execute(`SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}`)
+    return capResult(
+      sanitiseRows(results as Record<string,unknown>[]),
+      (fields as Array<{ name: string }>).map(f => f.name),
+    )
   }
 
   // -- SQL Server -----------------------------------------------
@@ -1381,18 +1391,14 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       connectionTimeout: (conn.connect_timeout_ms as number) || 5000,
       requestTimeout: (conn.query_timeout_ms as number) || 30000,
     }
-    // Fix #1: wrap in TOP 200 for MSSQL (no LIMIT support)
-    const mssqlQuery = trimmed.replace(/^(SELECT)/i, 'SELECT TOP 200')
+    // Fix #1: wrap in TOP N for MSSQL (no LIMIT support)
+    const mssqlQuery = trimmed.replace(/^(SELECT)/i, `SELECT TOP ${fetchN}`)
     const pool = decryptConnStr(conn)
       ? await mssql.connect(decryptConnStr(conn)!)
       : await mssql.connect(config as any)
     try {
       const result = await pool.request().query(mssqlQuery)
-      return {
-        rows: result.recordset,
-        rowCount: result.rowsAffected[0],
-        fields: Object.keys((result.recordset[0] as object) || {}),
-      }
+      return capResult(result.recordset as Record<string, unknown>[], Object.keys((result.recordset[0] as object) || {}))
     } finally {
       await pool.close()
     }
@@ -1452,10 +1458,14 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       : new Database(rawPath, { readonly: true })
 
     try {
-      const stmt = db2.prepare(trimmed)
+      // Wrap SELECT/WITH in a bounded subquery so SQLite (previously uncapped) obeys
+      // the same row ceiling as the server dialects. PRAGMA/EXPLAIN can't be wrapped,
+      // so run those as-is (they return few rows anyway).
+      const wrappable = upper.startsWith('SELECT') || upper.startsWith('WITH')
+      const stmt = db2.prepare(wrappable ? `SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}` : trimmed)
       const results = sanitiseRows(stmt.all() as Record<string,unknown>[])
       const fields = results.length > 0 ? Object.keys(results[0]) : []
-      return { rows: results, rowCount: results.length, fields }
+      return wrappable ? capResult(results, fields) : { rows: results, rowCount: results.length, fields, truncated: false }
     } finally {
       db2.close()
     }
@@ -1481,7 +1491,7 @@ async function queryDatabase(connectionId: string, queryInput: string) {
       const cursor = col.find((query.filter as object) || {})
       if (query.sort) cursor.sort(query.sort as Record<string, 1 | -1>)
       if (query.projection) cursor.project(query.projection as object)
-      const limit = Math.min((query.limit as number) || 20, 200)
+      const limit = Math.min((query.limit as number) || 20, cap)
       cursor.limit(limit)
       const rawResults = await cursor.toArray()
       const results = sanitiseRows(rawResults as Record<string,unknown>[])

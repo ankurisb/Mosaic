@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.101] - 2026-10-20
+
+### Changed
+- **Robustness #1 — uniform, visible row policy for dashboard panels.** Previously a panel's result size depended on the source: SQLite and API panels were uncapped (a large query could ship tens of thousands of rows to the browser and choke the chart), while Postgres/MySQL/MSSQL/Mongo were silently clipped to 200 rows (so a time-series wanting more than 200 points was quietly truncated with no indication). Now:
+  - **Database panels fetch up to 5,000 rows** on dashboards (chat stays at 200), so legitimate multi-point charts aren't clipped; SQLite is now wrapped with the same bounded `LIMIT` as the server dialects.
+  - **The route applies one policy to every source** (`lib/dashboard-rows`): large **time-series** (line/area/bar) are **downsampled with LTTB** to ≤1,000 points — preserving the visual shape and both endpoints — and large **tables/other** are capped to ≤1,000 rows.
+  - **It's visible, not silent.** Each panel's footer shows a note when its data was trimmed (`↓ 1,000 of 8,640 pts` for a downsample, `first 5,000+ rows` when the source itself had more), with a tooltip explaining and suggesting aggregation in SQL. `queryDatabase` now reports `truncated`, and the panel data carries `meta` (`total_rows`, `returned_rows`, `downsampled`, `truncated`, `source_capped`).
+  - Non-row results (e.g. a file-server document) pass through untouched. (`lib/dashboard-rows` + 10 unit tests, `lib/tools.ts` `queryDatabase`, `app/api/dashboards/[id]/data`, `PanelChart`.)
+
 ## [1.3.100] - 2026-10-20
 
 ### Changed
