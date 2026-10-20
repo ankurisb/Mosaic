@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.98] - 2026-10-20
+
+Re-release of 1.3.97 under a clean tag — the `v1.3.97` tag was accidentally
+placed on the previous (1.3.96) commit, so the build built stale code. No code
+change from 1.3.97; the fixes below shipped here.
+
 ## [1.3.97] - 2026-10-20
 
 ### Fixed
