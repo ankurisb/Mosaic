@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.97] - 2026-10-20
+
+### Fixed
+- **Changing the time window no longer blanks the whole page.** The structure-load effect depended on `fetchData`, which was re-created on every `timeWindow`/`customFrom`/`customTo` change — so each date keystroke and each Apply re-ran the full load effect and flipped the full-page loader on, reloading header and all. `fetchData` is now stable (it reads the current window from a ref); structure loads **once** per dashboard (the only place the full-page loader is toggled), and a separate effect refetches panel data when the **preset** window changes — so only the panels refresh, the header stays put.
+- **The calendar picker no longer refetches on every date change.** Custom `from`/`to` dates are no longer in any fetch-trigger dependency; a custom range is fetched **only** when you click **Apply** (which now shows the refresh spinner).
+- **Resizing a panel no longer wipes its content.** The resize path sent `update_panel` with just `{id, w, h}`, and `update_panel` overwrote *every* column — blanking the panel's title, query and source to defaults. `update_panel` now does a **geometry-only** update (touch only `col/row/w/h`) when no content fields are present. (`app/api/dashboards/route.ts`.)
+
+### Changed
+- **Dashboard panels moved to a 12-column grid** (from 4 columns) for far finer width control: widths now snap in 1/12ths (quarter = 3, third = 4, half = 6, two-thirds = 8, three-quarter = 9, full = 12) instead of coarse quarters, and heights go up to 3 rows. **Resizing now previews live** during the drag instead of only snapping on release. Existing panels are migrated (`020_dashboard_grid_12col.sql`, `w × 3`) so their proportions are preserved. The panel builder gained a **Height** selector; the AI planner, chat dock and proposal flow default to half-width (6) on the new grid. (`DashboardView`, `PanelChart`, `PanelBuilder`, `DashboardChatDock`, `ChatPage`, `app/api/dashboards/route.ts`, `lib/tools.ts`.)
+
 ## [1.3.96] - 2026-10-20
 
 ### Added

@@ -566,10 +566,10 @@ function ChartBody({ type, data, config, width, height }: { type: string; data: 
 
 // -- Panel card ------------------------------------------------
 export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onReorderStart, onReorderOver, onReorderDrop, isDropTarget }: Props) {
-  const colSpan = Math.min(Math.max(panel.w, 1), 4)
-  const rowSpan = panel.h >= 2 ? 2 : 1
+  const colSpan = Math.min(Math.max(panel.w, 1), 12)   // 12-column grid
+  const rowSpan = Math.min(Math.max(panel.h, 1), 3)
   const [bodyRef, bodyW] = useMeasure()
-  const chartH = rowSpan === 2 ? 340 : 200
+  const chartH = rowSpan >= 3 ? 480 : rowSpan === 2 ? 340 : 200
   const canDrag = isOwner && !!onReorderStart
   return (
     <div className="fade-in" data-panel-id={panel.id}

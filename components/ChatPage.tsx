@@ -872,11 +872,14 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
       const id = cd.id as string
       let order = 0
       for (const p of chosen) {
-        const g = p.suggested_grid || { col: (order % 2) * 2, row: Math.floor(order / 2), w: 2, h: 1 }
+        const g = p.suggested_grid || { col: (order % 2) * 6, row: Math.floor(order / 2), w: 6, h: 1 }
+        // The grid is 12 columns; scale any width that looks like the old 4-column
+        // scale (≤4) so a planner-supplied grid doesn't render a sliver.
+        const gw = g.w <= 4 ? g.w * 3 : g.w
         const r = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           action: 'add_panel', dashboard_id: id, title: p.title, subtitle: p.subtitle || '',
           source_type: p.source_type, source_id: p.source_id, query: p.query, chart_type: p.chart_type,
-          chart_config: p.chart_config || {}, col: g.col, row: g.row, w: g.w, h: g.h, sort_order: order,
+          chart_config: p.chart_config || {}, col: g.col, row: g.row, w: gw, h: g.h, sort_order: order,
         }) })
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Failed to add panel "${p.title}"`) }
         order++

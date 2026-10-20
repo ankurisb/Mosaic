@@ -74,7 +74,7 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
           body: JSON.stringify({
             action: 'add_panel', dashboard_id: dashboardId, title: p.title, subtitle: p.subtitle || '',
             source_type: p.source_type, source_id: p.source_id, query: p.query, chart_type: p.chart_type,
-            chart_config: p.chart_config || {}, col: (i % 2) * 2, row: 500 + i, w: 2, h: 1, sort_order: order + i,
+            chart_config: p.chart_config || {}, col: (i % 2) * 6, row: 500 + i, w: 6, h: 1, sort_order: order + i,
           }),
         })
         if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `Failed to add "${p.title}"`) }

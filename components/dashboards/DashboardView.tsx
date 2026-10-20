@@ -40,7 +40,16 @@ const REFRESH_OPTS = [
 ]
 
 // -- Panel resize hook -----------------------------------------
-function useResizePanel(onResize: (id: string, w: number, h: number) => void) {
+// Panels live on a 12-column grid, so width snaps in 1/12ths (quarter = 3,
+// third = 4, half = 6, full = 12) — far finer than the old 4-column grid.
+// `onLive` paints the new size during the drag so resizing feels continuous
+// instead of jumping only on release.
+const GRID_COLS = 12
+const MAX_ROWS = 3
+function useResizePanel(
+  onResize: (id: string, w: number, h: number) => void,
+  onLive?: (id: string, w: number, h: number) => void,
+) {
   const stateRef = React.useRef<{
     id: string; startX: number; startY: number
     startW: number; startH: number
@@ -59,10 +68,13 @@ function useResizePanel(onResize: (id: string, w: number, h: number) => void) {
       if (!stateRef.current) return
       const dx = ev.clientX - stateRef.current.startX
       const dy = ev.clientY - stateRef.current.startY
-      const newW = Math.max(1, Math.min(4, stateRef.current.startW + Math.round(dx / stateRef.current.colW)))
-      const newH = Math.max(1, Math.min(2, stateRef.current.startH + Math.round(dy / (stateRef.current.rowH * 0.6))))
-      stateRef.current.curW = newW
-      stateRef.current.curH = newH
+      const newW = Math.max(1, Math.min(GRID_COLS, stateRef.current.startW + Math.round(dx / stateRef.current.colW)))
+      const newH = Math.max(1, Math.min(MAX_ROWS, stateRef.current.startH + Math.round(dy / (stateRef.current.rowH * 0.5))))
+      if (newW !== stateRef.current.curW || newH !== stateRef.current.curH) {
+        stateRef.current.curW = newW
+        stateRef.current.curH = newH
+        onLive?.(stateRef.current.id, newW, newH)
+      }
     }
     function onUp() {
       if (!stateRef.current) return
@@ -73,7 +85,7 @@ function useResizePanel(onResize: (id: string, w: number, h: number) => void) {
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [onResize])
+  }, [onResize, onLive])
 
   return { start }
 }
@@ -152,10 +164,21 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     return d.dashboard
   }, [id, router])
 
+  // Current window kept in a ref so fetchData stays STABLE across window/date
+  // changes. Previously fetchData depended on timeWindow/customFrom/customTo, so
+  // every date keystroke re-created it and re-ran the structure-load effect
+  // (which calls setLoading(true)) — blanking the whole page. Now only the data
+  // refetches; the header/grid stay mounted.
+  const windowRef = useRef({ timeWindow, customFrom, customTo })
+  windowRef.current = { timeWindow, customFrom, customTo }
+
   const fetchData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setRefreshing(true)
     try {
-      const tw = timeWindow === 'custom' && customFrom && customTo ? `custom&time_from=${encodeURIComponent(customFrom + 'T00:00:00')}&time_to=${encodeURIComponent(customTo + 'T23:59:59')}` : timeWindow
+      const { timeWindow: tw0, customFrom: cf, customTo: ct } = windowRef.current
+      const tw = tw0 === 'custom' && cf && ct
+        ? `custom&time_from=${encodeURIComponent(cf + 'T00:00:00')}&time_to=${encodeURIComponent(ct + 'T23:59:59')}`
+        : tw0
       const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}`)
       const d = await r.json()
       const map: Record<string, PanelResult> = {}
@@ -163,43 +186,41 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       setResults(map)
       setLastFetch(new Date())
     } finally { setRefreshing(false) }
-  }, [id, timeWindow, customFrom, customTo])
+  }, [id])
 
   // Reload structure + data after the AI dock changes the dashboard (add/edit/remove).
   const reloadAfterEdit = useCallback(() => { loadStructure(); fetchData(false) }, [loadStructure, fetchData])
 
+  // Load STRUCTURE once per dashboard (not on window changes). This is the only
+  // place `loading` (full-page) is toggled, so changing the time window never
+  // blanks the page — only the panels refresh (via the effect below).
   const appliedDefaultWindow = useRef(false)
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
     loadStructure().then(dash => {
-      if (!dash) return
-      // Apply the dashboard's auto-detected default time window once, before the
-      // first data fetch, so a dashboard built over historical data opens on a
-      // window that covers it instead of blank on "Today". Changing timeWindow
-      // re-runs this effect (fetchData depends on it); the guard prevents a loop.
+      if (cancelled) return
+      if (!dash) { setLoading(false); return }
       const KNOWN = ['today','15m','1h','6h','24h','7d','30d','90d','1y','all']
       if (!appliedDefaultWindow.current) {
         appliedDefaultWindow.current = true
         const dw = dash.default_time_window as string | undefined
-        if (dw && KNOWN.includes(dw) && dw !== timeWindow) { setTimeWindow(dw); return }
+        if (dw && KNOWN.includes(dw) && dw !== windowRef.current.timeWindow) setTimeWindow(dw)
       }
-      // Only take the Superset-embed path when Superset is actually configured.
-      // A dashboard may carry a stale superset_embed_uuid from an edition/env that
-      // had Superset; without it (e.g. desktop), fall through to Mosaic's own
-      // native panel rendering rather than trying to embed a Superset that isn't
-      // there.
-      if (dash.superset_embed_uuid && supersetStatus?.configured) {
-        fetchGuestToken(id).finally(() => setLoading(false))
-      } else {
-        fetchData(true).finally(() => setLoading(false))
-      }
-      // Set up auto-refresh
-      if (dash.refresh_sec > 0) {
-        timerRef.current = setInterval(() => fetchData(false), dash.refresh_sec * 1000)
-      }
+      if (dash.superset_embed_uuid && supersetStatus?.configured) fetchGuestToken(id)
+      if (dash.refresh_sec > 0) timerRef.current = setInterval(() => fetchData(false), dash.refresh_sec * 1000)
+      setLoading(false)   // structure ready → header + grid stay; panel data loads below
     })
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [loadStructure, fetchData])
+    return () => { cancelled = true; if (timerRef.current) clearInterval(timerRef.current) }
+  }, [id, loadStructure, supersetStatus?.configured, fetchData])
+
+  // Refetch panel data when the PRESET window changes. Custom ranges fetch only on
+  // Apply (so typing dates doesn't refetch), and this never toggles `loading`.
+  useEffect(() => {
+    if (dashboard?.superset_embed_uuid) return
+    if (timeWindow === 'custom') return
+    fetchData(true)
+  }, [id, timeWindow, dashboard?.superset_embed_uuid, fetchData])
 
   // Reset timer when refresh_sec changes
   const resetTimer = (sec: number) => {
@@ -210,13 +231,19 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2500); return () => clearTimeout(t) } }, [toast])
 
   // -- Panel CRUD ------------------------------------------------
-  const { start: startResize } = useResizePanel(async (panelId, newW, newH) => {
-    await fetch('/api/dashboards', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_panel', id: panelId, w: newW, h: newH }),
-    })
-    setPanels(p => p.map(x => x.id === panelId ? { ...x, w: newW, h: newH } : x))
-  })
+  const { start: startResize } = useResizePanel(
+    // Commit on release: geometry-only update (title/query absent → the API leaves
+    // the panel's content intact and touches only w/h).
+    async (panelId, newW, newH) => {
+      setPanels(p => p.map(x => x.id === panelId ? { ...x, w: newW, h: newH } : x))
+      await fetch('/api/dashboards', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_panel', id: panelId, w: newW, h: newH }),
+      })
+    },
+    // Live preview during the drag so the panel grows/shrinks continuously.
+    (panelId, newW, newH) => setPanels(p => p.map(x => x.id === panelId ? { ...x, w: newW, h: newH } : x)),
+  )
 
   async function savePanel(data: Omit<Panel, 'id'> & { id?: string }) {
     const action = data.id ? 'update_panel' : 'add_panel'
@@ -284,10 +311,10 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>to</span>
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
-              <button onClick={() => fetchData(false)} disabled={!customFrom || !customTo} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: !customFrom || !customTo ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !customFrom || !customTo ? 0.5 : 1 }}>Apply</button>
+              <button onClick={() => fetchData(true)} disabled={!customFrom || !customTo} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: !customFrom || !customTo ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !customFrom || !customTo ? 0.5 : 1 }}>Apply</button>
             </>
           ) : (
-            <button onClick={() => fetchData(false)} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Apply</button>
+            <button onClick={() => fetchData(true)} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Apply</button>
           )}
         </div>}
 
@@ -403,7 +430,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             )}
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, alignItems: 'start' }} data-panel-grid>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14, alignItems: 'start' }} data-panel-grid>
             {panels.map(panel => (
               <PanelChart
                 key={panel.id}
@@ -419,7 +446,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 onResizeStart={(e: React.MouseEvent) => {
                   const grid = e.currentTarget.closest('[data-panel-grid]') as HTMLElement
                   if (!grid) return
-                  const colW = grid.getBoundingClientRect().width / 4
+                  const colW = grid.getBoundingClientRect().width / 12
                   const card = e.currentTarget.closest('[data-panel-id]') as HTMLElement
                   const rowH = card ? card.getBoundingClientRect().height : 200
                   startResize(e, panel.id, panel.w, panel.h, colW, rowH)

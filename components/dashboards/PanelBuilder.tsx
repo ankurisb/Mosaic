@@ -21,11 +21,19 @@ const CHART_TYPES = [
   { value: 'gauge',  label: 'Gauge',      icon: '' },
 ]
 
+// Widths on the 12-column grid.
 const WIDTHS = [
-  { value: 1, label: ' width (1 col)' },
-  { value: 2, label: ' width (2 cols)' },
-  { value: 3, label: ' width (3 cols)' },
-  { value: 4, label: 'Full width (4 cols)' },
+  { value: 3,  label: 'Quarter width' },
+  { value: 4,  label: 'Third width' },
+  { value: 6,  label: 'Half width' },
+  { value: 8,  label: 'Two-thirds width' },
+  { value: 9,  label: 'Three-quarter width' },
+  { value: 12, label: 'Full width' },
+]
+const HEIGHTS = [
+  { value: 1, label: 'Short' },
+  { value: 2, label: 'Tall' },
+  { value: 3, label: 'Extra tall' },
 ]
 
 const REFRESH_OPTS = [
@@ -56,7 +64,7 @@ export default function PanelBuilder({
   const [form, setForm] = useState<Panel>(initial ?? {
     title: '', subtitle: '', source_type: 'database', source_id: '',
     query: '', chart_type: 'bar', chart_config: {}, refresh_sec: null,
-    col: 0, row: 0, w: 2, h: 1,
+    col: 0, row: 0, w: 6, h: 1,
   })
   const [dbs, setDbs]       = useState<Connection[]>([])
   const [apis, setApis]     = useState<ApiService[]>([])
@@ -162,6 +170,12 @@ export default function PanelBuilder({
           <div><label style={LBL}>Width</label>
             <select value={form.w} onChange={e => set('w', Number(e.target.value))} style={{ ...INP, cursor: 'pointer' }}>
               {WIDTHS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {/* Height */}
+          <div><label style={LBL}>Height</label>
+            <select value={form.h} onChange={e => set('h', Number(e.target.value))} style={{ ...INP, cursor: 'pointer' }}>
+              {HEIGHTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
         </div>

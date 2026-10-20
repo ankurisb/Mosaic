@@ -114,7 +114,7 @@ export async function POST(req: Request) {
          ${source_type ?? 'database'}, ${source_id},
          ${query.trim()}, ${chart_type ?? 'bar'},
          ${JSON.stringify(chart_config ?? {})}, ${refresh_sec ?? null},
-         ${col ?? 0}, ${row ?? 0}, ${w ?? 2}, ${h ?? 1},
+         ${col ?? 0}, ${row ?? 0}, ${w ?? 6}, ${h ?? 1},
          ${sort_order ?? 0})
       RETURNING id`
     await sql`UPDATE dashboards SET updated_at = ${nowExpr()} WHERE id = ${dashboard_id}`
@@ -130,6 +130,18 @@ export async function POST(req: Request) {
     } = body
     if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
     if (!(await ownsPanel(sql, id, session.id))) return Response.json({ error: 'Not found' }, { status: 404 })
+    // Geometry-only update: when the body carries no content fields (title/query),
+    // this is a resize/move — touch ONLY col/row/w/h and leave the panel's title,
+    // query and source intact. (Previously a resize sent just {id,w,h} and this
+    // branch blanked everything else to its defaults.)
+    const geometryOnly = title === undefined && query === undefined && source_id === undefined && chart_type === undefined
+    if (geometryOnly) {
+      await sql`
+        UPDATE dashboard_panels
+        SET    col = ${col ?? 0}, row = ${row ?? 0}, w = ${w ?? 6}, h = ${h ?? 1}
+        WHERE  id = ${id}`
+      return Response.json({ ok: true })
+    }
     const roErr = await denyNonReadonly(sql, source_type, source_id, query)
     if (roErr) return Response.json({ error: `panel query rejected: ${roErr}` }, { status: 400 })
     await sql`
@@ -144,7 +156,7 @@ export async function POST(req: Request) {
              refresh_sec  = ${refresh_sec ?? null},
              col          = ${col ?? 0},
              row          = ${row ?? 0},
-             w            = ${w ?? 2},
+             w            = ${w ?? 6},
              h            = ${h ?? 1}
       WHERE  id = ${id}`
     return Response.json({ ok: true })
@@ -169,7 +181,7 @@ export async function POST(req: Request) {
       const p = panels[i]
       await sql`
         UPDATE dashboard_panels
-        SET col = ${p.col ?? 0}, row = ${p.row ?? 0}, w = ${p.w ?? 2}, h = ${p.h ?? 1}, sort_order = ${i}
+        SET col = ${p.col ?? 0}, row = ${p.row ?? 0}, w = ${p.w ?? 6}, h = ${p.h ?? 1}, sort_order = ${i}
         WHERE id = ${p.id} AND dashboard_id IN (SELECT id FROM dashboards WHERE owner_id = ${session.id})`
     }
     return Response.json({ ok: true })
