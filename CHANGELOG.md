@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.94] - 2026-10-20
+
+### Added
+- **Dashboard chat dock — evolve a dashboard in natural language, in place.** An "Edit with AI" button on a native dashboard opens a right-side chat scoped to *that* dashboard. You can:
+  - **Add panels** — "add a panel showing downtime by reason". The model proposes new panels (dry-run previewed, with per-panel data/empty/error verdicts); an "Add N to dashboard" button **appends** them to the current dashboard (not a new one) and the grid reloads live.
+  - **Edit a panel's presentation** — "change the OEE panel to a bar chart" → `update_dashboard_panel` (chart type / title / subtitle / chart_config only; query and source are left to the add-a-corrected-panel flow for safety).
+  - **Remove panels** — "remove the status-mix panel" → `remove_dashboard_panels`.
+  - **Ask questions** — "what does the defect-rate panel show?" — plain answers, no change.
+  - Server: `/api/chat` accepts a `dashboard_id`; when the owner supplies it, the current panels are injected as context and two dashboard-scoped tools (`update_dashboard_panel`, `remove_dashboard_panels`) are offered **only** in this mode (never in the normal chat). Changes emit a `dashboard_changed` event so the view refreshes immediately. (`components/dashboards/DashboardChatDock.tsx`, `DashboardView`, `app/api/chat/route.ts`.)
+
 ## [1.3.93] - 2026-10-20
 
 ### Fixed

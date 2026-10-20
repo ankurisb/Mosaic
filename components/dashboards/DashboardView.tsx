@@ -6,6 +6,7 @@ import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
 import PanelChart from './PanelChart'
 import PanelBuilder from './PanelBuilder'
+import DashboardChatDock from './DashboardChatDock'
 import { SupersetEmbed } from './SupersetEmbed'
 import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
@@ -87,6 +88,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [refreshing, setRefreshing] = useState(false)
   const [lastFetch, setLastFetch] = useState<Date | null>(null)
   const [showBuilder, setShowBuilder] = useState(false)
+  const [dockOpen, setDockOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
   const [timeWindow, setTimeWindow] = useState('today')
   const [customFrom, setCustomFrom] = useState('')
@@ -146,6 +148,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       setLastFetch(new Date())
     } finally { setRefreshing(false) }
   }, [id, timeWindow, customFrom, customTo])
+
+  // Reload structure + data after the AI dock changes the dashboard (add/edit/remove).
+  const reloadAfterEdit = useCallback(() => { loadStructure(); fetchData(false) }, [loadStructure, fetchData])
 
   const appliedDefaultWindow = useRef(false)
   useEffect(() => {
@@ -296,6 +301,13 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           {refreshing ? 'Refreshing...' : 'Refresh'}
         </button>
 
+        {isOwner && !dashboard?.superset_embed_uuid && (
+          <button onClick={() => setDockOpen(o => !o)} title="Evolve this dashboard with AI"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: dockOpen ? 'var(--accent-bg)' : 'var(--bg)', color: dockOpen ? 'var(--accent-fg)' : 'var(--text2)', border: dockOpen ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
+            Edit with AI
+          </button>
+        )}
         {isOwner && (
           <button onClick={() => { setEditingPanel(null); setShowBuilder(true) }}
             style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)' }}>
@@ -315,7 +327,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         />
       )}
 
-      {/* Dashboard grid or Superset embed */}
+      {/* Dashboard grid or Superset embed (+ AI chat dock) */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
       {dashboard?.superset_embed_uuid ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {guestTokenLoading ? (
@@ -414,6 +428,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       </div>
 
       )}
+        </div>
+        {isOwner && dockOpen && !dashboard?.superset_embed_uuid && (
+          <DashboardChatDock dashboardId={id} onChanged={reloadAfterEdit} onClose={() => setDockOpen(false)} />
+        )}
+      </div>
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '9px 18px', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, boxShadow: 'var(--shadow-lg)', zIndex: 999 }}>{toast}</div>
       )}

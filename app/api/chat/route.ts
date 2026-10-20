@@ -127,7 +127,7 @@ export async function POST(req: Request) {
 
   const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
   reqLog.info('Chat request received')
-  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments } = await req.json()
+  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments, dashboard_id } = await req.json()
   // Hard source-scoping: the chat picker sends the ids of pinned sources. When
   // present, tool calls are restricted to these ids (enforced in runTool). An
   // empty/absent list means no restriction (all sources allowed) — the default.
@@ -498,7 +498,31 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
       + '\n- PRISM panels: source_type "prism", source_id = the PRISM instance_id; query = a JSON string of query_prism params. For a trend use {"operation":"telemetry_history","entity_type":"DEVICE","entity_id":"<uuid>","keys":["kWh"],"agg":"SUM","interval":3600000} with chart_type line/area and chart_config {"x":"ts","y":"kWh"} (results come back as rows of {ts, <key>}). Pick an interval (ms) sensible for a typical window — e.g. 3600000 (1h) or 86400000 (1 day); Mosaic auto-coarsens it if a wide window would make too many buckets. For a raw (unaggregated) trend, omit agg and interval. For a current value use {"operation":"telemetry_latest","entity_type":"DEVICE","entity_id":"<uuid>","keys":["kW"]} with chart_type stat/gauge. You MUST use a real device/asset entity_id — if you don\'t have one, call query_prism operation "devices" FIRST to find the id, then build the plan. Use the instance\'s known telemetry keys (listed above) for the keys. Do NOT put {{time_from}} in a prism query — Mosaic injects startTs/endTs from the dashboard window automatically.'
       + '\n- API panels: source_type "api", source_id = the API connection id; query = the path/query to append to the connection base, e.g. "/A_InspectionResult?$filter=InspectionDate ge {{time_from}} and InspectionDate le {{time_to}}&$top=100&$format=json". For a time filter use the BARE placeholders {{time_from}}/{{time_to}} UNQUOTED in the OData $filter (Mosaic injects a bare ISO timestamp). Pick chart_type by the records: table for a list, bar/line for an aggregate, stat for a single value. Use the connection\'s known fields (listed above) to choose filter/select columns.'
     : ''
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock + dashboardBlock
+
+  // Dashboard chat dock: when a dashboard_id is supplied (the right-side "Edit with
+  // AI" chat on a dashboard), load its current panels so the model can reference,
+  // add to, edit, or remove them. Only the owner may edit.
+  let dashEditId = ''
+  let dashEditBlock = ''
+  if (dashboard_id) {
+    try {
+      const drow = await sql`SELECT id, name FROM dashboards WHERE id = ${dashboard_id} AND owner_id = ${session.id}`
+      if (drow.length) {
+        dashEditId = String(drow[0].id)
+        const dpanels = await sql`SELECT id, title, source_type, chart_type, query FROM dashboard_panels WHERE dashboard_id = ${dashEditId} ORDER BY sort_order ASC, row ASC, col ASC`
+        const list = dpanels.length
+          ? (dpanels as Record<string, unknown>[]).map(p => `  - panel_id:"${p.id}" | "${p.title}" | ${p.source_type} | ${p.chart_type} | query: ${String(p.query).replace(/\s+/g, ' ').slice(0, 120)}`).join('\n')
+          : '  (no panels yet)'
+        dashEditBlock = `\n\n## Editing the current dashboard: "${drow[0].name}"\nThe user is chatting from the side panel OF this dashboard to evolve it. Its existing panels:\n${list}\n`
+          + 'To ADD panel(s), call build_dashboard with ONLY the NEW panels — they are APPENDED to this dashboard (do not re-list existing panels). '
+          + 'To REMOVE panel(s), call remove_dashboard_panels with their panel_id(s). '
+          + 'To change a panel\'s chart type, title, subtitle or chart_config (presentation only — not its query/source), call update_dashboard_panel with its panel_id. For a different query or source, add a corrected panel and remove the old one. '
+          + 'Keep replies brief and act directly; after a change, confirm what you did in one short line.'
+      }
+    } catch { /* ignore — fall back to a normal chat turn */ }
+  }
+
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock + dashboardBlock + dashEditBlock
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)
@@ -682,13 +706,33 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
         // read/write accounting and pricing are already handled below (0.1x /
         // 1.25x). A cache_control on the last tool caches the tools block; one on
         // the system block caches system too.
-        const cachedTools = TOOLS.map((t, idx) => {
+        // Dashboard-edit tools — only offered in the dashboard chat dock (dashEditId
+        // set), so the destructive remove/update never appears in the normal chat.
+        const DASH_EDIT_TOOLS = dashEditId ? [
+          {
+            name: 'remove_dashboard_panels',
+            description: 'Remove one or more panels from the dashboard currently being edited (the side-chat dashboard). Pass the panel_id(s) shown in the "Editing the current dashboard" list.',
+            input_schema: { type: 'object' as const, properties: { panel_ids: { type: 'array', items: { type: 'string' }, description: 'panel_id values to delete.' } }, required: ['panel_ids'] },
+          },
+          {
+            name: 'update_dashboard_panel',
+            description: 'Change a panel\'s presentation (chart type, title, subtitle, or chart_config) on the dashboard currently being edited. Does NOT change the query or source — to do that, add a corrected panel and remove the old one.',
+            input_schema: { type: 'object' as const, properties: {
+              panel_id: { type: 'string', description: 'The panel_id to update.' },
+              chart_type: { type: 'string', enum: ['bar','line','area','table','stat','donut','gauge','heatmap','boxplot','sankey'] },
+              title: { type: 'string' }, subtitle: { type: 'string' },
+              chart_config: { type: 'object', description: 'Field mapping (x/y/value/label_key etc.).' },
+            }, required: ['panel_id'] },
+          },
+        ] : []
+        const toolList = [...TOOLS, ...DASH_EDIT_TOOLS]
+        const cachedTools = toolList.map((t, idx) => {
           // Phase 4 (gated): mark tools strict so inputs exactly match their schema.
           // Strict requires the schema to explicitly set additionalProperties:false.
           const base = STRICT_TOOLS
             ? ({ ...t, strict: true, input_schema: { ...t.input_schema, additionalProperties: false } } as typeof t)
             : t
-          return idx === TOOLS.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
+          return idx === toolList.length - 1 ? { ...base, cache_control: { type: 'ephemeral' as const } } : base
         })
         // Deliverable-only subset, used in the 'build' phase after the data budget
         // is reached so a report/chart can still be produced from gathered data.
@@ -886,6 +930,43 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
                   const msg = e instanceof Error ? e.message : 'dashboard build failed'
                   send({ type: 'tool_result', name: 'build_dashboard', result: { error: msg } })
                   return { type: 'tool_result' as const, tool_use_id: block.id, content: `Could not build the dashboard: ${msg}` }
+                }
+              }
+              // Dashboard chat dock — remove panels from the current dashboard.
+              if (block.name === 'remove_dashboard_panels' && dashEditId) {
+                try {
+                  const ids = (((block.input as { panel_ids?: unknown }).panel_ids) as unknown[] || []).map(String).filter(Boolean)
+                  if (!ids.length) return { type: 'tool_result' as const, tool_use_id: block.id, content: 'No panel_ids given.' }
+                  let removed = 0
+                  for (const pid of ids) {
+                    const r = await sql`DELETE FROM dashboard_panels WHERE id = ${pid} AND dashboard_id = ${dashEditId}`
+                    removed += (r as unknown as { changes?: number })?.changes ?? 1
+                  }
+                  await sql`UPDATE dashboards SET updated_at = ${nowExpr()} WHERE id = ${dashEditId}`
+                  send({ type: 'dashboard_changed', action: 'remove', count: ids.length })
+                  send({ type: 'tool_result', name: 'remove_dashboard_panels', result: { removed: ids.length } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Removed ${ids.length} panel(s) from the dashboard.` }
+                } catch (e) {
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Could not remove panels: ${e instanceof Error ? e.message : 'failed'}` }
+                }
+              }
+              // Dashboard chat dock — update a panel's presentation (not its query/source).
+              if (block.name === 'update_dashboard_panel' && dashEditId) {
+                try {
+                  const inp = block.input as { panel_id?: string; chart_type?: string; title?: string; subtitle?: string; chart_config?: Record<string, unknown> }
+                  const pid = String(inp.panel_id || '')
+                  const owns = await sql`SELECT id FROM dashboard_panels WHERE id = ${pid} AND dashboard_id = ${dashEditId}`
+                  if (!owns.length) return { type: 'tool_result' as const, tool_use_id: block.id, content: 'That panel is not on this dashboard.' }
+                  if (inp.chart_type) await sql`UPDATE dashboard_panels SET chart_type = ${inp.chart_type} WHERE id = ${pid}`
+                  if (typeof inp.title === 'string') await sql`UPDATE dashboard_panels SET title = ${inp.title} WHERE id = ${pid}`
+                  if (typeof inp.subtitle === 'string') await sql`UPDATE dashboard_panels SET subtitle = ${inp.subtitle} WHERE id = ${pid}`
+                  if (inp.chart_config && typeof inp.chart_config === 'object') await sql`UPDATE dashboard_panels SET chart_config = ${JSON.stringify(inp.chart_config)} WHERE id = ${pid}`
+                  await sql`UPDATE dashboards SET updated_at = ${nowExpr()} WHERE id = ${dashEditId}`
+                  send({ type: 'dashboard_changed', action: 'update', panel_id: pid })
+                  send({ type: 'tool_result', name: 'update_dashboard_panel', result: { updated: pid } })
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Updated the panel.` }
+                } catch (e) {
+                  return { type: 'tool_result' as const, tool_use_id: block.id, content: `Could not update the panel: ${e instanceof Error ? e.message : 'failed'}` }
                 }
               }
               const guardrailCtx = { userId: session.id, userEmail: session.email, userRole: session.role, conversationId: convId ?? undefined, allowedSources }
