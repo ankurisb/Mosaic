@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.95] - 2026-10-20
+
+### Changed
+- **Dashboard right pane is now full-height and unified.** The "Edit with AI" pane spans the whole right side of the dashboard (the view is a fixed-height app shell; the panel grid scrolls within its column). The manual panel editor no longer opens as a full-width drawer that pushes the grid down — it now lives in the **same right pane**, with a header toggle to switch between **Edit with AI** (chat) and **Edit panel / Add panel** (the form). Clicking a panel's edit pencil, or "Add panel", opens the form in that pane; `PanelBuilder` gained an `embedded` mode (fills the pane, fields stacked single-column). (`DashboardView`, `PanelBuilder`, `DashboardChatDock`.)
+
 ## [1.3.94] - 2026-10-20
 
 ### Added

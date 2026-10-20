@@ -44,12 +44,15 @@ const INP: React.CSSProperties = {
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: 'var(--text2)', marginBottom: 5, display: 'block' }
 
 export default function PanelBuilder({
-  initial, onSave, onCancel,
+  initial, onSave, onCancel, embedded = false,
 }: {
   initial: Panel | null
   onSave: (data: Panel) => void
   onCancel: () => void
+  embedded?: boolean   // render inside the right-side dock (narrow, stacked) vs. top drawer
 }) {
+  // In the narrow dock, stack the multi-column rows into a single column.
+  const cols3 = embedded ? '1fr' : '1fr 1fr 1fr'
   const [form, setForm] = useState<Panel>(initial ?? {
     title: '', subtitle: '', source_type: 'database', source_id: '',
     query: '', chart_type: 'bar', chart_config: {}, refresh_sec: null,
@@ -138,13 +141,15 @@ export default function PanelBuilder({
     : files
 
   return (
-    <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '16px 24px', boxShadow: '0 4px 16px rgba(0,0,0,.08)' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>
+    <div style={embedded
+      ? { background: 'var(--surface)', height: '100%', overflowY: 'auto', padding: '14px' }
+      : { background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '16px 24px', boxShadow: '0 4px 16px rgba(0,0,0,.08)' }}>
+      <div style={embedded ? {} : { maxWidth: 900, margin: '0 auto' }}>
+        {!embedded && <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>
           {initial?.id ? 'Edit panel' : 'Add panel'}
-        </div>
+        </div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12, marginBottom: 12 }}>
           {/* Title */}
           <div><label style={LBL}>Panel title *</label>
             <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. OEE -- Line A" style={INP} />
@@ -161,7 +166,7 @@ export default function PanelBuilder({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12, marginBottom: 12 }}>
           {/* Source type */}
           <div><label style={LBL}>Source type</label>
             <select value={form.source_type} onChange={e => { set('source_type', e.target.value); set('source_id', '') }} style={{ ...INP, cursor: 'pointer' }}>
@@ -280,7 +285,7 @@ export default function PanelBuilder({
         {form.chart_type === 'heatmap' && (
           <div style={{ marginBottom: 14 }}>
             <label style={LBL}>Heatmap config</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: embedded ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: 10 }}>
               {[
                 { key: 'low',  label: 'Min value', ph: '0'   },
                 { key: 'high', label: 'Max value',  ph: '100' },

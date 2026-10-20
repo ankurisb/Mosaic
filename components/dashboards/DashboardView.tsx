@@ -87,9 +87,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [lastFetch, setLastFetch] = useState<Date | null>(null)
-  const [showBuilder, setShowBuilder] = useState(false)
-  const [dockOpen, setDockOpen] = useState(false)
+  // Right-side dock: closed | AI chat | manual panel editor. The panel editor and
+  // the AI chat share one full-height pane (toggle between them).
+  const [rightMode, setRightMode] = useState<'closed' | 'chat' | 'edit'>('closed')
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
+  const openEdit = (panel: Panel | null) => { setEditingPanel(panel); setRightMode('edit') }
   const [timeWindow, setTimeWindow] = useState('today')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo,   setCustomTo]   = useState('')
@@ -208,7 +210,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, dashboard_id: id, ...data }),
     })
-    setShowBuilder(false); setEditingPanel(null)
+    setRightMode('closed'); setEditingPanel(null)
     await loadStructure()
     await fetchData(true)
     showToast(data.id ? 'Panel updated' : 'Panel added')
@@ -246,7 +248,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const isOwner = dashboard.owner_id === user.id
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
         <button onClick={() => router.push('/dashboards')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
@@ -302,15 +304,15 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         </button>
 
         {isOwner && !dashboard?.superset_embed_uuid && (
-          <button onClick={() => setDockOpen(o => !o)} title="Evolve this dashboard with AI"
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: dockOpen ? 'var(--accent-bg)' : 'var(--bg)', color: dockOpen ? 'var(--accent-fg)' : 'var(--text2)', border: dockOpen ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setRightMode(m => m === 'chat' ? 'closed' : 'chat')} title="Evolve this dashboard with AI"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rightMode === 'chat' ? 'var(--accent-bg)' : 'var(--bg)', color: rightMode === 'chat' ? 'var(--accent-fg)' : 'var(--text2)', border: rightMode === 'chat' ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
             Edit with AI
           </button>
         )}
         {isOwner && (
-          <button onClick={() => { setEditingPanel(null); setShowBuilder(true) }}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)' }}>
+          <button onClick={() => openEdit(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rightMode === 'edit' && !editingPanel ? 'var(--accent-bg)' : 'var(--bg)', color: rightMode === 'edit' && !editingPanel ? 'var(--accent-fg)' : 'var(--text2)', border: rightMode === 'edit' && !editingPanel ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="5.5" y1="1" x2="5.5" y2="10"/><line x1="1" y1="5.5" x2="10" y2="5.5"/></svg>
             Add panel
           </button>
@@ -318,14 +320,6 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         <ThemeToggle />
       </div>
 
-      {/* Panel builder drawer */}
-      {showBuilder && (
-        <PanelBuilder
-          initial={editingPanel}
-          onSave={savePanel}
-          onCancel={() => { setShowBuilder(false); setEditingPanel(null) }}
-        />
-      )}
 
       {/* Dashboard grid or Superset embed (+ AI chat dock) */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -388,7 +382,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text2)' }}>No panels yet</div>
             <div style={{ fontSize: 13, color: 'var(--text3)' }}>Add a panel to start visualising your data.</div>
             {isOwner && (
-              <button onClick={() => setShowBuilder(true)}
+              <button onClick={() => openEdit(null)}
                 style={{ marginTop: 8, padding: '8px 20px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
                 Add first panel
               </button>
@@ -402,7 +396,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 panel={panel}
                 result={results[panel.id]}
                 isOwner={isOwner}
-                onEdit={() => { setEditingPanel(panel); setShowBuilder(true) }}
+                onEdit={() => openEdit(panel)}
                 onDelete={() => deletePanel(panel.id, panel.title)}
                 onResizeStart={(e: React.MouseEvent) => {
                   const grid = e.currentTarget.closest('[data-panel-grid]') as HTMLElement
@@ -429,8 +423,28 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
 
       )}
         </div>
-        {isOwner && dockOpen && !dashboard?.superset_embed_uuid && (
-          <DashboardChatDock dashboardId={id} onChanged={reloadAfterEdit} onClose={() => setDockOpen(false)} />
+        {isOwner && rightMode !== 'closed' && !dashboard?.superset_embed_uuid && (
+          <div style={{ width: 400, flexShrink: 0, borderLeft: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Shared pane header — toggle between AI chat and the manual panel editor */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <button onClick={() => setRightMode('chat')}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, background: rightMode === 'chat' ? 'var(--accent-bg)' : 'transparent', color: rightMode === 'chat' ? 'var(--accent-fg)' : 'var(--text3)' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
+                Edit with AI
+              </button>
+              <button onClick={() => openEdit(editingPanel)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, background: rightMode === 'edit' ? 'var(--accent-bg)' : 'transparent', color: rightMode === 'edit' ? 'var(--accent-fg)' : 'var(--text3)' }}>
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7.5 1.5l2 2-6 6-2.5.5.5-2.5z"/></svg>
+                {editingPanel ? 'Edit panel' : 'Add panel'}
+              </button>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => { setRightMode('closed'); setEditingPanel(null) }} title="Close"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            {rightMode === 'chat'
+              ? <DashboardChatDock dashboardId={id} onChanged={reloadAfterEdit} />
+              : <PanelBuilder embedded initial={editingPanel} onSave={savePanel} onCancel={() => { setRightMode('closed'); setEditingPanel(null) }} />}
+          </div>
         )}
       </div>
       {toast && (

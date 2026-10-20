@@ -14,7 +14,7 @@ interface ProposalPanel {
 interface Proposal { title: string; panels: ProposalPanel[]; summary: { data: number; empty: number; error: number; invalid: number; total: number } }
 interface Msg { role: 'user' | 'assistant'; content: string; proposal?: Proposal; applied?: boolean }
 
-export default function DashboardChatDock({ dashboardId, onChanged, onClose }: { dashboardId: string; onChanged: () => void; onClose: () => void }) {
+export default function DashboardChatDock({ dashboardId, onChanged }: { dashboardId: string; onChanged: () => void }) {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState('')      // '' idle | 'thinking' | 'applying'
@@ -88,15 +88,7 @@ export default function DashboardChatDock({ dashboardId, onChanged, onClose }: {
   const clsColor = (cls: string) => cls === 'data' ? 'var(--green-t, #1f8a52)' : cls === 'empty' ? 'var(--amber-t, #b4690e)' : 'var(--red-t, #dc2626)'
 
   return (
-    <div style={{ width: 360, flexShrink: 0, borderLeft: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-bg)' }}><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Edit with AI</span>
-        </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1 }}>×</button>
-      </div>
-
+    <div style={{ flex: 1, minHeight: 0, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--text3)', lineHeight: 1.6 }}>
