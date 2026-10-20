@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.105] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 1: structured semantic model on DB sources** (`claude/mosaic-dashboard-semantic-architecture.md`). Upgrades the semantic dictionary from "descriptions the AI reads" to a **structured field model the executor acts on**, so meaning is declared once, not re-inferred at runtime:
+  - **Migration 021** adds structured columns to `semantic_descriptions` (`role`, `data_type`, `unit`, `default_aggregation`, `additivity`, `accumulation`, `time_grain`, `status`, `confidence`, `evidence`) and a `semantic_sources` table (schema fingerprint + model version, for the Phase 2 drift lifecycle). All back-compatible — nullable; description-only rows from 018 are untouched.
+  - **`lib/semantic-model.ts`**: `getSemanticModel()` loads the structured model for a source; `applySemanticModel()` post-processes a panel's rows against it. The headline deterministic win: a field declared `accumulation: cumulative_counter` (e.g. a kWh meter) is converted to **per-interval deltas** on the full-resolution ordered series (with counter-reset handling and per-series grouping) instead of being drawn as a flat rising line. Units are surfaced to the panel; fields with `status: proposed` that are actually plotted are flagged **unverified**.
+  - **Executor** (dashboard `/data` route) applies the model *before* downsampling, and merges `units`/`applied`/`unverified` into the panel meta.
+  - **`/api/semantic` upsert** now persists the structured fields (validated enums; invalid values nulled, never stored as junk), so the model can be authored by admin or (Phase 1 bootstrap) AI-proposed.
+  - **Panel footer** shows a `Δ/interval` note when a cumulative counter was delta'd and a `⚠ unverified` badge when a plotted field's semantics are AI-proposed.
+  - 16 unit tests + 1 real-sqlite integration test; full suite 299 green.
+
 ## [1.3.104] - 2026-10-20
 
 ### Changed

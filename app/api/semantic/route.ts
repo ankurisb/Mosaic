@@ -14,6 +14,7 @@ import { log } from '@/lib/logger'
 import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
 import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema'
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
+import { coerceStructured, hasStructured } from '@/lib/semantic-model'
 import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
@@ -260,17 +261,27 @@ export async function POST(req: Request) {
         const objectType = it.object_type === 'column' ? 'column' : 'table'
         const objectKey = String(it.object_key || '').trim()
         const description = sanitizeDescription(String(it.description || ''))  // bounded, single-line, control-stripped
+        const s = coerceStructured(it)   // validated structured fields (role/unit/aggregation/accumulation/…)
         if (!objectKey) continue
-        if (!description) {
-          // Empty description clears the entry rather than storing a blank.
+        if (!description && !hasStructured(s)) {
+          // Nothing to store (no description and no structured fields) → clear the entry.
           await sql`DELETE FROM semantic_descriptions WHERE source_type=${source_type} AND source_id=${source_id} AND object_key=${objectKey}`
           continue
         }
         await sql`
-          INSERT INTO semantic_descriptions (source_type, source_id, object_type, object_key, description, created_by, updated_at)
-          VALUES (${source_type}, ${source_id}, ${objectType}, ${objectKey}, ${description}, ${session.id}, ${nowExpr()})
+          INSERT INTO semantic_descriptions
+            (source_type, source_id, object_type, object_key, description,
+             role, data_type, unit, default_aggregation, additivity, accumulation, time_grain, status, confidence, evidence,
+             created_by, updated_at)
+          VALUES
+            (${source_type}, ${source_id}, ${objectType}, ${objectKey}, ${description},
+             ${s.role}, ${s.data_type}, ${s.unit}, ${s.default_aggregation}, ${s.additivity}, ${s.accumulation}, ${s.time_grain}, ${s.status}, ${s.confidence}, ${s.evidence},
+             ${session.id}, ${nowExpr()})
           ON CONFLICT(source_type, source_id, object_key)
-          DO UPDATE SET description=${description}, object_type=${objectType}, updated_at=${nowExpr()}`
+          DO UPDATE SET description=${description}, object_type=${objectType},
+             role=${s.role}, data_type=${s.data_type}, unit=${s.unit}, default_aggregation=${s.default_aggregation},
+             additivity=${s.additivity}, accumulation=${s.accumulation}, time_grain=${s.time_grain},
+             status=${s.status}, confidence=${s.confidence}, evidence=${s.evidence}, updated_at=${nowExpr()}`
         saved++
       }
       return Response.json({ ok: true, saved })
