@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.102] - 2026-10-20
+
+### Fixed
+- **Row policy (#1) was still clipping dashboard panels to 200.** `queryDatabase` sanitises rows with `sanitiseRows`, which hard-sliced to `MAX_RESULT_ROWS` (200) *before* the new cap/downsample logic ran — so raising the dashboard fetch to 5,000 had no effect and large time-series were silently capped at 200 with no flag. `sanitiseRows` now takes the caller's row ceiling (default unchanged at 200 for chat), and `queryDatabase` passes `fetchN` (cap+1) at every dialect, so dashboards actually receive up to 5,000 rows and the downsample/`source_capped` path fires. (`lib/tools.ts`.)
+
 ## [1.3.101] - 2026-10-20
 
 ### Changed

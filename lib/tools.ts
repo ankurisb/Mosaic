@@ -1270,9 +1270,9 @@ export async function testMcpEndpoint(endpoint: string, token?: string): Promise
 const MAX_CELL_CHARS = 500
 const MAX_RESULT_ROWS = 200
 
-function sanitiseRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+function sanitiseRows(rows: Record<string, unknown>[], maxRows: number = MAX_RESULT_ROWS): Record<string, unknown>[] {
   if (!rows.length) return rows
-  return rows.slice(0, MAX_RESULT_ROWS).map(row => {
+  return rows.slice(0, maxRows).map(row => {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(row)) {
       if (typeof v === 'string' && v.length > MAX_CELL_CHARS) {
@@ -1361,7 +1361,7 @@ async function queryDatabase(connectionId: string, queryInput: string, opts: { m
     }
     entry.lastUsed = Date.now()
     const result = await entry.pool.query(`SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}`)
-    return capResult(sanitiseRows(result.rows), result.fields.map(f => f.name))
+    return capResult(sanitiseRows(result.rows, fetchN), result.fields.map(f => f.name))
   }
 
   // -- MySQL ----------------------------------------------------
@@ -1369,7 +1369,7 @@ async function queryDatabase(connectionId: string, queryInput: string, opts: { m
     const pool = await getMysqlPool(connectionId, conn)
     const [results, fields] = await pool.execute(`SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}`)
     return capResult(
-      sanitiseRows(results as Record<string,unknown>[]),
+      sanitiseRows(results as Record<string,unknown>[], fetchN),
       (fields as Array<{ name: string }>).map(f => f.name),
     )
   }
@@ -1463,7 +1463,7 @@ async function queryDatabase(connectionId: string, queryInput: string, opts: { m
       // so run those as-is (they return few rows anyway).
       const wrappable = upper.startsWith('SELECT') || upper.startsWith('WITH')
       const stmt = db2.prepare(wrappable ? `SELECT * FROM (${trimmed}) _q LIMIT ${fetchN}` : trimmed)
-      const results = sanitiseRows(stmt.all() as Record<string,unknown>[])
+      const results = sanitiseRows(stmt.all() as Record<string,unknown>[], fetchN)
       const fields = results.length > 0 ? Object.keys(results[0]) : []
       return wrappable ? capResult(results, fields) : { rows: results, rowCount: results.length, fields, truncated: false }
     } finally {
@@ -1494,7 +1494,7 @@ async function queryDatabase(connectionId: string, queryInput: string, opts: { m
       const limit = Math.min((query.limit as number) || 20, cap)
       cursor.limit(limit)
       const rawResults = await cursor.toArray()
-      const results = sanitiseRows(rawResults as Record<string,unknown>[])
+      const results = sanitiseRows(rawResults as Record<string,unknown>[], fetchN)
       const fields = results.length > 0 ? Object.keys(results[0]) : []
       return { rows: results, rowCount: results.length, fields }
     } finally {
