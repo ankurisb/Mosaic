@@ -21,6 +21,7 @@ export interface DashboardProposal {
   panels: EnrichedPanel[]
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
   suggested_window?: string    // default time window that covers the data (auto-detected)
+  entity?: import('./dashboard-plan').EntityBinding   // Phase 9: device-filter binding to persist on save
 }
 
 export type DialectResolver = (sourceType: string, sourceId: string) => string | undefined
@@ -129,5 +130,5 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
   // dashboard opens populated (e.g. historical data → a wide enough window).
   const range = detectSampleTimeRange(enriched.map(p => p.validation.sample))
   const suggested_window = suggestDefaultWindow(range, Date.now()) ?? undefined
-  return { title: plan.title, description: plan.description, panels: enriched, summary, suggested_window }
+  return { title: plan.title, description: plan.description, panels: enriched, summary, suggested_window, entity: plan.entity }
 }

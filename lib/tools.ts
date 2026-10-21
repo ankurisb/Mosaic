@@ -455,6 +455,20 @@ Limits: ~30s wall clock, 1 GB memory, no network. For large datasets, aggregate 
                 required: ['title', 'source_type', 'source_id', 'query', 'chart_type']
               }
             },
+            entity: {
+              type: 'object',
+              description: 'Optional device/entity-filter binding for a MULTI-ENTITY source (PRISM device fleet, a multi-device SQL table). When present, panels should use the placeholder {{entity_id}} instead of a baked id, and Mosaic adds a Device filter to the dashboard. Ask the user which device(s) first if unspecified; set default to their choice or the single richest/most-recent device.',
+              properties: {
+                source_type: { type: 'string', enum: ['prism', 'database', 'api'] },
+                source_id: { type: 'string', description: 'The source the filter binds to.' },
+                kind: { type: 'string', enum: ['prism', 'sql', 'api'] },
+                key_field: { type: 'string', description: 'prism: "entity_id"; sql: the id column (e.g. device_id).' },
+                label_field: { type: 'string', description: 'Optional display column (sql) / defaults to name (prism).' },
+                table: { type: 'string', description: 'SQL only: table to list distinct entities from.' },
+                default: { type: 'array', items: { type: 'string' }, description: 'Default selected entity id(s) — the device(s) the user chose, or the richest one.' },
+              },
+              required: ['source_type', 'source_id', 'kind'],
+            },
           },
           required: ['title', 'panels']
         }

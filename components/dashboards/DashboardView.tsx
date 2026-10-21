@@ -123,6 +123,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [customFrom, setCustomFrom] = useState('')
   const [customTo,   setCustomTo]   = useState('')
   const [grain, setGrain] = useState<string>(() => defaultGrain(windowMsFor('today')))
+  // Entity/device filter (Phase 9). Populated from /entities when the dashboard is bound.
+  const [entityBound, setEntityBound] = useState(false)
+  const [entityOpts, setEntityOpts] = useState<{ id: string; label: string }[]>([])
+  const [selectedEntities, setSelectedEntities] = useState<string[]>([])
+  const [entityOpen, setEntityOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [guestToken, setGuestToken] = useState<string|null>(null)
   const [guestTokenLoading, setGuestTokenLoading] = useState(false)
@@ -171,17 +176,34 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   // every date keystroke re-created it and re-ran the structure-load effect
   // (which calls setLoading(true)) — blanking the whole page. Now only the data
   // refetches; the header/grid stay mounted.
-  const windowRef = useRef({ timeWindow, customFrom, customTo, grain })
-  windowRef.current = { timeWindow, customFrom, customTo, grain }
+  const windowRef = useRef({ timeWindow, customFrom, customTo, grain, selectedEntities })
+  windowRef.current = { timeWindow, customFrom, customTo, grain, selectedEntities }
+
+  // Load the entity filter options once per dashboard (if bound). Default selection comes
+  // from the dashboard's entity_config (the richest device the builder chose).
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/dashboards/${id}/entities`)
+      .then(r => r.ok ? r.json() : { bound: false })
+      .then((d: { bound?: boolean; entities?: { id: string; label: string }[]; default?: string[] }) => {
+        if (!alive || !d.bound) return
+        setEntityBound(true)
+        setEntityOpts(d.entities || [])
+        setSelectedEntities(prev => prev.length ? prev : (d.default || (d.entities?.[0] ? [d.entities[0].id] : [])))
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [id])
 
   const fetchData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setRefreshing(true)
     try {
-      const { timeWindow: tw0, customFrom: cf, customTo: ct, grain: g } = windowRef.current
+      const { timeWindow: tw0, customFrom: cf, customTo: ct, grain: g, selectedEntities: ents } = windowRef.current
       const tw = tw0 === 'custom' && cf && ct
         ? `custom&time_from=${encodeURIComponent(cf + 'T00:00:00')}&time_to=${encodeURIComponent(ct + 'T23:59:59')}`
         : tw0
-      const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}${g ? `&grain=${g}` : ''}`)
+      const entParam = ents && ents.length ? `&entity=${ents.map(encodeURIComponent).join(',')}` : ''
+      const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}${g ? `&grain=${g}` : ''}${entParam}`)
       const d = await r.json()
       const map: Record<string, PanelResult> = {}
       for (const res of (d.results || [])) map[res.panel_id] = res
@@ -222,7 +244,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     if (dashboard?.superset_embed_uuid) return
     if (timeWindow === 'custom') return
     fetchData(true)
-  }, [id, timeWindow, grain, dashboard?.superset_embed_uuid, fetchData])
+  }, [id, timeWindow, grain, selectedEntities, dashboard?.superset_embed_uuid, fetchData])
 
   // Reset timer when refresh_sec changes
   const resetTimer = (sec: number) => {
@@ -313,6 +335,38 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
             {allowedGrains(windowMsFor(timeWindow, customFrom, customTo)).map(g => <option key={g} value={g}>{GRAIN_LABEL[g]}</option>)}
           </select>
+          {/* Device/entity filter (only when the dashboard is bound to a multi-entity source) */}
+          {entityBound && (
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setEntityOpen(o => !o)} title="Choose which device(s) the panels show"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="1.5" y="2" width="9" height="6" rx="1"/><path d="M4 10h4"/></svg>
+                {selectedEntities.length === 0 ? 'Device: none'
+                  : selectedEntities.length === 1 ? `Device: ${(entityOpts.find(e => e.id === selectedEntities[0])?.label || '1')}`.slice(0, 26)
+                  : `Devices: ${selectedEntities.length}`}
+                <span style={{ color: 'var(--text4)' }}>▾</span>
+              </button>
+              {entityOpen && (
+                <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 50, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', padding: 6, minWidth: 220, maxHeight: 280, overflowY: 'auto' }}>
+                  {entityOpts.length === 0 && <div style={{ fontSize: 11, color: 'var(--text4)', padding: 6 }}>No devices found.</div>}
+                  {entityOpts.map(e => {
+                    const on = selectedEntities.includes(e.id)
+                    return (
+                      <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 6px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer', borderRadius: 4 }}>
+                        <input type="checkbox" checked={on} onChange={() => setSelectedEntities(prev => {
+                          if (on) return prev.filter(x => x !== e.id)
+                          if (prev.length >= 8) return prev   // overlay cap
+                          return [...prev, e.id]
+                        })} style={{ cursor: 'pointer' }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.label}</span>
+                      </label>
+                    )
+                  })}
+                  {entityOpts.length > 0 && <div style={{ fontSize: 10, color: 'var(--text4)', padding: '4px 6px 2px' }}>Pick up to 8 to overlay.</div>}
+                </div>
+              )}
+            </div>
+          )}
           {timeWindow === 'custom' ? (
             <>
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
@@ -460,7 +514,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 }}
                 onRefresh={() => {
                   // Refresh just this panel
-                  fetch(`/api/dashboards/${id}/data?time_window=${timeWindow === 'custom' && customFrom && customTo ? 'custom&time_from=' + encodeURIComponent(customFrom + 'T00:00:00') + '&time_to=' + encodeURIComponent(customTo + 'T23:59:59') : timeWindow}${grain ? `&grain=${grain}` : ''}`)
+                  fetch(`/api/dashboards/${id}/data?time_window=${timeWindow === 'custom' && customFrom && customTo ? 'custom&time_from=' + encodeURIComponent(customFrom + 'T00:00:00') + '&time_to=' + encodeURIComponent(customTo + 'T23:59:59') : timeWindow}${grain ? `&grain=${grain}` : ''}${selectedEntities.length ? `&entity=${selectedEntities.map(encodeURIComponent).join(',')}` : ''}`)
                     .then(r => r.json())
                     .then(d => {
                       const r = (d.results || []).find((x: PanelResult) => x.panel_id === panel.id)

@@ -90,6 +90,15 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
       })
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `Failed to add "${p.title}"`) }
     }
+    // Phase 9: if the builder bound a device/entity filter, persist it so the dashboard
+    // shows the Device control and panels using {{entity_id}} resolve.
+    const ent = (proposal as { entity?: unknown }).entity
+    if (ent && typeof ent === 'object') {
+      await fetch('/api/dashboards', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_entity_config', id: dashboardId, entity_config: ent }),
+      }).catch(() => {})
+    }
   }
 
   // Manual fallback (only shown if the auto-add failed): add a proposal's panels.

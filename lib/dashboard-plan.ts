@@ -34,10 +34,23 @@ export interface PanelPlan {
   confidence?: number             // 0..1, model's own confidence
 }
 
+// Phase 9: optional device/entity-filter binding the builder emits for a multi-entity
+// source. Panels then use {{entity_id}} and the dashboard gets this filter wired in.
+export interface EntityBinding {
+  source_type: string
+  source_id: string
+  kind: 'prism' | 'sql' | 'api'
+  key_field?: string          // 'entity_id' (prism) | the SQL id column
+  label_field?: string | null
+  table?: string | null       // SQL table to list entities from
+  default?: string[]          // default selected entity id(s)
+}
+
 export interface DashboardPlan {
   title: string
   description?: string
   panels: PanelPlan[]
+  entity?: EntityBinding
 }
 
 // Bounds so an AI-authored plan can't produce an unwieldy dashboard or a runaway

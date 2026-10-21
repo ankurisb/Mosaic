@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.122] - 2026-10-21
+
+### Added — dashboard entity filter 9c/9d (UI + builder)
+- **Device/Entity selector** in the dashboard top filter (DashboardView): shown only when
+  the dashboard is bound (via `/entities`), multi-select up to 8, selection passed to the
+  data endpoint; default from the builder's choice. Overlay = one series per device.
+- **Builder clarifies + wires the filter.** build_dashboard accepts an `entity` binding on
+  the plan; the prompt now tells the model, for a multi-entity source, to NOT bake one
+  device (which produced random-looking panels) but to ASK the user which device(s) first,
+  build panels with `{{entity_id}}`, and emit the binding. On save the dock persists it via
+  `set_entity_config`, so the Device filter appears and `{{entity_id}}` panels resolve.
+
+Completes the entity-filter feature (9a substitution/fan-out · 9b discovery/config · 9c UI
+· 9d builder). Suite 395 green; typecheck clean; production build verified.
+
 ## [1.3.119] - 2026-10-21
 
 ### Fixed (Cube pre-aggregation + long-name collapse)
