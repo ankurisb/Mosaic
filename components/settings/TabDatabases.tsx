@@ -87,6 +87,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [results, setResults] = useState<Record<string, TestResult>>({})
   const [ftsLoading, setFtsLoading] = useState<Record<string,boolean>>({})
   const [describing, setDescribing] = useState<DbConn | null>(null)
+  const [coverage, setCoverage] = useState<Record<string, { needs_config: boolean; verified: number }>>({})
 
   async function toggleFts(connId: string, currentlyEnabled: boolean) {
     setFtsLoading(p => ({ ...p, [connId]: true }))
@@ -204,6 +205,18 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
     } finally {
       setLoading(false)
     }
+    loadCoverage()
+  }
+
+  async function loadCoverage() {
+    try {
+      const r = await fetch('/api/semantic?view=coverage')
+      if (!r.ok) return
+      const d = await r.json() as { sources?: Array<{ source_id: string; needs_config: boolean; verified: number }> }
+      const m: Record<string, { needs_config: boolean; verified: number }> = {}
+      for (const s of d.sources || []) m[s.source_id] = { needs_config: s.needs_config, verified: s.verified }
+      setCoverage(m)
+    } catch { /* non-fatal */ }
   }
 
   async function createSandbox() {
@@ -576,6 +589,11 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                     </button>
                   )}
                   <Btn size="sm" onClick={() => test(c.id)} disabled={testing === c.id}>{testing === c.id ? <Spinner size={11} /> : 'Test'}</Btn>
+                  {user.role === 'admin' && c.dialect !== 'elasticsearch' && coverage[c.id] && (
+                    coverage[c.id].needs_config
+                      ? <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--warning,#d97706)', background: 'color-mix(in srgb, var(--warning,#d97706) 12%, transparent)', color: 'var(--warning,#d97706)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>⚠ Semantics</button>
+                      : <span title={`${coverage[c.id].verified} verified field(s)`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--green)', background: 'var(--green-bg)', color: 'var(--green-t)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>✓ Semantics</span>
+                  )}
                   {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}
@@ -588,7 +606,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             <SemanticDescriptionsModal
               sourceId={describing.id}
               sourceLabel={describing.label}
-              onClose={() => setDescribing(null)}
+              onClose={() => { setDescribing(null); loadCoverage() }}
             />
           )}
           {(

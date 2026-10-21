@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
+import SemanticCoverageBanner from '@/components/SemanticCoverageBanner'
 import { useIsMobile } from '@/lib/useIsMobile'
 
 interface Conv { id: string; title: string }
@@ -174,6 +175,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{SECTION_TITLES[pathname] || (pathname.startsWith('/settings') ? 'Settings' : 'Mosaic')}</span>
           </div>
         )}
+        <SemanticCoverageBanner role={user.role} />
         {children}
       </div>
     </div>

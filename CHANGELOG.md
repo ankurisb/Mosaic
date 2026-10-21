@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.113] - 2026-10-21
+
+### Added — Semantic onboarding (Phase 7)
+Makes configuring a source's semantics turnkey: AI proposes, humans verify, new sources
+are flagged.
+- **AI structured proposal (7a).** `lib/ai/describe-structured.ts` — one bounded call
+  proposes role/unit/aggregation/accumulation per column with a confidence (0–1) +
+  evidence, all `status='proposed'` (nothing auto-verified). `/api/semantic` generate
+  returns a merged draft; `?view=coverage` gives per-source coverage + `needs_config`.
+- **Structured-field editor (7b).** `SemanticDescriptionsModal` rewritten: per-column
+  status chip (✓/⚠/•), role-driven fields (measure → unit + aggregation + accumulation),
+  confidence %, AI evidence, filter (All / Needs review / Verified), "Analyze with AI",
+  "Accept N high-confidence" + per-row "Verify". Save persists the full structured model.
+- **New-source badge + global banner (7c).** `SemanticCoverageBanner` (app-wide, admin-only,
+  dismissible per unconfigured-set) in `AppShell`; a ⚠/✓ Semantics badge on each database
+  card in the Data sources tab, opening the dictionary. A schema-drift bump (Phase 2) flips
+  a source back to needs-review and re-notifies.
+
+Decisions: AI proposes everything but verifies nothing (human confirms); notification is
+badge + global banner. Suite 361 green; typecheck clean; production build verified.
+
 ## [1.3.112] - 2026-10-21
 
 ### Fixed / Added (from live box verification of the Cube engine)
