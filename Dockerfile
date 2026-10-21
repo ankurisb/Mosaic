@@ -57,6 +57,10 @@ COPY --from=builder /app/migrations ./migrations
 RUN mkdir -p /data && chown mosaic:nodejs /data
 # App data dir for generated report PDFs (report-runner writes to ./data/reports).
 RUN mkdir -p /app/data/reports && chown -R mosaic:nodejs /app/data
+# Cube schema dir (Phase 6): the app (uid 1001) writes generated cubes + the datasource
+# map here, and the shared named volume inherits this ownership on first mount — without
+# it the volume is root-owned and the app gets EACCES writing the schema.
+RUN mkdir -p /cube-model && chown mosaic:nodejs /cube-model
 
 USER mosaic
 EXPOSE 3001

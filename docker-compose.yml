@@ -876,6 +876,8 @@ services:
       - CUBEJS_LOG_LEVEL=warn
       # Drivers are resolved per-datasource by driverFactory in cube.js; no default DB.
       - CUBEJS_SCHEMA_PATH=model
+      # Single-node: this instance also builds pre-aggregations into Cube Store.
+      - CUBEJS_REFRESH_WORKER=true
     volumes:
       - ./docker/cube/cube.js:/cube/conf/cube.js:ro
       - cube-schema:/cube/conf/model:ro

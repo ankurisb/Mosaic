@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.112] - 2026-10-21
+
+### Fixed / Added (from live box verification of the Cube engine)
+- **Cube schema volume permissions.** `Dockerfile` now creates `/cube-model` owned by
+  uid 1001 so the shared named volume inherits that ownership on first mount — without it
+  the app got `EACCES` writing the generated schema (caught deploying to the box).
+- **`?view=cube` now tags `data_source`.** The endpoint passes the source id to
+  `generateCubeSchema`, so generated cubes carry `data_source: <connId>` and Cube's
+  `driverFactory` routes each to the right physical connection (multi-datasource).
+- **`cube.js` default-probe resolution.** Cube's readiness/liveness probe always tests a
+  `'default'` dataSource; `driverFactory` now resolves `'default'` to the first configured
+  source when one exists (so `/readyz` goes green once a SQL source is synced) instead of
+  hard-erroring.
+- **Single-node pre-aggregations.** `docker-compose.yml` cube service sets
+  `CUBEJS_REFRESH_WORKER=true` so this instance builds pre-aggregations into Cube Store.
+
+### Verified live (box, throwaway Postgres)
+- Deployed v1.3.111 → cube + cubestore up; Mosaic generated the `production` cube
+  (units:sum, oee:avg, count, ts:time, shift:string, day pre-agg) from a verified model and
+  Cube served a day-grain rollup **matching Postgres ground truth exactly**
+  (2026-10-01 units=1652 oee=0.72, 10-02 1644/0.74, 10-03 1676/0.735).
+- Open follow-up: the `daily` pre-aggregation builds but wasn't served from
+  (`usedPreAggregations: {}`) — Cube served correct results from source SQL. Pre-agg
+  partition/refresh tuning is tracked separately; correctness is unaffected (SQL fallback).
+
 ## [1.3.111] - 2026-10-21
 
 ### Added

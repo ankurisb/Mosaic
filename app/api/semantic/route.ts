@@ -209,7 +209,9 @@ export async function GET(req: Request) {
   // model, for DB sources that will be queried through Cube (Phase 5).
   if (searchParams.get('view') === 'cube') {
     const model = await getSemanticModel(sourceType, sourceId)
-    const cubes = generateCubeSchema([...model.byKey.values()])
+    // Tag cubes with the source id so Cube's driverFactory routes them to the right
+    // physical datasource (multi-datasource). Only database sources route to Cube.
+    const cubes = generateCubeSchema([...model.byKey.values()], sourceType === 'database' ? sourceId : undefined)
     return Response.json({ cubes, cube_js: renderAllCubes(cubes) })
   }
 

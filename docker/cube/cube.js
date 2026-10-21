@@ -30,7 +30,15 @@ module.exports = {
   // never resolve here (by design — every Mosaic cube is tagged).
   driverFactory: ({ dataSource }) => {
     const map = loadMap();
-    const ds = map[dataSource];
+    let ds = map[dataSource];
+    // Cube's readiness/liveness probe always tests a 'default' dataSource. Mosaic models
+    // no default source (every cube is tagged), so resolve 'default' to the first
+    // configured source when one exists; when none exist yet there is simply nothing for
+    // Cube to be ready for (the probe stays red until the first SQL source is synced).
+    if (!ds && dataSource === 'default') {
+      const first = Object.keys(map)[0];
+      ds = first ? map[first] : undefined;
+    }
     if (!ds) {
       throw new Error(`cube: no datasource config for '${dataSource}'`);
     }
