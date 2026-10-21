@@ -16,6 +16,8 @@ import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
 import { coerceStructured, hasStructured } from '@/lib/semantic-model'
 import { getSemanticHealth, computeFingerprint, recordFingerprint } from '@/lib/semantic-drift'
+import { getSemanticModel } from '@/lib/semantic-model'
+import { generateCubeSchema, renderAllCubes } from '@/lib/cube-schema'
 import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
@@ -200,6 +202,14 @@ export async function GET(req: Request) {
     const n = Number(searchParams.get('schema_fields'))
     const health = await getSemanticHealth(sourceType, sourceId, isFinite(n) && n > 0 ? n : undefined)
     return Response.json({ health })
+  }
+
+  // Cube view: generate the Cube (cube.dev) data model from the structured semantic
+  // model, for DB sources that will be queried through Cube (Phase 5).
+  if (searchParams.get('view') === 'cube') {
+    const model = await getSemanticModel(sourceType, sourceId)
+    const cubes = generateCubeSchema([...model.byKey.values()])
+    return Response.json({ cubes, cube_js: renderAllCubes(cubes) })
   }
 
   const sql = getDb()

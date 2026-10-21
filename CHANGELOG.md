@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.109] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 5: Cube data-model generation (core).** `lib/cube-schema.ts` generates a Cube (cube.dev) data model from the structured semantic model — one cube per table, measures typed from `default_aggregation` (`sum`/`avg`/`min`/`max`/`count`/`countDistinct`; `last`/`none` left to the app layer), dimensions typed from role/data_type, time dimensions for `role: time`, plus an always-on `count`. `/api/semantic?view=cube&source_id=…` returns the generated cubes + rendered Cube JS. The semantic model stays the single source of truth; Cube files are a generated artifact. 3 tests; suite 334 green.
+
+### Notes
+- The Cube **service** (a container in the on-prem compose stack, its pre-aggregation store, and routing DB panel queries through it) is the infra/box integration step — specified in `claude/mosaic-semantic-phase5-cube-deployment.md`, not wired live here (needs the box + a Cube instance to verify). Generation + the endpoint are tested and in place.
+
 ## [1.3.108] - 2026-10-21
 
 ### Added
