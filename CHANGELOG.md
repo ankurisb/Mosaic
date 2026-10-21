@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.125] - 2026-10-21
+
+### Fixed — review/Save pane now enforces the readiness gate (no errorful panels presented as buildable)
+The chat route streams the proposal card BEFORE the readiness check, so a NOT-READY proposal
+was still shown with a working green "Save dashboard (N)" and a misleading "0 issue" summary —
+the gate lived only in the model's text, not in the UI. The user could save a dashboard over
+errored/under-specified panels. This is source-agnostic (PRISM, SQL, API — anything needing
+back-and-forth): the chat must be deterministic before a dashboard is created.
+- `components/ChatPage.tsx` `DashboardProposalCard`: now readiness-aware. Not-ready panels
+  default to excluded and their checkbox is disabled; each shows its specific gaps ("Needs: …")
+  and a "not ready" chip. The header summary shows "readyCount/total ready". Save is blocked
+  entirely while the plan is not `allReady` (button reads "Not ready to build"), with a banner
+  listing every gap and directing the user to resolve them in chat. `save()` also defensively
+  strips any not-ready panel. Falls back to the old data/empty heuristic for pre-gate proposals.
+- The in-dashboard chat dock (`DashboardChatDock`) already enforced this (no Add button when
+  not ready); the standalone review pane now matches it. Both key off the readiness verdict,
+  not the source type.
+
 ## [1.3.124] - 2026-10-21
 
 ### Fixed — entity-templated panels now validate against a real device (no more baked-id workaround)

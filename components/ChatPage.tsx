@@ -830,13 +830,15 @@ interface ProposalPanel {
   source_type: string; source_id: string; query: string
   chart_type: string; chart_config?: Record<string, unknown>
   suggested_grid?: { col: number; row: number; w: number; h: number }
-  validation: { cls: 'data' | 'empty' | 'error' | 'invalid'; rows: number; detail?: string; sample?: unknown[] }
+  validation: { cls: 'data' | 'empty' | 'error' | 'invalid'; rows: number; detail?: string; sample?: unknown[]; needsEntity?: boolean }
+  readiness?: { ready: boolean; gaps: string[] }
 }
 interface DashboardProposal {
   title: string; description?: string
   panels: ProposalPanel[]
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
   suggested_window?: string
+  readiness?: { allReady: boolean; readyCount: number; total: number; gaps: { panel: string; gaps: string[] }[] }
 }
 const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey']
 
@@ -885,8 +887,15 @@ function ProposalSavedPreview({ id, window }: { id: string; window?: string }) {
 // saves — persisting via the existing create_dashboard / add_panel actions. Preview
 // is exactly the query that gets saved (bounded only for the dry-run).
 function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { proposal: DashboardProposal; onOpen: (id: string) => void; onSaved?: (id: string, title: string) => void; embedded?: boolean }) {
+  // A panel is "ready" per the readiness gate when present; otherwise fall back to the
+  // old executability heuristic (data/empty) for proposals that predate the gate.
+  const panelReady = (p: { readiness?: { ready: boolean }; validation: { cls: string } }) =>
+    p.readiness ? p.readiness.ready : (p.validation.cls === 'data' || p.validation.cls === 'empty')
+  // The whole dashboard is blocked from saving until EVERY panel is ready — the chat is the
+  // single deterministic path to a buildable dashboard (source-agnostic: PRISM, SQL, API…).
+  const planBlocked = proposal.readiness ? !proposal.readiness.allReady : false
   const [panels, setPanels] = useState(() => proposal.panels.map(p => ({
-    ...p, include: p.validation.cls === 'data' || p.validation.cls === 'empty', expanded: false,
+    ...p, include: panelReady(p), expanded: false,
   })))
   const [title, setTitle] = useState(proposal.title)
   const [saving, setSaving] = useState(false)
@@ -903,10 +912,12 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
   const includedCount = panels.filter(p => p.include).length
 
   async function save() {
+    if (planBlocked) { setErr('This dashboard isn’t ready to build yet — resolve the gaps in chat and I’ll rebuild it.'); return }
     setSaving(true); setErr('')
     try {
-      const chosen = panels.filter(p => p.include)
-      if (!chosen.length) throw new Error('Include at least one panel')
+      // Defensive: never persist a not-ready panel even if a stale include slipped through.
+      const chosen = panels.filter(p => p.include && panelReady(p))
+      if (!chosen.length) throw new Error('Include at least one ready panel')
       const cr = await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_dashboard', name: title.trim() || 'New dashboard', description: proposal.description || '', default_time_window: proposal.suggested_window }) })
       const cd = await cr.json()
       if (!cr.ok) throw new Error(cd.error || 'Could not create dashboard')
@@ -947,9 +958,18 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
     <div style={{ marginTop: embedded ? 0 : 10, border: embedded ? 'none' : '1px solid var(--border2)', borderRadius: embedded ? 0 : 12, background: embedded ? 'transparent' : 'var(--surface)', overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <input value={title} onChange={e => setTitle(e.target.value)} style={{ flex: 1, minWidth: 160, fontSize: 14, fontWeight: 600, color: 'var(--text)', background: 'transparent', border: 'none', borderBottom: '1px dashed var(--border2)', outline: 'none', padding: '2px 0', fontFamily: 'inherit' }} />
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{proposal.summary.data} data · {proposal.summary.empty} empty · {proposal.summary.error + proposal.summary.invalid} issue</span>
-        <button onClick={save} disabled={saving || includedCount === 0} style={{ padding: '7px 14px', background: includedCount ? 'var(--accent-bg)' : 'var(--bg4)', color: includedCount ? 'var(--accent-fg)' : 'var(--text4)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: saving || !includedCount ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : `Save dashboard (${includedCount})`}</button>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{proposal.readiness ? `${proposal.readiness.readyCount}/${proposal.readiness.total} ready` : `${proposal.summary.data} data · ${proposal.summary.empty} empty · ${proposal.summary.error + proposal.summary.invalid} issue`}</span>
+        <button onClick={save} disabled={saving || includedCount === 0 || planBlocked} title={planBlocked ? 'Resolve the gaps in chat before saving' : undefined} style={{ padding: '7px 14px', background: (includedCount && !planBlocked) ? 'var(--accent-bg)' : 'var(--bg4)', color: (includedCount && !planBlocked) ? 'var(--accent-fg)' : 'var(--text4)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, cursor: (saving || !includedCount || planBlocked) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : planBlocked ? 'Not ready to build' : `Save dashboard (${includedCount})`}</button>
       </div>
+      {planBlocked && proposal.readiness && (
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--amber-bg, rgba(180,105,14,.08))' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber-t, #b4690e)', marginBottom: 4 }}>Not ready to build — {proposal.readiness.total - proposal.readiness.readyCount} of {proposal.readiness.total} panel(s) need input</div>
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text2)' }}>
+            {proposal.readiness.gaps.map((g, k) => <li key={k} style={{ marginBottom: 2 }}><strong style={{ color: 'var(--text)' }}>{g.panel}</strong>: {g.gaps.join('; ')}</li>)}
+          </ul>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>Answer the questions in chat (confirm the metric/filter, pick a device, fix a field) and I’ll rebuild — nothing is saved until every panel is ready.</div>
+        </div>
+      )}
       {err && <div style={{ padding: '8px 16px', color: 'var(--red-t, #dc2626)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{err}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10, padding: 14 }}>
         {panels.map((p, i) => {
@@ -957,12 +977,15 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
           return (
             <div key={i} style={{ border: `1px solid ${p.include ? 'var(--border2)' : 'var(--border)'}`, borderRadius: 10, padding: 12, background: p.include ? 'var(--bg)' : 'var(--bg3)', opacity: p.include ? 1 : 0.6, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <input type="checkbox" checked={p.include} onChange={e => set(i, { include: e.target.checked })} style={{ flexShrink: 0 }} />
+                <input type="checkbox" checked={p.include} disabled={!panelReady(p)} onChange={e => set(i, { include: e.target.checked })} style={{ flexShrink: 0, cursor: panelReady(p) ? 'pointer' : 'not-allowed' }} title={panelReady(p) ? undefined : 'Not ready — resolve in chat'} />
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.title}</span>
+                {!panelReady(p) && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: 'var(--amber-bg, rgba(180,105,14,.12))', color: 'var(--amber-t, #b4690e)' }}>not ready</span>}
                 <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: c.bg, color: c.fg }}>{c.label}{p.validation.cls === 'data' ? ` · ${p.validation.rows}` : ''}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>{p.chart_type}{p.intent ? ` — ${p.intent}` : ''}</div>
-              {p.validation.detail && p.validation.cls !== 'data' && (
+              {p.readiness && !p.readiness.ready && p.readiness.gaps.length > 0 ? (
+                <div style={{ fontSize: 11, color: 'var(--amber-t, #b4690e)', marginBottom: 6 }}>Needs: {p.readiness.gaps.join('; ')}</div>
+              ) : p.validation.detail && p.validation.cls !== 'data' && (
                 <div style={{ fontSize: 11, color: c.fg, marginBottom: 6 }}>{p.validation.detail}</div>
               )}
               {p.validation.sample && p.validation.sample.length > 0 && (
