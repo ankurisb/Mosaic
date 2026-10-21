@@ -32,21 +32,30 @@ export function cubeGranularity(grain: string | null | undefined): string | null
 }
 
 // ---- routing gate ----------------------------------------------------------
+export interface MeasureSpec { agg: Aggregation | null | undefined; accumulation: string | null | undefined }
 export interface RouteCtx {
   dialect: string | null | undefined
-  modelVerified: boolean          // the source's model is status=verified (not proposed)
-  fingerprintCurrent: boolean     // live schema fingerprint matches the recorded one (no drift)
-  measureAggs: (Aggregation | null | undefined)[]   // declared aggregation of each requested measure
+  modelVerified: boolean          // the plotted measures are status=verified (not proposed)
+  fingerprintCurrent: boolean     // a schema fingerprint is recorded (drift baseline exists)
+  measures: MeasureSpec[]         // declared aggregation + accumulation of each requested measure
 }
 export interface RouteDecision { route: boolean; reason: string }
 
-// Route to Cube only when EVERY condition holds. Any miss → SQL pipeline.
+// An accumulation other than raw (cumulative_counter / rate) needs Mosaic's per-interval
+// delta transform, which Cube does NOT do — Cube would sum the raw counter and return
+// wrong numbers. Those measures must stay on the SQL pipeline.
+function needsDeltaPipeline(acc: string | null | undefined): boolean {
+  return acc === 'cumulative_counter' || acc === 'rate'
+}
+
+// Route to Cube only when EVERY condition holds. Any miss → SQL pipeline (fails closed).
 export function shouldRouteToCube(ctx: RouteCtx): RouteDecision {
   if (!cubeDialectSupported(ctx.dialect)) return { route: false, reason: `dialect-unsupported:${ctx.dialect ?? 'none'}` }
   if (!ctx.modelVerified) return { route: false, reason: 'model-unverified' }
   if (!ctx.fingerprintCurrent) return { route: false, reason: 'schema-drift' }
-  if (ctx.measureAggs.length === 0) return { route: false, reason: 'no-measures' }
-  if (!ctx.measureAggs.every(isNativeAgg)) return { route: false, reason: 'non-native-measure' }
+  if (ctx.measures.length === 0) return { route: false, reason: 'no-measures' }
+  if (!ctx.measures.every(m => isNativeAgg(m.agg))) return { route: false, reason: 'non-native-measure' }
+  if (ctx.measures.some(m => needsDeltaPipeline(m.accumulation))) return { route: false, reason: 'needs-delta-pipeline' }
   return { route: true, reason: 'ok' }
 }
 
@@ -179,11 +188,51 @@ export async function loadViaCube(cubeUrl: string, secret: string, cube: string,
   }
 }
 
-// Resolve which columns of a cube input are measures that must be native, for the gate.
-export function measureAggsFor(cfg: Record<string, unknown>, model: SemanticModel): (Aggregation | null | undefined)[] {
+// Resolve the plotted measures' {agg, accumulation} + whether each is verified, from the
+// model. Used by the routing gate.
+export function measureSpecsFor(cfg: Record<string, unknown>, model: SemanticModel): { specs: MeasureSpec[]; fields: SemanticField[] } {
   const yKeys = [cfg.y, cfg.value].filter(Boolean) as string[]
-  return yKeys.map(y => {
-    const f: SemanticField | undefined = model.byColumn.get(y) || model.byKey.get(y)
-    return f?.default_aggregation ?? null
-  })
+  const fields = yKeys.map(y => model.byColumn.get(y) || model.byKey.get(y)).filter(Boolean) as SemanticField[]
+  return { specs: fields.map(f => ({ agg: f.default_aggregation, accumulation: f.accumulation })), fields }
+}
+
+function tableOfKey(objectKey: string): string | null {
+  const i = objectKey.indexOf('.')
+  return i === -1 ? null : objectKey.slice(0, i)
+}
+
+export interface CubeRoutePlan { route: boolean; reason: string; cube?: string; query?: CubeQuery }
+
+// The single decision+build entry point the dashboard data path calls. Pure (no I/O):
+// decides eligibility, derives the single cube/table the panel targets, and builds the
+// Cube query. Returns { route:false, reason } to fall back to the SQL pipeline. Routing
+// is confined to single-table panels; a cross-table panel falls back.
+export function planCubeRouting(args: {
+  cfg: Record<string, unknown>
+  model: SemanticModel
+  dialect: string | null | undefined
+  fingerprintCurrent: boolean
+  timeFrom?: string
+  timeTo?: string
+}): CubeRoutePlan {
+  const { cfg, model, dialect, fingerprintCurrent } = args
+  const { specs, fields } = measureSpecsFor(cfg, model)
+  if (fields.length === 0) return { route: false, reason: 'no-measure-field' }
+  // All plotted measures must be verified.
+  const modelVerified = fields.every(f => f.status === 'verified')
+  const gate = shouldRouteToCube({ dialect, modelVerified, fingerprintCurrent, measures: specs })
+  if (!gate.route) return { route: false, reason: gate.reason }
+  // Single-table only: every measure field must share one table, and the time axis
+  // (if modelled) must be in that table too.
+  const tables = new Set(fields.map(f => tableOfKey(f.object_key)).filter(Boolean) as string[])
+  if (tables.size !== 1) return { route: false, reason: 'cross-table' }
+  const cube = [...tables][0]
+  const timeKey = (cfg.x || cfg.label) as string | undefined
+  if (timeKey) {
+    const tf = model.byColumn.get(timeKey) || model.byKey.get(timeKey)
+    if (tf) { const tt = tableOfKey(tf.object_key); if (tt && tt !== cube) return { route: false, reason: 'cross-table-time' } }
+  }
+  const query = toCubeQuery({ cube, cfg, timeFrom: args.timeFrom, timeTo: args.timeTo }, model)
+  if (!query) return { route: false, reason: 'no-query' }
+  return { route: true, reason: 'ok', cube, query }
 }

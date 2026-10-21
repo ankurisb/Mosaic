@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.115] - 2026-10-21
+
+### Added — Cube query routing (Phase 8)
+Dashboard panels now actually route through the Cube engine when it's safe to, with the
+SQL pipeline as the fallback for every query.
+- `lib/cube-client.ts`: `planCubeRouting()` — single pure entry point that gates
+  eligibility (Cube dialect + all plotted measures verified + drift baseline present +
+  Cube-native aggregation + **non-cumulative accumulation** — a cumulative counter needs
+  Mosaic's delta transform Cube can't do, so it falls back), derives the single target
+  cube/table (cross-table panels fall back), and builds the Cube `/load` query.
+  `shouldRouteToCube` now takes `{agg, accumulation}` per measure; `measureSpecsFor` helper.
+- `app/api/dashboards/[id]/data`: for database panels, when `CUBE_URL` is set, try Cube
+  (`planCubeRouting` → `loadViaCube`) before the SQL pipeline; on any miss/error fall back
+  to SQL exactly as before. Cube-served panels skip the local time-grain rollup (Cube
+  already aggregated). `semMeta` records `engine` (cube|sql), `engine_reason` (why SQL),
+  and `used_pre_agg`.
+- `PanelChart`: a `⚡ cube` badge (·pa when a pre-aggregation was hit) so you can always
+  see which engine served a panel — auditable.
+- 6 new tests (planCubeRouting, measureSpecsFor, accumulation gate). Suite 367 green;
+  production build verified. `CUBE_URL` unset → routing never attempted (unchanged behaviour).
+
 ## [1.3.114] - 2026-10-21
 
 ### Fixed

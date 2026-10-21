@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cubeDialectSupported, isNativeAgg, cubeGranularity, shouldRouteToCube,
-  toCubeQuery, parseCubeResult, buildDatasourceMap, measureAggsFor,
+  toCubeQuery, parseCubeResult, buildDatasourceMap, measureSpecsFor, planCubeRouting,
 } from './cube-client'
 import { buildModel } from './semantic-model'
 import type { SemanticField } from './semantic-model'
@@ -34,7 +34,7 @@ describe('cube-client: gates', () => {
 })
 
 describe('cube-client: shouldRouteToCube fails closed', () => {
-  const base = { dialect: 'postgres', modelVerified: true, fingerprintCurrent: true, measureAggs: ['sum' as const] }
+  const base = { dialect: 'postgres', modelVerified: true, fingerprintCurrent: true, measures: [{ agg: 'sum' as const, accumulation: 'raw' }] }
   it('routes when everything holds', () => {
     expect(shouldRouteToCube(base)).toEqual({ route: true, reason: 'ok' })
   })
@@ -48,10 +48,54 @@ describe('cube-client: shouldRouteToCube fails closed', () => {
     expect(shouldRouteToCube({ ...base, fingerprintCurrent: false }).reason).toBe('schema-drift')
   })
   it('blocks a non-native measure', () => {
-    expect(shouldRouteToCube({ ...base, measureAggs: ['sum', 'last'] }).reason).toBe('non-native-measure')
+    expect(shouldRouteToCube({ ...base, measures: [{ agg: 'sum', accumulation: 'raw' }, { agg: 'last', accumulation: 'raw' }] }).reason).toBe('non-native-measure')
+  })
+  it('blocks a cumulative-counter measure (needs Mosaic delta, Cube would sum raw)', () => {
+    expect(shouldRouteToCube({ ...base, measures: [{ agg: 'sum', accumulation: 'cumulative_counter' }] }).reason).toBe('needs-delta-pipeline')
   })
   it('blocks when no measures', () => {
-    expect(shouldRouteToCube({ ...base, measureAggs: [] }).reason).toBe('no-measures')
+    expect(shouldRouteToCube({ ...base, measures: [] }).reason).toBe('no-measures')
+  })
+})
+
+describe('cube-client: planCubeRouting', () => {
+  const m = model([
+    { object_key: 'production.units', role: 'measure', default_aggregation: 'sum', accumulation: 'raw', status: 'verified' },
+    { object_key: 'production.energy', role: 'measure', default_aggregation: 'sum', accumulation: 'cumulative_counter', status: 'verified' },
+    { object_key: 'production.ts', role: 'time', data_type: 'timestamp', status: 'verified' },
+    { object_key: 'other.widgets', role: 'measure', default_aggregation: 'sum', accumulation: 'raw', status: 'proposed' },
+  ])
+  const baseArgs = { model: m, dialect: 'postgres', fingerprintCurrent: true, timeFrom: '2026-01-01', timeTo: '2026-02-01' }
+  it('routes a clean single-table verified measure panel and builds the query', () => {
+    const plan = planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'units', grain: '1d' } })
+    expect(plan.route).toBe(true)
+    expect(plan.cube).toBe('production')
+    expect(plan.query?.measures).toEqual(['production.units'])
+    expect(plan.query?.timeDimensions[0]).toMatchObject({ dimension: 'production.ts', granularity: 'day' })
+  })
+  it('falls back on a cumulative-counter measure', () => {
+    expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'energy', grain: '1d' } }).reason).toBe('needs-delta-pipeline')
+  })
+  it('falls back when the measure is only proposed (not verified)', () => {
+    expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'widgets' } }).reason).toBe('model-unverified')
+  })
+  it('falls back when the measure is not modelled', () => {
+    expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'unknown_col' } }).reason).toBe('no-measure-field')
+  })
+  it('falls back on an unsupported dialect', () => {
+    expect(planCubeRouting({ ...baseArgs, dialect: 'sqlite', cfg: { x: 'ts', y: 'units' } }).reason).toContain('dialect-unsupported')
+  })
+})
+
+describe('cube-client: measureSpecsFor', () => {
+  it('resolves agg + accumulation of the plotted measures', () => {
+    const m = model([
+      { object_key: 'p.units', role: 'measure', default_aggregation: 'sum', accumulation: 'raw' },
+      { object_key: 'p.energy', role: 'measure', default_aggregation: 'sum', accumulation: 'cumulative_counter' },
+    ])
+    expect(measureSpecsFor({ y: 'units', value: 'energy' }, m).specs).toEqual([
+      { agg: 'sum', accumulation: 'raw' }, { agg: 'sum', accumulation: 'cumulative_counter' },
+    ])
   })
 })
 
@@ -108,12 +152,3 @@ describe('cube-client: buildDatasourceMap', () => {
   })
 })
 
-describe('cube-client: measureAggsFor', () => {
-  it('resolves declared aggregations of the plotted measures', () => {
-    const m = model([
-      { object_key: 'production.units', role: 'measure', default_aggregation: 'sum' },
-      { object_key: 'production.status', role: 'measure', default_aggregation: 'last' },
-    ])
-    expect(measureAggsFor({ y: 'units', value: 'status' }, m)).toEqual(['sum', 'last'])
-  })
-})

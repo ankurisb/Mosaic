@@ -7,6 +7,8 @@ import { capPanelRows, extractRows } from '@/lib/dashboard-rows'
 import { getSemanticModel, applySemanticModel, planRollup, type SemanticModel } from '@/lib/semantic-model'
 import { rollupByGrain } from '@/lib/semantic-rollup'
 import { windowResponsive, validateChartShape, buildLineage } from '@/lib/panel-contract'
+import { planCubeRouting, loadViaCube } from '@/lib/cube-client'
+import { getStoredFingerprint } from '@/lib/semantic-drift'
 export const runtime = 'nodejs'
 
 // Row policy for dashboard panels (see lib/dashboard-rows). Dashboards fetch more
@@ -96,6 +98,20 @@ export async function GET(
     if (!m) { m = getSemanticModel(st, sid); modelCache.set(key, m) }
     return m
   }
+  // Per-request cache of each DB connection's dialect (for Cube routing eligibility).
+  const dialectCache = new Map<string, Promise<string | null>>()
+  const getDialect = (sid: string): Promise<string | null> => {
+    let d = dialectCache.get(sid)
+    if (!d) {
+      d = sql`SELECT dialect FROM db_connections WHERE id = ${sid}`
+        .then(r => (r[0] as { dialect?: string } | undefined)?.dialect ?? null).catch(() => null)
+      dialectCache.set(sid, d)
+    }
+    return d
+  }
+  // Cube engine config (Phase 6/8). CUBE_URL unset → routing is never attempted.
+  const CUBE_URL = process.env.CUBE_URL || ''
+  const CUBE_SECRET = process.env.CUBEJS_API_SECRET || process.env.AUTH_SECRET || ''
 
   // Execute each panel query in parallel
   const results = await Promise.all(
@@ -105,13 +121,38 @@ export async function GET(
       try {
         let data: unknown
         let apiSourceCapped = false
+        let engine: 'cube' | 'sql' | null = null
+        let engineReason = ''
+        let usedPreAgg = false
         if (p.source_type === 'database') {
-          const q = substituteTimeWindow(String(p.query || ''), { time_from, time_to, interval })
-          data = await runTool('query_database', {
-            connection_id: p.source_id,
-            sql: q,
-            max_rows: DASH_SQL_FETCH,
-          })
+          const cfg0 = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : {}
+          // Cube query routing (fails CLOSED to SQL). Only when CUBE_URL is set and the
+          // panel's measures are verified, Cube-native and non-cumulative — otherwise the
+          // SQL pipeline below runs exactly as before.
+          if (CUBE_URL) {
+            const [model0, dialect0] = await Promise.all([
+              getModel('database', String(p.source_id || '')),
+              getDialect(String(p.source_id || '')),
+            ])
+            const fpCurrent = !!(await getStoredFingerprint('database', String(p.source_id || '')))
+            const plan = planCubeRouting({ cfg: cfg0, model: model0, dialect: dialect0, fingerprintCurrent: fpCurrent, timeFrom: time_from, timeTo: time_to })
+            if (plan.route && plan.cube && plan.query) {
+              const res = await loadViaCube(CUBE_URL, CUBE_SECRET, plan.cube, plan.query)
+              if (res.ok && !res.fallback) { data = { rows: res.rows }; engine = 'cube'; usedPreAgg = !!res.usedPreAgg }
+              else engineReason = res.reason || 'cube-fallback'
+            } else {
+              engineReason = plan.reason
+            }
+          }
+          if (engine !== 'cube') {
+            engine = 'sql'
+            const q = substituteTimeWindow(String(p.query || ''), { time_from, time_to, interval })
+            data = await runTool('query_database', {
+              connection_id: p.source_id,
+              sql: q,
+              max_rows: DASH_SQL_FETCH,
+            })
+          }
         } else if (p.source_type === 'api') {
           // API panel query is the path (e.g. /odata/OEEReport?$filter=ts ge {{time_from}}).
           // Time placeholders are injected UNQUOTED (OData $filter wants a bare ISO).
@@ -169,8 +210,12 @@ export async function GET(
           // the (delta'd) series to the grain by each measure's declared aggregation.
           const applied = [...sem.meta.applied]
           let shaped = sem.rows
-          const rollup = planRollup(model, cfg)
-          if (rollup) { shaped = rollupByGrain(shaped, rollup); applied.push(`rollup:${rollup.grain}`) }
+          // Cube already aggregated to the requested grain; re-rolling would double-count.
+          // Only the SQL path runs the local time-grain rollup.
+          if (engine !== 'cube') {
+            const rollup = planRollup(model, cfg)
+            if (rollup) { shaped = rollupByGrain(shaped, rollup); applied.push(`rollup:${rollup.grain}`) }
+          }
           const { rows, meta } = capPanelRows({ rows: shaped }, String(p.chart_type || ''), cfg, {
             maxPoints: DASH_MAX_POINTS, maxRows: DASH_MAX_TABLE_ROWS, sourceCapped: srcCapped,
           })
@@ -182,7 +227,7 @@ export async function GET(
             sourceType: String(p.source_type || 'database'), sourceId: String(p.source_id || ''),
             window: timeWindow, transforms: applied,
           })
-          const semMeta = { units: sem.meta.units, applied, unverified: sem.meta.unverified, window_ignored: windowIgnored, shape_errors: shape.errors, shape_warnings: shape.warnings, lineage }
+          const semMeta = { units: sem.meta.units, applied, unverified: sem.meta.unverified, window_ignored: windowIgnored, shape_errors: shape.errors, shape_warnings: shape.warnings, lineage, engine: engine || undefined, engine_reason: engine === 'sql' && engineReason ? engineReason : undefined, used_pre_agg: usedPreAgg || undefined }
           data = { rows, meta: { ...meta, ...semMeta } }
         }
         return {
