@@ -15,6 +15,7 @@ import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
 import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema'
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
 import { coerceStructured, hasStructured } from '@/lib/semantic-model'
+import { getSemanticHealth, computeFingerprint, recordFingerprint } from '@/lib/semantic-drift'
 import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
@@ -193,9 +194,18 @@ export async function GET(req: Request) {
   const sourceType = searchParams.get('source_type') || 'database'
   const sourceId = searchParams.get('source_id')
   if (!sourceId) return Response.json({ error: 'source_id required' }, { status: 400 })
+
+  // Health view: coverage/verification summary for the semantic model of this source.
+  if (searchParams.get('view') === 'health') {
+    const n = Number(searchParams.get('schema_fields'))
+    const health = await getSemanticHealth(sourceType, sourceId, isFinite(n) && n > 0 ? n : undefined)
+    return Response.json({ health })
+  }
+
   const sql = getDb()
   const rows = await sql`
-    SELECT object_type, object_key, description, updated_at
+    SELECT object_type, object_key, description, updated_at,
+           role, data_type, unit, default_aggregation, additivity, accumulation, time_grain, status, confidence
     FROM   semantic_descriptions
     WHERE  source_type = ${sourceType} AND source_id = ${sourceId}
     ORDER  BY object_type DESC, object_key`
@@ -230,6 +240,17 @@ export async function POST(req: Request) {
       if (!schema || schema.error) {
         return Response.json({ error: schema?.error || 'Schema not available for this source' }, { status: 400 })
       }
+      // Record a schema fingerprint so drift can be detected on the next introspect.
+      try {
+        const fields: Array<{ object_key: string; data_type: string }> = []
+        for (const t of (schema.tables || []) as Array<Record<string, unknown>>) {
+          const tn = t.schema && t.schema !== 'public' ? `${t.schema}.${t.name}` : String(t.name)
+          for (const c of ((t.columns as Array<Record<string, unknown>>) || [])) {
+            fields.push({ object_key: `${tn}.${c.name ?? c.column_name}`, data_type: String(c.type ?? c.data_type ?? '') })
+          }
+        }
+        if (fields.length) await recordFingerprint('database', source_id, computeFingerprint(fields))
+      } catch { /* best-effort */ }
       // Sample a few rows from up to 6 tables — same approach as schema-preview.
       const tables = (schema.tables || []).slice(0, 6)
       const samples: Record<string, unknown[]> = {}

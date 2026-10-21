@@ -10,6 +10,29 @@
 //      surfacing, and flagging of unverified fields that were actually used. No DB,
 //      so it is fully unit-testable.
 import { getDb } from './db'
+import { type Grain, type Agg, type RollupSpec } from './semantic-rollup'
+
+const GRAINS = new Set<string>(['1m', '5m', '15m', '30m', '1h', '6h', '12h', '1d', '1w', '1mo'])
+
+// Build a rollup spec from the panel's chart config + the semantic model, or null if
+// the panel didn't ask for a grain (chart_config.grain). Measures aggregate by their
+// declared default_aggregation (fallback sum); the x key is the time axis.
+export function planRollup(model: SemanticModel, chartConfig?: Record<string, unknown>): RollupSpec | null {
+  const cfg = chartConfig || {}
+  const grain = String(cfg.grain || '').trim()
+  if (!GRAINS.has(grain)) return null
+  const timeKey = (cfg.x || cfg.label) as string | undefined
+  const yKeys = [cfg.y, cfg.value].filter(Boolean) as string[]
+  if (!timeKey || !yKeys.length) return null
+  const seriesKey = (cfg.series || cfg.group) as string | undefined
+  const measures: Record<string, Agg> = {}
+  for (const y of yKeys) {
+    const f = model.byColumn.get(y) || model.byKey.get(y)
+    const agg = f?.default_aggregation && f.default_aggregation !== 'none' ? f.default_aggregation : 'sum'
+    measures[y] = agg as Agg
+  }
+  return { timeKey, grain: grain as Grain, measures, seriesKeys: seriesKey ? [seriesKey] : [] }
+}
 
 export type Role = 'measure' | 'dimension' | 'time' | 'identifier' | 'attribute'
 export type Aggregation = 'sum' | 'avg' | 'min' | 'max' | 'last' | 'count' | 'count_distinct' | 'none'

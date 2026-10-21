@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildModel, deltaColumn, applySemanticModel, coerceStructured, hasStructured, type SemanticField } from './semantic-model'
+import { buildModel, deltaColumn, applySemanticModel, planRollup, coerceStructured, hasStructured, type SemanticField } from './semantic-model'
+import { rollupByGrain } from './semantic-rollup'
 
 const F = (object_key: string, extra: Partial<SemanticField> = {}): SemanticField => ({ object_key, ...extra })
 
@@ -99,5 +100,31 @@ describe('applySemanticModel', () => {
     ]
     const r = applySemanticModel(rows, model, { chartConfig: { x: 'day', y: 'energy_kwh', series: 'dev' } })
     expect(r.rows.map(x => x.energy_kwh)).toEqual([0, 0, 15, 60])
+  })
+})
+
+describe('full pipeline: cumulative kWh → delta → daily rollup = daily consumption', () => {
+  const model = buildModel([
+    F('meter.energy_kwh', { role: 'measure', unit: 'kWh', accumulation: 'cumulative_counter', default_aggregation: 'sum', status: 'verified' }),
+    F('meter.ts', { role: 'time', data_type: 'timestamp' }),
+  ])
+  it('turns an hourly cumulative counter into correct daily consumption', () => {
+    const rows = [
+      { ts: '2026-04-12T00:00:00Z', energy_kwh: 1000 },
+      { ts: '2026-04-12T06:00:00Z', energy_kwh: 1010 },
+      { ts: '2026-04-12T12:00:00Z', energy_kwh: 1025 },
+      { ts: '2026-04-13T00:00:00Z', energy_kwh: 1025 },
+      { ts: '2026-04-13T06:00:00Z', energy_kwh: 1040 },
+      { ts: '2026-04-13T12:00:00Z', energy_kwh: 1070 },
+    ]
+    const cfg = { x: 'ts', y: 'energy_kwh', grain: '1d' }
+    const sem = applySemanticModel(rows, model, { chartConfig: cfg })  // delta
+    const spec = planRollup(model, cfg)!
+    expect(spec.measures.energy_kwh).toBe('sum')
+    const daily = rollupByGrain(sem.rows, spec)
+    expect(daily).toEqual([
+      { ts: '2026-04-12', energy_kwh: 25 },   // 0+10+15
+      { ts: '2026-04-13', energy_kwh: 45 },   // 0+15+30
+    ])
   })
 })

@@ -4,7 +4,8 @@ import { runTool } from '@/lib/tools'
 import { substituteTimeWindow, substituteTimeWindowApi, parsePrismQuery, applyPrismWindow, prismSeriesToRows } from '@/lib/dashboard-plan'
 import { fetchApiRows } from '@/lib/api-paginate'
 import { capPanelRows, extractRows } from '@/lib/dashboard-rows'
-import { getSemanticModel, applySemanticModel, type SemanticModel } from '@/lib/semantic-model'
+import { getSemanticModel, applySemanticModel, planRollup, type SemanticModel } from '@/lib/semantic-model'
+import { rollupByGrain } from '@/lib/semantic-rollup'
 export const runtime = 'nodejs'
 
 // Row policy for dashboard panels (see lib/dashboard-rows). Dashboards fetch more
@@ -163,11 +164,17 @@ export async function GET(
           // flagging — driven by the source's declared semantic model.
           const model = await getModel(String(p.source_type || 'database'), String(p.source_id || ''))
           const sem = applySemanticModel(extractRows(data), model, { chartType: String(p.chart_type || ''), chartConfig: cfg })
-          const { rows, meta } = capPanelRows({ rows: sem.rows }, String(p.chart_type || ''), cfg, {
+          // Optional time-grain rollup (panel asked for chart_config.grain): aggregate
+          // the (delta'd) series to the grain by each measure's declared aggregation.
+          const applied = [...sem.meta.applied]
+          let shaped = sem.rows
+          const rollup = planRollup(model, cfg)
+          if (rollup) { shaped = rollupByGrain(shaped, rollup); applied.push(`rollup:${rollup.grain}`) }
+          const { rows, meta } = capPanelRows({ rows: shaped }, String(p.chart_type || ''), cfg, {
             maxPoints: DASH_MAX_POINTS, maxRows: DASH_MAX_TABLE_ROWS, sourceCapped: srcCapped,
           })
-          const semMeta = (sem.meta.applied.length || Object.keys(sem.meta.units).length || sem.meta.unverified.length)
-            ? { units: sem.meta.units, applied: sem.meta.applied, unverified: sem.meta.unverified }
+          const semMeta = (applied.length || Object.keys(sem.meta.units).length || sem.meta.unverified.length)
+            ? { units: sem.meta.units, applied, unverified: sem.meta.unverified }
             : {}
           data = { rows, meta: { ...meta, ...semMeta } }
         }

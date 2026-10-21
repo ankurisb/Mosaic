@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.106] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 2: time-grain shaping + drift lifecycle.**
+  - **Time-grain rollup** (`lib/semantic-rollup.ts`): a raw-timestamp series can be rolled up to a coarser grain (minute/hour/day/week/month), aggregating each measure by its **declared** aggregation (from the semantic model). Wired into the executor after the cumulative→delta step, so a panel with `chart_config.grain` turns, e.g., an hourly cumulative kWh counter into correct **daily consumption** (delta → daily sum) — verified end-to-end in the test suite.
+  - **Drift lifecycle** (`lib/semantic-drift.ts`): a schema **fingerprint** (order-independent, type-sensitive) is recorded in `semantic_sources` on DB `generate`; `diffSchema` reports added/removed/retyped fields; `getSemanticHealth` summarises coverage/verification. `/api/semantic` gains a `?view=health` read and now returns the structured columns in its listing.
+  - 12 new tests (rollup, fingerprint/diff, health integration, full delta→rollup pipeline); suite 311 green.
+
+### Notes
+- `applySemanticModel`/rollup are **source-agnostic** — API/PRISM panels already benefit at execution once their model is populated; the structured **auto-describe** for API/PRISM (AI generation) is a box-verify follow-up (needs an Anthropic key). Live drift-detection-on-introspect uses the primitives shipped here.
+
 ## [1.3.105] - 2026-10-21
 
 ### Added
