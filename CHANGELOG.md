@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.107] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 3: cross-source composition (core).** Base measures in different sources are made comparable by a **conformed dimension** (a logical entity whose per-source key columns are declared in a crosswalk), then composed by a formula at a common grain.
+  - **Migration 022**: `conformed_dimensions` (entity + optional JSON hierarchy levels), `conformed_keys` (the per-source crosswalk), `cross_source_measures` (name, entity, grain, formula, bases, status).
+  - **`lib/cross-source.ts`**: a **safe** arithmetic formula evaluator (recursive-descent, no `eval`/`Function` — identifiers are variable lookups only, so no code execution); `federate()` aligns per-source rows on the conformed entity (+ time bucket) and computes the formula, emitting **null when a base is missing** for a key (never a silent wrong join); `validateCrossMeasure()` is the **verification gate** — a composed measure may use only `verified` base fields and a formula that parses and references only declared aliases; hierarchy helpers (`parseLevels`/`drillTo`) enable drill-down later.
+  - 11 tests (formula precedence/safety/divide-by-zero, federation join + time alignment + missing-base null, verification gate, hierarchy). Suite 322 green.
+
+### Notes
+- This ships the **semantic composition core**. Wiring a `composed` panel type (fan out to each source adapter, remap keys, federate, render) is the integration step held for box verification, since it needs live multi-source data — the federation + gate logic it depends on is fully tested here. At scale the physical join routes through the existing DuckDB `combineSources`.
+
 ## [1.3.106] - 2026-10-21
 
 ### Added
