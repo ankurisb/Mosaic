@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.124] - 2026-10-21
+
+### Fixed — entity-templated panels now validate against a real device (no more baked-id workaround)
+The readiness dry-run was sending the literal `{{entity_id}}` placeholder to the source, so
+every entity-filtered panel errored at validation (PRISM returned `Invalid UUID string:
+{{entity_id}}`). The model then "rescued" the build by baking a literal device id into each
+panel — which defeats the Phase 9 Device filter (the dashboard could no longer switch
+devices). Root cause + fix:
+- `lib/dashboard-build.ts` `dryRunPanel`: resolves a **sample device** (the plan's
+  `entity.default[0]`) and substitutes it into the entity placeholder **for the read-only
+  preview only** — PRISM `entity_id`, SQL/API `{{entity_id}}` — so the panel is validated
+  against real data. The **saved** query always keeps `{{entity_id}}`, so the live Device
+  filter still switches devices at view time.
+- No default device available → `dryRunPanel` returns `{ needsEntity: true }` and does NOT run
+  the query. `lib/dashboard-readiness.ts` turns that into a single, specific gap ("pick a
+  default device…") instead of a misleading query error — so the chat interrogates for a
+  device rather than the model hard-coding one.
+- `app/api/chat/route.ts` prompt: explicitly forbids baking a literal device id to pass
+  validation; the fix for a placeholder failure is to set `entity.default` to a real id and
+  keep `{{entity_id}}` in the query.
+- Tests: `dashboard-readiness.test.ts` adds the "no default device → one device gap, not an
+  executability failure" case (20 dashboard tests pass).
+
 ## [1.3.123] - 2026-10-21
 
 ### Added — dashboard builder readiness / interrogation gate

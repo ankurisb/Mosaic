@@ -33,6 +33,13 @@ describe('assessPanelReadiness', () => {
   it('passes a scoped multi-entity panel', () => {
     expect(assessPanelReadiness({ sourceType: 'prism', cls: 'data', multiEntity: true, hasEntityScope: true }).ready).toBe(true)
   })
+  it('entity-templated with no default device → one "pick a device" gap, not a query error', () => {
+    const r = assessPanelReadiness({ sourceType: 'prism', cls: 'empty', detail: 'awaiting default device', needsSampleEntity: true, multiEntity: true, hasEntityScope: true })
+    expect(r.ready).toBe(false)
+    expect(r.gaps).toHaveLength(1)
+    expect(r.gaps[0]).toMatch(/default device/i)
+    expect(r.gaps[0]).not.toMatch(/no data|failed/i)   // not reported as an executability failure
+  })
 })
 
 describe('assessPlanReadiness', () => {

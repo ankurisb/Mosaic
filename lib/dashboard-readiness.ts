@@ -22,12 +22,23 @@ export interface ReadinessInput {
   // ({{entity_id}} + a dashboard entity binding)?
   multiEntity?: boolean
   hasEntityScope?: boolean
+  // The panel is entity-templated ({{entity_id}}) but no default device was available to
+  // preview it against, so the dry-run could not run. This is NOT a query error — the panel
+  // is well-formed; it just needs a default device chosen before it can be validated/opened.
+  needsSampleEntity?: boolean
 }
 
 export interface Readiness { ready: boolean; gaps: string[] }
 
 export function assessPanelReadiness(inp: ReadinessInput): Readiness {
   const gaps: string[] = []
+
+  // Entity-templated but no default device to preview against: the one gap is to pick a
+  // default device. Report only this (don't also fire the executability/empty gaps, since
+  // the query was deliberately NOT run) — keep {{entity_id}} in the saved query either way.
+  if (inp.needsSampleEntity) {
+    return { ready: false, gaps: ['no default device set — pick a device for the Device filter so the panel can be previewed (keep {{entity_id}} in the query; do not hard-code a device)'] }
+  }
 
   if (inp.cls === 'invalid') gaps.push(`chart/shape invalid${inp.detail ? `: ${inp.detail}` : ''}`)
   else if (inp.cls === 'error') gaps.push(`query failed${inp.detail ? `: ${inp.detail}` : ''} — check columns/filters`)
