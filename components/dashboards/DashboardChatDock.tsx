@@ -10,8 +10,9 @@ interface ProposalPanel {
   title: string; subtitle?: string; source_type: string; source_id: string; query: string
   chart_type: string; chart_config?: Record<string, unknown>
   validation: { cls: string; rows: number; detail?: string }
+  readiness?: { ready: boolean; gaps: string[] }
 }
-interface Proposal { title: string; panels: ProposalPanel[]; summary: { data: number; empty: number; error: number; invalid: number; total: number } }
+interface Proposal { title: string; panels: ProposalPanel[]; summary: { data: number; empty: number; error: number; invalid: number; total: number }; entity?: unknown; readiness?: { allReady: boolean; readyCount: number; total: number; gaps: { panel: string; gaps: string[] }[] } }
 interface Msg { role: 'user' | 'assistant'; content: string; proposal?: Proposal; applied?: boolean }
 
 export default function DashboardChatDock({ dashboardId, onChanged }: { dashboardId: string; onChanged: () => void }) {
@@ -55,8 +56,11 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
       if (changed) onChanged()
       // Auto-add proposed panels straight to the dashboard (they're trivially
       // deletable), so the user sees the real panels instead of a confirm step.
+      // Readiness gate: only auto-add when every panel is ready. If not, leave the
+      // proposal unapplied — the assistant's message interrogates the user to close the
+      // gaps, and nothing is written until a rebuild passes.
       // On failure the proposal card still renders its manual "Add" button.
-      if (pendingProposal) {
+      if (pendingProposal && (!pendingProposal.readiness || pendingProposal.readiness.allReady)) {
         setBusy('applying')
         try {
           await applyPanels(pendingProposal)
@@ -75,7 +79,9 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
   // first failure. Used by the auto-add after a proposal streams in, and by the
   // manual fallback button.
   async function applyPanels(proposal: Proposal) {
-    const chosen = proposal.panels.filter(p => p.validation.cls === 'data' || p.validation.cls === 'empty')
+    // Only add panels that passed the readiness gate (fall back to the executability
+    // class when a panel has no readiness verdict, e.g. an older build).
+    const chosen = proposal.panels.filter(p => p.readiness ? p.readiness.ready : (p.validation.cls === 'data' || p.validation.cls === 'empty'))
     if (!chosen.length) throw new Error('No addable panels (all errored)')
     let order = 1000 + Math.floor(Date.now() / 1000) % 1000
     for (let i = 0; i < chosen.length; i++) {
@@ -136,22 +142,30 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
             </div>
             {m.proposal && (
               <div style={{ marginTop: 8, border: '1px solid var(--border2)', borderRadius: 10, padding: 10, background: 'var(--bg)' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>{m.applied ? 'Added to dashboard ✓' : `Proposed ${m.proposal.panels.length} panel(s)`}</div>
+                {(() => { const notReady = m.proposal.readiness && !m.proposal.readiness.allReady; return (<>
+                <div style={{ fontSize: 11, fontWeight: 600, color: notReady ? 'var(--amber-t, #b4690e)' : 'var(--text2)', marginBottom: 6 }}>
+                  {m.applied ? 'Added to dashboard ✓' : notReady ? `Needs info — ${m.proposal.readiness!.readyCount}/${m.proposal.readiness!.total} panels ready` : `Proposed ${m.proposal.panels.length} panel(s)`}
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: m.applied ? 0 : 8 }}>
                   {m.proposal.panels.map((p, j) => (
-                    <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: clsColor(p.validation.cls), flexShrink: 0 }} />
-                      <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</span>
-                      <span style={{ color: 'var(--text4)', marginLeft: 'auto', flexShrink: 0 }}>{p.chart_type} · {p.validation.cls === 'data' ? `${p.validation.rows} rows` : p.validation.cls}</span>
+                    <div key={j}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.readiness && !p.readiness.ready ? 'var(--amber-t, #b4690e)' : clsColor(p.validation.cls), flexShrink: 0 }} />
+                        <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</span>
+                        <span style={{ color: 'var(--text4)', marginLeft: 'auto', flexShrink: 0 }}>{p.chart_type} · {p.validation.cls === 'data' ? `${p.validation.rows} rows` : p.validation.cls}</span>
+                      </div>
+                      {p.readiness && !p.readiness.ready && <div style={{ fontSize: 10.5, color: 'var(--amber-t, #b4690e)', marginLeft: 12, marginTop: 1 }}>{p.readiness.gaps.join('; ')}</div>}
                     </div>
                   ))}
                 </div>
-                {!m.applied && (
+                {!m.applied && notReady && <div style={{ fontSize: 11, color: 'var(--text3)' }}>Not created yet — answer the question above so Mosaic can build these correctly.</div>}
+                {!m.applied && !notReady && (
                   <button onClick={() => addPanels(i, m.proposal!)} disabled={!!busy}
                     style={{ padding: '6px 12px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 11.5, fontWeight: 600, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', opacity: busy ? 0.6 : 1 }}>
-                    {busy === 'applying' ? 'Adding…' : `Add ${m.proposal.panels.filter(p => p.validation.cls === 'data' || p.validation.cls === 'empty').length} to dashboard`}
+                    {busy === 'applying' ? 'Adding…' : `Add ${m.proposal.panels.filter(p => p.readiness ? p.readiness.ready : (p.validation.cls === 'data' || p.validation.cls === 'empty')).length} to dashboard`}
                   </button>
                 )}
+                </>) })()}
               </div>
             )}
           </div>

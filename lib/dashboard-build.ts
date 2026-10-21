@@ -5,7 +5,10 @@
 // enriched proposal the chat route streams to the UI. Nothing is persisted here —
 // the user confirms in the proposal card, which saves via create_dashboard/add_panel.
 import { runTool } from './tools'
+import { getDb } from './db'
 import { extractApiRecords } from './api-dictionary'
+import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs } from './dashboard-readiness'
+import { hasEntityPlaceholder, prismNeedsEntity } from './dashboard-entity'
 import {
   validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow, substituteTimeWindowApi,
   parsePrismQuery, applyPrismWindow, prismSeriesToRows, detectSampleTimeRange, suggestDefaultWindow,
@@ -14,6 +17,7 @@ import {
 
 export interface EnrichedPanel extends PanelPlan {
   validation: { cls: PanelCls | 'invalid'; rows: number; detail?: string; sample?: unknown[] }
+  readiness?: { ready: boolean; gaps: string[] }   // Phase: readiness gate
 }
 export interface DashboardProposal {
   title: string
@@ -22,6 +26,7 @@ export interface DashboardProposal {
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
   suggested_window?: string    // default time window that covers the data (auto-detected)
   entity?: import('./dashboard-plan').EntityBinding   // Phase 9: device-filter binding to persist on save
+  readiness?: import('./dashboard-readiness').PlanReadiness   // readiness gate verdict
 }
 
 export type DialectResolver = (sourceType: string, sourceId: string) => string | undefined
@@ -126,9 +131,47 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
   }
   const summary = { data: 0, empty: 0, error: 0, invalid: 0, total: enriched.length }
   for (const p of enriched) summary[p.validation.cls as keyof typeof summary]++
+
+  // Readiness gate: known field/key sets per source (from the semantic dictionary) for
+  // grounding, computed once per unique source. Best-effort — absent dictionary skips
+  // grounding for that source (the dry-run still gates).
+  const knownBySource = new Map<string, string[]>()
+  const srcIds = [...new Set(enriched.filter(p => p.source_type === 'prism' || p.source_type === 'api').map(p => `${p.source_type}:${p.source_id}`))]
+  await Promise.all(srcIds.map(async k => {
+    const [st, sid] = k.split(/:(.+)/)
+    try {
+      const rows = await getDb()`SELECT object_key FROM semantic_descriptions WHERE source_type=${st} AND source_id=${sid}` as Array<{ object_key: string }>
+      knownBySource.set(k, rows.map(r => String(r.object_key).replace(/.*\./, '').toLowerCase()))
+    } catch { /* no dictionary → skip grounding */ }
+  }))
+  const hasBinding = !!plan.entity
+  for (const p of enriched) {
+    let usedRefs: string[] | undefined
+    let multiEntity = false
+    let hasEntityScope = false
+    if (p.source_type === 'prism') {
+      multiEntity = true   // PRISM instances are device fleets
+      const pr = parsePrismQuery(p.query)
+      if (pr.ok) { usedRefs = prismUsedRefs(pr.params!); hasEntityScope = prismNeedsEntity(pr.params!) || hasBinding }
+    } else if (p.source_type === 'api') {
+      usedRefs = apiUsedRefs(String(p.query || ''))
+      multiEntity = hasBinding
+      hasEntityScope = hasEntityPlaceholder(String(p.query || '')) || hasBinding
+    } else if (p.source_type === 'database') {
+      multiEntity = hasBinding
+      hasEntityScope = hasEntityPlaceholder(String(p.query || '')) || hasBinding
+    }
+    p.readiness = assessPanelReadiness({
+      sourceType: p.source_type, cls: p.validation.cls, detail: p.validation.detail,
+      knownRefs: knownBySource.get(`${p.source_type}:${p.source_id}`), usedRefs,
+      multiEntity, hasEntityScope,
+    })
+  }
+
   // Auto-detect a default time window from the previewed data so the saved
   // dashboard opens populated (e.g. historical data → a wide enough window).
   const range = detectSampleTimeRange(enriched.map(p => p.validation.sample))
   const suggested_window = suggestDefaultWindow(range, Date.now()) ?? undefined
-  return { title: plan.title, description: plan.description, panels: enriched, summary, suggested_window, entity: plan.entity }
+  const readiness = assessPlanReadiness(enriched.map(p => ({ title: p.title, readiness: p.readiness! })))
+  return { title: plan.title, description: plan.description, panels: enriched, summary, suggested_window, entity: plan.entity, readiness }
 }

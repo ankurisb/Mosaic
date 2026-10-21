@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.123] - 2026-10-21
+
+### Added — dashboard builder readiness / interrogation gate
+Raises the bar from "does the query run" to "do we have enough confirmed, grounded info to
+build the right thing" — so dashboards aren't created on hallucinated columns or
+under-specified requests.
+- `lib/dashboard-readiness.ts` (pure): per-panel `ready` + specific `gaps`. A panel is ready
+  only when shape-valid, read-only, grounded (referenced keys/fields exist in the source's
+  dictionary), executable AND non-empty in the preview, and — for a multi-entity source —
+  scoped to a device. `prismUsedRefs`/`apiUsedRefs` extract the referenced fields; SQL is
+  grounded by the dry-run. 12 tests.
+- `enrichPlan`: computes readiness per panel (known keys/fields from the semantic
+  dictionary, multi-entity + scope detection) and a plan-level verdict.
+- **Build gate**: when not all panels are ready, build_dashboard does NOT create — it
+  returns the gaps and the chat interrogates the user to resolve them, then rebuilds.
+  Strictest setting: an empty-in-preview panel counts as not ready. The chat dock no longer
+  auto-adds a not-ready proposal; the card shows the gaps and "not created yet".
+- Prompt: the builder asks 1–3 focused questions up front when the request is vague and
+  keeps interrogating until every panel is ready; never claims a build while gaps remain.
+
+Suite 407 green; typecheck clean; production build verified.
+
 ## [1.3.122] - 2026-10-21
 
 ### Added — dashboard entity filter 9c/9d (UI + builder)
