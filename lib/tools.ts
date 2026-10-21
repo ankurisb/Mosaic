@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { log } from './logger'
 import { getDb } from './db'
+import { assertNoDangerousSql } from './sql-guard'
 import { getKey } from './keys'
 import { emitToolCall, type MeteringEventData } from './metering'
 import {
@@ -1328,6 +1329,11 @@ async function queryDatabase(connectionId: string, queryInput: string, opts: { m
     if (conn.read_only && (upper.includes('INSERT') || upper.includes('UPDATE') || upper.includes('DELETE'))) {
       throw new Error('This connection is read-only.')
     }
+    // Defence in depth: a SELECT that passes the start-of-statement allowlist can still
+    // reach the network/filesystem via ClickHouse table functions (url/s3/file/remote/…)
+    // or MySQL INTO OUTFILE. Block those constructs (the authoritative control is a
+    // locked-down DB user; see docs/CLICKHOUSE_HARDENING).
+    assertNoDangerousSql(trimmed, dialect)
   }
 
   // -- MCP connector (Postgres / MySQL / SQL Server) -----------

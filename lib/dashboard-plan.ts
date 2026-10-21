@@ -13,6 +13,8 @@
 
 // Chart types the native panel renderer (PanelChart) understands. Kept in sync
 // with components/dashboards/PanelBuilder.tsx CHART_TYPES.
+import { assertNoDangerousSql } from './sql-guard'
+
 export const DASH_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey'] as const
 export type DashChartType = typeof DASH_CHART_TYPES[number]
 
@@ -80,6 +82,9 @@ export function readonlyGuard(rawSql: string, dialect: string): GuardResult {
   if (!allowed.some(v => upper.startsWith(v))) {
     return { ok: false, reason: `only ${allowed.join(' / ')} queries are allowed (read-only)` }
   }
+  // Defence in depth: block network/filesystem table functions (ClickHouse url/s3/file/…)
+  // and MySQL INTO OUTFILE that slip past the start-of-statement allowlist.
+  try { assertNoDangerousSql(sql, d) } catch (e) { return { ok: false, reason: (e as Error).message } }
   return { ok: true }
 }
 

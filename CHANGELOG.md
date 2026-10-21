@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.116] - 2026-10-21
+
+### Security
+- **ClickHouse/MySQL table-function hardening (defence in depth).** The read-only guard
+  only checked the statement *start* (SELECT/WITH/EXPLAIN), which a ClickHouse table
+  function abuses inside a plain SELECT to reach the network/filesystem — `url()`,
+  `remote()`, `s3()`, `file()`, `mysql()`, `postgresql()`, `hdfs()`, `jdbc()`, … — or a
+  `SETTINGS` clause to raise limits. New `lib/sql-guard.ts` (`assertNoDangerousSql`)
+  blocks these for ClickHouse (and MySQL `INTO OUTFILE`/`DUMPFILE`/`LOAD_FILE`), wired
+  into both the runtime query path (`lib/tools.ts`) and panel-save (`readonlyGuard`).
+  String/identifier literals are stripped first so a value like `'see s3(x)'` doesn't
+  false-trip. The authoritative control remains a locked-down DB user — documented in
+  `docs/CLICKHOUSE_HARDENING.md` (readonly=1, SELECT-only grants, no REMOTE/URL/S3/FILE,
+  a settings profile capping execution/memory/rows). 14 new guard tests; suite 374 green.
+
 ## [1.3.115] - 2026-10-21
 
 ### Added — Cube query routing (Phase 8)
