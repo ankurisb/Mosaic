@@ -5,6 +5,7 @@
 // source of truth (Cube files are a generated artifact). Pure + unit-testable; the
 // Cube SERVICE deployment and query routing are the infra/box integration.
 import type { SemanticField } from './semantic-model'
+import { createHash } from 'crypto'
 
 // Semantic default_aggregation → Cube measure type. 'last'/'none' have no native Cube
 // measure type (would need custom SQL), so they are not emitted as measures.
@@ -25,11 +26,16 @@ function safeName(s: string): string {
 }
 
 // Cube names must be globally unique across ALL loaded schema files; two sources that both
-// have a `production` table would collide in Cube's single namespace. Namespace the cube
-// name by source id when one is given, so each source's cubes are distinct. The same
-// function is used by the query planner so member refs match.
+// have a `production` table would collide in Cube's single namespace. Namespace by a SHORT
+// lowercase hash of the source id: a raw id is often long and mixed-case, which Cube
+// snake-cases into a huge name whose `<cube>__<member>` column aliases overflow Cube Store's
+// name limit and collapse (all columns end up identically named). An 8-hex-char hash keeps
+// names compact and SQL-safe. Deterministic, so the generator and the query planner agree.
 export function cubeNameFor(table: string, dataSource?: string): string {
-  return dataSource ? `s_${safeName(dataSource)}_${safeName(table)}` : safeName(table)
+  const t = safeName(table).toLowerCase()
+  if (!dataSource) return t
+  const h = createHash('sha1').update(dataSource).digest('hex').slice(0, 8)
+  return `s_${h}_${t}`
 }
 
 // Build one cube per table from its column-level semantic fields.

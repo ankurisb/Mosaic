@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.119] - 2026-10-21
+
+### Fixed (Cube pre-aggregation + long-name collapse)
+- **Cube names now use a short hash of the source id** (`s_<8hex>_<table>`), lowercase.
+  The previous raw-id namespacing produced very long, mixed-case names that Cube
+  snake-cased into ~60-char identifiers; the derived `<cube>__<member>` pre-aggregation
+  column aliases then overflowed Cube Store's column-name limit and collapsed to identical
+  names, so a measure value landed in the timestamp column and the pre-agg build failed
+  ("Can't parse timestamp"), returning HTTP 400 and forcing SQL fallback. Short names keep
+  the aliases distinct — routing returns 200 and the day-grain pre-aggregation builds.
+  Found in the comprehensive dashboard e2e on the box.
+
 ## [1.3.118] - 2026-10-21
 
 ### Fixed (multi-source Cube routing — from the comprehensive dashboard e2e)

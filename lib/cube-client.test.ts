@@ -88,10 +88,12 @@ describe('cube-client: planCubeRouting', () => {
   it('routes a native grain (1d/1h/1mo)', () => {
     expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'units', grain: '1h' } }).route).toBe(true)
   })
-  it('namespaces the cube name by source id so two sources do not collide', () => {
-    const plan = planCubeRouting({ ...baseArgs, sourceId: 'CONN9', cfg: { x: 'ts', y: 'units', grain: '1d' } })
-    expect(plan.cube).toBe('s_CONN9_production')
-    expect(plan.query?.measures).toEqual(['s_CONN9_production.units'])
+  it('namespaces the cube name by source id (short hash) so two sources do not collide', () => {
+    const p9 = planCubeRouting({ ...baseArgs, sourceId: 'CONN9', cfg: { x: 'ts', y: 'units', grain: '1d' } })
+    const p8 = planCubeRouting({ ...baseArgs, sourceId: 'CONN8', cfg: { x: 'ts', y: 'units', grain: '1d' } })
+    expect(p9.cube).toMatch(/^s_[0-9a-f]{8}_production$/)   // short lowercase hash, SQL-safe
+    expect(p9.cube).not.toBe(p8.cube)                        // different sources → distinct cubes
+    expect(p9.query?.measures).toEqual([`${p9.cube}.units`]) // member refs match the cube name
   })
   it('falls back on an unsupported dialect', () => {
     expect(planCubeRouting({ ...baseArgs, dialect: 'sqlite', cfg: { x: 'ts', y: 'units' } }).reason).toContain('dialect-unsupported')
