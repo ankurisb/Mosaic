@@ -9,6 +9,7 @@ import { rollupByGrain } from '@/lib/semantic-rollup'
 import { windowResponsive, validateChartShape, buildLineage } from '@/lib/panel-contract'
 import { planCubeRouting, loadViaCube } from '@/lib/cube-client'
 import { getStoredFingerprint } from '@/lib/semantic-drift'
+import { clampGrain } from '@/lib/dashboard-grain'
 export const runtime = 'nodejs'
 
 // Row policy for dashboard panels (see lib/dashboard-rows). Dashboards fetch more
@@ -72,6 +73,18 @@ export async function GET(
   const { time_from, time_to, interval } = timeWindow === 'custom' && customFromP && customToP
     ? { time_from: customFromP, time_to: customToP, interval: 'custom' }
     : getTimeWindow(timeWindow)
+  // Global aggregation grain from the top filter, clamped to what the window allows
+  // (a 7-day window must not render 5-minute buckets). windowMs from the resolved range.
+  const windowMs = Math.max(1, (Date.parse(time_to) || 0) - (Date.parse(time_from) || 0))
+  const grainParam = url.searchParams.get('grain') || ''
+  // Effective grain for a panel: the global grain wins when set; else the panel's own
+  // chart_config.grain; either way clamped into the window's allowed set.
+  const effGrain = (cfg: Record<string, unknown>): string | null =>
+    clampGrain(grainParam || (cfg?.grain as string | undefined), windowMs)
+  const withGrain = (cfg: Record<string, unknown>): Record<string, unknown> => {
+    const g = effGrain(cfg)
+    return g ? { ...cfg, grain: g } : cfg
+  }
   const sql = getDb()
 
   // Verify the user can see this dashboard
@@ -125,7 +138,7 @@ export async function GET(
         let engineReason = ''
         let usedPreAgg = false
         if (p.source_type === 'database') {
-          const cfg0 = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : {}
+          const cfg0 = withGrain((p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : {})
           // Cube query routing (fails CLOSED to SQL). Only when CUBE_URL is set and the
           // panel's measures are verified, Cube-native and non-cumulative — otherwise the
           // SQL pipeline below runs exactly as before.
@@ -200,7 +213,8 @@ export async function GET(
         // through untouched.
         if (extractRows(data).length) {
           const srcCapped = apiSourceCapped || !!(data && typeof data === 'object' && (data as Record<string, unknown>).truncated)
-          const cfg = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : undefined
+          const cfgRaw = (p.chart_config && typeof p.chart_config === 'object') ? p.chart_config as Record<string, unknown> : undefined
+          const cfg = cfgRaw ? withGrain(cfgRaw) : undefined
           // Semantic post-processing FIRST, on full-resolution ordered rows (before
           // downsampling): deterministic cumulative→delta, unit surfacing, unverified
           // flagging — driven by the source's declared semantic model.

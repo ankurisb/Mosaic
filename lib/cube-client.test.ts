@@ -82,6 +82,12 @@ describe('cube-client: planCubeRouting', () => {
   it('falls back when the measure is not modelled', () => {
     expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'unknown_col' } }).reason).toBe('no-measure-field')
   })
+  it('falls back on a grain Cube cannot express natively (e.g. 15m)', () => {
+    expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'units', grain: '15m' } }).reason).toBe('non-native-grain')
+  })
+  it('routes a native grain (1d/1h/1mo)', () => {
+    expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'units', grain: '1h' } }).route).toBe(true)
+  })
   it('falls back on an unsupported dialect', () => {
     expect(planCubeRouting({ ...baseArgs, dialect: 'sqlite', cfg: { x: 'ts', y: 'units' } }).reason).toContain('dialect-unsupported')
   })

@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.117] - 2026-10-21
+
+### Added — Window-logical aggregation grain
+- A global **Aggregation** selector in the dashboard top filter, beside the time window.
+  Its options are constrained to the grains that make sense for the selected range, so a
+  7-day window no longer offers 5-minute buckets and a 15-minute window no longer offers
+  1-day buckets. Changing the window resets the grain to a sensible default for that range.
+- `lib/dashboard-grain.ts` (pure, shared by UI + server): `allowedGrains` / `defaultGrain`
+  / `clampGrain` keyed on window duration (bucket count held between ~2 and ~500, default
+  near ~120). The server **clamps** the requested grain to the window's allowed set, so a
+  stale or hand-crafted request can never render an absurd grain.
+- Data route applies the global grain to every time-series panel (overriding a panel's own
+  grain when set), via the existing rollup. Cube routing now **falls back to SQL** for a
+  grain Cube can't express natively (5m/15m/30m/6h/12h), since SQL can roll up any grain.
+- 13 new tests (grain logic + Cube non-native-grain fallback); suite 387 green; build verified.
+
 ## [1.3.116] - 2026-10-21
 
 ### Security

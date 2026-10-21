@@ -10,6 +10,7 @@ import DashboardChatDock from './DashboardChatDock'
 import { SupersetEmbed } from './SupersetEmbed'
 import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
+import { allowedGrains, defaultGrain, windowMsFor, GRAIN_LABEL } from '@/lib/dashboard-grain'
 
 interface Panel {
   id: string; title: string; subtitle: string
@@ -121,6 +122,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [timeWindow, setTimeWindow] = useState('today')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo,   setCustomTo]   = useState('')
+  const [grain, setGrain] = useState<string>(() => defaultGrain(windowMsFor('today')))
   const [toast, setToast] = useState('')
   const [guestToken, setGuestToken] = useState<string|null>(null)
   const [guestTokenLoading, setGuestTokenLoading] = useState(false)
@@ -169,17 +171,17 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   // every date keystroke re-created it and re-ran the structure-load effect
   // (which calls setLoading(true)) — blanking the whole page. Now only the data
   // refetches; the header/grid stay mounted.
-  const windowRef = useRef({ timeWindow, customFrom, customTo })
-  windowRef.current = { timeWindow, customFrom, customTo }
+  const windowRef = useRef({ timeWindow, customFrom, customTo, grain })
+  windowRef.current = { timeWindow, customFrom, customTo, grain }
 
   const fetchData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setRefreshing(true)
     try {
-      const { timeWindow: tw0, customFrom: cf, customTo: ct } = windowRef.current
+      const { timeWindow: tw0, customFrom: cf, customTo: ct, grain: g } = windowRef.current
       const tw = tw0 === 'custom' && cf && ct
         ? `custom&time_from=${encodeURIComponent(cf + 'T00:00:00')}&time_to=${encodeURIComponent(ct + 'T23:59:59')}`
         : tw0
-      const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}`)
+      const r = await fetch(`/api/dashboards/${id}/data?time_window=${tw}${g ? `&grain=${g}` : ''}`)
       const d = await r.json()
       const map: Record<string, PanelResult> = {}
       for (const res of (d.results || [])) map[res.panel_id] = res
@@ -220,7 +222,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
     if (dashboard?.superset_embed_uuid) return
     if (timeWindow === 'custom') return
     fetchData(true)
-  }, [id, timeWindow, dashboard?.superset_embed_uuid, fetchData])
+  }, [id, timeWindow, grain, dashboard?.superset_embed_uuid, fetchData])
 
   // Reset timer when refresh_sec changes
   const resetTimer = (sec: number) => {
@@ -302,16 +304,21 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         {/* Time window selector — hidden for Superset embeds */}
         {!dashboard?.superset_embed_uuid && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}><rect x="1" y="2" width="10" height="9" rx="1"/><path d="M1 5h10M4 1v2M8 1v2"/></svg>
-          <select value={timeWindow} onChange={e => setTimeWindow(e.target.value)}
+          <select value={timeWindow} onChange={e => { const v = e.target.value; setTimeWindow(v); setGrain(defaultGrain(windowMsFor(v, customFrom, customTo))) }}
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
             {TIME_WINDOW_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {/* Aggregation grain — options constrained to what the window allows */}
+          <select value={grain} onChange={e => setGrain(e.target.value)} title="Aggregation interval (limited to what the selected time range supports)"
+            style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
+            {allowedGrains(windowMsFor(timeWindow, customFrom, customTo)).map(g => <option key={g} value={g}>{GRAIN_LABEL[g]}</option>)}
           </select>
           {timeWindow === 'custom' ? (
             <>
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>to</span>
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', outline: 'none' }} />
-              <button onClick={() => fetchData(true)} disabled={!customFrom || !customTo} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: !customFrom || !customTo ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !customFrom || !customTo ? 0.5 : 1 }}>Apply</button>
+              <button onClick={() => { setGrain(defaultGrain(windowMsFor('custom', customFrom, customTo))); fetchData(true) }} disabled={!customFrom || !customTo} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: !customFrom || !customTo ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !customFrom || !customTo ? 0.5 : 1 }}>Apply</button>
             </>
           ) : (
             <button onClick={() => fetchData(true)} style={{ padding: '4px 10px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Apply</button>
@@ -453,7 +460,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 }}
                 onRefresh={() => {
                   // Refresh just this panel
-                  fetch(`/api/dashboards/${id}/data?time_window=${timeWindow === 'custom' && customFrom && customTo ? 'custom&time_from=' + encodeURIComponent(customFrom + 'T00:00:00') + '&time_to=' + encodeURIComponent(customTo + 'T23:59:59') : timeWindow}`)
+                  fetch(`/api/dashboards/${id}/data?time_window=${timeWindow === 'custom' && customFrom && customTo ? 'custom&time_from=' + encodeURIComponent(customFrom + 'T00:00:00') + '&time_to=' + encodeURIComponent(customTo + 'T23:59:59') : timeWindow}${grain ? `&grain=${grain}` : ''}`)
                     .then(r => r.json())
                     .then(d => {
                       const r = (d.results || []).find((x: PanelResult) => x.panel_id === panel.id)

@@ -227,6 +227,10 @@ export function planCubeRouting(args: {
   const tables = new Set(fields.map(f => tableOfKey(f.object_key)).filter(Boolean) as string[])
   if (tables.size !== 1) return { route: false, reason: 'cross-table' }
   const cube = [...tables][0]
+  // A requested grain Cube can't express natively (5m/15m/30m/6h/12h) must fall back to
+  // SQL, which rolls up to any grain — otherwise Cube would return ungrouped rows.
+  const grain = cfg.grain as string | undefined
+  if (grain && !cubeGranularity(grain)) return { route: false, reason: 'non-native-grain' }
   const timeKey = (cfg.x || cfg.label) as string | undefined
   if (timeKey) {
     const tf = model.byColumn.get(timeKey) || model.byKey.get(timeKey)
