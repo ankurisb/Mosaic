@@ -13,9 +13,10 @@ import { getDb, nowExpr } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { getOrFetchSchema, formatSchemaForPrompt, runTool } from '@/lib/tools'
 import { describeSchema, type DescribeDraftItem } from '@/lib/ai/describe-schema'
+import { proposeStructured } from '@/lib/ai/describe-structured'
 import { sanitizeDescription, MAX_KEY_LEN, MAX_ITEMS_PER_UPSERT } from '@/lib/semantic'
 import { coerceStructured, hasStructured } from '@/lib/semantic-model'
-import { getSemanticHealth, computeFingerprint, recordFingerprint } from '@/lib/semantic-drift'
+import { getSemanticHealth, getCoverageSummary, computeFingerprint, recordFingerprint } from '@/lib/semantic-drift'
 import { getSemanticModel } from '@/lib/semantic-model'
 import { generateCubeSchema, renderAllCubes } from '@/lib/cube-schema'
 import { resyncCubeModel } from '@/lib/cube-sync'
@@ -196,6 +197,14 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const sourceType = searchParams.get('source_type') || 'database'
   const sourceId = searchParams.get('source_id')
+
+  // Coverage view (no source_id): per-source semantic coverage across all database
+  // sources, for the "needs configuration" badges + the global banner (Phase 7).
+  if (searchParams.get('view') === 'coverage') {
+    const summary = await getCoverageSummary()
+    return Response.json(summary)
+  }
+
   if (!sourceId) return Response.json({ error: 'source_id required' }, { status: 400 })
 
   // Health view: coverage/verification summary for the semantic model of this source.
@@ -275,9 +284,25 @@ export async function POST(req: Request) {
         } catch { /* skip tables that error */ }
       }))
       const schemaText = formatSchemaForPrompt(schema, { maxChars: 6000 })
-      const result = await describeSchema(schemaText, samples)
-      if (!result.ok) return Response.json({ error: result.reason || 'Generation failed' }, { status: 502 })
-      return Response.json({ draft: result.items ?? [] })
+      // Two bounded calls in parallel: table/column descriptions + the structured model
+      // (role/unit/aggregation/accumulation + confidence). Everything comes back proposed.
+      const [descRes, structRes] = await Promise.all([
+        describeSchema(schemaText, samples),
+        proposeStructured(schemaText, samples),
+      ])
+      if (!descRes.ok && !structRes.ok) {
+        return Response.json({ error: structRes.reason || descRes.reason || 'Generation failed' }, { status: 502 })
+      }
+      // Merge: structured column rows carry description+role+confidence; keep table-level
+      // description rows from the describe pass. Structured description wins when present.
+      const structByKey = new Map((structRes.items ?? []).map(i => [i.object_key, i]))
+      const tableItems = (descRes.items ?? []).filter(i => i.object_type === 'table')
+      const descByKey = new Map((descRes.items ?? []).filter(i => i.object_type === 'column').map(i => [i.object_key, i.description]))
+      const columnItems = [...structByKey.values()].map(s => ({
+        ...s,
+        description: s.description || descByKey.get(s.object_key) || '',
+      }))
+      return Response.json({ draft: [...tableItems, ...columnItems], structured: true })
     }
 
     // -- UPSERT: save confirmed/edited descriptions -------------------------------

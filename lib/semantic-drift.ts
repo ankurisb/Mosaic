@@ -60,6 +60,41 @@ export interface SemanticHealth {
   structured: number; coverage_pct: number; last_introspected_at: string | null
 }
 
+export interface SourceCoverage {
+  source_type: string; source_id: string; label: string
+  structured: number; verified: number; proposed: number; needs_config: boolean
+}
+export interface CoverageSummary { sources: SourceCoverage[]; unconfigured: number }
+
+// Per-source coverage across all database connections, for the "needs configuration"
+// badges + global banner. A source needs config when it has no verified semantic fields
+// yet. Pure counting over semantic_descriptions; degrades to empty on error.
+export async function getCoverageSummary(): Promise<CoverageSummary> {
+  try {
+    const sql = getDb()
+    const conns = await sql`SELECT id, label FROM db_connections ORDER BY created_at ASC` as Array<{ id: string; label: string }>
+    const counts = await sql`
+      SELECT source_id,
+             SUM(CASE WHEN role IS NOT NULL THEN 1 ELSE 0 END) AS structured,
+             SUM(CASE WHEN status='verified' THEN 1 ELSE 0 END) AS verified,
+             SUM(CASE WHEN status='proposed' THEN 1 ELSE 0 END) AS proposed
+      FROM semantic_descriptions WHERE source_type='database' GROUP BY source_id` as Array<{ source_id: string; structured: number; verified: number; proposed: number }>
+    const byId = new Map(counts.map(c => [c.source_id, c]))
+    const sources: SourceCoverage[] = conns.map(c => {
+      const n = byId.get(c.id)
+      const verified = Number(n?.verified ?? 0)
+      return {
+        source_type: 'database', source_id: c.id, label: c.label,
+        structured: Number(n?.structured ?? 0), verified, proposed: Number(n?.proposed ?? 0),
+        needs_config: verified === 0,
+      }
+    })
+    return { sources, unconfigured: sources.filter(s => s.needs_config).length }
+  } catch {
+    return { sources: [], unconfigured: 0 }
+  }
+}
+
 // Coverage/verification summary for a source — the semantic-health surface.
 export async function getSemanticHealth(sourceType: string, sourceId: string, schemaFieldCount?: number): Promise<SemanticHealth> {
   const base: SemanticHealth = { total: schemaFieldCount ?? 0, described: 0, verified: 0, proposed: 0, structured: 0, coverage_pct: 0, last_introspected_at: null }
