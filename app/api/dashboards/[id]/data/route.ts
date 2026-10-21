@@ -78,8 +78,9 @@ export async function GET(
   // (a 7-day window must not render 5-minute buckets). windowMs from the resolved range.
   const windowMs = Math.max(1, (Date.parse(time_to) || 0) - (Date.parse(time_from) || 0))
   const grainParam = url.searchParams.get('grain') || ''
-  // Selected entities/devices from the dashboard entity filter (empty = none selected).
-  const selectedIds = parseEntitySelection(url.searchParams.get('entity'))
+  // Selected entities/devices from the dashboard entity filter; falls back to the
+  // dashboard's default selection (set below from entity_config) when the param is absent.
+  const selectedParam = parseEntitySelection(url.searchParams.get('entity'))
   // Effective grain for a panel: the global grain wins when set; else the panel's own
   // chart_config.grain; either way clamped into the window's allowed set.
   const effGrain = (cfg: Record<string, unknown>): string | null =>
@@ -92,10 +93,20 @@ export async function GET(
 
   // Verify the user can see this dashboard
   const dash = await sql`
-    SELECT id, name, refresh_sec, default_time_window
+    SELECT id, name, refresh_sec, default_time_window, entity_config
     FROM   dashboards
     WHERE  id = ${id} AND (owner_id = ${session.id} OR is_public = true)`
   if (!dash.length) return Response.json({ error: 'Not found' }, { status: 404 })
+  // When no device is selected in the filter, fall back to the dashboard's default
+  // selection (set by the builder) so an entity-scoped dashboard isn't blank on first load.
+  let entityDefault: string[] = []
+  try {
+    const ecRaw = (dash[0] as { entity_config?: string | null }).entity_config
+    const ec = ecRaw ? (typeof ecRaw === 'string' ? JSON.parse(ecRaw) : ecRaw) : null
+    if (ec && Array.isArray(ec.default)) entityDefault = ec.default.map(String)
+  } catch { /* ignore */ }
+  // Effective selection: explicit param wins; else the dashboard's default.
+  const selectedIds = selectedParam.length ? selectedParam : parseEntitySelection(entityDefault.join(','))
 
   // Load all panels
   const panels = await sql`

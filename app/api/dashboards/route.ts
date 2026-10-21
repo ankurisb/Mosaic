@@ -79,6 +79,20 @@ export async function POST(req: Request) {
     return Response.json({ ok: true })
   }
 
+  // -- SET ENTITY CONFIG (Phase 9) — bind the dashboard's device/entity filter ----
+  if (action === 'set_entity_config') {
+    const { id, entity_config } = body
+    if (!id) return Response.json({ error: 'ID required' }, { status: 400 })
+    // Store as a JSON string, or null to clear. Validate it's an object with a source.
+    let val: string | null = null
+    if (entity_config && typeof entity_config === 'object') {
+      const ec = entity_config as Record<string, unknown>
+      if (ec.source_id && ec.kind) val = JSON.stringify(ec)
+    }
+    await sql`UPDATE dashboards SET entity_config = ${val}, updated_at = ${nowExpr()} WHERE id = ${id} AND owner_id = ${session.id}`
+    return Response.json({ ok: true })
+  }
+
   // -- DELETE DASHBOARD ------------------------------------------
   if (action === 'delete_dashboard') {
     const { id } = body
