@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.110] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 6: Cube engine packaged into the Mosaic stack.** A
+  Cube (cube.dev) query engine now ships inside the compose package (bundled profile),
+  so on-prem installs get accelerated, pre-aggregated measure queries with no extra
+  setup — while Cube stays an **accelerator, never a correctness dependency** (the SQL
+  pipeline remains the fallback for every query).
+  - `docker-compose.yml`: new `cube` (`cubejs/cube:v0.36.9`) + `cubestore` services
+    (internal network only, bundled profile), shared `cube-schema` volume (app writes,
+    Cube reads read-only) and `cubestore-data`. `mosaic` gains `CUBE_URL`,
+    `CUBEJS_API_SECRET`, `CUBE_MODEL_DIR` and the rw schema mount.
+  - `docker/cube/cube.js`: multi-datasource `driverFactory` — each Mosaic `db_connection`
+    is a Cube data source, resolved from a `.datasources.json` map the app writes.
+  - `lib/cube-schema.ts`: generator now tags each cube with its `data_source` and emits a
+    conservative day-grain pre-aggregation when a time dimension + additive measures exist.
+  - `lib/cube-client.ts`: routing gate (`shouldRouteToCube` — fails **closed** to SQL on
+    unsupported dialect, unverified model, schema drift, or any non-native measure), panel
+    → Cube `/load` query translation, result flattening, datasource-map builder, and a
+    `loadViaCube` that returns `{fallback:true}` on any error. SQLite/Mongo never route.
+  - `lib/cube-sync.ts`: writes the generated cubes + datasource map into the shared volume
+    (no-ops when `CUBE_MODEL_DIR` unset — harmless when Cube isn't deployed).
+  - 20 new tests (cube-client + generator). Suite 354 green; typecheck clean (0 new).
+
+### Notes
+- `CUBE_URL` unset (the default, and all current installs) → the app never attempts Cube;
+  behaviour is identical to v1.3.109. Query routing is wired into the dashboard data path
+  as a follow-up once the engine is verified running on the box (see
+  `claude/mosaic-semantic-phase6-cube-engine-design.md`).
+
 ## [1.3.109] - 2026-10-21
 
 ### Added

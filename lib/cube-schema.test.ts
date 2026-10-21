@@ -45,4 +45,32 @@ describe('generateCubeSchema', () => {
     expect(js).toContain('ts: { sql: `ts`, type: `time` }')
     expect(js).toContain('count: { type: `count` }')
   })
+
+  it('tags cubes with data_source when provided', () => {
+    const c = generateCubeSchema(fields, 'conn-123')[0]
+    expect(c.data_source).toBe('conn-123')
+    expect(renderCubeJs(c)).toContain('data_source: `conn-123`')
+  })
+
+  it('omits data_source when not provided', () => {
+    const c = generateCubeSchema(fields)[0]
+    expect(c.data_source).toBeUndefined()
+    expect(renderCubeJs(c)).not.toContain('data_source:')
+  })
+
+  it('emits a day-grain pre-aggregation when a time dimension + additive measures exist', () => {
+    const js = renderCubeJs(generateCubeSchema(fields)[0])
+    expect(js).toContain('pre_aggregations:')
+    expect(js).toContain('time_dimension: production.ts')
+    expect(js).toContain('granularity: `day`')
+    expect(js).toContain('production.units')
+  })
+
+  it('emits no pre-aggregation when the cube has no time dimension', () => {
+    const js = renderCubeJs(generateCubeSchema([
+      F('t.v', { role: 'measure', default_aggregation: 'sum' }),
+      F('t.k', { role: 'dimension', data_type: 'string' }),
+    ])[0])
+    expect(js).not.toContain('pre_aggregations:')
+  })
 })

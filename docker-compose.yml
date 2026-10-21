@@ -202,6 +202,14 @@ services:
       # SSO / Keycloak (optional — set SSO_ENABLED=true to use)
       - SSO_ENABLED=${SSO_ENABLED:-false}
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
+      # Cube engine (Phase 6, bundled profile). CUBE_URL unset -> the app never attempts
+      # Cube and every panel uses the SQL pipeline (current behaviour). Set by the
+      # bundled stack so panels on verified, drift-clean SQL sources route through Cube
+      # with SQL fallback. CUBEJS_API_SECRET must match the cube service's.
+      - CUBE_URL=${CUBE_URL:-}
+      - CUBEJS_API_SECRET=${CUBEJS_API_SECRET:-${AUTH_SECRET}}
+      # Path the app writes generated cubes + .datasources.json into (shared volume).
+      - CUBE_MODEL_DIR=${CUBE_MODEL_DIR:-/cube-model}
     volumes:
       # MOSAIC_DATA_DIR lets an existing SQLite DB be mounted from the host
       # (e.g. an in-place upgrade). Defaults to the named volume for fresh installs.
@@ -215,6 +223,9 @@ services:
       # /app/logs. Mount a writable volume there.
       - mosaic-logs:/app/logs
       - backup-status:/backup-status:ro
+      # Cube schema volume (rw): the app writes generated cubes + .datasources.json here;
+      # the cube service mounts the same volume read-only. Harmless when Cube is absent.
+      - cube-schema:/cube-model
     # NOTE: no depends_on. Bundled tools (superset, n8n, ciso), the metering
     # stack (openmeter et al.), and elasticsearch are profile-gated and may be
     # absent in Personal / "bring your own" deployments; Mosaic reaches them over
@@ -845,8 +856,52 @@ services:
     networks:
       - mosaic-net
 
+  # ── Cube (semantic query engine) ─────────────────────────────
+  # Phase 6: a Cube (cube.dev) engine packaged into the stack. Mosaic generates the
+  # cube schema from its semantic model and writes it (plus a .datasources.json map)
+  # into the shared cube-schema volume; Cube reads them read-only. Internal only (no
+  # host port) — reached by the app at http://cube:4000. Cube is an ACCELERATOR: if it
+  # is absent or a query can't be served, Mosaic falls back to its SQL pipeline, so this
+  # service is bundled-profile and safe to omit in Personal / BYO installs.
+  cube:
+    image: cubejs/cube:v0.36.9
+    container_name: mosaic-cube
+    restart: unless-stopped
+    profiles: ["bundled"]
+    environment:
+      - CUBEJS_API_SECRET=${CUBEJS_API_SECRET:-${AUTH_SECRET}}
+      - CUBEJS_DEV_MODE=false
+      - CUBEJS_CUBESTORE_HOST=cubestore
+      - CUBEJS_CUBESTORE_PORT=3030
+      - CUBEJS_LOG_LEVEL=warn
+      # Drivers are resolved per-datasource by driverFactory in cube.js; no default DB.
+      - CUBEJS_SCHEMA_PATH=model
+    volumes:
+      - ./docker/cube/cube.js:/cube/conf/cube.js:ro
+      - cube-schema:/cube/conf/model:ro
+    depends_on:
+      - cubestore
+    networks:
+      - mosaic-net
+
+  # Cube Store — the pre-aggregation / rollup store backing the cube service.
+  cubestore:
+    image: cubejs/cubestore:v0.36.9
+    container_name: mosaic-cubestore
+    restart: unless-stopped
+    profiles: ["bundled"]
+    environment:
+      - CUBESTORE_SERVER_NAME=cubestore:9999
+    volumes:
+      - cubestore-data:/cube/data
+    networks:
+      - mosaic-net
+
 # ── Volumes ─────────────────────────────────────────────────
 volumes:
+  # Generated Cube schema + the datasource map. Written by Mosaic (rw), read by Cube (ro).
+  cube-schema:
+  cubestore-data:
   caddy-data:
   caddy-config:
   mosaic-data:
