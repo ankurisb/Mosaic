@@ -18,6 +18,7 @@ import { coerceStructured, hasStructured } from '@/lib/semantic-model'
 import { getSemanticHealth, computeFingerprint, recordFingerprint } from '@/lib/semantic-drift'
 import { getSemanticModel } from '@/lib/semantic-model'
 import { generateCubeSchema, renderAllCubes } from '@/lib/cube-schema'
+import { resyncCubeModel } from '@/lib/cube-sync'
 import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
@@ -315,6 +316,11 @@ export async function POST(req: Request) {
              status=${s.status}, confidence=${s.confidence}, evidence=${s.evidence}, updated_at=${nowExpr()}`
         saved++
       }
+      // Phase 6: keep the Cube engine's generated schema in step with the model.
+      // Fire-and-forget; no-ops when CUBE_MODEL_DIR is unset (Cube not deployed).
+      if (source_type === 'database') {
+        resyncCubeModel().catch(() => {})
+      }
       return Response.json({ ok: true, saved })
     }
 
@@ -322,11 +328,13 @@ export async function POST(req: Request) {
     if (action === 'delete') {
       if (body.all === true) {
         await sql`DELETE FROM semantic_descriptions WHERE source_type=${source_type} AND source_id=${source_id}`
+        if (source_type === 'database') resyncCubeModel().catch(() => {})
         return Response.json({ ok: true })
       }
       const objectKey = String(body.object_key || '').trim()
       if (!objectKey) return Response.json({ error: 'object_key required' }, { status: 400 })
       await sql`DELETE FROM semantic_descriptions WHERE source_type=${source_type} AND source_id=${source_id} AND object_key=${objectKey}`
+      if (source_type === 'database') resyncCubeModel().catch(() => {})
       return Response.json({ ok: true })
     }
 

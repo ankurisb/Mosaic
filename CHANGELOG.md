@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.111] - 2026-10-21
+
+### Added
+- **Phase 6 (cont.): Cube model self-sync hooks.** The app now keeps the Cube engine's
+  generated schema + datasource map in step automatically: a semantic-model upsert/delete
+  on a database source fires `resyncCubeModel()`, and a connection create/update/delete
+  fires `syncDatasourceMap()` (both fire-and-forget; both no-op when `CUBE_MODEL_DIR` is
+  unset, so no effect on installs without the Cube engine). This makes the bundled engine
+  self-populating — no manual schema export step. Suite 354 green; typecheck clean.
+
 ## [1.3.110] - 2026-10-21
 
 ### Added

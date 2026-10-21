@@ -6,6 +6,7 @@ import { encrypt, decrypt } from '@/lib/encrypt'
 import { syncToSuperset } from '@/lib/superset-sync'
 import { Pool } from 'pg'
 import { invalidateSchema, refreshSchemaInBackground } from '@/lib/tools'
+import { syncDatasourceMap } from '@/lib/cube-sync'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
         if (!r.ok) log.warn({ service: 'connections', connId: (rows[0] as { id: string }).id }, `[connections] Superset sync did not complete: ${r.reason}`)
       }).catch(() => {})
       refreshSchemaInBackground((rows[0] as { id: string }).id)
+      syncDatasourceMap().catch(() => {})   // Phase 6: keep Cube's datasource map current
       const newId = (rows[0] as { id: string }).id
       audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_CREATE, `connection:${newId}`, 'success', { label, dialect, environment, host, database_name })
       return Response.json({ id: newId })
@@ -79,6 +81,7 @@ export async function POST(req: Request) {
         WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)
+      syncDatasourceMap().catch(() => {})   // Phase 6: keep Cube's datasource map current
       audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_UPDATE, `connection:${id}`, 'success', { label, dialect })
       return Response.json({ ok: true })
     }
@@ -88,6 +91,7 @@ export async function POST(req: Request) {
     const { id: delId, label: delLabel } = body
     await sql`DELETE FROM db_connections WHERE id=${delId}`
     await invalidateSchema(delId)
+    syncDatasourceMap().catch(() => {})   // Phase 6: drop the deleted source from Cube's map
     audit(req, { id: session.id, email: session.email, role: session.role }, AUDIT.CONNECTION_DELETE, `connection:${delId}`, 'success', { label: delLabel })
     return Response.json({ ok: true })
   }
