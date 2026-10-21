@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.108] - 2026-10-21
+
+### Added
+- **Semantic architecture — Phase 4: panel contract + lineage.** The panel now validates chart ↔ data ↔ time and carries provenance:
+  - **Window responsiveness (#5 foot-gun)**: `windowResponsive()` detects a SQL/API panel whose query lacks `{{time_from}}`/`{{time_to}}` — i.e. it silently shows all-time regardless of the selected window. The executor sets a `window_ignored` flag (only when a window is actually applied), and the panel footer shows a **⚠ ignores window** badge. PRISM/file never flagged (they always window or have none).
+  - **Chart-shape validation (#3 robustness)**: `validateChartShape()` checks the result fits the chart type (cartesian needs x + numeric y; stat/gauge a numeric value; donut a category + value, warned on high cardinality; heatmap two dims + value; missing configured columns flagged). Surfaced as a shape warning on the panel.
+  - **Lineage**: every panel result carries a `lineage` record (source, window, transforms applied) — auditable by construction.
+  - 9 tests; suite 331 green.
+
+### Notes
+- Full **semantic-aware access policy** (per-measure/entity RBAC extending `guardrails.ts`) is the remaining governance piece — deferred for box verification; lineage (the auditable half of 7a) ships here.
+
 ## [1.3.107] - 2026-10-21
 
 ### Added

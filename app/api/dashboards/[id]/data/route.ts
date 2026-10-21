@@ -6,6 +6,7 @@ import { fetchApiRows } from '@/lib/api-paginate'
 import { capPanelRows, extractRows } from '@/lib/dashboard-rows'
 import { getSemanticModel, applySemanticModel, planRollup, type SemanticModel } from '@/lib/semantic-model'
 import { rollupByGrain } from '@/lib/semantic-rollup'
+import { windowResponsive, validateChartShape, buildLineage } from '@/lib/panel-contract'
 export const runtime = 'nodejs'
 
 // Row policy for dashboard panels (see lib/dashboard-rows). Dashboards fetch more
@@ -173,9 +174,15 @@ export async function GET(
           const { rows, meta } = capPanelRows({ rows: shaped }, String(p.chart_type || ''), cfg, {
             maxPoints: DASH_MAX_POINTS, maxRows: DASH_MAX_TABLE_ROWS, sourceCapped: srcCapped,
           })
-          const semMeta = (applied.length || Object.keys(sem.meta.units).length || sem.meta.unverified.length)
-            ? { units: sem.meta.units, applied, unverified: sem.meta.unverified }
-            : {}
+          // Panel contract: flag a panel that silently ignores the applied window,
+          // validate the chart shape, and attach lineage (auditable).
+          const windowIgnored = timeWindow !== 'all' && !windowResponsive(String(p.source_type || 'database'), String(p.query || ''))
+          const shape = validateChartShape(String(p.chart_type || ''), rows, cfg)
+          const lineage = buildLineage({
+            sourceType: String(p.source_type || 'database'), sourceId: String(p.source_id || ''),
+            window: timeWindow, transforms: applied,
+          })
+          const semMeta = { units: sem.meta.units, applied, unverified: sem.meta.unverified, window_ignored: windowIgnored, shape_errors: shape.errors, shape_warnings: shape.warnings, lineage }
           data = { rows, meta: { ...meta, ...semMeta } }
         }
         return {

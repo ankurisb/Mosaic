@@ -622,7 +622,7 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
           // Row-policy note: shown when the server downsampled a time-series or capped
           // a large result, so a trimmed chart is never silently misleading.
           const meta = (result.data && typeof result.data === 'object' && !Array.isArray(result.data)
-            ? (result.data as Record<string, unknown>).meta as { total_rows: number; returned_rows: number; downsampled: boolean; truncated: boolean; source_capped?: boolean; applied?: string[]; unverified?: string[] } | undefined
+            ? (result.data as Record<string, unknown>).meta as { total_rows: number; returned_rows: number; downsampled: boolean; truncated: boolean; source_capped?: boolean; applied?: string[]; unverified?: string[]; window_ignored?: boolean; shape_warnings?: string[] } | undefined
             : undefined)
           let note: string | null = null, tip = ''
           if (meta?.downsampled) { note = `↓ ${fmtCompact(meta.returned_rows)} of ${fmtCompact(meta.total_rows)} pts`; tip = `Downsampled from ${meta.total_rows.toLocaleString()} points for display; shape and endpoints preserved.` }
@@ -632,12 +632,16 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
           // field's semantics are AI-proposed (unverified).
           const deltaed = (meta?.applied || []).some(a => a.startsWith('delta:'))
           const unverified = (meta?.unverified || []).length > 0
+          const windowIgnored = !!meta?.window_ignored
+          const shapeWarn = (meta?.shape_warnings || [])[0]
           return (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 6 }}>
               <span style={{ fontSize: 9, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{panel.source_type}</span>
               <span style={{ display: 'flex', gap: 6, alignItems: 'center', overflow: 'hidden' }}>
+                {windowIgnored && <span title="This panel's query does not reference the dashboard time window ({{time_from}}/{{time_to}}), so it shows all-time regardless of the selected window." style={{ fontSize: 9, color: 'var(--amber-t, #b4690e)', fontWeight: 600, flexShrink: 0 }}>⚠ ignores window</span>}
                 {deltaed && <span title="A cumulative counter was converted to per-interval change, per the semantic model." style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>Δ/interval</span>}
                 {unverified && <span title={`Unverified semantics: ${(meta!.unverified || []).join(', ')} — the field's meaning/unit/aggregation is AI-proposed, not yet reviewed.`} style={{ fontSize: 9, color: 'var(--amber-t, #b4690e)', fontWeight: 600, flexShrink: 0 }}>⚠ unverified</span>}
+                {!windowIgnored && shapeWarn && <span title={shapeWarn} style={{ fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>⚠</span>}
                 {note && <span title={tip} style={{ fontSize: 9, color: 'var(--amber-t, #b4690e)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</span>}
               </span>
               <span style={{ fontSize: 9, color: 'var(--text4)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{result.latency_ms}ms</span>
