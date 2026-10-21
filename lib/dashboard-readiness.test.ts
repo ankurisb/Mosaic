@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs } from './dashboard-readiness'
+import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs, sqlScopesEntity, sqlHasAggregate, apiScopesEntity } from './dashboard-readiness'
 
 describe('assessPanelReadiness', () => {
   it('ready when data + grounded + scoped', () => {
@@ -61,5 +61,34 @@ describe('ref extraction', () => {
   it('apiUsedRefs reads $select + $filter identifiers', () => {
     const refs = apiUsedRefs('/X?$select=OEE,Shift&$filter=Line eq 3 and ts ge 2026')
     expect(refs).toContain('oee'); expect(refs).toContain('shift'); expect(refs).toContain('line')
+  })
+})
+
+describe('multi-entity scoping (SQL/API, dictionary-driven)', () => {
+  const ecols = ['machine_id']
+  it('raw unscoped multi-entity SQL is NOT scoped (the ambiguous-mix case)', () => {
+    expect(sqlScopesEntity('SELECT shift_date, cycle_time_s FROM production_logs', ecols)).toBe(false)
+  })
+  it('WHERE on the identifier scopes it', () => {
+    expect(sqlScopesEntity("SELECT shift_date, cycle_time_s FROM production_logs WHERE machine_id = 'M1'", ecols)).toBe(true)
+    expect(sqlScopesEntity('SELECT * FROM production_logs WHERE machine_id IN (1,2)', ecols)).toBe(true)
+  })
+  it('GROUP BY the identifier scopes it (per-entity series)', () => {
+    expect(sqlScopesEntity('SELECT shift_date, machine_id, AVG(cycle_time_s) FROM production_logs GROUP BY shift_date, machine_id', ecols)).toBe(true)
+  })
+  it('a GROUP BY that does NOT include the identifier is still unscoped', () => {
+    expect(sqlScopesEntity('SELECT shift_date, AVG(cycle_time_s) FROM production_logs GROUP BY shift_date', ecols)).toBe(false)
+  })
+  it('{{entity_id}} placeholder scopes it', () => {
+    expect(sqlScopesEntity("SELECT * FROM production_logs WHERE machine_id = {{entity_id}}", ecols)).toBe(true)
+  })
+  it('sqlHasAggregate distinguishes a deliberate rollup from a raw series', () => {
+    expect(sqlHasAggregate('SELECT shift_date, AVG(cycle_time_s) FROM production_logs GROUP BY shift_date')).toBe(true)
+    expect(sqlHasAggregate('SELECT shift_date, cycle_time_s FROM production_logs')).toBe(false)
+  })
+  it('apiScopesEntity: identifier in $filter scopes it; collection without it does not', () => {
+    expect(apiScopesEntity('/telemetry?$filter=device_id eq 7', ['device_id'])).toBe(true)
+    expect(apiScopesEntity('/telemetry?$select=ts,kw', ['device_id'])).toBe(false)
+    expect(apiScopesEntity('/telemetry/{{entity_id}}/metrics', ['device_id'])).toBe(true)
   })
 })

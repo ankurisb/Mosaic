@@ -86,3 +86,43 @@ export function apiUsedRefs(path: string): string[] {
   }
   return [...refs]
 }
+
+// ── Multi-entity scoping for SQL / API sources (dictionary-driven) ────────────
+// A source is "multi-entity" when its semantic dictionary marks a column/field as an
+// IDENTIFIER (role='identifier') — e.g. machine_id, device_id. A panel over such a source
+// must be SCOPED to an entity (the {{entity_id}} filter + a Device binding, a WHERE on the
+// id, or a GROUP BY the id) OR be a deliberate aggregate rollup; otherwise it silently mixes
+// many entities into one ambiguous series (the SQL/API analogue of PRISM picking a random
+// device). These are pure string checks — the caller supplies the identifier column names.
+
+const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]/g, '')
+
+// Does a SQL query scope to an entity? {{entity_id}} placeholder, a WHERE filter on an
+// identifier column (col = / col IN (), or a GROUP BY that includes one.
+export function sqlScopesEntity(query: string, entityCols: string[]): boolean {
+  if (!query) return false
+  if (/\{\{entity_id\}\}/.test(query)) return true
+  const lc = query.toLowerCase()
+  const gb = lc.match(/group\s+by\s+([\s\S]*?)(?:\border\s+by\b|\bhaving\b|\blimit\b|$)/i)
+  for (const col of entityCols) {
+    const c = canon(col); if (!c) continue
+    if (new RegExp(`\\b${c}\\s*(?:=|in\\b)`).test(lc)) return true           // WHERE machine_id = / IN (
+    if (gb && new RegExp(`\\b${c}\\b`).test(gb[1])) return true              // GROUP BY machine_id
+  }
+  return false
+}
+
+// A query that collapses rows with an explicit aggregate is a deliberate rollup (allowed);
+// a raw unscoped multi-entity series (no aggregate) mixes entities ambiguously (flagged).
+export function sqlHasAggregate(query: string): boolean {
+  return /\b(?:sum|avg|count|min|max)\s*\(/i.test(query || '')
+}
+
+// Does an API path scope to an entity? {{entity_id}} present, or an identifier field used
+// in $filter/$select (reuses apiUsedRefs).
+export function apiScopesEntity(path: string, entityCols: string[]): boolean {
+  if (!path) return false
+  if (/\{\{entity_id\}\}/.test(path)) return true
+  const used = new Set(apiUsedRefs(path).map(canon))
+  return entityCols.some(c => used.has(canon(c)))
+}

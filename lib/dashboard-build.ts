@@ -7,7 +7,7 @@
 import { runTool } from './tools'
 import { getDb } from './db'
 import { extractApiRecords } from './api-dictionary'
-import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs } from './dashboard-readiness'
+import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs, sqlScopesEntity, sqlHasAggregate, apiScopesEntity } from './dashboard-readiness'
 import { hasEntityPlaceholder, prismNeedsEntity, substituteEntityQuery, applyPrismEntity, ENTITY_ID_PH } from './dashboard-entity'
 import {
   validatePanelShape, readonlyGuard, withPreviewLimit, classifyPanelResult, substituteTimeWindow, substituteTimeWindowApi,
@@ -169,13 +169,18 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
   // grounding, computed once per unique source. Best-effort — absent dictionary skips
   // grounding for that source (the dry-run still gates).
   const knownBySource = new Map<string, string[]>()
-  const srcIds = [...new Set(enriched.filter(p => p.source_type === 'prism' || p.source_type === 'api').map(p => `${p.source_type}:${p.source_id}`))]
+  // Identifier columns/fields per source (role='identifier' in the dictionary) — a source
+  // with any is "multi-entity" and its panels must be scoped (Phase 9 / source-agnostic gate).
+  const entityColsBySource = new Map<string, string[]>()
+  const srcIds = [...new Set(enriched.filter(p => p.source_type === 'prism' || p.source_type === 'api' || p.source_type === 'database').map(p => `${p.source_type}:${p.source_id}`))]
   await Promise.all(srcIds.map(async k => {
     const [st, sid] = k.split(/:(.+)/)
     try {
-      const rows = await getDb()`SELECT object_key FROM semantic_descriptions WHERE source_type=${st} AND source_id=${sid}` as Array<{ object_key: string }>
-      knownBySource.set(k, rows.map(r => String(r.object_key).replace(/.*\./, '').toLowerCase()))
-    } catch { /* no dictionary → skip grounding */ }
+      const rows = await getDb()`SELECT object_key, role FROM semantic_descriptions WHERE source_type=${st} AND source_id=${sid}` as Array<{ object_key: string; role: string | null }>
+      const bare = (ok: string) => String(ok).replace(/.*\./, '').toLowerCase()
+      knownBySource.set(k, rows.map(r => bare(r.object_key)))
+      entityColsBySource.set(k, rows.filter(r => r.role === 'identifier').map(r => bare(r.object_key)).filter(Boolean))
+    } catch { /* no dictionary → skip grounding + entity detection */ }
   }))
   const hasBinding = !!plan.entity
   for (const p of enriched) {
@@ -187,12 +192,22 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
       const pr = parsePrismQuery(p.query)
       if (pr.ok) { usedRefs = prismUsedRefs(pr.params!); hasEntityScope = prismNeedsEntity(pr.params!) || hasBinding }
     } else if (p.source_type === 'api') {
-      usedRefs = apiUsedRefs(String(p.query || ''))
-      multiEntity = hasBinding
-      hasEntityScope = hasEntityPlaceholder(String(p.query || '')) || hasBinding
+      const q = String(p.query || '')
+      usedRefs = apiUsedRefs(q)
+      const ecols = entityColsBySource.get(`api:${p.source_id}`) || []
+      // Multi-entity when the endpoint's dictionary marks an identifier field; scoped when
+      // {{entity_id}} / a binding / an identifier used in $filter narrows it to one entity.
+      multiEntity = ecols.length > 0 || hasBinding
+      hasEntityScope = hasBinding || hasEntityPlaceholder(q) || apiScopesEntity(q, ecols)
     } else if (p.source_type === 'database') {
-      multiEntity = hasBinding
-      hasEntityScope = hasEntityPlaceholder(String(p.query || '')) || hasBinding
+      const q = String(p.query || '')
+      const ecols = entityColsBySource.get(`database:${p.source_id}`) || []
+      // A raw (non-aggregated) series over a table with an identifier column mixes every
+      // entity into one ambiguous line — gate it. A deliberate aggregate rollup (SUM/AVG/…)
+      // is allowed (deterministic; the model explains intent). Scoped = {{entity_id}} /
+      // binding / WHERE id / GROUP BY id.
+      multiEntity = (ecols.length > 0 && !sqlHasAggregate(q)) || hasBinding
+      hasEntityScope = hasBinding || hasEntityPlaceholder(q) || sqlScopesEntity(q, ecols)
     }
     p.readiness = assessPanelReadiness({
       sourceType: p.source_type, cls: p.validation.cls, detail: p.validation.detail,

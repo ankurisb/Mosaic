@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.126] - 2026-10-22
+
+### Added — gate-level multi-entity scoping for SQL & API (source-agnostic determinism)
+Extreme-testing the readiness gate (v1.3.125) showed the entity-scope guarantee was only
+hardcoded for PRISM. A multi-entity SQL table (e.g. production_logs keyed by machine_id)
+plotted as a raw series across all machines would pass the gate — the SQL analogue of "PRISM
+picked a random device". The model self-corrected in testing, but the gate didn't enforce it.
+Now it does, driven by the semantic dictionary (not the source type):
+- `lib/dashboard-readiness.ts`: `sqlScopesEntity` (is a SQL query narrowed to an entity via
+  {{entity_id}}, a WHERE on an identifier column, or a GROUP BY the identifier), `sqlHasAggregate`
+  (a deliberate SUM/AVG/… rollup, which is allowed), and `apiScopesEntity` (identifier used in
+  an API $filter / path). 7 tests.
+- `lib/dashboard-build.ts` `enrichPlan`: loads each source's IDENTIFIER columns (role='identifier')
+  from the dictionary. A database panel is multi-entity (→ must scope) when the source has an
+  identifier column AND the query is a raw, non-aggregated, unscoped series; an aggregate rollup
+  or a scoped/placeholder/GROUP-BY query passes. API panels are multi-entity when the dictionary
+  marks an identifier field and the call isn't scoped. PRISM unchanged (always a device fleet).
+- Net: the readiness gate — not the model — now enforces device-scoping for any source whose
+  dictionary declares an entity key, so a raw multi-entity series is blocked with a "scope to a
+  device" gap and the chat interrogates, exactly as it does for PRISM.
+
 ## [1.3.125] - 2026-10-21
 
 ### Fixed — review/Save pane now enforces the readiness gate (no errorful panels presented as buildable)
