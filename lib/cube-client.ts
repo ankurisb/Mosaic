@@ -7,6 +7,7 @@
 // The actual HTTP load and the filesystem writers are thin I/O wrappers at the bottom.
 import { SignJWT } from 'jose'
 import type { SemanticModel, SemanticField, Aggregation } from './semantic-model'
+import { cubeNameFor } from './cube-schema'
 
 // ---- dialect support -------------------------------------------------------
 // Cube ships native drivers for these. SQLite (incl. Mosaic's own metadata DB) and
@@ -212,6 +213,7 @@ export function planCubeRouting(args: {
   model: SemanticModel
   dialect: string | null | undefined
   fingerprintCurrent: boolean
+  sourceId?: string
   timeFrom?: string
   timeTo?: string
 }): CubeRoutePlan {
@@ -226,7 +228,7 @@ export function planCubeRouting(args: {
   // (if modelled) must be in that table too.
   const tables = new Set(fields.map(f => tableOfKey(f.object_key)).filter(Boolean) as string[])
   if (tables.size !== 1) return { route: false, reason: 'cross-table' }
-  const cube = [...tables][0]
+  const table = [...tables][0]
   // A requested grain Cube can't express natively (5m/15m/30m/6h/12h) must fall back to
   // SQL, which rolls up to any grain — otherwise Cube would return ungrouped rows.
   const grain = cfg.grain as string | undefined
@@ -234,8 +236,10 @@ export function planCubeRouting(args: {
   const timeKey = (cfg.x || cfg.label) as string | undefined
   if (timeKey) {
     const tf = model.byColumn.get(timeKey) || model.byKey.get(timeKey)
-    if (tf) { const tt = tableOfKey(tf.object_key); if (tt && tt !== cube) return { route: false, reason: 'cross-table-time' } }
+    if (tf) { const tt = tableOfKey(tf.object_key); if (tt && tt !== table) return { route: false, reason: 'cross-table-time' } }
   }
+  // Use the SAME namespaced cube name the generator emits, so member refs resolve.
+  const cube = cubeNameFor(table, args.sourceId)
   const query = toCubeQuery({ cube, cfg, timeFrom: args.timeFrom, timeTo: args.timeTo }, model)
   if (!query) return { route: false, reason: 'no-query' }
   return { route: true, reason: 'ok', cube, query }

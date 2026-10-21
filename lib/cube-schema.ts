@@ -24,6 +24,14 @@ function safeName(s: string): string {
   return s.replace(/[^A-Za-z0-9_]/g, '_')
 }
 
+// Cube names must be globally unique across ALL loaded schema files; two sources that both
+// have a `production` table would collide in Cube's single namespace. Namespace the cube
+// name by source id when one is given, so each source's cubes are distinct. The same
+// function is used by the query planner so member refs match.
+export function cubeNameFor(table: string, dataSource?: string): string {
+  return dataSource ? `s_${safeName(dataSource)}_${safeName(table)}` : safeName(table)
+}
+
 // Build one cube per table from its column-level semantic fields.
 // dataSource (optional) tags every cube so a Cube `driverFactory` can route it to the
 // right physical connection (Phase 6 multi-datasource). Omitted → Cube's default source.
@@ -53,7 +61,7 @@ export function generateCubeSchema(fields: SemanticField[], dataSource?: string)
     }
     // A count measure is always useful.
     measures.unshift({ name: 'count', sql: '', type: 'count' })
-    cubes.push({ name: safeName(table), sql_table: table, measures, dimensions, ...(dataSource ? { data_source: dataSource } : {}) })
+    cubes.push({ name: cubeNameFor(table, dataSource), sql_table: table, measures, dimensions, ...(dataSource ? { data_source: dataSource } : {}) })
   }
   return cubes
 }

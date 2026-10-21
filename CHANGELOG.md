@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.118] - 2026-10-21
+
+### Fixed (multi-source Cube routing — from the comprehensive dashboard e2e)
+- **Cube names namespaced per source.** Two sources that each have a `production` table
+  generated two cubes literally named `production`, colliding in Cube's single namespace
+  (`Cube 'production' not found`) so queries fell back to SQL. `cubeNameFor(table, source)`
+  now emits `s_<source>_<table>`; the generator and the query planner share it so member
+  refs resolve. Routing is correct with multiple same-named tables across sources.
+- **Stale cube files removed.** When a source loses its structured model (model cleared /
+  connection deleted), its generated `.js` is now deleted instead of left as an empty file,
+  keeping Cube's compiled schema clean.
+- `docker/cube/cube.js` gains a `schemaVersion` (hash of the model dir) so Cube recompiles
+  when Mosaic rewrites the model files — a newly verified source is picked up without a
+  Cube restart.
+
 ## [1.3.117] - 2026-10-21
 
 ### Added — Window-logical aggregation grain

@@ -4,7 +4,7 @@
 // pure builders in cube-schema.ts / cube-client.ts. No-ops safely when CUBE_MODEL_DIR is
 // unset (Cube not deployed) so it is harmless to call unconditionally after a semantic
 // model or connection change.
-import { writeFileSync, mkdirSync, existsSync } from 'fs'
+import { writeFileSync, mkdirSync, existsSync, rmSync } from 'fs'
 import { join } from 'path'
 import { getDb } from './db'
 import { decrypt } from './encrypt'
@@ -45,8 +45,12 @@ export async function syncCubeSchemaForSource(sourceId: string, dialect?: string
   const cubes = generateCubeSchema([...model.byKey.values()], sourceId)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   const safe = sourceId.replace(/[^A-Za-z0-9_-]/g, '_')
-  writeFileSync(join(dir, `${safe}.js`), renderAllCubes(cubes), { mode: 0o644 })
-  return cubes.length > 0
+  const file = join(dir, `${safe}.js`)
+  // No cubes (source has no structured model) → remove any stale file rather than leaving
+  // an empty one, so Cube's compiled schema stays clean.
+  if (cubes.length === 0) { try { rmSync(file) } catch { /* not there */ } return false }
+  writeFileSync(file, renderAllCubes(cubes), { mode: 0o644 })
+  return true
 }
 
 // Full resync: datasource map + a schema file per Cube-supported connection. Called after

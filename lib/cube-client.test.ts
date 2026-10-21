@@ -88,6 +88,11 @@ describe('cube-client: planCubeRouting', () => {
   it('routes a native grain (1d/1h/1mo)', () => {
     expect(planCubeRouting({ ...baseArgs, cfg: { x: 'ts', y: 'units', grain: '1h' } }).route).toBe(true)
   })
+  it('namespaces the cube name by source id so two sources do not collide', () => {
+    const plan = planCubeRouting({ ...baseArgs, sourceId: 'CONN9', cfg: { x: 'ts', y: 'units', grain: '1d' } })
+    expect(plan.cube).toBe('s_CONN9_production')
+    expect(plan.query?.measures).toEqual(['s_CONN9_production.units'])
+  })
   it('falls back on an unsupported dialect', () => {
     expect(planCubeRouting({ ...baseArgs, dialect: 'sqlite', cfg: { x: 'ts', y: 'units' } }).reason).toContain('dialect-unsupported')
   })

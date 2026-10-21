@@ -9,8 +9,10 @@
 // then falls back to SQL.
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-const MAP_FILE = path.join(__dirname, 'model', '.datasources.json');
+const MODEL_DIR = path.join(__dirname, 'model');
+const MAP_FILE = path.join(MODEL_DIR, '.datasources.json');
 
 function loadMap() {
   try {
@@ -24,6 +26,21 @@ module.exports = {
   // Where the generated cube schema files live (mounted read-only from the shared
   // cube-schema volume that Mosaic writes to).
   schemaPath: 'model',
+
+  // Recompile the schema when Mosaic rewrites the model files. In production mode Cube
+  // caches the compiled schema; without this a cube written AFTER Cube started (a newly
+  // verified source) is never picked up and queries fall back to SQL. Hashing the model
+  // dir's filenames+mtimes makes the version change exactly when the files change, so a
+  // model/verify/connection change is reflected on the next query — no restart needed.
+  schemaVersion: () => {
+    try {
+      const h = crypto.createHash('sha1')
+      for (const f of fs.readdirSync(MODEL_DIR).sort()) {
+        try { h.update(f + ':' + fs.statSync(path.join(MODEL_DIR, f)).mtimeMs + ';') } catch (_e) { /* skip */ }
+      }
+      return h.digest('hex')
+    } catch (_e) { return '0' }
+  },
 
   // Return the driver config for a given dataSource. Cube passes { dataSource:'default' }
   // for cubes with no data_source; we don't register a default source, so such cubes

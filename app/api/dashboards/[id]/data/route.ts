@@ -148,7 +148,7 @@ export async function GET(
               getDialect(String(p.source_id || '')),
             ])
             const fpCurrent = !!(await getStoredFingerprint('database', String(p.source_id || '')))
-            const plan = planCubeRouting({ cfg: cfg0, model: model0, dialect: dialect0, fingerprintCurrent: fpCurrent, timeFrom: time_from, timeTo: time_to })
+            const plan = planCubeRouting({ cfg: cfg0, model: model0, dialect: dialect0, fingerprintCurrent: fpCurrent, sourceId: String(p.source_id || ''), timeFrom: time_from, timeTo: time_to })
             if (plan.route && plan.cube && plan.query) {
               const res = await loadViaCube(CUBE_URL, CUBE_SECRET, plan.cube, plan.query)
               if (res.ok && !res.fallback) { data = { rows: res.rows }; engine = 'cube'; usedPreAgg = !!res.usedPreAgg }
