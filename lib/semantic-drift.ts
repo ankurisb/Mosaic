@@ -72,7 +72,9 @@ export interface CoverageSummary { sources: SourceCoverage[]; unconfigured: numb
 export async function getCoverageSummary(): Promise<CoverageSummary> {
   try {
     const sql = getDb()
-    const conns = await sql`SELECT id, label FROM db_connections ORDER BY created_at ASC` as Array<{ id: string; label: string }>
+    // Exclude non-SQL / search-only dialects (e.g. Elasticsearch): they aren't semantic-
+    // model targets, so they shouldn't be flagged as "needs configuration".
+    const conns = await sql`SELECT id, label FROM db_connections WHERE dialect IS NULL OR dialect != 'elasticsearch' ORDER BY created_at ASC` as Array<{ id: string; label: string }>
     const counts = await sql`
       SELECT source_id,
              SUM(CASE WHEN role IS NOT NULL THEN 1 ELSE 0 END) AS structured,

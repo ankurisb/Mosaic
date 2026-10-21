@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.114] - 2026-10-21
+
+### Fixed
+- **Coverage excludes Elasticsearch.** `getCoverageSummary` no longer flags
+  Elasticsearch connections (search indexes, not semantic-model targets) as
+  "needs configuration", so the badge (which already hid them) and the global banner
+  agree. Caught in the live Phase 7 smoke test on the box.
+
 ## [1.3.113] - 2026-10-21
 
 ### Added — Semantic onboarding (Phase 7)
