@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.133] - 2026-10-22
+
+### Fixed — Device filter no longer reflows the header as you select meters
+The device-filter button sized to its label ("Device: none" → "Device: GM01000009P" →
+"Devices: 8"), so changing the selection resized it and pushed the Apply button left/right.
+- `components/dashboards/DashboardView.tsx`: the button is now a fixed width (170px) with the
+  label truncating via ellipsis, so the header layout stays put regardless of the selection.
+
 ## [1.3.132] - 2026-10-22
 
 ### Changed — overlay cap raised, clearer device filter, grain vs refresh disambiguated

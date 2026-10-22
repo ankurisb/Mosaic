@@ -344,12 +344,15 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           {entityBound && (
             <div style={{ position: 'relative' }}>
               <button onClick={() => setEntityOpen(o => !o)} title="Choose which device(s) the panels show"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="1.5" y="2" width="9" height="6" rx="1"/><path d="M4 10h4"/></svg>
-                {selectedEntities.length === 0 ? 'Device: none'
-                  : selectedEntities.length === 1 ? `Device: ${(entityOpts.find(e => e.id === selectedEntities[0])?.label || '1')}`.slice(0, 26)
-                  : `Devices: ${selectedEntities.length}`}
-                <span style={{ color: 'var(--text4)' }}>▾</span>
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, width: 170, flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ flexShrink: 0 }}><rect x="1.5" y="2" width="9" height="6" rx="1"/><path d="M4 10h4"/></svg>
+                {/* Fixed width + ellipsis so changing the label doesn't reflow the Apply button. */}
+                <span style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedEntities.length === 0 ? 'Device: none'
+                    : selectedEntities.length === 1 ? `Device: ${entityOpts.find(e => e.id === selectedEntities[0])?.label || '1'}`
+                    : `Devices: ${selectedEntities.length}`}
+                </span>
+                <span style={{ color: 'var(--text4)', flexShrink: 0 }}>▾</span>
               </button>
               {entityOpen && (
                 <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 50, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', padding: 6, minWidth: 220, maxHeight: 280, overflowY: 'auto' }}>
