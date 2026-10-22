@@ -838,6 +838,7 @@ interface DashboardProposal {
   panels: ProposalPanel[]
   summary: { data: number; empty: number; error: number; invalid: number; total: number }
   suggested_window?: string
+  entity?: { source_type?: string; source_id?: string; kind?: string; key_field?: string; label_field?: string | null; table?: string | null; default?: string[] }
   readiness?: { allReady: boolean; readyCount: number; total: number; gaps: { panel: string; gaps: string[] }[] }
 }
 const PROPOSAL_CHART_TYPES = ['bar', 'line', 'area', 'table', 'stat', 'donut', 'gauge', 'heatmap', 'boxplot', 'sankey']
@@ -935,6 +936,12 @@ function DashboardProposalCard({ proposal, onOpen, onSaved, embedded }: { propos
         }) })
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Failed to add panel "${p.title}"`) }
         order++
+      }
+      // Phase 9: persist the device/entity binding so the saved dashboard shows the Device
+      // filter and the {{entity_id}} panels resolve. Without this the panels are stuck asking
+      // for a device with no selector. (The in-dashboard chat dock already does this.)
+      if (proposal.entity && typeof proposal.entity === 'object') {
+        await fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_entity_config', id, entity_config: proposal.entity }) }).catch(() => {})
       }
       setSaved(id)
       onSaved?.(id, title.trim() || 'New dashboard')

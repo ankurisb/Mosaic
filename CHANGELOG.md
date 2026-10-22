@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.129] - 2026-10-22
+
+### Fixed — review-pane "Save dashboard" now persists the device/entity binding
+A PRISM (or any entity-bound) dashboard saved from the chat proposal's review pane kept its
+{{entity_id}} panels but dropped the entity binding, so the saved dashboard showed NO Device
+filter — every panel was stuck on "This panel is scoped to a device — pick one in the Device
+filter above" with no selector to pick from.
+- `components/ChatPage.tsx` `DashboardProposalCard.save()`: after creating the dashboard and
+  panels, it now POSTs `set_entity_config` with `proposal.entity` (mirroring the in-dashboard
+  chat dock, which already did this). The client `DashboardProposal` type gains the `entity`
+  field. The saved dashboard now renders the Device multi-select and the {{entity_id}} panels
+  resolve to the bound device(s).
+
 ## [1.3.128] - 2026-10-22
 
 ### Fixed — entity detection covers API & PRISM fields (not just dotted SQL columns)
