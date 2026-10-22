@@ -62,3 +62,4 @@ backups/
 installer/deploy/registry-auth.json
 docs/SERVICE_CREDENTIALS.md
 tests/map/map-harness.html
+scratch-*.mjs
