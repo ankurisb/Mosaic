@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.128] - 2026-10-22
+
+### Fixed — entity detection covers API & PRISM fields (not just dotted SQL columns)
+The multi-entity gate extracted identifier columns by filtering object_keys that contain a '.'
+(table.column) — but API fields and PRISM keys are stored as BARE object_keys (no dot), so the
+gate silently ignored every API/PRISM identifier field.
+- `lib/dashboard-build.ts` `enrichPlan`: identifier fields are now taken from column-level
+  dictionary entries (`object_type = 'column'`) rather than keys containing a '.', so DB columns
+  (`table.col`), API fields and PRISM keys (bare names) are all covered. role='identifier' still
+  wins; the name fallback (isIdentifierName) applies when role is absent — which is the norm for
+  API/PRISM, since those describers don't assign structured roles.
+- Net: an unscoped API collection over an endpoint whose dictionary has an identifier field
+  (e.g. device_id/asset_id) is now gated like SQL/PRISM, provided the API source has been
+  described. (An API that returns no records at its sampled path yields no fields to gate on.)
+
+### Operational — Sandbox DB semantic model populated
+Ran the structured describer on the built-in Sandbox DB: 28 columns now carry role/unit/
+aggregation (machine_id/*.id → identifier, shift_date → time, cycle_time_s → measure/avg/s,
+units_produced → measure/sum/units, oee_pct/defect_rate_pct → measure/avg/%). This is box data,
+not a code change — it makes the scope gate fire via role and improves rollup/unit accuracy.
+
 ## [1.3.127] - 2026-10-22
 
 ### Fixed — multi-entity detection no longer depends on the dictionary carrying roles

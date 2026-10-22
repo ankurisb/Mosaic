@@ -176,13 +176,14 @@ export async function enrichPlan(plan: DashboardPlan, dialectOf: DialectResolver
   await Promise.all(srcIds.map(async k => {
     const [st, sid] = k.split(/:(.+)/)
     try {
-      const rows = await getDb()`SELECT object_key, role FROM semantic_descriptions WHERE source_type=${st} AND source_id=${sid}` as Array<{ object_key: string; role: string | null }>
+      const rows = await getDb()`SELECT object_type, object_key, role FROM semantic_descriptions WHERE source_type=${st} AND source_id=${sid}` as Array<{ object_type: string; object_key: string; role: string | null }>
       const bare = (ok: string) => String(ok).replace(/.*\./, '').toLowerCase()
       knownBySource.set(k, rows.map(r => bare(r.object_key)))
-      // Identifier columns: role='identifier' when the dictionary carries structured roles,
-      // else a name-based fallback (id/_id/device/…) so the gate still fires on dictionaries
-      // with null roles. Only column-level keys (object_key contains a '.'), never table names.
-      const cols = rows.filter(r => String(r.object_key).includes('.'))
+      // Identifier fields: role='identifier' when the dictionary carries structured roles,
+      // else a name-based fallback (id/_id/device/…) so the gate fires even on dictionaries
+      // with null roles. Column-level entries only (object_type 'column'), never tables —
+      // this covers DB columns ('table.col'), API fields and PRISM keys (bare names) alike.
+      const cols = rows.filter(r => r.object_type === 'column')
       entityColsBySource.set(k, [...new Set(
         cols.filter(r => r.role === 'identifier' || isIdentifierName(bare(r.object_key)))
             .map(r => bare(r.object_key)).filter(Boolean)
