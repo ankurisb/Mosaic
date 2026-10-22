@@ -126,6 +126,8 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   // Entity/device filter (Phase 9). Populated from /entities when the dashboard is bound.
   const [entityBound, setEntityBound] = useState(false)
   const [entityOpts, setEntityOpts] = useState<{ id: string; label: string }[]>([])
+  // id → device label, so overlay chart legends/tooltips show meter names, not raw ids.
+  const entityLabelMap = React.useMemo(() => Object.fromEntries(entityOpts.map(e => [e.id, e.label])), [entityOpts])
   const [selectedEntities, setSelectedEntities] = useState<string[]>([])
   const [entityOpen, setEntityOpen] = useState(false)
   const [toast, setToast] = useState('')
@@ -498,6 +500,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 panel={panel}
                 result={results[panel.id]}
                 isOwner={isOwner}
+                seriesLabels={entityLabelMap}
                 onEdit={() => openEdit(panel)}
                 onDelete={() => deletePanel(panel.id, panel.title)}
                 onReorderStart={() => setDragId(panel.id)}

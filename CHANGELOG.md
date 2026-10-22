@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.130] - 2026-10-22
+
+### Fixed — dashboard line/area/bar panels render with recharts (overlay + no clipping)
+The dashboard panels were hand-rolled SVG that (a) ignored the overlay series tag, so a
+multi-device selection drew every device as ONE polyline on an index-based x-axis (the weird
+zig-zag), and (b) clipped at the edges because it used a fixed aspect with no headroom.
+- `components/dashboards/PanelChart.tsx`: line/area/bar now render with recharts (already a
+  dependency). A time-scaled x-axis, one line per series, tooltips, a legend for >1 series, and
+  a responsive container that no longer clips. Overlay mode (`config.series = '__entity'`) pivots
+  the fanned-out device rows into one line per device, aligned by timestamp. Non-cartesian
+  panels (gauge, heatmap, sankey, boxplot) and table/stat stay hand-rolled.
+- `components/dashboards/DashboardView.tsx`: passes an id→label map so overlay legends/tooltips
+  show the meter name (e.g. GM01000009P) instead of the raw device id.
+
 ## [1.3.129] - 2026-10-22
 
 ### Fixed — review-pane "Save dashboard" now persists the device/entity binding

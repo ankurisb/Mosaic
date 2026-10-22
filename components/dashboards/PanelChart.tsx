@@ -1,5 +1,9 @@
 'use client'
 import React, { useRef, useState, useEffect } from 'react'
+import {
+  ResponsiveContainer, LineChart as RLine, AreaChart as RArea, BarChart as RBar,
+  Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts'
 
 interface Panel {
   id: string; title: string; subtitle: string; source_type?: string; source_id?: string; query?: string; refresh_sec?: number | null
@@ -20,6 +24,7 @@ interface Props {
   onReorderOver?: (e: React.DragEvent) => void
   onReorderDrop?: () => void
   isDropTarget?: boolean
+  seriesLabels?: Record<string, string>   // entity id → device label, for overlay legends
 }
 
 // -- Colour palette --------------------------------------------
@@ -75,83 +80,104 @@ function normalise(raw: unknown): { rows: Record<string, unknown>[]; keys: strin
   return { rows, keys }
 }
 
-// -- SVG bar chart ---------------------------------------------
-// Rendered at native pixels (viewBox == width×height) so axis fonts stay true-size
-// at any panel width. Compact y-axis numbers; x labels thinned to avoid overlap.
-function BarChart({ rows, keys, config, width = 600, height = 190 }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number }) {
+// -- Recharts shared bits --------------------------------------
+const AXIS_TICK = { fill: 'var(--text3)', fontSize: 10, fontFamily: 'var(--font-sans)' } as const
+const TOOLTIP_STYLE = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11, color: 'var(--text)', boxShadow: '0 2px 10px rgba(0,0,0,.12)' } as const
+
+// Pivot long-format rows (one row per x per series) into wide format for recharts:
+// [{x, seriesA: v, seriesB: v}, …] + the series list. Used for the multi-device
+// overlay (series column = __entity): each device becomes one line, aligned by x.
+function pivotSeries(rows: Record<string, unknown>[], labelKey: string, seriesKey: string, valueKey: string): { data: Record<string, unknown>[]; series: string[] } {
+  const byX = new Map<string, Record<string, unknown>>()
+  const series: string[] = []
+  for (const r of rows) {
+    const xv = r[labelKey]; const xk = String(xv)
+    const s = String(r[seriesKey] ?? '')
+    if (s && !series.includes(s)) series.push(s)
+    if (!byX.has(xk)) byX.set(xk, { [labelKey]: xv })
+    const v = Number(r[valueKey]); byX.get(xk)![s] = Number.isFinite(v) ? v : null
+  }
+  const data = [...byX.values()].sort((a, b) => {
+    const ta = Date.parse(String(a[labelKey])), tb = Date.parse(String(b[labelKey]))
+    if (!isNaN(ta) && !isNaN(tb)) return ta - tb
+    return String(a[labelKey]).localeCompare(String(b[labelKey]))
+  })
+  return { data, series }
+}
+
+// -- Bar chart (recharts) --------------------------------------
+function BarChart({ rows, keys, config, height = 190, seriesLabels }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; seriesLabels?: Record<string, string> }) {
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
   const labelKey = (config.label_key as string) || (config.x as string) || keys[0]
-  const valueKey = (config.value_key as string) || (config.y as string) || keys.find(k => k !== labelKey) || keys[1]
+  const seriesKey = config.series as string | undefined
   const unit = (config.unit as string) || ''
-  const vals = rows.map(r => Number(r[valueKey]) || 0)
-  const max = Math.max(...vals, 0) || 1
-  const W = Math.max(width, 240), H = height, pL = 52, pB = 30, pT = 12, pR = 12
-  const cW = W - pL - pR, cH = H - pT - pB
-  const gap = cW / rows.length
-  const bW = Math.max(1, gap * 0.68)
-  const step = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(cW / 64))))
+  let data: Record<string, unknown>[], series: string[]
+  if (seriesKey && rows.some(r => r[seriesKey] !== undefined)) {
+    const valueKey = (config.value_key as string) || (config.y as string) || keys.find(k => k !== labelKey && k !== seriesKey) || keys[1]
+    const p = pivotSeries(rows, labelKey, seriesKey, valueKey); data = p.data; series = p.series
+  } else {
+    const valueKey = (config.value_key as string) || (config.y as string) || keys.find(k => k !== labelKey) || keys[1]
+    data = rows; series = [valueKey]
+  }
+  const nameOf = (s: string) => (seriesLabels && seriesLabels[s]) || (s.length > 18 ? s.slice(0, 17) + '…' : s)
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
-      {[0, 0.25, 0.5, 0.75, 1].map(f => <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)} stroke="var(--border)" strokeWidth="1" />)}
-      {rows.map((row, i) => {
-        const v = Number(row[valueKey]) || 0
-        const bH = Math.max(1, (v / max) * cH)
-        const x = pL + gap * i + (gap - bW) / 2
-        return <rect key={i} x={x} y={pT + cH - bH} width={bW} height={bH} fill={COLOURS[rows.length <= 8 ? i % COLOURS.length : 0]} rx={bW > 3 ? 2 : 0} opacity="0.85" />
-      })}
-      {rows.map((row, i) => i % step === 0 && (
-        <text key={'l' + i} x={pL + gap * i + gap / 2} y={H - 10} textAnchor="middle" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{fmtAxis(row[labelKey])}</text>
-      ))}
-      {[0, 0.5, 1].map(f => <text key={'y' + f} x={pL - 6} y={pT + cH * (1 - f) + 3.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text3)">{fmtCompact(max * f)}{unit}</text>)}
-    </svg>
+    <ResponsiveContainer width="100%" height={height}>
+      <RBar data={data} margin={{ top: 10, right: 18, bottom: 2, left: 2 }}>
+        <CartesianGrid stroke="var(--border)" strokeOpacity={0.6} vertical={false} />
+        <XAxis dataKey={labelKey} tickFormatter={fmtAxis} tick={AXIS_TICK} minTickGap={24} tickLine={false} axisLine={{ stroke: 'var(--border)' }} height={22} />
+        <YAxis tickFormatter={(v: number) => fmtCompact(v) + unit} tick={AXIS_TICK} width={50} tickLine={false} axisLine={false} domain={[0, 'auto']} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'var(--bg3)', opacity: 0.5 }} labelFormatter={(l) => fmtAxis(l)} formatter={(v: number, n: string) => [fmtCompact(Number(v)) + unit, nameOf(n)]} />
+        {series.length > 1 && <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => nameOf(String(v))} />}
+        {series.map((s, i) => <Bar key={s} dataKey={s} name={nameOf(s)} fill={COLOURS[i % COLOURS.length]} radius={[2, 2, 0, 0]} isAnimationActive={false} />)}
+      </RBar>
+    </ResponsiveContainer>
   )
 }
 
-// -- SVG line / area chart -------------------------------------
-// Native-pixel rendering; multi-series; compact y-axis and formatted x-axis
-// (ISO timestamps → "13 Oct 00:27"), with labels thinned to the available width.
-function LineChart({ rows, keys, config, width = 600, height = 190, fill = false }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; fill?: boolean }) {
+// -- Line / area chart (recharts) ------------------------------
+// Time-scaled x-axis; one line per series. Overlay mode (config.series = '__entity')
+// pivots the fanned-out device rows into one line per device, aligned by timestamp.
+// Multi-metric mode draws one line per value column. Tooltip + legend; responsive.
+function LineChart({ rows, keys, config, height = 190, fill = false, seriesLabels }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; fill?: boolean; seriesLabels?: Record<string, string> }) {
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
   const labelKey = (config.x as string) || (config.label_key as string) || keys[0]
-  let valueKeys = (config.value_keys as string[]) || (config.y ? [config.y as string] : keys.filter(k => k !== labelKey))
-  if (!valueKeys || !valueKeys.length) valueKeys = [keys[1]]
-  valueKeys = valueKeys.slice(0, 6)
+  const seriesKey = config.series as string | undefined
   const unit = (config.unit as string) || ''
-  const W = Math.max(width, 240), H = height, pL = 54, pB = 30, pT = valueKeys.length > 1 ? 24 : 12, pR = 14
-  const cW = W - pL - pR, cH = H - pT - pB
-  const n = rows.length
-  const xf = (i: number) => n <= 1 ? pL + cW / 2 : pL + (i / (n - 1)) * cW
-  let gmax = 0
-  for (const vk of valueKeys) for (const r of rows) { const v = Number(r[vk]); if (Number.isFinite(v) && v > gmax) gmax = v }
-  gmax = gmax || 1
-  const yf = (v: number) => pT + cH - (v / gmax) * cH
-  const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(cW / 92))))
+  let data: Record<string, unknown>[], series: string[]
+  if (seriesKey && rows.some(r => r[seriesKey] !== undefined)) {
+    const valueKey = (config.y as string) || keys.find(k => k !== labelKey && k !== seriesKey) || keys[1]
+    const p = pivotSeries(rows, labelKey, seriesKey, valueKey); data = p.data; series = p.series
+  } else {
+    let vks = (config.value_keys as string[]) || (config.y ? [config.y as string] : keys.filter(k => k !== labelKey))
+    if (!vks || !vks.length) vks = [keys[1]]
+    data = rows; series = vks.slice(0, 6)
+  }
+  const nameOf = (s: string) => (seriesLabels && seriesLabels[s]) || (s.length > 18 ? s.slice(0, 17) + '…' : s)
+  const showLegend = series.length > 1
+  const common = { data, margin: { top: 10, right: 18, bottom: 2, left: 2 } }
+  const axes = (
+    <>
+      <CartesianGrid stroke="var(--border)" strokeOpacity={0.6} vertical={false} />
+      <XAxis dataKey={labelKey} tickFormatter={fmtAxis} tick={AXIS_TICK} minTickGap={44} tickLine={false} axisLine={{ stroke: 'var(--border)' }} height={22} />
+      <YAxis tickFormatter={(v: number) => fmtCompact(v) + unit} tick={AXIS_TICK} width={50} tickLine={false} axisLine={false} domain={[0, 'auto']} />
+      <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(l) => fmtAxis(l)} formatter={(v: number, n: string) => [fmtCompact(Number(v)) + unit, nameOf(n)]} />
+      {showLegend && <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => nameOf(String(v))} iconType="plainline" />}
+    </>
+  )
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
-      {[0, 0.25, 0.5, 0.75, 1].map(f => <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)} stroke="var(--border)" strokeWidth="1" />)}
-      {valueKeys.map((vk, vi) => {
-        const col = COLOURS[vi % COLOURS.length]
-        const vals = rows.map(r => Number(r[vk]) || 0)
-        const pts = vals.map((v, i) => `${xf(i).toFixed(1)},${yf(v).toFixed(1)}`).join(' ')
-        return (
-          <g key={vk}>
-            {fill && <polygon points={`${xf(0).toFixed(1)},${(pT + cH).toFixed(1)} ${pts} ${xf(n - 1).toFixed(1)},${(pT + cH).toFixed(1)}`} fill={col} opacity="0.12" />}
-            <polyline points={pts} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-            {n <= 50 && vals.map((v, i) => <circle key={i} cx={xf(i)} cy={yf(v)} r="2.5" fill={col} stroke="var(--surface)" strokeWidth="1" />)}
-          </g>
-        )
-      })}
-      {rows.map((row, i) => i % step === 0 && (
-        <text key={'x' + i} x={xf(i)} y={H - 10} textAnchor="middle" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{fmtAxis(row[labelKey])}</text>
-      ))}
-      {[0, 0.5, 1].map(f => <text key={'y' + f} x={pL - 6} y={pT + cH * (1 - f) + 3.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text3)">{fmtCompact(gmax * f)}{unit}</text>)}
-      {valueKeys.length > 1 && valueKeys.map((vk, vi) => (
-        <g key={'lg' + vk} transform={`translate(${pL + vi * 110}, 10)`}>
-          <rect width="9" height="9" y="-7" fill={COLOURS[vi % COLOURS.length]} rx="1.5" />
-          <text x="13" y="1" fontFamily="var(--font-sans)" fontSize="10" fill="var(--text3)">{vk.length > 14 ? vk.slice(0, 13) + '…' : vk}</text>
-        </g>
-      ))}
-    </svg>
+    <ResponsiveContainer width="100%" height={height}>
+      {fill ? (
+        <RArea {...common}>
+          {axes}
+          {series.map((s, i) => <Area key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={COLOURS[i % COLOURS.length]} fill={COLOURS[i % COLOURS.length]} fillOpacity={0.14} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
+        </RArea>
+      ) : (
+        <RLine {...common}>
+          {axes}
+          {series.map((s, i) => <Line key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={COLOURS[i % COLOURS.length]} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
+        </RLine>
+      )}
+    </ResponsiveContainer>
   )
 }
 
@@ -544,14 +570,14 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
 }
 
 
-function ChartBody({ type, data, config, width, height }: { type: string; data: unknown; config: Record<string, unknown>; width: number; height: number }) {
+function ChartBody({ type, data, config, width, height, seriesLabels }: { type: string; data: unknown; config: Record<string, unknown>; width: number; height: number; seriesLabels?: Record<string, string> }) {
   const { rows, keys } = normalise(data)
   if (!rows.length) return <EmptyChart label="No data" />
-  const w = width || 600
+  void width
   switch (type) {
-    case 'bar':    return <BarChart    rows={rows} keys={keys} config={config} width={w} height={height} />
-    case 'line':   return <LineChart   rows={rows} keys={keys} config={config} width={w} height={height} />
-    case 'area':   return <LineChart   rows={rows} keys={keys} config={config} width={w} height={height} fill />
+    case 'bar':    return <BarChart    rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
+    case 'line':   return <LineChart   rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
+    case 'area':   return <LineChart   rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} fill />
     case 'number': return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'stat':   return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'table':  return <TableView   rows={rows} keys={keys} />
@@ -560,12 +586,12 @@ function ChartBody({ type, data, config, width, height }: { type: string; data: 
     case 'heatmap': return <HeatmapChart data={data} />
     case 'boxplot': return <BoxplotChart rows={rows} keys={keys} config={config} />
     case 'sankey':  return <SankeyChart  rows={rows} keys={keys} config={config} />
-    default:        return <BarChart     rows={rows} keys={keys} config={config} width={w} height={height} />
+    default:        return <BarChart     rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
   }
 }
 
 // -- Panel card ------------------------------------------------
-export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onReorderStart, onReorderOver, onReorderDrop, isDropTarget }: Props) {
+export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onReorderStart, onReorderOver, onReorderDrop, isDropTarget, seriesLabels }: Props) {
   const colSpan = Math.min(Math.max(panel.w, 1), 12)   // 12-column grid
   const rowSpan = Math.min(Math.max(panel.h, 1), 3)
   const [bodyRef, bodyW] = useMeasure()
@@ -616,7 +642,7 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
             {result.error}
           </div>
         ) : (
-          <ChartBody type={panel.chart_type} data={result.data} config={panel.chart_config} width={bodyW} height={chartH} />
+          <ChartBody type={panel.chart_type} data={result.data} config={panel.chart_config} width={bodyW} height={chartH} seriesLabels={seriesLabels} />
         )}
         {result && (() => {
           // Row-policy note: shown when the server downsampled a time-series or capped
