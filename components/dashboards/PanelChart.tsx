@@ -28,7 +28,7 @@ interface Props {
 }
 
 // -- Colour palette --------------------------------------------
-const COLOURS = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3']
+const COLOURS = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3','#e11d48','#4f46e5','#65a30d','#0369a1']
 
 // -- Shared chart helpers --------------------------------------
 // Compact number for axis ticks: 323440 → "323k", 1_250_000 → "1.3M".
@@ -587,14 +587,23 @@ function ChartBody({ type, data, config, width, height, seriesLabels }: { type: 
   // per device. Single-value widgets can't show several devices — grey them out with a hint.
   const deviceCount = new Set(rows.filter(r => r[SERIES_KEY] !== undefined).map(r => String(r[SERIES_KEY]))).size
   const overlay = deviceCount > 1
+  // Selected device count (from the data route meta) — so an overlay panel can say when some
+  // of the picked meters returned no data for this metric/period.
+  const meta = (data && typeof data === 'object' ? (data as Record<string, unknown>).meta : undefined) as Record<string, unknown> | undefined
+  const selectedCount = Number(meta?.entities) || 0
   if (overlay && SINGLE_VALUE_TYPES.has(type)) {
-    return <EmptyChart label={`Shows one device — pick a single meter (${deviceCount} selected)`} />
+    return <EmptyChart label={`Shows one device — pick a single meter (${selectedCount || deviceCount} selected)`} />
   }
   const cfg = overlay && !config.series ? { ...config, series: SERIES_KEY } : config
+  // Overlay note: fewer lines than meters picked means the rest have no data here.
+  const note = overlay && selectedCount > deviceCount ? `${deviceCount} of ${selectedCount} meters have data for this period` : null
+  const wrap = (el: React.ReactNode) => note
+    ? <div style={{ position: 'relative', height: '100%' }}><div style={{ position: 'absolute', top: 0, right: 4, fontSize: 9.5, color: 'var(--text4)', background: 'var(--surface)', padding: '0 3px', borderRadius: 3, zIndex: 1 }}>{note}</div>{el}</div>
+    : el
   switch (type) {
-    case 'bar':    return <BarChart    rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
-    case 'line':   return <LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
-    case 'area':   return <LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} fill />
+    case 'bar':    return wrap(<BarChart    rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />)
+    case 'line':   return wrap(<LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />)
+    case 'area':   return wrap(<LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} fill />)
     case 'number': return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'stat':   return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'table':  return <TableView   rows={rows} keys={keys} seriesLabels={seriesLabels} />
@@ -603,7 +612,7 @@ function ChartBody({ type, data, config, width, height, seriesLabels }: { type: 
     case 'heatmap': return <HeatmapChart data={data} />
     case 'boxplot': return <BoxplotChart rows={rows} keys={keys} config={config} />
     case 'sankey':  return <SankeyChart  rows={rows} keys={keys} config={config} />
-    default:        return <BarChart     rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
+    default:        return wrap(<BarChart     rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />)
   }
 }
 

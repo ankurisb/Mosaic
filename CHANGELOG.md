@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.132] - 2026-10-22
+
+### Changed — overlay cap raised, clearer device filter, grain vs refresh disambiguated
+Follow-ups from live multi-device use:
+- Overlay cap raised 8 → 12 (`MAX_OVERLAY_ENTITIES`), with 4 more distinct series colours so up
+  to 12 meters stay visually separable. The device-filter dropdown no longer silently ignores a
+  click at the cap — unchecked rows disable with a "Maximum 12 — deselect to add another" hint,
+  and the footer shows the live selected count.
+- Overlay panels now show a small "N of M meters have data for this period" note when fewer
+  meters have data than were selected, so a 3-line chart from an 8-meter pick is explained rather
+  than looking broken. (Many meters report current values but no historical series.)
+- Header controls disambiguated: the aggregation grain gets a bar icon and a clearer tooltip
+  ("bucket size the data is rolled up to"); the refresh control's tooltip now says "Auto-refresh
+  interval … not an aggregation" — the two look-alike dropdowns were being read as two aggregations.
+
 ## [1.3.131] - 2026-10-22
 
 ### Fixed — multi-device overlay actually draws one line per device; single-value widgets grey out

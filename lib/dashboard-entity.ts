@@ -6,7 +6,7 @@
 
 export const ENTITY_ID_PH = '{{entity_id}}'
 export const ENTITY_LABEL_PH = '{{entity}}'
-export const MAX_OVERLAY_ENTITIES = 8
+export const MAX_OVERLAY_ENTITIES = 12
 export const SERIES_KEY = '__entity'   // the per-row series column fan-out tags rows with
 
 // Does this panel depend on the entity filter? (SQL/API query text, or a PRISM params

@@ -11,6 +11,7 @@ import { SupersetEmbed } from './SupersetEmbed'
 import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
 import { allowedGrains, defaultGrain, windowMsFor, GRAIN_LABEL } from '@/lib/dashboard-grain'
+import { MAX_OVERLAY_ENTITIES } from '@/lib/dashboard-entity'
 
 interface Panel {
   id: string; title: string; subtitle: string
@@ -332,8 +333,10 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
             {TIME_WINDOW_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {/* Aggregation grain — options constrained to what the window allows */}
-          <select value={grain} onChange={e => setGrain(e.target.value)} title="Aggregation interval (limited to what the selected time range supports)"
+          {/* Aggregation grain — options constrained to what the window allows. A bar
+             icon marks it as "aggregate every N", distinct from the refresh (clock) control. */}
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)', marginLeft: 2 }} aria-label="Aggregation"><path d="M2 10V6M6 10V2M10 10V7"/></svg>
+          <select value={grain} onChange={e => setGrain(e.target.value)} title="Aggregation interval — bucket size the data is rolled up to (limited to what the time range supports)"
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
             {allowedGrains(windowMsFor(timeWindow, customFrom, customTo)).map(g => <option key={g} value={g}>{GRAIN_LABEL[g]}</option>)}
           </select>
@@ -353,18 +356,20 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                   {entityOpts.length === 0 && <div style={{ fontSize: 11, color: 'var(--text4)', padding: 6 }}>No devices found.</div>}
                   {entityOpts.map(e => {
                     const on = selectedEntities.includes(e.id)
+                    const atCap = !on && selectedEntities.length >= MAX_OVERLAY_ENTITIES
                     return (
-                      <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 6px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer', borderRadius: 4 }}>
-                        <input type="checkbox" checked={on} onChange={() => setSelectedEntities(prev => {
+                      <label key={e.id} title={atCap ? `Maximum ${MAX_OVERLAY_ENTITIES} devices — deselect one to add another` : undefined}
+                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 6px', fontSize: 12, color: atCap ? 'var(--text4)' : 'var(--text2)', cursor: atCap ? 'not-allowed' : 'pointer', borderRadius: 4 }}>
+                        <input type="checkbox" checked={on} disabled={atCap} onChange={() => setSelectedEntities(prev => {
                           if (on) return prev.filter(x => x !== e.id)
-                          if (prev.length >= 8) return prev   // overlay cap
+                          if (prev.length >= MAX_OVERLAY_ENTITIES) return prev   // overlay cap
                           return [...prev, e.id]
-                        })} style={{ cursor: 'pointer' }} />
+                        })} style={{ cursor: atCap ? 'not-allowed' : 'pointer' }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.label}</span>
                       </label>
                     )
                   })}
-                  {entityOpts.length > 0 && <div style={{ fontSize: 10, color: 'var(--text4)', padding: '4px 6px 2px' }}>Pick up to 8 to overlay.</div>}
+                  {entityOpts.length > 0 && <div style={{ fontSize: 10, color: 'var(--text4)', padding: '4px 6px 2px' }}>{selectedEntities.length >= MAX_OVERLAY_ENTITIES ? `Maximum ${MAX_OVERLAY_ENTITIES} selected — deselect to add another.` : `Overlay up to ${MAX_OVERLAY_ENTITIES} devices (${selectedEntities.length} selected).`}</div>}
                 </div>
               )}
             </div>
@@ -386,7 +391,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}>
             <circle cx="6" cy="6" r="5"/><path d="M6 3.5v3l2 1.5"/>
           </svg>
-          <select value={dashboard.refresh_sec} onChange={e => updateDashboard({ refresh_sec: Number(e.target.value) })}
+          <select value={dashboard.refresh_sec} onChange={e => updateDashboard({ refresh_sec: Number(e.target.value) })} title="Auto-refresh interval — how often the dashboard re-queries live data (not an aggregation)"
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>
             {REFRESH_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
