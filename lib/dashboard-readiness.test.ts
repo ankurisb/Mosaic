@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs, sqlScopesEntity, sqlHasAggregate, apiScopesEntity } from './dashboard-readiness'
+import { assessPanelReadiness, assessPlanReadiness, prismUsedRefs, apiUsedRefs, sqlScopesEntity, sqlHasAggregate, apiScopesEntity, isIdentifierName } from './dashboard-readiness'
 
 describe('assessPanelReadiness', () => {
   it('ready when data + grounded + scoped', () => {
@@ -90,5 +90,20 @@ describe('multi-entity scoping (SQL/API, dictionary-driven)', () => {
     expect(apiScopesEntity('/telemetry?$filter=device_id eq 7', ['device_id'])).toBe(true)
     expect(apiScopesEntity('/telemetry?$select=ts,kw', ['device_id'])).toBe(false)
     expect(apiScopesEntity('/telemetry/{{entity_id}}/metrics', ['device_id'])).toBe(true)
+  })
+})
+
+describe('isIdentifierName (fallback when dictionary role is null)', () => {
+  it('matches id / *_id / *_uuid', () => {
+    for (const n of ['id', 'machine_id', 'device_id', 'asset_id', 'equipment_uuid', 'node_guid'])
+      expect(isIdentifierName(n), n).toBe(true)
+  })
+  it('matches bare device/asset tokens (optionally suffixed)', () => {
+    for (const n of ['device', 'machine', 'asset', 'serial', 'gateway', 'meter', 'deviceId', 'serial_no'])
+      expect(isIdentifierName(n), n).toBe(true)
+  })
+  it('does NOT match measures/dimensions/time', () => {
+    for (const n of ['shift', 'shift_date', 'oee_pct', 'units_produced', 'cycle_time_s', 'inspector', 'reason', 'grid', 'paid'])
+      expect(isIdentifierName(n), n).toBe(false)
   })
 })

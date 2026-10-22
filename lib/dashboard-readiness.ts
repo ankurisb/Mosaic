@@ -97,6 +97,18 @@ export function apiUsedRefs(path: string): string[] {
 
 const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]/g, '')
 
+// Fallback entity-column detector by NAME, for dictionaries that don't carry a structured
+// role (role IS NULL). A column is an identifier when it's `id`, ends in `_id`/`_uuid`/`_guid`,
+// or is a well-known device/asset token (optionally suffixed with id/no/code). Conservative
+// on purpose — matches machine_id, device_id, asset_id, serial, gateway; NOT shift, oee_pct,
+// units_produced, inspector. role='identifier' in the dictionary always wins over this.
+export function isIdentifierName(name: string): boolean {
+  const c = canon(name)
+  if (!c) return false
+  if (c === 'id' || c.endsWith('_id') || c.endsWith('_uuid') || c.endsWith('_guid')) return true
+  return /^(device|machine|asset|equipment|meter|sensor|serial|gateway)(_?(id|no|num|code|uuid))?$/.test(c)
+}
+
 // Does a SQL query scope to an entity? {{entity_id}} placeholder, a WHERE filter on an
 // identifier column (col = / col IN (), or a GROUP BY that includes one.
 export function sqlScopesEntity(query: string, entityCols: string[]): boolean {

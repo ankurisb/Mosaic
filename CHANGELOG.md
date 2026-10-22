@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.127] - 2026-10-22
+
+### Fixed — multi-entity detection no longer depends on the dictionary carrying roles
+Live extreme-testing v1.3.126 showed the SQL/API scoping gate was inert on real data: every
+semantic_descriptions row on the instance had `role` = NULL (the structured describer hadn't
+populated roles), so the `role='identifier'` lookup found nothing and the gate never fired.
+- `lib/dashboard-readiness.ts`: `isIdentifierName()` — a conservative name-based fallback that
+  recognises an entity key by name (`id`, `*_id`, `*_uuid`, or device/machine/asset/meter/
+  sensor/serial/gateway tokens) when the dictionary has no role. Matches machine_id, device_id,
+  asset_id, serial; does NOT match shift, oee_pct, units_produced, inspector, grid. 3 tests.
+- `lib/dashboard-build.ts` `enrichPlan`: an identifier column is now `role='identifier']` OR
+  `isIdentifierName()` (column-level keys only, never table names), so the gate fires on
+  dictionaries with null roles too. role always wins when present.
+- Net: the multi-entity scoping gate from v1.3.126 now actually bites on real sources — a raw,
+  unscoped series over a table with a `*_id`/device-type column is blocked with a "scope to a
+  device" gap, independent of whether the dictionary was ever enriched with roles.
+
 ## [1.3.126] - 2026-10-22
 
 ### Added — gate-level multi-entity scoping for SQL & API (source-agnostic determinism)
