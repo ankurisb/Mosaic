@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.131] - 2026-10-22
+
+### Fixed — multi-device overlay actually draws one line per device; single-value widgets grey out
+Even after the recharts move, selecting several devices drew one line: the data route adds the
+per-device series tag (`__entity`) to its INTERNAL config for the rollup, but the response
+doesn't carry it and the client chart reads the STORED `panel.chart_config`, which has no
+`series` — so the client never split on device.
+- `components/dashboards/PanelChart.tsx` `ChartBody`: detects the `__entity` column in the
+  returned rows and injects `series = '__entity'` client-side, so line/area/bar pivot into one
+  line per device (recharts). A single-value widget (stat/number/gauge) can't show several
+  devices, so under a multi-device selection it greys out with "Shows one device — pick a single
+  meter (N selected)" instead of a misleading number.
+- `TableView`: the device column is moved first, headed "Device", and shows the meter label
+  (via the id→label map) instead of the raw `__entity` id.
+- Note: a selected device with no data for a panel's metric contributes no line (correct) — e.g.
+  an export meter that reports current values but no energy history.
+
 ## [1.3.130] - 2026-10-22
 
 ### Fixed — dashboard line/area/bar panels render with recharts (overlay + no clipping)

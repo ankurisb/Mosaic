@@ -204,14 +204,18 @@ function NumberCard({ rows, keys, config }: { rows: Record<string, unknown>[]; k
 }
 
 // -- Data table ------------------------------------------------
-function TableView({ rows, keys }: { rows: Record<string, unknown>[]; keys: string[] }) {
-  const displayKeys = keys.slice(0, 6)
+function TableView({ rows, keys, seriesLabels }: { rows: Record<string, unknown>[]; keys: string[]; seriesLabels?: Record<string, string> }) {
+  // Put the device column first when present, and render it as the meter label, not the raw id.
+  const ordered = keys.includes('__entity') ? ['__entity', ...keys.filter(k => k !== '__entity')] : keys
+  const displayKeys = ordered.slice(0, 6)
+  const header = (k: string) => k === '__entity' ? 'Device' : k
+  const cell = (k: string, v: unknown) => k === '__entity' ? ((seriesLabels && seriesLabels[String(v)]) || String(v ?? '')) : String(v ?? '')
   return (
     <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 200 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr>{displayKeys.map(k => (
-            <th key={k} style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>{k}</th>
+            <th key={k} style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>{header(k)}</th>
           ))}</tr>
         </thead>
         <tbody>
@@ -219,7 +223,7 @@ function TableView({ rows, keys }: { rows: Record<string, unknown>[]; keys: stri
             <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'var(--bg3)' }}>
               {displayKeys.map(k => (
                 <td key={k} style={{ padding: '5px 8px', color: 'var(--text2)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {String(row[k] ?? '')}
+                  {cell(k, row[k])}
                 </td>
               ))}
             </tr>
@@ -570,23 +574,36 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
 }
 
 
+const SERIES_KEY = '__entity'   // per-device tag the data route adds in overlay mode
+// Chart types that show a single value and so can't represent several devices at once.
+const SINGLE_VALUE_TYPES = new Set(['number', 'stat', 'gauge'])
+
 function ChartBody({ type, data, config, width, height, seriesLabels }: { type: string; data: unknown; config: Record<string, unknown>; width: number; height: number; seriesLabels?: Record<string, string> }) {
   const { rows, keys } = normalise(data)
   if (!rows.length) return <EmptyChart label="No data" />
   void width
+  // Overlay detection: the data route tags each row with __entity when >1 device is picked.
+  // The client (not the stored config) decides to split on it, so the chart draws one series
+  // per device. Single-value widgets can't show several devices — grey them out with a hint.
+  const deviceCount = new Set(rows.filter(r => r[SERIES_KEY] !== undefined).map(r => String(r[SERIES_KEY]))).size
+  const overlay = deviceCount > 1
+  if (overlay && SINGLE_VALUE_TYPES.has(type)) {
+    return <EmptyChart label={`Shows one device — pick a single meter (${deviceCount} selected)`} />
+  }
+  const cfg = overlay && !config.series ? { ...config, series: SERIES_KEY } : config
   switch (type) {
-    case 'bar':    return <BarChart    rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
-    case 'line':   return <LineChart   rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
-    case 'area':   return <LineChart   rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} fill />
+    case 'bar':    return <BarChart    rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
+    case 'line':   return <LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
+    case 'area':   return <LineChart   rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} fill />
     case 'number': return <NumberCard  rows={rows} keys={keys} config={config} />
     case 'stat':   return <NumberCard  rows={rows} keys={keys} config={config} />
-    case 'table':  return <TableView   rows={rows} keys={keys} />
+    case 'table':  return <TableView   rows={rows} keys={keys} seriesLabels={seriesLabels} />
     case 'donut':  return <DonutChart  rows={rows} keys={keys} config={config} />
     case 'gauge':   return <Gauge        rows={rows} keys={keys} config={config} />
     case 'heatmap': return <HeatmapChart data={data} />
     case 'boxplot': return <BoxplotChart rows={rows} keys={keys} config={config} />
     case 'sankey':  return <SankeyChart  rows={rows} keys={keys} config={config} />
-    default:        return <BarChart     rows={rows} keys={keys} config={config} height={height} seriesLabels={seriesLabels} />
+    default:        return <BarChart     rows={rows} keys={keys} config={cfg} height={height} seriesLabels={seriesLabels} />
   }
 }
 
