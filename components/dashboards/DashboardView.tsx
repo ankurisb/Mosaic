@@ -182,8 +182,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const windowRef = useRef({ timeWindow, customFrom, customTo, grain, selectedEntities })
   windowRef.current = { timeWindow, customFrom, customTo, grain, selectedEntities }
 
-  // Load the entity filter options once per dashboard (if bound). Default selection comes
-  // from the dashboard's entity_config (the richest device the builder chose).
+  // Per-user device selection persists across refresh in localStorage, keyed by dashboard.
+  const entityLsKey = `mosaic.dash.${id}.entities`
+  // Load the entity filter options once per dashboard (if bound). The selection is restored
+  // from localStorage (this user's last pick) and falls back to the dashboard's entity_config
+  // default (the device the builder chose), then the first device.
   useEffect(() => {
     let alive = true
     fetch(`/api/dashboards/${id}/entities`)
@@ -191,12 +194,22 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       .then((d: { bound?: boolean; entities?: { id: string; label: string }[]; default?: string[] }) => {
         if (!alive || !d.bound) return
         setEntityBound(true)
-        setEntityOpts(d.entities || [])
-        setSelectedEntities(prev => prev.length ? prev : (d.default || (d.entities?.[0] ? [d.entities[0].id] : [])))
+        const opts = d.entities || []
+        setEntityOpts(opts)
+        let saved: string[] = []
+        try { const raw = localStorage.getItem(entityLsKey); if (raw) saved = JSON.parse(raw) } catch { /* private mode / disabled */ }
+        const valid = Array.isArray(saved) ? saved.filter(idv => opts.some(o => o.id === idv)).slice(0, MAX_OVERLAY_ENTITIES) : []
+        setSelectedEntities(prev => prev.length ? prev : (valid.length ? valid : (d.default || (opts[0] ? [opts[0].id] : []))))
       })
       .catch(() => {})
     return () => { alive = false }
-  }, [id])
+  }, [id, entityLsKey])
+
+  // Persist the device selection whenever it changes (best-effort; survives refresh).
+  useEffect(() => {
+    if (!entityBound) return
+    try { localStorage.setItem(entityLsKey, JSON.stringify(selectedEntities)) } catch { /* ignore */ }
+  }, [selectedEntities, entityBound, entityLsKey])
 
   const fetchData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setRefreshing(true)

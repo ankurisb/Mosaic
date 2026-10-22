@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.134] - 2026-10-22
+
+### Fixed — device selection persists across refresh
+- components/dashboards/DashboardView.tsx: the multi-device selection is saved to localStorage per dashboard and restored on load (falling back to the entity_config default), so a refresh no longer resets your picks.
+
 ## [1.3.133] - 2026-10-22
 
 ### Fixed — Device filter no longer reflows the header as you select meters
