@@ -12,6 +12,21 @@ import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
 import { allowedGrains, defaultGrain, windowMsFor, GRAIN_LABEL } from '@/lib/dashboard-grain'
 import { MAX_OVERLAY_ENTITIES } from '@/lib/dashboard-entity'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+// Wraps a PanelChart as a dnd-kit sortable item: the card is the drag node, the header grip
+// (dragListeners) is the handle, and the grid reflows as items reorder.
+function SortablePanel(props: React.ComponentProps<typeof PanelChart>) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.panel.id })
+  return <PanelChart {...props}
+    sortableRef={setNodeRef}
+    sortableStyle={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
+    sortableAttributes={attributes as unknown as Record<string, unknown>}
+    dragListeners={props.isOwner ? (listeners as unknown as Record<string, unknown>) : undefined}
+    isDragging={isDragging} />
+}
 
 interface Panel {
   id: string; title: string; subtitle: string
@@ -106,16 +121,17 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   const [rightMode, setRightMode] = useState<'closed' | 'chat' | 'edit'>('closed')
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
   const openEdit = (panel: Panel | null) => { setEditingPanel(panel); setRightMode('edit') }
-  // Drag-to-reorder panels
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropId, setDropId] = useState<string | null>(null)
-  const reorderPanels = (from: string | null, to: string) => {
-    if (!from || from === to) return
+  // Drag-to-reorder panels (dnd-kit sortable). A small activation distance so clicking the
+  // header buttons doesn't start a drag.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
     setPanels(prev => {
-      const arr = [...prev]
-      const fi = arr.findIndex(p => p.id === from), ti = arr.findIndex(p => p.id === to)
-      if (fi < 0 || ti < 0) return prev
-      const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m)
+      const oldI = prev.findIndex(p => p.id === active.id)
+      const newI = prev.findIndex(p => p.id === over.id)
+      if (oldI < 0 || newI < 0) return prev
+      const arr = arrayMove(prev, oldI, newI)
       fetch('/api/dashboards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reorder_panels', panels: arr.map(p => ({ id: p.id, col: p.col, row: p.row, w: p.w, h: p.h })) }) }).catch(() => {})
       return arr
     })
@@ -514,9 +530,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
             )}
           </div>
         ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={panels.map(p => p.id)} strategy={rectSortingStrategy}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14, alignItems: 'start' }} data-panel-grid>
             {panels.map(panel => (
-              <PanelChart
+              <SortablePanel
                 key={panel.id}
                 panel={panel}
                 result={results[panel.id]}
@@ -524,10 +542,6 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 seriesLabels={entityLabelMap}
                 onEdit={() => openEdit(panel)}
                 onDelete={() => deletePanel(panel.id, panel.title)}
-                onReorderStart={() => setDragId(panel.id)}
-                onReorderOver={(e: React.DragEvent) => { if (dragId && dragId !== panel.id) { e.preventDefault(); if (dropId !== panel.id) setDropId(panel.id) } }}
-                onReorderDrop={() => { reorderPanels(dragId, panel.id); setDragId(null); setDropId(null) }}
-                isDropTarget={dropId === panel.id && dragId !== panel.id}
                 onResizeStart={(e: React.MouseEvent) => {
                   const grid = e.currentTarget.closest('[data-panel-grid]') as HTMLElement
                   if (!grid) return
@@ -548,6 +562,8 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
               />
             ))}
           </div>
+          </SortableContext>
+          </DndContext>
         )}
       </div>
 

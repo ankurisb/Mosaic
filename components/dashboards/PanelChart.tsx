@@ -20,11 +20,13 @@ interface Props {
   onDelete: () => void
   onRefresh: () => void
   onResizeStart?: (e: React.MouseEvent) => void
-  onReorderStart?: () => void              // drag this panel (from its header) to reorder
-  onReorderOver?: (e: React.DragEvent) => void
-  onReorderDrop?: () => void
-  isDropTarget?: boolean
   seriesLabels?: Record<string, string>   // entity id → device label, for overlay legends
+  // dnd-kit sortable wiring (set by the SortablePanel wrapper in DashboardView):
+  sortableRef?: (el: HTMLElement | null) => void
+  sortableStyle?: React.CSSProperties
+  sortableAttributes?: Record<string, unknown>
+  dragListeners?: Record<string, unknown>
+  isDragging?: boolean
 }
 
 // -- Colour palette --------------------------------------------
@@ -617,21 +619,19 @@ function ChartBody({ type, data, config, width, height, seriesLabels }: { type: 
 }
 
 // -- Panel card ------------------------------------------------
-export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onReorderStart, onReorderOver, onReorderDrop, isDropTarget, seriesLabels }: Props) {
+export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, seriesLabels, sortableRef, sortableStyle, sortableAttributes, dragListeners, isDragging }: Props) {
   const colSpan = Math.min(Math.max(panel.w, 1), 12)   // 12-column grid
   const rowSpan = Math.min(Math.max(panel.h, 1), 3)
   const [bodyRef, bodyW] = useMeasure()
   const chartH = rowSpan >= 3 ? 480 : rowSpan === 2 ? 340 : 200
-  const canDrag = isOwner && !!onReorderStart
+  const canDrag = isOwner && !!dragListeners
   return (
-    <div className="fade-in" data-panel-id={panel.id}
-      onDragOver={onReorderOver} onDrop={onReorderDrop}
-      style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}`, position: 'relative', background: 'var(--surface)', border: isDropTarget ? '1px solid var(--accent-bg)' : '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: isDropTarget ? '0 0 0 2px var(--accent-bg) inset' : 'var(--shadow)', overflow: 'hidden' }}>
-      {/* Panel header (drag handle for reordering) */}
-      <div draggable={canDrag} onDragStart={canDrag ? onReorderStart : undefined}
-        style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '12px 14px 8px', cursor: canDrag ? 'grab' : 'default' }}>
+    <div className="fade-in" data-panel-id={panel.id} ref={sortableRef} {...sortableAttributes}
+      style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}`, position: 'relative', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,.18)' : 'var(--shadow)', overflow: 'hidden', opacity: isDragging ? 0.85 : 1, ...sortableStyle }}>
+      {/* Panel header — the grip is the drag handle (dnd-kit sortable) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '12px 14px 8px' }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-          {canDrag && <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--text4)" style={{ flexShrink: 0, marginTop: 3 }}><circle cx="2" cy="2" r="1"/><circle cx="2" cy="5" r="1"/><circle cx="2" cy="8" r="1"/><circle cx="6" cy="2" r="1"/><circle cx="6" cy="5" r="1"/><circle cx="6" cy="8" r="1"/></svg>}
+          {canDrag && <span {...dragListeners} title="Drag to rearrange" style={{ flexShrink: 0, marginTop: 1, cursor: 'grab', touchAction: 'none', display: 'inline-flex', padding: 2, color: 'var(--text4)' }}><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><circle cx="2" cy="2" r="1"/><circle cx="2" cy="5" r="1"/><circle cx="2" cy="8" r="1"/><circle cx="6" cy="2" r="1"/><circle cx="6" cy="5" r="1"/><circle cx="6" cy="8" r="1"/></svg></span>}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{panel.title}</div>
             {panel.subtitle && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{panel.subtitle}</div>}

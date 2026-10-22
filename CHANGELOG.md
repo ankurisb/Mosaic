@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.135] - 2026-10-22
+
+### Changed — panels rearrange with smooth drag-and-drop (dnd-kit)
+The swap-on-drop reorder is replaced with a proper sortable grid.
+- Added @dnd-kit (core/sortable/utilities) — React-19-native (react-grid-layout was ruled out: it still uses findDOMNode, which React 19 removed, so it would crash on drag).
+- components/dashboards/DashboardView.tsx + PanelChart.tsx: panels are a dnd-kit SortableContext; drag the header grip to move a panel and the grid reflows live. Order persists via reorder_panels (sort_order). Resize is unchanged. A 5px activation distance keeps header-button clicks from starting a drag.
+
 ## [1.3.134] - 2026-10-22
 
 ### Fixed — device selection persists across refresh
