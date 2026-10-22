@@ -170,6 +170,17 @@ function renderNarrativeHtml(text: string): string {
     .map(p => `<p style="margin:0 0 10px 0;line-height:1.65">${p}</p>`).join('')
 }
 
+// The data the AI summary is based on — shown compactly beneath the narrative so the
+// digest is auditable (you can see the numbers behind the words). Visible in the PDF.
+function renderEvidence(rows: Row[]): string {
+  if (!rows.length) return ''
+  const cols = Object.keys(rows[0]).slice(0, 8)
+  const thead = `<tr>${cols.map(c => `<th>${c.replace(/_/g, ' ')}</th>`).join('')}</tr>`
+  const body = rows.slice(0, 10).map(r => `<tr>${cols.map(c => `<td>${r[c] ?? '—'}</td>`).join('')}</tr>`).join('')
+  const more = rows.length > 10 ? `<div style="font-size:10px;color:#888;margin-top:4px">+${rows.length - 10} more rows</div>` : ''
+  return `<div style="margin-top:10px"><div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Based on</div><table>${`<thead>${thead}</thead>`}<tbody>${body}</tbody></table>${more}</div>`
+}
+
 async function renderSectionHtml(
   section: ReportSection,
   precomputed?: Map<string, { rows: Row[]; text: string }>,
@@ -186,7 +197,7 @@ async function renderSectionHtml(
     const pc = precomputed.get(section.id)!
     const text = pc.text || (section.ai_prompt ? await generateNarrative(section.ai_prompt, pc.rows) : `${pc.rows.length} rows returned.`)
     const basisN = section.width === 'half' ? 'calc(50% - 8px)' : section.width === 'third' ? 'calc(33.333% - 11px)' : '100%'
-    return `<div class="section" style="flex:1 1 ${basisN};max-width:${basisN};box-sizing:border-box">${title}${renderNarrativeHtml(text)}</div>`
+    return `<div class="section" style="flex:1 1 ${basisN};max-width:${basisN};box-sizing:border-box">${title}${renderNarrativeHtml(text)}${renderEvidence(pc.rows)}</div>`
   }
   const { rows, error } = await executeSection(section)
   if (error) {
@@ -201,7 +212,7 @@ async function renderSectionHtml(
       const text = section.ai_prompt
         ? await generateNarrative(section.ai_prompt, rows)
         : `${rows.length} rows returned.`
-      body = renderNarrativeHtml(text)
+      body = renderNarrativeHtml(text) + renderEvidence(rows)
       break
     }
   }

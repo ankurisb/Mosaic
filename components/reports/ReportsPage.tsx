@@ -116,7 +116,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
         <span style={{ fontSize: 13, color: 'var(--text3)' }}>Chat</span>
         <span style={{ fontSize: 13, color: 'var(--text3)' }}>/</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Reports</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Digests</span>
       </div>
 
       {/* Tab bar */}
@@ -125,14 +125,14 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
           {(['library', 'templates', 'history'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               style={{ padding: '12px 18px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? 'var(--text)' : 'var(--text3)', fontFamily: 'inherit' }}>
-              {t === 'library' ? 'Report library' : t === 'templates' ? 'Templates' : 'History'}
+              {t === 'library' ? 'Generated' : t === 'templates' ? 'Digests' : 'History'}
             </button>
           ))}
         </div>
         {isAdmin && tab === 'templates' && (
           <button onClick={() => router.push('/reports/template/new')}
             style={{ padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            + New template
+            + New digest
           </button>
         )}
       </div>
@@ -153,7 +153,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
         {!loading && tab === 'library' && (
           filteredLibrary.length === 0
             ? <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
-                No reports generated yet. Export an RCA from chat to create your first report.
+                No digests generated yet. Create a digest below, or export an RCA from chat.
               </div>
             : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {filteredLibrary.map(r => (
@@ -189,7 +189,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
         {!loading && tab === 'templates' && (
           templates.length === 0
             ? <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
-                No templates yet. Create one to schedule recurring reports.
+                No digests yet. Create one to schedule a recurring AI summary emailed to your team.
               </div>
             : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {templates.map(t => (
@@ -270,7 +270,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
           <div onClick={e => e.stopPropagation()}
             style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 460, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>New report template</div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>New digest</div>
               <button onClick={() => setShowNewTemplate(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -280,7 +280,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Description</label>
-                <input style={INP} placeholder="What this report covers" value={newTemplate.description} onChange={e => setNewTemplate(p => ({ ...p, description: e.target.value }))} />
+                <input style={INP} placeholder="What this digest covers" value={newTemplate.description} onChange={e => setNewTemplate(p => ({ ...p, description: e.target.value }))} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Type</label>

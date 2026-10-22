@@ -58,12 +58,15 @@ interface Template {
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
-function defaultSection(type: SectionType): Section {
+// A digest is made of AI-summary items only: each runs a saved query (or API) and Claude
+// writes a narrative over the results. The old multi-section designer (KPI/table/chart/text,
+// width layouts) was removed — a digest is the one differentiator worth keeping.
+function defaultSection(): Section {
   return {
-    id: uid(), type, title: '',
-    source_type: type === 'text' || type === 'ai_narrative' ? 'none' : 'database',
+    id: uid(), type: 'ai_narrative', title: '',
+    source_type: 'database',
     source_id: '', query: '', ai_prompt: '', content: '',
-    chart_type: 'bar', width: 'full',
+    width: 'full',
   }
 }
 
@@ -80,7 +83,7 @@ const SECTION_LABELS: Record<SectionType, string> = {
   kpi:          'KPI Summary',
   table:        'Data Table',
   chart:        'Chart',
-  ai_narrative: 'AI Narrative',
+  ai_narrative: 'AI summary',
   text:         'Static Text',
 }
 
@@ -88,7 +91,7 @@ const SECTION_DESC: Record<SectionType, string> = {
   kpi:          'Run a query and render results as metric cards',
   table:        'Run a query and render results as a formatted table',
   chart:        'Run a query and render as bar, line, or pie chart',
-  ai_narrative: 'Claude analyses query results and writes a narrative paragraph',
+  ai_narrative: 'Claude reads the query results and writes a narrative summary',
   text:         'Static markdown/HTML text — no data binding needed',
 }
 
@@ -203,29 +206,15 @@ function SectionCard({
               value={section.title} onChange={e => up('title', e.target.value)} />
           </div>
 
-          {/* Width — controls how wide this section is in its row. Half/third sections
-              sit side-by-side; full breaks to its own row. */}
-          <div style={FIELD}>
-            <label style={LABEL}>Width</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {([['full', 'Full width'], ['half', 'Half'], ['third', 'Third']] as const).map(([w, lbl]) => (
-                <button key={w} onClick={() => up('width', w)}
-                  style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${(section.width || 'full') === w ? 'var(--blue)' : 'var(--border2)'}`, background: (section.width || 'full') === w ? '#eff6ff' : 'var(--bg)', color: (section.width || 'full') === w ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: (section.width || 'full') === w ? 600 : 400 }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Source type */}
           {needsSource && (
             <div style={FIELD}>
               <label style={LABEL}>Data source</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                {(['database', 'api', 'none'] as const).map(st => (
+                {(['database', 'api'] as const).map(st => (
                   <button key={st} onClick={() => up('source_type', st)}
                     style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.source_type === st ? 'var(--blue)' : 'var(--border2)'}`, background: section.source_type === st ? '#eff6ff' : 'var(--bg)', color: section.source_type === st ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.source_type === st ? 600 : 400 }}>
-                    {st === 'database' ? 'Database' : st === 'api' ? 'API' : 'None'}
+                    {st === 'database' ? 'Database' : 'API'}
                   </button>
                 ))}
               </div>
@@ -294,11 +283,10 @@ function SectionCard({
           {needsPrompt && (
             <div style={FIELD}>
               <label style={LABEL}>
-                AI narrative prompt
-                <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(query results will be appended automatically)</span>
+                What to summarise <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(the query results are given to Claude automatically)</span>
               </label>
               <textarea style={{ ...TEXTAREA, minHeight: 90 }}
-                placeholder={'Analyse the OEE data below and write a 2-paragraph narrative. Identify the top 2 underperforming machines, state the likely causes, and recommend immediate actions. Be concise and use manufacturing terminology.'}
+                placeholder={'Summarise this week’s OEE data: call out the top 2 underperforming machines, the likely causes, and the immediate actions to take. Be concise and use plant terminology.'}
                 value={section.ai_prompt} onChange={e => up('ai_prompt', e.target.value)} />
             </div>
           )}
@@ -324,34 +312,12 @@ function SectionCard({
 
 // ── Section type picker ───────────────────────────────────────────────────────
 
-function SectionPicker({ onAdd }: { onAdd: (t: SectionType) => void }) {
-  const [open, setOpen] = useState(false)
+function SectionPicker({ onAdd }: { onAdd: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {!open ? (
-        <button onClick={() => setOpen(true)}
-          style={{ padding: '8px 18px', borderRadius: 8, border: '1.5px dashed var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg> Add section
-        </button>
-      ) : (
-        <div style={{ border: '1.5px solid var(--border)', borderRadius: 10, background: 'var(--surface)', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Choose section type</span>
-            <button onClick={() => setOpen(false)} style={{ width: 24, height: 24, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>×</button>
-          </div>
-          {(Object.keys(SECTION_LABELS) as SectionType[]).map((t, i, arr) => (
-            <button key={t} onClick={() => { onAdd(t); setOpen(false) }}
-              style={{ width: '100%', padding: '11px 16px', border: 'none', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{ color: 'var(--text3)' }}>{SECTION_ICONS[t]}</span>
-                  {SECTION_LABELS[t]}
-                </span>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>{SECTION_DESC[t]}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <button onClick={onAdd}
+      style={{ padding: '8px 18px', borderRadius: 8, border: '1.5px dashed var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg> Add AI summary
+    </button>
   )
 }
 
@@ -634,8 +600,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   const up = useCallback(<K extends keyof Template>(k: K, v: Template[K]) =>
     setTemplate(p => ({ ...p, [k]: v })), [])
 
-  function addSection(type: SectionType) {
-    setTemplate(p => ({ ...p, sections: [...p.sections, defaultSection(type)] }))
+  function addSection() {
+    setTemplate(p => ({ ...p, sections: [...p.sections, defaultSection()] }))
   }
 
   function updateSection(idx: number, s: Section) {
@@ -657,7 +623,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   }
 
   async function save() {
-    if (!template.name) { setError('Template name is required'); return }
+    if (!template.name) { setError('Digest name is required'); return }
     setSaving(true); setError('')
     try {
       const cronStr = scheduleToCron(template.scheduleState)
@@ -709,26 +675,26 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
           <button onClick={() => router.push('/reports')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L4 6l4 4"/></svg>
-            Reports
+            Digests
           </button>
           <span>/</span>
-          <span style={{ color: 'var(--text)' }}>{isEdit ? 'Edit template' : 'New template'}</span>
+          <span style={{ color: 'var(--text)' }}>{isEdit ? 'Edit digest' : 'New digest'}</span>
         </div>
 
-        <div style={{ fontWeight: 700, fontSize: 20 }}>{isEdit ? 'Edit template' : 'New report template'}</div>
+        <div style={{ fontWeight: 700, fontSize: 20 }}>{isEdit ? 'Edit digest' : 'New digest'}</div>
 
-        {/* Sections */}
+        {/* Summary items */}
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', marginBottom: -8 }}>
-          Sections
+          Summary items
           <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 8 }}>
-            {template.sections.length === 0 ? 'No sections yet — add one below' : `${template.sections.length} section${template.sections.length !== 1 ? 's' : ''}`}
+            {template.sections.length === 0 ? 'No summaries yet — add one below' : `${template.sections.length} summar${template.sections.length !== 1 ? 'ies' : 'y'}`}
           </span>
         </div>
 
         {template.sections.length === 0 && (
           <div style={{ padding: '32px 20px', border: '1.5px dashed var(--border2)', borderRadius: 10, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
-            Add sections to define what data appears in this report.
-            <br />Each section can pull from a database query, API, or AI narrative.
+            A digest is one or more AI summaries, emailed on a schedule.
+            <br />Add a summary: pick a saved query and tell Claude what to highlight.
           </div>
         )}
 
@@ -748,23 +714,23 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
       {/* Right panel — metadata + save */}
       <div data-rsplit-aside style={{ width: 320, borderLeft: '1px solid var(--border)', overflowY: 'auto', padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--surface)', flexShrink: 0 }}>
 
-        <div style={{ fontWeight: 700, fontSize: 15 }}>Template settings</div>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>Digest settings</div>
 
         <div style={FIELD}>
-          <label style={LABEL}>Template name *</label>
-          <input style={INP} placeholder="e.g. Weekly OEE Summary — Line B"
+          <label style={LABEL}>Digest name *</label>
+          <input style={INP} placeholder="e.g. Weekly OEE digest — Line B"
             value={template.name} onChange={e => up('name', e.target.value)} />
         </div>
 
         <div style={FIELD}>
           <label style={LABEL}>Description</label>
           <textarea style={{ ...TEXTAREA, minHeight: 60 }}
-            placeholder="What this report covers"
+            placeholder="What this digest covers"
             value={template.description} onChange={e => up('description', e.target.value)} />
         </div>
 
         <div style={FIELD}>
-          <label style={LABEL}>Report type</label>
+          <label style={LABEL}>Digest type</label>
           <select style={INP} value={template.type} onChange={e => up('type', e.target.value)}>
             <option value="operational">Operational</option>
             <option value="maintenance">Maintenance</option>
@@ -793,9 +759,8 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
 
         {/* Summary */}
         <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '12px 14px', fontSize: 12, color: 'var(--text3)', display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div><b style={{ color: 'var(--text2)' }}>{template.sections.length}</b> sections</div>
-          <div><b style={{ color: 'var(--text2)' }}>{template.sections.filter(s => s.source_type !== 'none').length}</b> data bindings</div>
-          <div><b style={{ color: 'var(--text2)' }}>{template.sections.filter(s => s.type === 'ai_narrative').length}</b> AI narratives</div>
+          <div><b style={{ color: 'var(--text2)' }}>{template.sections.length}</b> AI summar{template.sections.length === 1 ? 'y' : 'ies'}</div>
+          <div><b style={{ color: 'var(--text2)' }}>{template.sections.filter(s => s.source_type !== 'none' && !!s.source_id).length}</b> with a data source</div>
           <div><b style={{ color: 'var(--text2)' }}>{template.recipients.length}</b> recipients</div>
           <div style={{ color: 'var(--text3)' }}>{template.scheduleState.enabled ? (() => { const s = template.scheduleState; const time = `${String(s.hour).padStart(2,'0')}:${s.minute===0?'00':'30'}`; return s.frequency === 'daily' ? `Daily at ${time}` : s.frequency === 'weekly' ? `Weekly · ${time}` : `Monthly · ${time}` })() : 'Manual only'}</div>
         </div>
@@ -809,7 +774,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
           <button onClick={save} disabled={saving || !template.name}
             style={{ padding: '10px 0', borderRadius: 8, border: 'none', background: 'var(--blue)', color: 'white', fontSize: 14, fontWeight: 700, cursor: template.name ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: !template.name ? 0.5 : 1 }}>
-            {saving ? 'Saving…' : savedAt ? 'Saved ✓ — keep editing' : isEdit ? 'Save changes' : 'Create template'}
+            {saving ? 'Saving…' : savedAt ? 'Saved ✓ — keep editing' : isEdit ? 'Save changes' : 'Create digest'}
           </button>
           <button onClick={async () => { await save(); router.push('/reports') }} disabled={saving || !template.name}
             style={{ padding: '9px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 13, cursor: template.name ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: !template.name ? 0.5 : 1 }}>

@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.137] - 2026-10-23
+
+### Changed — Reports gutted to the AI-narrated scheduled digest
+The flexible report designer (KPI/table/chart/static-text sections, width layouts) is removed in favour of the one differentiated thing it did well: a scheduled, AI-narrated operational digest emailed to a team.
+- components/reports/TemplateBuilder.tsx: a digest is now name + schedule + recipients + one or more AI summaries. Each summary = a saved query (or API) + a focus prompt; Claude writes the narrative. Dropped the section-type palette, width, chart type and static text.
+- lib/report-runner.ts: each AI summary now renders the underlying data (a compact Based-on table) beneath the narrative, so the digest is auditable in the PDF. Legacy section renderers kept so any pre-existing templates still render.
+- Renamed the module Reports -> Digests in the nav and the page (route /reports and the report_* tables unchanged). Scheduling, recipients, PDF output and the scheduler path are unchanged.
+- saved_queries, Rules and the Query Builder are untouched.
+
 ## [1.3.136] - 2026-10-22
 
 ### Added — per-panel AI chat, with a whole-dashboard toggle
