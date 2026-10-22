@@ -20,6 +20,7 @@ interface Props {
   onDelete: () => void
   onRefresh: () => void
   onResizeStart?: (e: React.MouseEvent) => void
+  onAskAI?: () => void                     // pin the AI chat to this panel
   seriesLabels?: Record<string, string>   // entity id → device label, for overlay legends
   // dnd-kit sortable wiring (set by the SortablePanel wrapper in DashboardView):
   sortableRef?: (el: HTMLElement | null) => void
@@ -619,7 +620,7 @@ function ChartBody({ type, data, config, width, height, seriesLabels }: { type: 
 }
 
 // -- Panel card ------------------------------------------------
-export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, seriesLabels, sortableRef, sortableStyle, sortableAttributes, dragListeners, isDragging }: Props) {
+export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, onRefresh, onResizeStart, onAskAI, seriesLabels, sortableRef, sortableStyle, sortableAttributes, dragListeners, isDragging }: Props) {
   const colSpan = Math.min(Math.max(panel.w, 1), 12)   // 12-column grid
   const rowSpan = Math.min(Math.max(panel.h, 1), 3)
   const [bodyRef, bodyW] = useMeasure()
@@ -645,7 +646,11 @@ export default function PanelChart({ panel, result, isOwner, onEdit, onDelete, o
             </svg>
           </button>
           {isOwner && <>
-            <button onClick={onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}>
+            {onAskAI && <button onClick={onAskAI} title="Ask AI about this panel"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
+            </button>}
+            <button onClick={onEdit} title="Edit panel" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M7.5 1.5l2 2-6 6-2.5.5.5-2.5z"/></svg>
             </button>
             <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}>

@@ -127,7 +127,7 @@ export async function POST(req: Request) {
 
   const reqLog = log.child({ requestId, userId: session.id, userEmail: session.email, service: 'chat' })
   reqLog.info('Chat request received')
-  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments, dashboard_id } = await req.json()
+  const { messages, system, conversation_id, title, model: requestedModel, allowed_sources, attachments, dashboard_id, panel_id } = await req.json()
   // Hard source-scoping: the chat picker sends the ids of pinned sources. When
   // present, tool calls are restricted to these ids (enforced in runTool). An
   // empty/absent list means no restriction (all sources allowed) — the default.
@@ -520,6 +520,15 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           + 'To REMOVE panel(s), call remove_dashboard_panels with their panel_id(s). '
           + 'To change a panel\'s chart type, title, subtitle or chart_config (presentation only — not its query/source), call update_dashboard_panel with its panel_id. For a different query or source, add a corrected panel and remove the old one. '
           + 'Keep replies brief and act directly; after a change, confirm what you did in one short line.'
+        // Panel-scoped chat: the user pinned the conversation to ONE panel ("Ask AI" on a panel).
+        if (panel_id) {
+          const fp = (dpanels as Record<string, unknown>[]).find(p => String(p.id) === String(panel_id))
+          if (fp) {
+            dashEditBlock += `\n\nFOCUS — this chat is PINNED to one panel: panel_id:"${fp.id}" ("${fp.title}", ${fp.source_type} ${fp.chart_type}). `
+              + 'Answer about, analyse, and make changes to THIS panel unless the user clearly asks about the whole dashboard. Prefer update_dashboard_panel on this panel_id for presentation tweaks; when adding a replacement, remove this one. '
+              + `This panel's full query: ${String(fp.query).replace(/\s+/g, ' ').slice(0, 500)}.`
+          }
+        }
       }
     } catch { /* ignore — fall back to a normal chat turn */ }
   }

@@ -120,7 +120,10 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
   // the AI chat share one full-height pane (toggle between them).
   const [rightMode, setRightMode] = useState<'closed' | 'chat' | 'edit'>('closed')
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
+  // AI chat scope: a pinned panel ("Ask AI" on a panel) or null for the whole dashboard.
+  const [chatPanel, setChatPanel] = useState<Panel | null>(null)
   const openEdit = (panel: Panel | null) => { setEditingPanel(panel); setRightMode('edit') }
+  const openChat = (panel: Panel | null) => { setChatPanel(panel); setRightMode('chat') }
   // Drag-to-reorder panels (dnd-kit sortable). A small activation distance so clicking the
   // header buttons doesn't start a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -445,7 +448,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
         </button>
 
         {isOwner && !dashboard?.superset_embed_uuid && (
-          <button onClick={() => setRightMode(m => m === 'chat' ? 'closed' : 'chat')} title="Evolve this dashboard with AI"
+          <button onClick={() => rightMode === 'chat' ? setRightMode('closed') : openChat(null)} title="Chat with AI about the whole dashboard"
             style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rightMode === 'chat' ? 'var(--accent-bg)' : 'var(--bg)', color: rightMode === 'chat' ? 'var(--accent-fg)' : 'var(--text2)', border: rightMode === 'chat' ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5 10.1 10.9 5.5 9l4.6-1.4L12 3z"/></svg>
             Edit with AI
@@ -541,6 +544,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 isOwner={isOwner}
                 seriesLabels={entityLabelMap}
                 onEdit={() => openEdit(panel)}
+                onAskAI={() => openChat(panel)}
                 onDelete={() => deletePanel(panel.id, panel.title)}
                 onResizeStart={(e: React.MouseEvent) => {
                   const grid = e.currentTarget.closest('[data-panel-grid]') as HTMLElement
@@ -588,7 +592,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
             {rightMode === 'chat'
-              ? <DashboardChatDock dashboardId={id} onChanged={reloadAfterEdit} />
+              ? <DashboardChatDock key={chatPanel?.id || 'dashboard'} dashboardId={id} onChanged={reloadAfterEdit} panel={chatPanel ? { id: chatPanel.id, title: chatPanel.title } : null} onScope={() => setChatPanel(null)} />
               : <PanelBuilder embedded initial={editingPanel} onSave={savePanel} onCancel={() => { setRightMode('closed'); setEditingPanel(null) }} />}
           </div>
         )}

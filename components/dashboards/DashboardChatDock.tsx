@@ -15,7 +15,7 @@ interface ProposalPanel {
 interface Proposal { title: string; panels: ProposalPanel[]; summary: { data: number; empty: number; error: number; invalid: number; total: number }; entity?: unknown; readiness?: { allReady: boolean; readyCount: number; total: number; gaps: { panel: string; gaps: string[] }[] } }
 interface Msg { role: 'user' | 'assistant'; content: string; proposal?: Proposal; applied?: boolean }
 
-export default function DashboardChatDock({ dashboardId, onChanged }: { dashboardId: string; onChanged: () => void }) {
+export default function DashboardChatDock({ dashboardId, onChanged, panel, onScope }: { dashboardId: string; onChanged: () => void; panel?: { id: string; title: string } | null; onScope?: (panelId: string | null) => void }) {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState('')      // '' idle | 'thinking' | 'applying'
@@ -34,7 +34,7 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
     try {
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, model: 'auto', dashboard_id: dashboardId }),
+        body: JSON.stringify({ messages: history, model: 'auto', dashboard_id: dashboardId, panel_id: panel?.id }),
       })
       if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`)
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; let changed = false
@@ -123,6 +123,19 @@ export default function DashboardChatDock({ dashboardId, onChanged }: { dashboar
 
   return (
     <div style={{ flex: 1, minHeight: 0, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+      {/* Scope bar — when pinned to a panel, show it and let the user switch to the whole dashboard. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11.5, flexShrink: 0 }}>
+        <span style={{ color: 'var(--text4)' }}>Chatting about:</span>
+        {panel ? (
+          <>
+            <span style={{ fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }} title={panel.title}>{panel.title}</span>
+            <button onClick={() => onScope?.(null)} title="Switch to the whole dashboard"
+              style={{ marginLeft: 'auto', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', padding: '2px 9px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Whole dashboard</button>
+          </>
+        ) : (
+          <span style={{ fontWeight: 600, color: 'var(--text)' }}>Whole dashboard</span>
+        )}
+      </div>
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--text3)', lineHeight: 1.6 }}>

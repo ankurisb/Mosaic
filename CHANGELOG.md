@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.136] - 2026-10-22
+
+### Added — per-panel AI chat, with a whole-dashboard toggle
+The Edit-with-AI dock can now be pinned to a single panel.
+- Each panel has an "Ask AI" (sparkle) action that opens the dock focused on THAT panel: the chat route gets panel_id and a FOCUS instruction with the panel’s full query, so edits/analysis target it. Each panel (and the dashboard) gets its own fresh conversation.
+- The dock shows a scope bar — "Chatting about: <panel>" with a "Whole dashboard" button to switch back. The header "Edit with AI" opens the whole-dashboard chat.
+- app/api/chat/route.ts: accepts panel_id and appends a panel-FOCUS block to the dashboard-edit context.
+
 ## [1.3.135] - 2026-10-22
 
 ### Changed — panels rearrange with smooth drag-and-drop (dnd-kit)
