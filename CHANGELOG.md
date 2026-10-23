@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.138] - 2026-10-23
+### Added
+- **Knowledge graph (Asset Explorer).** A new top-level **Assets** view that renders a
+  property graph of the plant, materialised automatically from whatever sources a
+  customer has connected — no hand-authoring per install. The generic materialiser
+  (`lib/graph-materialize`) introspects each source, reads its semantic roles
+  (`semantic_descriptions`) and the conformed-dimension crosswalk (022), and emits
+  entity **nodes** (identifier/dimension values) with intra-source containment
+  **edges**, then proposes cross-source `same_as` links with a confidence and a
+  human-readable reason for an admin to verify.
+  - Storage: `graph_nodes`, `graph_edges`, `graph_runs` (migration 024). Deterministic
+    node/edge ids so re-runs update in place; human decisions (verified/rejected/manual)
+    are never overwritten by a rebuild.
+  - API: `GET /api/graph` (full graph or `?scope=&depth=` subgraph) and admin
+    `POST /api/graph` (`rebuild`, `confirm`/`reject` a match, `manual_edge`).
+  - UI: layered graph canvas, node inspector, inline pending-match review queue, and a
+    Build / Rebuild-Sync control. Design invariant — **every edge is earned**: it exists
+    only because the data justifies it (`provenance='data'`) or an admin asserted it
+    (`manual`). A source with no shared keys stays an island, which is correct.
+
 ## [1.3.137] - 2026-10-23
 
 ### Changed — Reports gutted to the AI-narrated scheduled digest

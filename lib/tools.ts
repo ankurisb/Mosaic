@@ -1300,7 +1300,7 @@ function sanitiseRows(rows: Record<string, unknown>[], maxRows: number = MAX_RES
   })
 }
 
-async function queryDatabase(connectionId: string, queryInput: string, opts: { maxRows?: number } = {}) {
+export async function queryDatabase(connectionId: string, queryInput: string, opts: { maxRows?: number } = {}) {
   // Row ceiling for the wrap. Default 200 (chat); dashboards pass a higher value so
   // multi-point charts aren't silently clipped. We fetch cap+1 to DETECT truncation
   // (more rows existed at the source) and report it, instead of capping invisibly.
@@ -3676,7 +3676,7 @@ export interface ChartArtifact {
 
 // -- Prism IoT query -------------------------------------------
 
-async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
+export async function queryPrism(input: Record<string, unknown>): Promise<unknown> {
   const db = getDb()
 
   // Resolve instance — use explicit id or fall back to single active instance

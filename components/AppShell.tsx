@@ -9,7 +9,7 @@ import { useIsMobile } from '@/lib/useIsMobile'
 
 interface Conv { id: string; title: string }
 
-const SECTION_TITLES: Record<string, string> = { '/': 'Chats', '/dashboards': 'Dashboards', '/reports': 'Reports', '/query-builder': 'Query Builder', '/rules': 'Rules', '/connectors': 'Connectors', '/settings': 'Settings' }
+const SECTION_TITLES: Record<string, string> = { '/': 'Chats', '/dashboards': 'Dashboards', '/assets': 'Asset Explorer', '/reports': 'Reports', '/query-builder': 'Query Builder', '/rules': 'Rules', '/connectors': 'Connectors', '/settings': 'Settings' }
 
 export default function AppShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
   const router   = useRouter()
@@ -87,6 +87,10 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
           {navBtn('/dashboards',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg>,
             'Dashboards'
+          )}
+          {navBtn('/assets',
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="2.5" r="1.5"/><circle cx="2.5" cy="11" r="1.5"/><circle cx="11.5" cy="11" r="1.5"/><path d="M7 4v2.5M7 6.5L3.2 9.8M7 6.5l3.8 3.3"/></svg>,
+            'Assets'
           )}
           {navBtn('/reports',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/></svg>,
