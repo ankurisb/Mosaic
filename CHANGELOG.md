@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.141] - 2026-10-24
+### Changed
+- Knowledge graph: API sources enter the graph as one island node per published
+  **service**, not per connection. A service commonly fans out into many
+  connections/endpoints (97 across 3 services on the reference box), which would
+  otherwise flood the graph with disconnected nodes.
+
 ## [1.3.140] - 2026-10-23
 ### Fixed
 - Migration 024 failed to apply (`SqliteError: incomplete input`): two column

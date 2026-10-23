@@ -52,7 +52,10 @@ async function enumerateSources(): Promise<SourceRef[]> {
   const [dbs, prisms, apis] = await Promise.all([
     sql`SELECT id, label FROM db_connections ORDER BY created_at ASC`.catch(() => []) as Promise<Array<{ id: string; label: string }>>,
     sql`SELECT id, label FROM prism_instances WHERE active = true ORDER BY created_at ASC`.catch(() => []) as Promise<Array<{ id: string; label: string }>>,
-    sql`SELECT c.id as id, COALESCE(c.label, s.label) as label FROM api_connections c JOIN api_services s ON s.id = c.service_id WHERE COALESCE(s.status,'published')='published' ORDER BY c.created_at ASC`.catch(() => []) as Promise<Array<{ id: string; label: string }>>,
+    // One island node per published SERVICE (not per connection): a service is the
+    // unit a user thinks of as "a connected API", and a service often has many
+    // connections/endpoints that would otherwise flood the graph with stray dots.
+    sql`SELECT id, label FROM api_services WHERE COALESCE(status,'published')='published' ORDER BY created_at ASC`.catch(() => []) as Promise<Array<{ id: string; label: string }>>,
   ])
   return [
     ...dbs.map(r => ({ source_type: 'database', source_id: r.id, label: r.label || r.id })),
