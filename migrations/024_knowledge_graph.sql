@@ -29,12 +29,12 @@ CREATE INDEX IF NOT EXISTS idx_graph_nodes_source ON graph_nodes(source_type, so
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_kind   ON graph_nodes(kind);
 
 CREATE TABLE IF NOT EXISTS graph_edges (
-  id           TEXT PRIMARY KEY,          -- deterministic for data/auto edges; random for manual
+  id           TEXT PRIMARY KEY,          -- deterministic for data/auto edges, random for manual
   src          TEXT NOT NULL,             -- -> graph_nodes.id
   dst          TEXT NOT NULL,             -- -> graph_nodes.id
   type         TEXT NOT NULL,             -- contains | measured_on | same_as | related
   provenance   TEXT NOT NULL DEFAULT 'data',   -- data | manual
-  confidence   REAL,                      -- 0..1 for proposed same_as; NULL for structural edges
+  confidence   REAL,                      -- 0..1 for proposed same_as, NULL for structural edges
   status       TEXT NOT NULL DEFAULT 'verified', -- verified | pending | rejected
   evidence     TEXT DEFAULT '',           -- why this edge exists (matched tokens, FK name, admin note)
   created_at   TEXT DEFAULT (datetime('now')),

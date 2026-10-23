@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.140] - 2026-10-23
+### Fixed
+- Migration 024 failed to apply (`SqliteError: incomplete input`): two column
+  comments contained semicolons, and the migration runner splits statements on
+  `;` after stripping only full-line comments, so the `graph_edges` CREATE was
+  cut mid-statement. Reworded the comments. No schema change. (v1.3.139 shipped
+  the knowledge-graph code with this broken migration.)
+
 ## [1.3.139] - 2026-10-23
 ### Added
 - **Knowledge graph (Asset Explorer).** A new top-level **Assets** view that renders a
