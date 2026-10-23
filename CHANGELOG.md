@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.138] - 2026-10-23
+## [1.3.139] - 2026-10-23
 ### Added
 - **Knowledge graph (Asset Explorer).** A new top-level **Assets** view that renders a
   property graph of the plant, materialised automatically from whatever sources a
