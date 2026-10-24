@@ -35,10 +35,13 @@ export async function GET(req: NextRequest) {
   try {
     const buf = await readFile(resolved)
     const filename = `${String(r.name).replace(/[^a-z0-9]/gi, '_')}.pdf`
+    // inline=1 serves the PDF for in-app viewing (embedded in the viewer route);
+    // default is attachment (download).
+    const inline = searchParams.get('inline') === '1'
     return new Response(buf, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${filename}"`,
         'Content-Length': String(buf.length),
       },
     })

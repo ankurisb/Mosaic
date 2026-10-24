@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.144] - 2026-10-24
+### Changed
+- Digests: collapsed the three tabs (Generated / Digests / History) into **one
+  tab-less view**. Each digest is an expandable row showing its schedule, status,
+  and run history inline; every run links to its output. RCA exports from chat
+  appear in a single "From chat" group that only shows when such exports exist.
+- Digest outputs now open **in-app** (new route `/reports/view/[id]`, embedded PDF
+  with a Back link) instead of only downloading; Download remains available.
+  `/api/reports/download?inline=1` serves the PDF inline for the viewer.
+
 ## [1.3.143] - 2026-10-24
 ### Fixed
 - Knowledge graph: **Rebuild now fully replaces** the graph instead of upserting.

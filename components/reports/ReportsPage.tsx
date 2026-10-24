@@ -1,46 +1,41 @@
 'use client'
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import AppShell from '@/components/AppShell'
 
-type Tab = 'library' | 'templates' | 'history'
-
-function fmtDate(s: string | null) {
+function fmtDate(s: unknown) {
   if (!s) return '—'
-  return new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  try { return new Date(String(s)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return String(s) }
 }
-
-function fmtSize(bytes: number | null) {
-  if (!bytes) return '—'
-  return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`
+function fmtSize(bytes: unknown) {
+  const n = Number(bytes); if (!n) return ''
+  return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
 }
-
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, [string, string]> = {
-    completed: ['#f0fdf4', '#16a34a'],
-    pending:   ['#fffbeb', '#d97706'],
-    failed:    ['#fef2f2', '#dc2626'],
-    running:   ['#eff6ff', '#2563eb'],
+    completed: ['#f0fdf4', '#16a34a'], pending: ['#fffbeb', '#d97706'],
+    failed: ['#fef2f2', '#dc2626'], running: ['#eff6ff', '#2563eb'],
   }
   const [bg, fg] = map[status] || ['var(--bg3)', 'var(--text3)']
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: bg, color: fg }}>{status}</span>
 }
-
 function TypeBadge({ type }: { type: string }) {
   const map: Record<string, string> = { rca: '#7c3aed', operational: '#2563eb', maintenance: '#dc2626', scheduled: '#059669' }
   const color = map[type] || '#6366f1'
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: color + '18', color, border: `1px solid ${color}30` }}>{type}</span>
 }
 
+type Row = Record<string, unknown>
+
 export default function ReportsPage({ user }: { user: SessionUser }) {
   const router = useRouter()
-  const [tab, setTab] = useState<Tab>('library')
-  const [library, setLibrary] = useState<Record<string,unknown>[]>([])
-  const [templates, setTemplates] = useState<Record<string,unknown>[]>([])
-  const [history, setHistory] = useState<Record<string,unknown>[]>([])
+  const [templates, setTemplates] = useState<Row[]>([])
+  const [runs, setRuns] = useState<Row[]>([])          // report_instances (runs + outputs)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [chatOpen, setChatOpen] = useState(false)
   const [showNewTemplate, setShowNewTemplate] = useState(false)
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', type: 'operational', schedule: '', recipients: '' })
   const [saving, setSaving] = useState(false)
@@ -48,25 +43,53 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
 
   const isAdmin = user.role === 'admin'
 
-  const load = useCallback(async (t: Tab) => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/reports?type=${t === 'library' ? 'instances' : t}`)
-      const d = await r.json()
-      if (t === 'library') setLibrary(d.instances || [])
-      else if (t === 'templates') setTemplates(d.templates || [])
-      else setHistory(d.history || [])
+      const [tr, hr] = await Promise.all([
+        fetch('/api/reports?type=templates').then(r => r.json()).catch(() => ({})),
+        fetch('/api/reports?type=history').then(r => r.json()).catch(() => ({})),
+      ])
+      setTemplates(tr.templates || [])
+      setRuns(hr.history || [])
     } finally { setLoading(false) }
   }, [])
+  useEffect(() => { load() }, [load])
 
-  useEffect(() => { load(tab) }, [tab, load])
+  // runs grouped by template
+  const runsByTemplate = useMemo(() => {
+    const m = new Map<string, Row[]>()
+    for (const r of runs) {
+      const tid = r.template_id ? String(r.template_id) : ''
+      if (!tid) continue
+      ;(m.get(tid) || m.set(tid, []).get(tid)!).push(r)
+    }
+    for (const list of m.values()) list.sort((a, b) => String(b.generated_at).localeCompare(String(a.generated_at)))
+    return m
+  }, [runs])
+  const chatRuns = useMemo(
+    () => runs.filter(r => !r.template_id).sort((a, b) => String(b.generated_at).localeCompare(String(a.generated_at))),
+    [runs],
+  )
 
-  async function deleteTemplate(id: string) {
-    if (!confirm('Delete this template?')) return
-    await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_template', id }) })
-    load('templates')
+  const visibleTemplates = templates.filter(t => !search ||
+    String(t.name).toLowerCase().includes(search.toLowerCase()) ||
+    String(t.description || '').toLowerCase().includes(search.toLowerCase()))
+  const visibleChat = chatRuns.filter(r => !search || String(r.name).toLowerCase().includes(search.toLowerCase()))
+
+  function toggleExpand(id: string) {
+    setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
+  async function deleteTemplate(id: string) {
+    if (!confirm('Delete this digest? Its past runs remain accessible.')) return
+    await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_template', id }) })
+    load()
+  }
+  async function toggleActive(id: string, active: boolean) {
+    await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'toggle_template', id, active }) })
+    load()
+  }
   async function saveTemplate() {
     if (!newTemplate.name) return
     setSaving(true)
@@ -74,238 +97,176 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
       await fetch('/api/reports', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create_template',
-          name: newTemplate.name,
-          description: newTemplate.description,
-          type: newTemplate.type,
+          action: 'create_template', name: newTemplate.name, description: newTemplate.description, type: newTemplate.type,
           schedule: newTemplate.schedule || null,
           recipients: newTemplate.recipients.split(',').map(r => r.trim()).filter(Boolean),
-        })
+        }),
       })
       setShowNewTemplate(false)
       setNewTemplate({ name: '', description: '', type: 'operational', schedule: '', recipients: '' })
-      load('templates')
+      load()
     } finally { setSaving(false) }
   }
-
   async function runTemplate(id: string, name: string) {
     setRunning(id)
     try {
-      const res = await fetch('/api/reports/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template_id: id }),
-      })
+      const res = await fetch('/api/reports/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template_id: id }) })
       const d = await res.json()
-      if (!res.ok || d.error) { alert(d.error || 'Failed to generate report'); return }
-      alert(`Report "${name}" generated successfully`)
-      load('library')
-      setTab('library')
-    } catch (e) { alert('Failed to generate report') }
+      if (!res.ok || d.error) { alert(d.error || 'Failed to generate digest'); return }
+      setExpanded(s => new Set(s).add(id))
+      await load()
+    } catch { alert('Failed to generate digest') }
     finally { setRunning(null) }
   }
 
   const INP: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1.5px solid var(--border2)', borderRadius: 7, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
+  const btn: React.CSSProperties = { padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }
 
-  const filteredLibrary = library.filter(r => !search || String(r.name).toLowerCase().includes(search.toLowerCase()))
-  const filteredHistory = history.filter(r => !search || String(r.name).toLowerCase().includes(search.toLowerCase()) || String(r.trigger).toLowerCase().includes(search.toLowerCase()))
+  function runRow(r: Row) {
+    const id = String(r.id)
+    const deliveries = Number(r.sent_count) > 0 ? `${r.sent_count}/${r.delivery_count} sent` : r.delivery_count ? `${r.delivery_count} pending` : null
+    const viewable = r.pdf_path && r.status !== 'failed'
+    return (
+      <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 8px 18px', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+        <span style={{ color: 'var(--text3)', whiteSpace: 'nowrap', minWidth: 140 }}>{fmtDate(r.generated_at)}</span>
+        <span style={{ color: 'var(--text4)', textTransform: 'capitalize' }}>{String(r.trigger || '—')}</span>
+        {deliveries && <span style={{ color: 'var(--text4)' }}>· {deliveries}</span>}
+        {r.pdf_size ? <span style={{ color: 'var(--text4)' }}>· {fmtSize(r.pdf_size)}</span> : null}
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <StatusBadge status={String(r.status)} />
+          {viewable && <button onClick={() => router.push(`/reports/view/${id}`)} style={{ ...btn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>Open</button>}
+          {r.pdf_path ? <a href={`/api/reports/download?id=${id}`} download style={{ ...btn, textDecoration: 'none' }}>Download</a> : null}
+        </span>
+      </div>
+    )
+  }
+
+  const nothing = !loading && templates.length === 0 && runs.length === 0
 
   return (
     <AppShell user={user}>
-      {/* Breadcrumb header */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
         <span style={{ fontSize: 13, color: 'var(--text3)' }}>Chat</span>
         <span style={{ fontSize: 13, color: 'var(--text3)' }}>/</span>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Digests</span>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 0 }}>
-          {(['library', 'templates', 'history'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              style={{ padding: '12px 18px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? 'var(--text)' : 'var(--text3)', fontFamily: 'inherit' }}>
-              {t === 'library' ? 'Generated' : t === 'templates' ? 'Digests' : 'History'}
-            </button>
-          ))}
-        </div>
-        {isAdmin && tab === 'templates' && (
-          <button onClick={() => router.push('/reports/template/new')}
-            style={{ padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+        <input placeholder="Search digests…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...INP, maxWidth: 320 }} />
+        {isAdmin && (
+          <button onClick={() => setShowNewTemplate(true)}
+            style={{ marginLeft: 'auto', padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             + New digest
           </button>
         )}
       </div>
 
-      {/* Scrollable content — centred with max-width like other modules */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 900, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-
-        {/* Search */}
-        {(tab === 'library' || tab === 'history') && (
-          <input placeholder={tab === 'library' ? 'Search reports...' : 'Search history...'}
-            value={search} onChange={e => setSearch(e.target.value)}
-            style={{ ...INP, marginBottom: 16 }} />
-        )}
-
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 940, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         {loading && <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading…</div>}
 
-        {/* Library */}
-        {!loading && tab === 'library' && (
-          filteredLibrary.length === 0
-            ? <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
-                No digests generated yet. Create a digest below, or export an RCA from chat.
-              </div>
-            : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {filteredLibrary.map(r => (
-                  <div key={String(r.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)' }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round">
-                        <path d="M4 2h7l4 4v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M11 2v4h4M6 9h6M6 12h4"/>
-                      </svg>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{String(r.name)}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <TypeBadge type={String(r.type)} />
-                        <span>{fmtDate(String(r.generated_at))}</span>
-                        {r.pdf_size && <span>{fmtSize(Number(r.pdf_size))}</span>}
-                        {r.page_count && <span>{String(r.page_count)} pages</span>}
-                        {r.triggered_by_name && <span>by {String(r.triggered_by_name)}</span>}
-                      </div>
-                    </div>
-                    <StatusBadge status={String(r.status)} />
-                    {r.pdf_path && (
-                      <a href={`/api/reports/download?id=${r.id}`} download
-                        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer', textDecoration: 'none', fontFamily: 'inherit' }}>
-                        Download
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
+        {nothing && (
+          <div style={{ padding: '44px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
+            No digests yet — create one to schedule an AI summary for your team, or export an RCA from a chat.
+          </div>
         )}
 
-        {/* Templates */}
-        {!loading && tab === 'templates' && (
-          templates.length === 0
-            ? <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
-                No digests yet. Create one to schedule a recurring AI summary emailed to your team.
-              </div>
-            : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {templates.map(t => (
-                  <div key={String(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', opacity: t.active ? 1 : 0.6 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{String(t.name)}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {!loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {visibleTemplates.map(t => {
+              const id = String(t.id)
+              const tRuns = runsByTemplate.get(id) || []
+              const last = tRuns[0]
+              const isOpen = expanded.has(id)
+              const active = t.active === 1 || t.active === true || t.active === undefined
+              return (
+                <div key={id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', opacity: active ? 1 : 0.65, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px' }}>
+                    <button onClick={() => toggleExpand(id)} aria-label={isOpen ? 'Collapse' : 'Expand'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, display: 'flex' }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><path d="M4 2.5L8 6l-4 3.5" /></svg>
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => toggleExpand(id)}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {String(t.name)}
+                        {!active && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text4)', border: '1px solid var(--border2)', borderRadius: 999, padding: '1px 7px' }}>Paused</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                         <TypeBadge type={String(t.type)} />
-                        {t.schedule && <span>⏱ {String(t.schedule)}</span>}
-                        {t.description && <span>{String(t.description)}</span>}
+                        <span>⏱ {t.schedule ? String(t.schedule) : 'Manual'}</span>
+                        {last ? <span>· last run {fmtDate(last.generated_at)}</span> : <span style={{ color: 'var(--text4)' }}>· never run</span>}
+                        {tRuns.length ? <span style={{ color: 'var(--text4)' }}>· {tRuns.length} run{tRuns.length > 1 ? 's' : ''}</span> : null}
                       </div>
                     </div>
+                    {last ? <StatusBadge status={String(last.status)} /> : null}
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => router.push(`/reports/template/edit/${t.id}`)}
-                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2L4 10H2v-2L8.5 1.5z"/></svg> Edit
+                        <button onClick={() => runTemplate(id, String(t.name))} disabled={running === id} style={btn}>
+                          {running === id ? 'Running…' : <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><polygon points="2,1 9,5 2,9" fill="currentColor" /></svg> Run now</>}
                         </button>
-                        <button onClick={() => runTemplate(String(t.id), String(t.name))} disabled={running === String(t.id)}
-                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          {running === String(t.id) ? 'Generating…' : <><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><polygon points="2,1 9,5 2,9" fill="currentColor" stroke="none"/></svg> Run now</>}
-                        </button>
-                        <button onClick={() => deleteTemplate(String(t.id))}
-                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          Delete
-                        </button>
+                        <button onClick={() => router.push(`/reports/template/edit/${id}`)} style={btn}>Edit</button>
+                        <button onClick={() => toggleActive(id, !active)} style={btn}>{active ? 'Pause' : 'Resume'}</button>
+                        <button onClick={() => deleteTemplate(id)} style={{ ...btn, color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2' }}>Delete</button>
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-        )}
-
-        {/* History */}
-        {!loading && tab === 'history' && (
-          filteredHistory.length === 0
-            ? <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text3)', fontSize: 13 }}>
-                No report history yet.
-              </div>
-            : <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                        {['Report', 'Type', 'Trigger', 'Generated', 'Triggered by', 'Deliveries', 'Status'].map(h => (
-                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredHistory.map(r => (
-                        <tr key={String(r.id)} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '10px 14px' }}>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{String(r.name)}</div>
-                            {r.template_name && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{String(r.template_name)}</div>}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}><TypeBadge type={String(r.type)} /></td>
-                          <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text3)' }}>{String(r.trigger)}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmtDate(String(r.generated_at))}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text3)' }}>{String(r.triggered_by_name || '—')}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text3)' }}>
-                            {Number(r.sent_count) > 0 ? `${r.sent_count}/${r.delivery_count} sent` : r.delivery_count ? `${r.delivery_count} pending` : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}><StatusBadge status={String(r.status)} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {isOpen && (
+                    tRuns.length
+                      ? <div>{tRuns.map(runRow)}</div>
+                      : <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text4)' }}>No runs yet. {isAdmin ? 'Use “Run now”, or wait for the schedule.' : 'Waiting for its schedule.'}</div>
+                  )}
                 </div>
+              )
+            })}
+
+            {/* From chat — only when RCA exports exist */}
+            {visibleChat.length > 0 && (
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden', marginTop: 4 }}>
+                <div onClick={() => setChatOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', cursor: 'pointer' }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: chatOpen ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><path d="M4 2.5L8 6l-4 3.5" /></svg>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>From chat</span>
+                  <span style={{ fontSize: 11, color: 'var(--text4)' }}>{visibleChat.length} export{visibleChat.length > 1 ? 's' : ''} · RCAs you saved from a conversation</span>
+                </div>
+                {chatOpen && <div>{visibleChat.map(runRow)}</div>}
               </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* New Template Modal */}
+      {/* New digest modal */}
       {showNewTemplate && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowNewTemplate(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 460, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 460, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 16 }}>New digest</div>
-              <button onClick={() => setShowNewTemplate(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <button onClick={() => setShowNewTemplate(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Template name *</label>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Digest name *</label>
                 <input style={INP} placeholder="e.g. Weekly OEE Summary — Line B" value={newTemplate.name} onChange={e => setNewTemplate(p => ({ ...p, name: e.target.value }))} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Description</label>
-                <input style={INP} placeholder="What this digest covers" value={newTemplate.description} onChange={e => setNewTemplate(p => ({ ...p, description: e.target.value }))} />
+                <input style={INP} placeholder="What this digest summarises" value={newTemplate.description} onChange={e => setNewTemplate(p => ({ ...p, description: e.target.value }))} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Type</label>
-                <select style={INP} value={newTemplate.type} onChange={e => setNewTemplate(p => ({ ...p, type: e.target.value }))}>
-                  <option value="operational">Operational</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="quality">Quality</option>
-                  <option value="rca">RCA</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Schedule</label>
-                <input style={INP} placeholder="e.g. Every Monday at 06:00, or leave blank for manual" value={newTemplate.schedule} onChange={e => setNewTemplate(p => ({ ...p, schedule: e.target.value }))} />
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Schedule (cron, optional)</label>
+                <input style={INP} placeholder="e.g. 0 7 * * 1  (Mon 07:00) — leave blank for manual" value={newTemplate.schedule} onChange={e => setNewTemplate(p => ({ ...p, schedule: e.target.value }))} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>Recipients (comma-separated emails)</label>
-                <input style={INP} placeholder="manager@company.com, ops@company.com" value={newTemplate.recipients} onChange={e => setNewTemplate(p => ({ ...p, recipients: e.target.value }))} />
+                <input style={INP} placeholder="ops@acme.com, plant.manager@acme.com" value={newTemplate.recipients} onChange={e => setNewTemplate(p => ({ ...p, recipients: e.target.value }))} />
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-              <button onClick={() => setShowNewTemplate(false)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--text2)' }}>Cancel</button>
-              <button onClick={saveTemplate} disabled={saving || !newTemplate.name}
-                style={{ padding: '7px 16px', borderRadius: 7, border: 'none', background: 'var(--blue)', color: 'white', cursor: newTemplate.name ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', opacity: !newTemplate.name ? 0.5 : 1 }}>
-                {saving ? 'Saving…' : 'Create template'}
-              </button>
+              <div style={{ fontSize: 11, color: 'var(--text4)' }}>You can add the AI-narrated sections after creating it (Edit).</div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button onClick={() => setShowNewTemplate(false)} style={{ ...btn, padding: '8px 14px' }}>Cancel</button>
+                <button onClick={saveTemplate} disabled={saving || !newTemplate.name}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, fontWeight: 600, cursor: newTemplate.name ? 'pointer' : 'default', opacity: newTemplate.name ? 1 : 0.6, fontFamily: 'inherit' }}>
+                  {saving ? 'Creating…' : 'Create digest'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
