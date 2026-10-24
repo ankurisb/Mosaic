@@ -37,6 +37,14 @@ export interface OAuth2ClientAuth {
   token_url: string
   refresh_token?: string
   header_prefix?: string
+  // --- variants (Stage 5) ---
+  scope?: string                       // space-separated scopes (common for client_credentials)
+  audience?: string                    // required by some providers (e.g. Auth0)
+  grant_type?: string                  // explicit override; else inferred below
+  oauth_username?: string              // resource-owner password grant
+  oauth_password?: string
+  client_auth?: 'body' | 'basic'       // where client_id/secret go — body (default) or HTTP Basic header
+  extra_params?: string                // JSON object string of extra token-request params, merged verbatim
 }
 /**
  * Generic login-endpoint auth: POST credentials to a login URL, read a token
@@ -149,24 +157,48 @@ async function getOAuth2AccessTokenImpl(
   const cached = oauth2TokenCache.get(serviceId)
   if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token }
 
-  if (!authConfig.token_url || !authConfig.client_id || !authConfig.client_secret) {
+  const clientAuth = authConfig.client_auth === 'basic' ? 'basic' : 'body'
+  if (!authConfig.token_url) {
+    return { ok: false, error: 'Missing required field: token_url' }
+  }
+  // For Basic client auth the secret can be empty (public client); for body auth
+  // we still require id+secret unless this is a password grant with its own creds.
+  const hasPasswordCreds = !!(authConfig.oauth_username && authConfig.oauth_password)
+  if (clientAuth === 'body' && !hasPasswordCreds && (!authConfig.client_id || !authConfig.client_secret)) {
     return { ok: false, error: 'Missing required fields: client_id, client_secret, or token_url' }
   }
 
   const params = new URLSearchParams()
-  params.set('client_id', authConfig.client_id)
-  params.set('client_secret', authConfig.client_secret)
-  if (authConfig.refresh_token) {
-    params.set('grant_type', 'refresh_token')
-    params.set('refresh_token', authConfig.refresh_token)
+  // Choose the grant: explicit override wins, else infer from the fields present.
+  const grant = authConfig.grant_type
+    || (authConfig.refresh_token ? 'refresh_token'
+      : hasPasswordCreds ? 'password'
+      : 'client_credentials')
+  params.set('grant_type', grant)
+  if (grant === 'refresh_token' && authConfig.refresh_token) params.set('refresh_token', authConfig.refresh_token)
+  if (grant === 'password') { params.set('username', authConfig.oauth_username || ''); params.set('password', authConfig.oauth_password || '') }
+  if (authConfig.scope) params.set('scope', authConfig.scope)
+  if (authConfig.audience) params.set('audience', authConfig.audience)
+  // Client credentials: in the body by default, or via HTTP Basic when asked.
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
+  if (clientAuth === 'basic') {
+    if (authConfig.client_id) headers['Authorization'] = `Basic ${Buffer.from(`${authConfig.client_id}:${authConfig.client_secret || ''}`).toString('base64')}`
   } else {
-    params.set('grant_type', 'client_credentials')
+    if (authConfig.client_id) params.set('client_id', authConfig.client_id)
+    if (authConfig.client_secret) params.set('client_secret', authConfig.client_secret)
+  }
+  // Arbitrary provider-specific extras (e.g. resource=, tenant=) merged verbatim.
+  if (authConfig.extra_params) {
+    try {
+      const extra = JSON.parse(authConfig.extra_params) as Record<string, unknown>
+      for (const [k, v] of Object.entries(extra)) if (v != null) params.set(k, String(v))
+    } catch { /* ignore malformed extra_params */ }
   }
 
   try {
     const res = await fetch(authConfig.token_url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers,
       body: params.toString(),
       signal: AbortSignal.timeout(timeoutMs),
     })

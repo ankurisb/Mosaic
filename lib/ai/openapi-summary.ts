@@ -44,11 +44,19 @@ const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete']
 // grouping happens on the real resource segments underneath.
 const MOUNT_SEG = /^(api|apis|rest|public|internal|services?|v\d+(?:[._]\d+)*)$/i
 
-/** Resolve a local $ref ("#/components/schemas/X" or "#/definitions/X"). */
+/**
+ * Resolve a $ref against the spec. Handles a local ref ("#/components/schemas/X")
+ * and an external-file ref ("components.yaml#/components/schemas/X" or
+ * "./types.json#/Foo") — for the latter we resolve the FRAGMENT after '#' against
+ * the spec, which works once co-dropped files have been merged into one component
+ * pool (see mergeSpecBlocks). An external ref with no fragment can't be resolved.
+ */
 function resolveRef(spec: Obj, ref: string): Obj | null {
-  if (!ref.startsWith('#/')) return null
+  const hashIdx = ref.indexOf('#')
+  const frag = hashIdx >= 0 ? ref.slice(hashIdx + 1) : ''   // "/components/schemas/X"
+  if (!frag.startsWith('/')) return null
   let cur: unknown = spec
-  for (const part of ref.slice(2).split('/')) {
+  for (const part of frag.slice(1).split('/')) {
     if (!isObj(cur)) return null
     cur = cur[decodeURIComponent(part.replace(/~1/g, '/').replace(/~0/g, '~'))]
   }
@@ -291,16 +299,65 @@ export function splitMaterialBlocks(materials: string): string[] {
   return parts.length ? parts : (materials.trim() ? [materials.trim()] : [])
 }
 
-/** Find the first OpenAPI/Swagger spec inside materials (whole text or any block). */
+/**
+ * Deep-merge source's plain-object maps into target (shallow per top-level key,
+ * recursive for nested objects), without overwriting an existing concrete value.
+ * Used to pool components/definitions from several co-dropped spec files.
+ */
+function mergePools(target: Obj, source: unknown): void {
+  if (!isObj(source)) return
+  for (const [k, v] of Object.entries(source)) {
+    if (isObj(v)) { if (!isObj(target[k])) target[k] = {}; mergePools(target[k] as Obj, v) }
+    else if (!(k in target)) target[k] = v
+  }
+}
+
+/**
+ * Merge several co-dropped OpenAPI spec blocks into one. The primary is the block
+ * that actually has `paths`; the others contribute their `components`,
+ * `definitions`, parameters, responses and security schemes to a shared pool, so
+ * an external-file `$ref` (resolved by fragment) finds its target. A single spec
+ * is returned unchanged.
+ */
+export function mergeSpecBlocks(materials: string): unknown | null {
+  // A block counts if it is a full spec OR a fragment file carrying a shared
+  // component pool (components/definitions) or extra paths — the latter has no
+  // `paths`+`openapi`, so isOpenApiSpec rejects it, but its schemas are exactly
+  // what an external $ref points at.
+  const isFragment = (o: unknown): o is Obj => isObj(o) && (isObj(o.components) || isObj(o.definitions) || isObj(o.paths))
+  const blocks: Obj[] = []
+  const whole = parseSpec(materials)
+  if (isOpenApiSpec(whole) && isObj(whole)) blocks.push(whole)
+  if (!blocks.length) {
+    for (const b of splitMaterialBlocks(materials)) {
+      const s = parseSpec(b)
+      if ((isOpenApiSpec(s) || isFragment(s)) && isObj(s)) blocks.push(s)
+    }
+  }
+  if (!blocks.length) return null
+  if (blocks.length === 1) return blocks[0]
+  // Primary = the first real spec (paths + openapi/swagger); else the first block
+  // that at least has paths; else the first block.
+  let primaryIdx = blocks.findIndex(s => isOpenApiSpec(s))
+  if (primaryIdx < 0) primaryIdx = blocks.findIndex(s => isObj(s.paths))
+  if (primaryIdx < 0) primaryIdx = 0
+  const primary = blocks[primaryIdx]
+  for (let i = 0; i < blocks.length; i++) {
+    if (i === primaryIdx) continue
+    const s = blocks[i]
+    if (isObj(s.components)) { if (!isObj(primary.components)) primary.components = {}; mergePools(primary.components as Obj, s.components) }
+    if (isObj(s.definitions)) { if (!isObj(primary.definitions)) primary.definitions = {}; mergePools(primary.definitions as Obj, s.definitions) }
+    // Fold in paths too, so a spec split across files keeps all its endpoints.
+    if (isObj(s.paths)) { if (!isObj(primary.paths)) primary.paths = {}; mergePools(primary.paths as Obj, s.paths) }
+  }
+  return primary
+}
+
+/** Find the first OpenAPI/Swagger spec inside materials (whole text or any block),
+ *  merging co-dropped spec files into one so cross-file $refs resolve. */
 export function extractSpecFromMaterials(materials: string): unknown | null {
   if (!materials) return null
-  const whole = parseSpec(materials)
-  if (isOpenApiSpec(whole)) return whole
-  for (const b of splitMaterialBlocks(materials)) {
-    const s = parseSpec(b)
-    if (isOpenApiSpec(s)) return s
-  }
-  return null
+  return mergeSpecBlocks(materials)
 }
 
 /** Render a summary as compact text for an LLM prompt. */

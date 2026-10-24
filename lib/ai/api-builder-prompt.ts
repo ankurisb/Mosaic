@@ -51,7 +51,12 @@ AUTH TYPES and their auth_config fields:
 - bearer           -> { "token": "<token>" }                                  Authorization: Bearer <token>
 - api_key_header   -> { "header": "X-API-Key", "key": "<key>" }               sends that header
 - basic            -> { "username": "...", "password": "..." }                Authorization: Basic base64(user:pass)
-- oauth2_client    -> { "client_id", "client_secret", "token_url", "refresh_token"? , "header_prefix"? }  OAuth2 (form-encoded grant)
+- oauth2_client    -> { "client_id", "client_secret", "token_url", "refresh_token"?, "header_prefix"?,
+                        "scope"?, "audience"?, "grant_type"?, "client_auth"? ("body"|"basic"),
+                        "oauth_username"?, "oauth_password"?, "extra_params"? (JSON string) }  OAuth2.
+                        Grant is inferred: refresh_token present => refresh_token; oauth_username+oauth_password => password;
+                        else client_credentials. Set "scope"/"audience" when the docs require them; set client_auth:"basic"
+                        when the token endpoint wants client_id/secret in an HTTP Basic header rather than the body.
 - session_token    -> login endpoint that returns a token in its JSON body. Fields:
      { "login_url": "<absolute or path relative to base_url>",
        "username": "...", "password": "...",

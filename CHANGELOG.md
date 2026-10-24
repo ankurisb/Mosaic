@@ -5,6 +5,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.151] - 2026-10-24
+### Added
+- **Live OData `$metadata` discovery (Stage 3).** "Discover endpoints" now probes
+  `<base>/$metadata` first: a SAP / OData service root is read live into its entity
+  sets (→ GET collections), with the OData version detected and surfaced. This is
+  the SAP-first answer to "every SAP box is different" — Mosaic reads what is
+  actually there instead of relying on a curated preset. (`collectionsFromEdmx`,
+  wired into `discoverEndpoints`; `source: 'metadata'`, `odata_version` on the
+  discover response.)
+- **SAP Gateway service-catalogue discovery (Stage 3).** New `sap_catalog` action
+  + `discoverSapServices()` read the Gateway catalogue
+  (`/sap/opu/odata/IWFND/CATALOGSERVICE…`, V2 and V4 shapes) and list every
+  ACTIVATED OData service on that box, so the user can pick one to ingest.
+  (`parseSapCatalog`.)
+- **SAP activation signal (Stage 4).** A service root that answers 404/403 with a
+  Gateway "service not found/active" error (e.g. "Resource not found for the
+  segment", a `/IWFND/` error code, a SICF reference) is now diagnosed as
+  *not activated* — discovery returns the real fix (activate in
+  `/IWFND/MAINT_SERVICE`) instead of a generic "nothing found".
+  (`diagnoseSapActivation`.) OData V2/V4 query threading (pagination via
+  `@odata.nextLink` / `$top`+`$skip`, `$format=json`, keyed reads) was already in
+  place; the discovered version is now carried through to the UI/agent.
+- **OAuth2 variants (Stage 5).** `oauth2_client` now supports `scope`, `audience`,
+  an explicit `grant_type` override, the resource-owner **password** grant
+  (`oauth_username`/`oauth_password`), **HTTP Basic** client authentication
+  (`client_auth: 'basic'`) as well as the default body creds, and arbitrary
+  `extra_params` merged into the token request. The grant is inferred when not
+  set (refresh_token → refresh_token; username+password → password; else
+  client_credentials). Manual form exposes scope / audience / client-auth; the AI
+  builder knows the full set.
+- **Multi-file `$ref` resolution (Stage 5).** Co-dropped spec files are merged into
+  one component pool and external-file refs (`common.yaml#/components/schemas/X`)
+  resolve by fragment, so a spec split across files — or one that `$ref`s a shared
+  types file — ingests correctly. (`mergeSpecBlocks`; `resolveRef` tolerates
+  external refs; `discoverEndpoints` gained an optional `ssrf` override.)
+### Tested
+- 14 new unit/integration tests plus end-to-end checks: a live `$metadata` server
+  and a live SAP catalogue drive discovery through the real probe path; a live
+  OAuth2 token endpoint verifies every grant/variant; cross-file `$ref` resolves
+  into login fields. Full suite 470/470; tsc unchanged (15 pre-existing).
+
 ## [1.3.150] - 2026-10-24
 ### Added
 - API auth: **x509 / mutual-TLS (`mtls`)** — present a client certificate during

@@ -15,9 +15,10 @@
 import { runCandidateProbe } from '@/lib/api-probe'
 import type { AuthConfig } from '@/lib/api-auth'
 import { parseSpec, extractSpecFromMaterials } from '@/lib/ai/openapi-summary'
+import { isEdmx, edmxToSummary } from '@/lib/ai/edmx'
 
 export interface DiscoveredCollection { path: string; label: string; name?: string }
-export interface DiscoverResult { source: 'spec' | 'route-map' | 'none'; collections: DiscoveredCollection[]; note?: string }
+export interface DiscoverResult { source: 'spec' | 'metadata' | 'route-map' | 'none'; collections: DiscoveredCollection[]; note?: string; odataVersion?: '2' | '4' | 'unknown' }
 
 // Both JSON and YAML spec filenames — many APIs serve openapi.yaml rather than .json.
 const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json', '/openapi.yaml', '/openapi.yml', '/swagger.yaml']
@@ -94,6 +95,28 @@ export function selectCollectionPaths(routes: { path: string; name?: string }[])
   return out
 }
 
+/**
+ * Collection paths from a live OData $metadata document: every entity set is a
+ * listable GET at /{EntitySet}. edmxToSummary already emits those as GET
+ * endpoints with hasPathParams=false (the keyed read has true), so we keep only
+ * those. Returns [] for a non-EDMX body.
+ */
+export function collectionsFromEdmx(xml: string, serviceUrl?: string): { collections: DiscoveredCollection[]; odataVersion: '2' | '4' | 'unknown' } {
+  const r = edmxToSummary(xml, serviceUrl)
+  if (!r) return { collections: [], odataVersion: 'unknown' }
+  const seen = new Set<string>()
+  const out: DiscoveredCollection[] = []
+  for (const e of r.summary.endpoints) {
+    if (e.method !== 'GET' || e.hasPathParams) continue
+    if (e.path.includes('(')) continue                 // keyed read, not a list
+    const norm = '/' + e.path.replace(/^\/+/, '').replace(/\/+$/, '')
+    if (norm.length < 2 || seen.has(norm)) continue
+    seen.add(norm)
+    out.push({ path: norm, label: labelFor(norm) })
+  }
+  return { collections: out, odataVersion: r.odataVersion }
+}
+
 /** Extract GET collection paths (no path templating) from an OpenAPI/Swagger doc. */
 function collectionsFromOpenApi(spec: unknown): DiscoveredCollection[] {
   const paths = (spec as { paths?: Record<string, Record<string, unknown>> })?.paths
@@ -119,11 +142,12 @@ export async function discoverEndpoints(input: {
   authConfig: AuthConfig
   defaultHeaders?: Record<string, string>
   specText?: string            // a spec the user supplied (uploaded/pasted) — tried first
+  ssrf?: 'lan' | 'strict' | 'off'
 }): Promise<DiscoverResult> {
   const common = {
     cacheKey: input.cacheKey, baseUrl: input.baseUrl, authType: input.authType,
     authConfig: input.authConfig, defaultHeaders: input.defaultHeaders || {},
-    method: 'GET', ssrf: 'lan' as const, timeoutMs: 12000,
+    method: 'GET', ssrf: input.ssrf ?? ('lan' as const), timeoutMs: 12000,
   }
 
   // 0. A spec the user handed us (a dropped OpenAPI/Swagger file, JSON or YAML).
@@ -137,7 +161,24 @@ export async function discoverEndpoints(input: {
     }
   }
 
-  // 1. OpenAPI/Swagger spec fetched from the live server (JSON or YAML), authenticated.
+  // 1. Live OData $metadata (EDMX). A SAP on-prem / OData service root exposes its
+  // whole shape at <base>/$metadata — no OpenAPI needed. This is the SAP-first
+  // discovery path: point Mosaic at the service root and it reads the live entity
+  // sets (which vary per SAP box), instead of relying on a curated preset.
+  {
+    const svcUrl = input.baseUrl.replace(/\/+$/, '')
+    const md = await runCandidateProbe({ ...common, basePath: '', path: '/$metadata' })
+    const xml = typeof md.body === 'string' ? md.body : ''
+    if (md.status >= 200 && md.status < 300 && isEdmx(xml)) {
+      const { collections, odataVersion } = collectionsFromEdmx(xml, `${svcUrl}/$metadata`)
+      if (collections.length) {
+        const v = odataVersion === 'unknown' ? '' : ` (OData V${odataVersion})`
+        return { source: 'metadata', collections, odataVersion, note: `Read ${collections.length} entity sets live from ${svcUrl}/$metadata${v}.` }
+      }
+    }
+  }
+
+  // 2. OpenAPI/Swagger spec fetched from the live server (JSON or YAML), authenticated.
   for (const sp of SPEC_PATHS) {
     const out = await runCandidateProbe({ ...common, basePath: '', path: sp })
     if (out.status >= 200 && out.status < 300) {
@@ -150,7 +191,7 @@ export async function discoverEndpoints(input: {
     }
   }
 
-  // 2. Server route map — a Django DEBUG 404 page lists every URL pattern.
+  // 3. Server route map — a Django DEBUG 404 page lists every URL pattern.
   const probe404 = await runCandidateProbe({ ...common, basePath: '', path: '/__mosaic_discover_404__/' })
   const html = typeof probe404.body === 'string' ? probe404.body : ''
   const routes = parseDjangoDebugRoutes(html)
@@ -159,5 +200,125 @@ export async function discoverEndpoints(input: {
     if (cols.length) return { source: 'route-map', collections: cols, note: `No machine-readable spec was reachable (it may be gated). Read ${cols.length} candidate collections from the server's URL map.` }
   }
 
+  // 4. Nothing discoverable. Before giving up, check whether this is a SAP
+  // service root that simply isn't ACTIVATED — a very common SAP stumble — and
+  // return the real fix instead of a generic "nothing found".
+  {
+    const root = await runCandidateProbe({ ...common, basePath: '', path: '/' })
+    const act = diagnoseSapActivation(root.status, root.body)
+    if (act.likelyInactive) return { source: 'none', collections: [], note: act.message }
+  }
+
   return { source: 'none', collections: [], note: 'No OpenAPI spec was reachable and the server exposes no readable route map. Add endpoints manually, or expose the spec to this login.' }
+}
+
+// ---- SAP activation signal --------------------------------------------------
+// A SAP OData service that exists in the system but has not been ACTIVATED in
+// transaction /IWFND/MAINT_SERVICE answers its service root with a Gateway error
+// (404/403) whose body carries a tell-tale signature — "Resource not found for
+// the segment", "Service ... not active/registered", a /IWFND/ or /IWBEP/ error
+// code, or a SICF reference. Distinguishing that from a plain dead URL lets us
+// give the real fix ("ask Basis to activate it") instead of "not a data endpoint".
+const SAP_INACTIVE_RE = /not found for the segment|is not active|not registered in the system|could not be found in the system|\/IWFND\/|\/IWBEP\/|SICF|MAINT_SERVICE|service is not active|resource not found/i
+
+export interface SapActivation { likelyInactive: boolean; message?: string }
+
+export function diagnoseSapActivation(status: number, body: unknown): SapActivation {
+  if (status !== 404 && status !== 403 && status !== 501) return { likelyInactive: false }
+  let text = ''
+  if (typeof body === 'string') text = body
+  else if (body && typeof body === 'object') { try { text = JSON.stringify(body) } catch { text = '' } }
+  if (!SAP_INACTIVE_RE.test(text)) return { likelyInactive: false }
+  return {
+    likelyInactive: true,
+    message: `The SAP service root answered HTTP ${status} with a Gateway "service not found/active" error. In SAP the OData service must be activated in transaction /IWFND/MAINT_SERVICE (add the service, then activate its ICF node). Ask your Basis team to activate it, then retry discovery.`,
+  }
+}
+
+// ---- SAP service catalogue --------------------------------------------------
+// "Every SAP implementation is different" — the set of ACTIVATED OData services
+// is whatever that customer's Basis team switched on. Rather than ship a curated
+// preset and hope, we read the SAP Gateway service catalogue live: it lists every
+// activated service with its technical name and service-root URL. The user then
+// picks one, and we discover its entity sets via $metadata (above).
+
+export interface SapService { name: string; title?: string; serviceUrl: string; version?: '2' | '4' }
+export interface SapCatalogResult { ok: boolean; services: SapService[]; note?: string }
+
+// Known SAP Gateway catalogue endpoints. V2 gateway and the newer V4 catalogue
+// differ in path and casing; we try each. $format=json so we get JSON, not XML.
+const SAP_CATALOG_PATHS = [
+  "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/ServiceCollection?$format=json",
+  "/sap/opu/odata/iwfnd/catalogservice;v=2/ServiceCollection?$format=json",
+  "/sap/opu/odata4/IWFND/CONFIG/default/IWFND/CATALOG_0002/ServiceGroups?$format=json",
+]
+
+/**
+ * Parse a SAP Gateway catalogue response into a flat service list. Handles the
+ * OData V2 shape ({ d: { results: [...] } }) and the V4 shape ({ value: [...] }).
+ * Each service exposes a technical name and a service-root URL under varying
+ * field names across gateway versions, so we read the common ones defensively.
+ */
+export function parseSapCatalog(body: unknown): SapService[] {
+  const rows: unknown[] = (() => {
+    if (!body || typeof body !== 'object') return []
+    const d = (body as { d?: { results?: unknown[] } }).d
+    if (d && Array.isArray(d.results)) return d.results
+    const value = (body as { value?: unknown[] }).value
+    if (Array.isArray(value)) return value
+    return []
+  })()
+  const out: SapService[] = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue
+    const o = r as Record<string, unknown>
+    const name = String(o.TechnicalServiceName || o.ServiceId || o.ID || o.Name || o.ServiceGroupId || '').trim()
+    const serviceUrl = String(o.ServiceUrl || o.Url || o.MetadataUrl || '').trim().replace(/\/\$metadata.*$/i, '').replace(/\/+$/, '')
+    const title = String(o.Title || o.Description || '').trim() || undefined
+    const verRaw = String(o.TechnicalServiceVersion || o.ODataVersion || '')
+    const version = /4/.test(verRaw) ? '4' : /^\d/.test(verRaw) ? '2' : undefined
+    if (!name && !serviceUrl) continue
+    const key = serviceUrl || name
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ name: name || serviceUrl, title, serviceUrl, version: version as '2' | '4' | undefined })
+  }
+  return out
+}
+
+/**
+ * Probe the SAP Gateway catalogue at a gateway root and return every activated
+ * OData service. `gatewayBase` is the host root (e.g. https://host:44300). Uses
+ * the production auth exactly as the probe does, so Basic / mTLS / OAuth all work.
+ */
+export async function discoverSapServices(input: {
+  cacheKey: string
+  gatewayBase: string
+  authType: string
+  authConfig: AuthConfig
+  defaultHeaders?: Record<string, string>
+  ssrf?: 'lan' | 'strict' | 'off'
+}): Promise<SapCatalogResult> {
+  const base = input.gatewayBase.replace(/\/+$/, '')
+  const common = {
+    cacheKey: input.cacheKey, baseUrl: base, authType: input.authType,
+    authConfig: input.authConfig, defaultHeaders: input.defaultHeaders || {},
+    method: 'GET', ssrf: input.ssrf ?? 'lan' as const, timeoutMs: 15000,
+  }
+  for (const p of SAP_CATALOG_PATHS) {
+    const qIdx = p.indexOf('?')
+    const path = qIdx >= 0 ? p.slice(0, qIdx) : p
+    const queryParams = qIdx >= 0 ? Object.fromEntries(new URLSearchParams(p.slice(qIdx + 1))) : undefined
+    const out = await runCandidateProbe({ ...common, basePath: '', path, queryParams })
+    if (out.status >= 200 && out.status < 300) {
+      let body: unknown = out.body
+      if (typeof body === 'string') { try { body = JSON.parse(body) } catch { /* not json */ } }
+      const services = parseSapCatalog(body)
+      if (services.length) {
+        return { ok: true, services, note: `Found ${services.length} activated OData service${services.length === 1 ? '' : 's'} in the SAP Gateway catalogue.` }
+      }
+    }
+  }
+  return { ok: false, services: [], note: 'No SAP Gateway catalogue was reachable at the standard paths (/sap/opu/odata/IWFND/CATALOGSERVICE). The gateway may be locked down, or this host is not an SAP Gateway — point at a specific service root and use $metadata instead.' }
 }

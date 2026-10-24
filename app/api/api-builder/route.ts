@@ -13,7 +13,7 @@ import { generateApiCandidate, refineApiCandidate } from '@/lib/ai/api-builder-p
 import { runApiAgent, diagnoseApiConnection } from '@/lib/ai/api-agent'
 import { getServiceConfigById } from '@/lib/api-source-store'
 import { runCandidateProbe, classifyProbe } from '@/lib/api-probe'
-import { discoverEndpoints } from '@/lib/api-discover'
+import { discoverEndpoints, discoverSapServices } from '@/lib/api-discover'
 import { mapLimit } from '@/lib/concurrency'
 import type { AuthConfig } from '@/lib/api-auth'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
@@ -195,7 +195,30 @@ export async function POST(req: Request) {
       const proposed = validated.filter(v => v.cls === 'data' || v.cls === 'empty')
       const summary: Record<string, number> = { scanned: disc.collections.length, probed: validated.length, data: 0, empty: 0, dead: 0, auth: 0, error: 0 }
       for (const v of validated) summary[v.cls] = (summary[v.cls] || 0) + 1
-      return Response.json({ ok: true, source: disc.source, note: disc.note, proposed, all: validated, summary })
+      return Response.json({ ok: true, source: disc.source, note: disc.note, odata_version: disc.odataVersion, proposed, all: validated, summary })
+    }
+
+    if (action === 'sap_catalog') {
+      // Read the SAP Gateway service catalogue: every ACTIVATED OData service on
+      // this box (which differs per SAP install). The user points at the gateway
+      // root; auth is applied exactly as production (Basic / mTLS / OAuth all work).
+      const { service_id, service, gateway_base } = body
+      let svc: Record<string, unknown> | undefined = service
+      if (service_id) {
+        const cfg = await getServiceConfigById(String(service_id))
+        if (!cfg) return Response.json({ error: 'Connection not found' }, { status: 404 })
+        svc = cfg.service as unknown as Record<string, unknown>
+      }
+      const base = String(gateway_base || (svc && svc.base_url) || '')
+      if (!base) return Response.json({ error: 'gateway_base or service/service_id required' }, { status: 400 })
+      const cacheKey = `sapcat:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 7)}`
+      const res = await discoverSapServices({
+        cacheKey, gatewayBase: base,
+        authType: String((svc && svc.auth_type) || body.auth_type || ''),
+        authConfig: ((svc && svc.auth_config) || body.auth_config || {}) as unknown as AuthConfig,
+        defaultHeaders: ((svc && svc.default_headers) as Record<string, string>) || {},
+      })
+      return Response.json({ ok: res.ok, services: res.services, note: res.note })
     }
 
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })
