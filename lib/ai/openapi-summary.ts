@@ -33,9 +33,11 @@ export interface OpenApiSummary {
   groups: string[]
   endpoints: EndpointRef[]
   endpointCount: number
-  // Unresolved server-URL variables (e.g. SAP's {host}/{port}) the caller must
-  // supply to target their own host. Empty when the base URL is fully concrete.
-  serverVariables?: { name: string; description?: string }[]
+  // Template variables in the server URL (e.g. SAP's {host}/{port}) surfaced as
+  // fields the caller can override to target their own host — even when the spec
+  // ships a default (which is typically a sandbox value the customer must replace).
+  // `default` carries that placeholder for prefill.
+  serverVariables?: { name: string; description?: string; default?: string }[]
 }
 
 const LOGIN_RE = /(login|authenticate|signin|sign-in|token|session|oauth)/i
@@ -137,7 +139,7 @@ function resolveServerBase(spec: Obj, specUrl?: string): string {
   return (origin + (s.startsWith('/') ? s : '/' + s)).replace(/\/+$/, '')
 }
 
-interface ServerVar { name: string; description?: string }
+interface ServerVar { name: string; description?: string; default?: string }
 /**
  * Choose the base URL from the servers list, substituting each server's variable
  * defaults. PREFER a fully-concrete absolute server (no leftover {vars}) — e.g.
@@ -150,6 +152,12 @@ interface ServerVar { name: string; description?: string }
 function pickServerBase(spec: Obj, specUrl?: string): { base: string; variables: ServerVar[] } {
   const servers = Array.isArray(spec.servers) ? (spec.servers as Obj[]) : []
   const resolved: { url: string; unresolved: ServerVar[] }[] = []
+  // EVERY template variable seen across servers, defaulted-or-not. These are
+  // surfaced as editable fields so the user can point at their own host/port —
+  // critical for SAP, where the spec's {host}/{port} ship with a *sandbox* default
+  // the customer must override. Distinct from `unresolved` (no default), which
+  // only decides whether a server counts as "fully concrete" for base selection.
+  const allTemplateVars = new Map<string, ServerVar>()
   for (const s of servers) {
     if (typeof s.url !== 'string') continue
     const vars = isObj(s.variables) ? (s.variables as Obj) : {}
@@ -157,13 +165,14 @@ function pickServerBase(spec: Obj, specUrl?: string): { base: string; variables:
     const url = s.url.replace(/\{([^}]+)\}/g, (_m: string, name: string) => {
       const v = isObj(vars[name]) ? (vars[name] as Obj) : undefined
       const def = v && typeof v.default === 'string' ? v.default.trim() : ''
-      if (!def) unresolved.push({ name, description: v && typeof v.description === 'string' ? v.description : undefined })
+      const description = v && typeof v.description === 'string' ? v.description : undefined
+      if (!allTemplateVars.has(name)) allTemplateVars.set(name, { name, description, default: def || undefined })
+      if (!def) unresolved.push({ name, description })
       return def || `{${name}}`
     }).replace(/\/+$/, '')
     resolved.push({ url, unresolved })
   }
-  const allVars = new Map<string, ServerVar>()
-  for (const r of resolved) for (const v of r.unresolved) if (!allVars.has(v.name)) allVars.set(v.name, v)
+  const allVars = allTemplateVars
 
   // 1. a fully concrete absolute server
   const concrete = resolved.find(r => r.unresolved.length === 0 && /^https?:\/\//i.test(r.url) && !/\{[^}]+\}/.test(r.url))
@@ -365,7 +374,7 @@ export function renderSummaryText(s: OpenApiSummary): string {
   const lines: string[] = []
   lines.push(`OpenAPI spec${s.title ? `: ${s.title}` : ''}${s.version ? ` (v${s.version})` : ''} — ${s.endpointCount} endpoints.`)
   if (s.suggestedBaseUrl) lines.push(`Base URL to call: ${s.suggestedBaseUrl}`)
-  if (s.serverVariables?.length) lines.push(`Base-URL variables the user must provide (e.g. to target their own host instead of the default/sandbox base): ${s.serverVariables.map(v => v.name + (v.description ? ` (${v.description})` : '')).join(', ')} — treat each as a required field to fill.`)
+  if (s.serverVariables?.length) lines.push(`Base-URL variables the user must provide (e.g. to target their own host instead of the default/sandbox base): ${s.serverVariables.map(v => v.name + (v.default ? ` (default/sandbox: ${v.default})` : '') + (v.description ? ` — ${v.description}` : '')).join(', ')} — treat each as a field to fill, defaulting to the sandbox value but expecting the user to override it for their own system.`)
   const sec = Object.entries(s.securitySchemes || {})
   if (sec.length) lines.push(`Auth: ${sec.map(([k, v]) => `${k} (${[v.type, v.scheme, v.in && `in ${v.in}`, v.name].filter(Boolean).join(' ')})`).join('; ')}`)
   if (s.loginCandidates?.length) lines.push(`Login endpoints: ${s.loginCandidates.map(l => `${l.method} ${l.path} {${l.fields.map(f => f.name).join(', ')}}`).join('; ')}`)

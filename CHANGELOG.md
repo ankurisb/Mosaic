@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.152] - 2026-10-25
+### Fixed
+- **API ingestion hardening (adversarial audit).** Ran a 33-case adversarial suite
+  across the whole ingestion funnel (malformed inputs, degenerate specs, detection
+  order, multi-file `$ref`, oversized artifacts, URL building). Three real fixes:
+  - **Server template variables are always surfaced.** A templated server whose
+    variables ship a *default* (SAP's `https://{host}:{port}/…` with a sandbox
+    default) previously baked the default in silently, leaving the user no field to
+    point at their own system. Now every `{var}` is surfaced as an overridable
+    field carrying its default, while base-URL selection still prefers a fully
+    concrete server. (`pickServerBase` / `summarizeOpenApi.serverVariables`.)
+  - **The 24 KB truncation wall is closed for unrecognised formats.** A large
+    artifact we don't parse (prose docs, an unsupported dialect, a sample dump) was
+    passed through whole and then blindly head-truncated downstream, dropping a base
+    URL or auth note that lived further in. It's now condensed to its *signal* —
+    URLs, auth-mentioning lines, endpoint-like paths, plus head+tail — within the
+    prompt budget, so nothing critical is lost regardless of format. Small inputs
+    still pass through untouched. (`condenseUnknownLarge` in `api-materials`.)
+  - **OData system query options keep their literal `$`.** `buildUrl` percent-
+    encoded `$format`/`$filter`/`$top` to `%24…`; valid but non-conventional and
+    rejected by some strict SAP Gateways. A leading `$` in a query key is now
+    preserved. (`lib/api-probe`.)
+### Confirmed robust (no change needed)
+- The funnel degrades (never throws) on truncated JSON, BOM/CRLF, YAML
+  anchors/tabs, XML comments/DTD/namespaces, empty/binary input, deeply nested
+  Postman, and odd HAR; HAR auth header values are never leaked. Detection order is
+  false-positive-safe (a real OpenAPI mentioning `<Edmx>`/`DataServices` is not
+  hijacked). Circular cross-file `$ref` terminates; a 2000-path spec preserves its
+  true endpoint count and all groups (the builder registers one connection per
+  group, so coverage is complete even though the detail list is capped).
+
 ## [1.3.151] - 2026-10-24
 ### Added
 - **Live OData `$metadata` discovery (Stage 3).** "Discover endpoints" now probes

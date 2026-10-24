@@ -41,14 +41,18 @@ export interface ProbeOutcome {
 
 const BLOCKED_HEADERS = ['host', 'authorization', 'cookie', 'x-forwarded-for']
 
-function buildUrl(baseUrl: string, basePath: string, path: string, queryParams?: Record<string, string>): string {
+export function buildUrl(baseUrl: string, basePath: string, path: string, queryParams?: Record<string, string>): string {
   const base = baseUrl.replace(/\/$/, '')
   const bp = (basePath || '').replace(/\/$/, '')
   let p = path || ''
   if (p && !p.startsWith('/') && !p.startsWith('?')) p = '/' + p
   let url = base + bp + p
   const qp = Object.entries(queryParams || {}).filter(([k, v]) => k && String(v).trim() !== '').slice(0, 30)
-  if (qp.length) url += (url.includes('?') ? '&' : '?') + qp.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&')
+  // Preserve a leading '$' in the key: OData system query options ($format,
+  // $filter, $top, …) are conventionally literal, and a strict SAP Gateway can
+  // reject the %24-encoded form. Encode the rest of the key and the value normally.
+  const encKey = (k: string) => (k.startsWith('$') ? '$' + encodeURIComponent(k.slice(1)) : encodeURIComponent(k))
+  if (qp.length) url += (url.includes('?') ? '&' : '?') + qp.map(([k, v]) => `${encKey(k)}=${encodeURIComponent(String(v))}`).join('&')
   return url
 }
 

@@ -127,7 +127,41 @@ export function condenseApiMaterials(materials: string | undefined): string | un
     if (isPostman(o)) return condensePostman(o)
     if (isHar(o)) return condenseHar(o)
   }
+  // Nothing recognised. A SMALL input passes through untouched (the AI reads it in
+  // full). A LARGE one must NOT pass through whole: downstream the prompt slices
+  // materials to a fixed budget (head only), silently dropping a base URL or auth
+  // note that lives further in. Condense an unknown-but-large artifact to its
+  // signal so the AI still gets the essentials from a format we don't parse.
+  if (materials.length > UNKNOWN_CONDENSE_THRESHOLD) return condenseUnknownLarge(materials)
   return materials
+}
+
+// Kept well under the downstream prompt budget (24000) so the result always fits.
+const UNKNOWN_CONDENSE_THRESHOLD = 16000
+const UNKNOWN_MAX_OUT = 18000
+const AUTH_LINE_RE = /authorization|api[\s_-]?key|bearer|oauth|\btoken\b|client[\s_-]?id|client[\s_-]?secret|x-[a-z0-9-]+-(?:key|token|auth)|secret|www-authenticate|basic auth|\bscheme\b|credential|x-api-key/i
+
+/**
+ * Best-effort condensation of an unrecognised but large API artifact (a prose doc,
+ * an unsupported spec dialect, a sample dump). Pulls out the signals the builder
+ * actually needs — base-URL candidates (URLs anywhere), auth hints (lines), and
+ * endpoint-like paths — plus head+tail context, so nothing critical is lost to a
+ * blind head-truncation downstream. Format-agnostic by design.
+ */
+function condenseUnknownLarge(text: string): string {
+  const uniq = (xs: string[], cap: number) => Array.from(new Set(xs.map(s => s.trim()).filter(Boolean))).slice(0, cap)
+  const urls = uniq(text.match(/https?:\/\/[^\s"'<>)\]}]+/g) || [], 40)
+  const authLines = uniq((text.split(/\r?\n/).filter(l => AUTH_LINE_RE.test(l)).map(l => l.trim().slice(0, 300))), 60)
+  const paths = uniq((text.match(/\/[A-Za-z0-9_][A-Za-z0-9_\-/{}.]{1,80}/g) || []).filter(p => p.length > 2 && !/^\/\//.test(p)), 100)
+  const head = text.slice(0, 2000)
+  const tail = text.slice(-2000)
+  const parts: string[] = ['[Unrecognised API artifact — condensed to its signal (URLs, auth hints, endpoint-like paths, plus head/tail). The full document did not fit; infer base_url and auth from these.]']
+  if (urls.length) parts.push(`URLs found (base-URL candidates):\n${urls.map(u => '  ' + u).join('\n')}`)
+  if (authLines.length) parts.push(`Lines mentioning auth:\n${authLines.map(l => '  ' + l).join('\n')}`)
+  if (paths.length) parts.push(`Path-like tokens (possible endpoints):\n  ${paths.join('  ')}`)
+  parts.push(`--- document head ---\n${head}`)
+  parts.push(`--- document tail ---\n${tail}`)
+  return parts.join('\n\n').slice(0, UNKNOWN_MAX_OUT)
 }
 
 function condenseEdmx(xml: string): string | null {
