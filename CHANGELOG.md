@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.142] - 2026-10-24
+### Fixed
+- Knowledge graph: the database adapter treated **every** `dimension` column as a
+  plant-hierarchy level, so event/row attributes (shift, status, downtime reason,
+  operator/inspector name) became "containers" of the asset — e.g. `CNC-01`
+  shown as contained by `Shift 1`, `Unplanned`, and an operator's name. Now only
+  true hierarchy dimensions (plant/area/line/cell) form containment; other
+  dimensions are left out of the graph. On the reference box this drops ~19 junk
+  nodes and leaves a clean Line → machine hierarchy.
+
 ## [1.3.141] - 2026-10-24
 ### Changed
 - Knowledge graph: API sources enter the graph as one island node per published

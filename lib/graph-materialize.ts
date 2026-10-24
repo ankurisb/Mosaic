@@ -115,10 +115,17 @@ async function adaptDatabase(src: SourceRef): Promise<AdapterOut> {
       const assetId = nodeId('database', src.source_id, 'asset', idStr)
       addNode({ id: assetId, source_type: 'database', source_id: src.source_id, kind: 'asset', natural_key: idStr, label: labelVal, props: { table, source: src.label }, status: 'active' })
 
-      // hierarchy chain from present dimension values, ordered by rank
+      // hierarchy chain from present dimension values, ordered by rank.
+      // CRITICAL: only true plant-hierarchy dimensions (plant/area/line/cell) become
+      // containment nodes. Other role='dimension' columns are event/row ATTRIBUTES —
+      // shift, status, downtime reason, operator/inspector name — and must NOT become
+      // "containers" of the asset (that both pollutes the graph and is nonsense:
+      // a machine is not "contained by" an operator). dimRank returns rank 50 for
+      // anything that doesn't match a hierarchy level, so we drop those here.
       const chain = dimCols
         .filter(c => row[c] != null && row[c] !== '')
         .map(c => ({ col: c, val: String(row[c]), ...dimRank(c) }))
+        .filter(d => d.rank < 50)
         .sort((a, b) => a.rank - b.rank)
       let prevId: string | null = null
       for (const d of chain) {
