@@ -598,6 +598,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [importDragOver, setImportDragOver] = useState(false)
   const [showPostmanZone, setShowPostmanZone] = useState(false)
   const [showOpenApiZone, setShowOpenApiZone] = useState(false)
+  const [addMenu, setAddMenu] = useState(false)   // unified "Add API" launcher
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [apiSearch, setApiSearch] = useState('')
   const [apiPage, setApiPage] = useState(1)
@@ -935,6 +936,15 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     marginBottom: 16,
   }
 
+  // One row inside the unified "Add API" launcher menu.
+  const addOpt = (title: string, desc: string, onClick: () => void, accent = false) => (
+    <button onClick={onClick} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', padding: '9px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
+      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: accent ? 'var(--accent)' : 'var(--text)' }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 2, lineHeight: 1.35 }}>{desc}</div>
+    </button>
+  )
+
   return (
     <div className="fade-in">
       {user.role === 'admin' && showBuilder ? (
@@ -950,12 +960,21 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <PageTitle>API connections</PageTitle>
         {user.role === 'admin' && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn onClick={() => { setShowPostmanZone(s => !s); setShowOpenApiZone(false); setImportError('') }}> Import Postman</Btn>
-            <Btn onClick={() => { setShowOpenApiZone(s => !s); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') }}> Import OpenAPI</Btn>
-            <Btn onClick={() => { setShowSapForm(s => !s); setSapError('') }} style={{ background: 'var(--bg)', border: '1px solid rgba(0,112,243,0.3)', color: '#0070f3' }}> SAP S/4HANA</Btn>
-            <Btn onClick={() => { setShowSvcForm(!showSvcForm); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') }}>+ Add manually</Btn>
-            <Btn variant="primary" onClick={() => { setResumeDraftId(null); setShowBuilder(b => !b); setError(''); setTryIt(null); setTryResult(null) }}>✨ Add with AI</Btn>
+          <div style={{ position: 'relative' }}>
+            <Btn variant="primary" onClick={() => setAddMenu(m => !m)}>+ Add API</Btn>
+            {addMenu && (
+              <>
+                <div onClick={() => setAddMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 50, width: 320, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', padding: 6 }}>
+                  {addOpt('Build with AI', 'Drop an OpenAPI / Postman / HAR file, or just describe the API — Mosaic drafts and probes the connection.', () => { setAddMenu(false); setResumeDraftId(null); setShowBuilder(true); setError(''); setTryIt(null); setTryResult(null) }, true)}
+                  {addOpt('SAP S/4HANA', 'Connect standard S/4HANA OData services from the built-in catalogue (host + credentials).', () => { setAddMenu(false); setShowSapForm(true); setSapError('') })}
+                  <div style={{ height: 1, background: 'var(--border)', margin: '6px 8px' }} />
+                  {addOpt('Import OpenAPI (no AI)', 'Paste a spec URL or raw JSON/YAML for a deterministic endpoint preview.', () => { setAddMenu(false); setShowOpenApiZone(true); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') })}
+                  {addOpt('Import Postman (no AI)', 'Drop a Postman v2.1 collection for a deterministic endpoint preview.', () => { setAddMenu(false); setShowPostmanZone(true); setShowOpenApiZone(false); setImportError('') })}
+                  {addOpt('Add manually', 'Enter the base URL and auth yourself.', () => { setAddMenu(false); setShowSvcForm(true); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') })}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

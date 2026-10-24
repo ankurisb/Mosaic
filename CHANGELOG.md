@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.148] - 2026-10-24
+### Changed
+- API connections: the five separate entry buttons (Import Postman, Import
+  OpenAPI, SAP S/4HANA, Add manually, Add with AI) are consolidated into a single
+  **"+ Add API"** launcher menu. Build-with-AI (the generic file-drop) is the
+  primary option; SAP S/4HANA is a catalogue shortcut; the deterministic
+  OpenAPI/Postman imports and manual entry sit below. One door, same flows.
+
 ## [1.3.147] - 2026-10-24
 ### Changed
 - API builder spec ingestion: base-URL selection now **prefers a fully concrete
