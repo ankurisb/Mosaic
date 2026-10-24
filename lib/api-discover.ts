@@ -14,11 +14,13 @@
 // unit testing.
 import { runCandidateProbe } from '@/lib/api-probe'
 import type { AuthConfig } from '@/lib/api-auth'
+import { parseSpec, extractSpecFromMaterials } from '@/lib/ai/openapi-summary'
 
 export interface DiscoveredCollection { path: string; label: string; name?: string }
 export interface DiscoverResult { source: 'spec' | 'route-map' | 'none'; collections: DiscoveredCollection[]; note?: string }
 
-const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json']
+// Both JSON and YAML spec filenames — many APIs serve openapi.yaml rather than .json.
+const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json', '/openapi.yaml', '/openapi.yml', '/swagger.yaml']
 
 // Title-case the last meaningful path segment for a readable label, keeping the
 // module prefix so two "metrics" under different modules stay distinguishable.
@@ -116,6 +118,7 @@ export async function discoverEndpoints(input: {
   authType: string
   authConfig: AuthConfig
   defaultHeaders?: Record<string, string>
+  specText?: string            // a spec the user supplied (uploaded/pasted) — tried first
 }): Promise<DiscoverResult> {
   const common = {
     cacheKey: input.cacheKey, baseUrl: input.baseUrl, authType: input.authType,
@@ -123,12 +126,23 @@ export async function discoverEndpoints(input: {
     method: 'GET', ssrf: 'lan' as const, timeoutMs: 12000,
   }
 
-  // 1. OpenAPI/Swagger spec (authenticated).
+  // 0. A spec the user handed us (a dropped OpenAPI/Swagger file, JSON or YAML).
+  // This is the generic "company shares their spec" path — it works even when the
+  // live server exposes no reachable spec (gated or absent).
+  if (input.specText) {
+    const spec = extractSpecFromMaterials(input.specText)
+    if (spec) {
+      const cols = collectionsFromOpenApi(spec)
+      if (cols.length) return { source: 'spec', collections: cols, note: `Read ${cols.length} GET collections from the spec you provided.` }
+    }
+  }
+
+  // 1. OpenAPI/Swagger spec fetched from the live server (JSON or YAML), authenticated.
   for (const sp of SPEC_PATHS) {
     const out = await runCandidateProbe({ ...common, basePath: '', path: sp })
     if (out.status >= 200 && out.status < 300) {
       let spec: unknown = out.body
-      if (typeof spec === 'string') { try { spec = JSON.parse(spec) } catch { spec = null } }
+      if (typeof spec === 'string') spec = parseSpec(spec)
       if (spec && typeof spec === 'object' && (spec as { paths?: unknown }).paths) {
         const cols = collectionsFromOpenApi(spec)
         if (cols.length) return { source: 'spec', collections: cols, note: `Read ${cols.length} GET collections from the OpenAPI spec at ${sp}.` }

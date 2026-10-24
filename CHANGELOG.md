@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.145] - 2026-10-24
+### Fixed
+- API builder: a dropped OpenAPI/Swagger spec (YAML or JSON) is now **parsed and
+  condensed to its structure** before the AI drafts a connection, instead of being
+  dumped as raw text and truncated at 24 KB. Real specs (often >24 KB of YAML) no
+  longer get chopped mid-document. The condensed summary surfaces base URL, auth
+  schemes, login endpoints, groups, and the endpoint list.
+### Added
+- Endpoint discovery now accepts a **user-supplied spec** (the dropped file) as its
+  first source, so "Find endpoints" works even when the live server exposes no
+  reachable spec (gated or absent). Fetched specs are now parsed as YAML as well as
+  JSON, and `openapi.yaml` / `openapi.yml` / `swagger.yaml` were added to the probed
+  spec paths.
+- Shared spec helpers in `lib/ai/openapi-summary` (`parseSpec`, `isOpenApiSpec`,
+  `extractSpecFromMaterials`, `condenseSpecMaterials`) used across the generate,
+  agent, and discovery paths.
+
 ## [1.3.144] - 2026-10-24
 ### Changed
 - Digests: collapsed the three tabs (Generated / Digests / History) into **one

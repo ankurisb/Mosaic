@@ -286,7 +286,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
     try {
       const r = await fetch('/api/api-builder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'discover_endpoints', service: { ...service, auth_config: mergedAuthConfig } }),
+        body: JSON.stringify({ action: 'discover_endpoints', service: { ...service, auth_config: mergedAuthConfig }, spec_text: materials || undefined }),
       })
       const d = await r.json()
       if (!r.ok || !d.ok) { setError(d.error || 'Discovery failed'); setDiscovering(false); return }

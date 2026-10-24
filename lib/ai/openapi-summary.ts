@@ -8,6 +8,8 @@
 // agent never has to reason about prefixes. Pure — the caller fetches/parses
 // (JSON or YAML) and passes the object plus (ideally) the spec's own URL.
 
+import yaml from 'js-yaml'
+
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
 
@@ -216,4 +218,70 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 150, specUrl?: str
     endpoints: endpoints.slice(0, endpointCap),
     endpointCount: endpoints.length,
   }
+}
+
+// ---- Spec ingestion from uploaded/pasted/fetched text (JSON or YAML) --------
+// Shared by the AI builder's generate/agent paths and by endpoint discovery, so a
+// spec a company hands us as a file is treated exactly like one we fetch live.
+
+/** Parse spec text as JSON, falling back to YAML. (JSON is valid YAML, but we try
+ *  JSON first for speed/accuracy.) Returns null if neither parses. */
+export function parseSpec(text: string): unknown {
+  if (!text || !text.trim()) return null
+  try { return JSON.parse(text) } catch { /* not json */ }
+  try { return yaml.load(text) } catch { /* not yaml */ }
+  return null
+}
+
+/** True when the object looks like an OpenAPI 3.x / Swagger 2.0 document. */
+export function isOpenApiSpec(o: unknown): boolean {
+  return isObj(o) && !!o.paths && (!!o.openapi || !!o.swagger)
+}
+
+// Materials from the builder are a concatenation of "===== name =====" blocks.
+// Split them back out (or return the whole string when there are no headers).
+function splitMaterialBlocks(materials: string): string[] {
+  const parts = materials.split(/[ \t]*={3,}[^\n]*={3,}[ \t]*\r?\n?/g).map(s => s.trim()).filter(Boolean)
+  return parts.length ? parts : (materials.trim() ? [materials.trim()] : [])
+}
+
+/** Find the first OpenAPI/Swagger spec inside materials (whole text or any block). */
+export function extractSpecFromMaterials(materials: string): unknown | null {
+  if (!materials) return null
+  const whole = parseSpec(materials)
+  if (isOpenApiSpec(whole)) return whole
+  for (const b of splitMaterialBlocks(materials)) {
+    const s = parseSpec(b)
+    if (isOpenApiSpec(s)) return s
+  }
+  return null
+}
+
+/** Render a summary as compact text for an LLM prompt. */
+export function renderSummaryText(s: OpenApiSummary): string {
+  const lines: string[] = []
+  lines.push(`OpenAPI spec${s.title ? `: ${s.title}` : ''}${s.version ? ` (v${s.version})` : ''} — ${s.endpointCount} endpoints.`)
+  if (s.suggestedBaseUrl) lines.push(`Base URL to call: ${s.suggestedBaseUrl}`)
+  const sec = Object.entries(s.securitySchemes || {})
+  if (sec.length) lines.push(`Auth: ${sec.map(([k, v]) => `${k} (${[v.type, v.scheme, v.in && `in ${v.in}`, v.name].filter(Boolean).join(' ')})`).join('; ')}`)
+  if (s.loginCandidates?.length) lines.push(`Login endpoints: ${s.loginCandidates.map(l => `${l.method} ${l.path} {${l.fields.map(f => f.name).join(', ')}}`).join('; ')}`)
+  if (s.groups?.length) lines.push(`Groups: ${s.groups.join(', ')}`)
+  lines.push('Endpoints (relative to base URL):')
+  for (const e of s.endpoints) lines.push(`  ${e.method.toUpperCase()} ${e.path}${e.summary ? ` — ${e.summary}` : ''}`)
+  return lines.join('\n')
+}
+
+/** If materials contain an OpenAPI/Swagger spec (often hundreds of KB of YAML/JSON),
+ *  replace it with a compact structured summary so the model sees the whole API
+ *  instead of a truncated fragment. Non-spec docs are preserved (capped). Returns
+ *  the materials unchanged when no spec is present. */
+export function condenseSpecMaterials(materials: string | undefined, endpointCap = 200): string | undefined {
+  if (!materials) return materials
+  const spec = extractSpecFromMaterials(materials)
+  if (!spec) return materials
+  const sum = summarizeOpenApi(spec, endpointCap)
+  if (!sum.ok) return materials
+  const nonSpec = splitMaterialBlocks(materials).filter(b => !isOpenApiSpec(parseSpec(b)))
+  const extras = nonSpec.join('\n\n').slice(0, 8000)
+  return `[OpenAPI spec provided — condensed to its structure]\n${renderSummaryText(sum)}${extras ? `\n\n===== other materials =====\n${extras}` : ''}`
 }

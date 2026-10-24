@@ -17,6 +17,7 @@ import { discoverEndpoints } from '@/lib/api-discover'
 import { mapLimit } from '@/lib/concurrency'
 import type { AuthConfig } from '@/lib/api-auth'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
+import { condenseSpecMaterials } from '@/lib/ai/openapi-summary'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
         fetched = g.fetched
         fetchedText = g.text
       }
-      const combined = [materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n')
+      const combined = condenseSpecMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
       const r = await generateApiCandidate(String(description), combined || undefined)
       if (!r.ok) return Response.json({ error: r.reason, fetched }, { status: 502 })
       return Response.json({ ok: true, candidate: r.candidate, fetched })
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
       const urls = extractUrls(String(description))
       let fetchedText = ''; let fetched: FetchedDoc[] = []
       if (urls.length) { const g = await gatherMaterials(urls); fetchedText = g.text; fetched = g.fetched }
-      const combined = [materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n')
+      const combined = condenseSpecMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
       const creds = (credentials && typeof credentials === 'object') ? credentials as Record<string, string> : undefined
       const r = await runApiAgent({ description: String(description), materials: combined || undefined, credentials: creds })
       return Response.json({ ok: r.ok, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, fetched })
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
       // the server's route map. Each discovered collection is then validated with
       // a live probe so we only propose ones that actually return data — the
       // non-/api routes and param-only routes fall out here (they 404 under base).
-      const { service_id, service } = body
+      const { service_id, service, spec_text } = body
       let svc: Record<string, unknown> | undefined = service
       if (service_id) {
         const cfg = await getServiceConfigById(String(service_id))
@@ -174,6 +175,7 @@ export async function POST(req: Request) {
       const disc = await discoverEndpoints({
         cacheKey, baseUrl: String(svc.base_url), authType: String(svc.auth_type || ''),
         authConfig, defaultHeaders: (svc.default_headers as Record<string, string>) || {},
+        specText: spec_text ? String(spec_text) : undefined,
       })
       const candidates = disc.collections.slice(0, 200)
       const validated = await mapLimit(candidates, 8, async (c) => {
