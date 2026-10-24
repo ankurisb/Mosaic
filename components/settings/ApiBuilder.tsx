@@ -47,7 +47,7 @@ interface Candidate {
 }
 interface ProbeResult { ok: boolean; status: number; latencyMs?: number; url?: string; body?: unknown; error?: string }
 
-const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'yaml', 'yml', 'csv', 'har']
+const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'yaml', 'yml', 'csv', 'har', 'xml', 'edmx']
 
 export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resumeDraftId }: { onClose: () => void; onRegistered: () => void; onDraftSaved?: () => void; resumeDraftId?: string }) {
   const [step, setStep] = useState<'describe' | 'review'>('describe')
@@ -510,7 +510,7 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
             <Field label="Docs / spec / sample" hint="Attach text files (docs, OpenAPI, Postman, a sample response) or pull a docs URL.">
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Btn size="sm" onClick={() => fileRef.current?.click()}>Attach files</Btn>
-                <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.json,.yaml,.yml,.csv,.har" style={{ display: 'none' }}
+                <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.json,.yaml,.yml,.csv,.har,.xml,.edmx" style={{ display: 'none' }}
                   onChange={e => addFiles(e.target.files)} />
                 <input value={docsUrl} onChange={e => setDocsUrl(e.target.value)} placeholder="https://docs.example.com/llms.txt"
                   style={{ ...INP, flex: 1, minWidth: 220 }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); fetchDocs() } }} />

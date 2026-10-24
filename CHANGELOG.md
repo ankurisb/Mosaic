@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.149] - 2026-10-24
+### Added
+- API builder: ingest **OData `$metadata` (EDMX XML, V2 and V4)** — the format SAP
+  on-prem gateways and many OData services expose instead of OpenAPI. A dropped
+  `.xml`/`.edmx` is parsed into entity sets (→ collection + keyed-read endpoints),
+  function/action imports, and OData version, then condensed with the right OData
+  query conventions attached. The file-drop now accepts `.xml`/`.edmx`.
+  (`lib/ai/edmx`, wired into `condenseApiMaterials`.)
+- Project doc `mosaic-api-ingestion-coverage.md`: exhaustive gap analysis +
+  SAP-first roadmap (x509/mTLS auth, live `$metadata`/service-catalogue discovery,
+  V2/V4 threading, then SOAP/GraphQL/gRPC/AsyncAPI as needed).
+
 ## [1.3.148] - 2026-10-24
 ### Changed
 - API connections: the five separate entry buttons (Import Postman, Import

@@ -9,7 +9,8 @@
 // server-side extractors here (the mature client-side Postman import in TabAPIs
 // stays as its own flow — this just lets the single AI drop zone handle the file).
 
-import { condenseSpecMaterials, extractSpecFromMaterials, parseSpec, splitMaterialBlocks } from './openapi-summary'
+import { condenseSpecMaterials, extractSpecFromMaterials, parseSpec, splitMaterialBlocks, renderSummaryText } from './openapi-summary'
+import { isEdmx, edmxToSummary } from './edmx'
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -113,6 +114,11 @@ function condenseHar(o: Obj): string {
  *  Returns the materials unchanged when none is detected. */
 export function condenseApiMaterials(materials: string | undefined): string | undefined {
   if (!materials) return materials
+  // OData $metadata (EDMX XML) — SAP on-prem and other OData services ship this
+  // instead of OpenAPI. Checked first because it's XML (not JSON/YAML).
+  for (const b of splitMaterialBlocks(materials)) {
+    if (isEdmx(b)) { const out = condenseEdmx(b); if (out) return out }
+  }
   // OpenAPI/Swagger (handles its own block extraction + non-spec passthrough).
   if (extractSpecFromMaterials(materials)) return condenseSpecMaterials(materials)
   // Postman / HAR: scan each block.
@@ -122,4 +128,16 @@ export function condenseApiMaterials(materials: string | undefined): string | un
     if (isHar(o)) return condenseHar(o)
   }
   return materials
+}
+
+function condenseEdmx(xml: string): string | null {
+  const r = edmxToSummary(xml)
+  if (!r) return null
+  const conv = r.odataVersion === '2'
+    ? "OData V2 — list: GET /{EntitySet}; filter $filter, select $select, expand $expand, paginate $top/$skip; add $format=json; read one: /{EntitySet}(Key='value') with string keys single-quoted."
+    : r.odataVersion === '4'
+    ? 'OData V4 — list: GET /{EntitySet}; filter $filter, select $select, expand $expand, paginate $top/$skip, $count=true; read one: /{EntitySet}(Key=value).'
+    : 'OData service.'
+  const ver = r.odataVersion === 'unknown' ? 'version unknown' : `V${r.odataVersion}`
+  return `[OData $metadata (EDMX, ${ver}) — condensed to its structure]\n${renderSummaryText(r.summary)}\nConventions: ${conv}\nNote: $metadata carries no auth or host. The base URL is the service root (the $metadata URL without /$metadata); ask the user for the host and auth (SAP is commonly Basic, OAuth2, or x509 client certificate).`
 }
