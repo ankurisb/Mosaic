@@ -236,21 +236,34 @@ export async function materializeGraph(): Promise<MaterializeResult> {
       detail[`${src.source_type}:${src.label}`] = { nodes: out.nodes.length, edges: out.edges.length, ...(out.note ? { note: out.note } : {}) }
     }
 
-    // preserve human decisions, skip re-proposing decided pairs
+    // Preserve human decisions on surviving nodes: verified/rejected same_as and
+    // manual edges whose BOTH endpoints are still produced this run. (A decision
+    // about a node that no longer exists is moot and drops with the node.)
     const existing = await loadGraph()
-    const decided = new Set(existing.edges.filter(e => e.type === 'same_as' && (e.status === 'verified' || e.status === 'rejected')).map(e => e.id))
+    const produced = new Set(allNodes.map(n => n.id))
+    const humanEdges = existing.edges.filter(e =>
+      (e.provenance === 'manual' || (e.type === 'same_as' && (e.status === 'verified' || e.status === 'rejected')))
+      && produced.has(e.src) && produced.has(e.dst))
+    const decided = new Set(humanEdges.filter(e => e.type === 'same_as').map(e => e.id))
     const proposals = resolveIdentities(allNodes, decided)
 
+    // Rebuild is a FULL REPLACE so nodes/edges that vanished from the sources drop
+    // out (upsert alone would leave them orphaned). The graph is small and fully
+    // regenerable; human decisions are re-applied from humanEdges above.
+    await sql`DELETE FROM graph_edges`
+    await sql`DELETE FROM graph_nodes`
     await upsertNodes(allNodes)
-    await upsertEdges([...allEdges, ...proposals])
+    await upsertEdges([...allEdges, ...proposals, ...humanEdges])
 
     const pending = proposals.length
+    const totalEdges = allEdges.length + proposals.length + humanEdges.length
     detail.sameas_proposed = pending
+    detail.human_edges_kept = humanEdges.length
     if (runId) {
-      await sql`UPDATE graph_runs SET status='ok', finished_at=${nowExpr()}, nodes=${allNodes.length}, edges=${allEdges.length + pending}, pending=${pending}, sources=${sources.length}, detail=${JSON.stringify(detail)} WHERE id=${runId}`
+      await sql`UPDATE graph_runs SET status='ok', finished_at=${nowExpr()}, nodes=${allNodes.length}, edges=${totalEdges}, pending=${pending}, sources=${sources.length}, detail=${JSON.stringify(detail)} WHERE id=${runId}`
     }
-    log.info({ nodes: allNodes.length, edges: allEdges.length + pending, pending, sources: sources.length }, 'graph materialised')
-    return { ok: true, nodes: allNodes.length, edges: allEdges.length + pending, pending, sources: sources.length, detail }
+    log.info({ nodes: allNodes.length, edges: totalEdges, pending, sources: sources.length }, 'graph materialised')
+    return { ok: true, nodes: allNodes.length, edges: totalEdges, pending, sources: sources.length, detail }
   } catch (e) {
     const error = (e as Error)?.message || String(e)
     if (runId) await sql`UPDATE graph_runs SET status='error', finished_at=${nowExpr()}, error=${error}, detail=${JSON.stringify(detail)} WHERE id=${runId}`.catch(() => {})

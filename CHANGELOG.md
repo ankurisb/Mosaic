@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.143] - 2026-10-24
+### Fixed
+- Knowledge graph: **Rebuild now fully replaces** the graph instead of upserting.
+  The materialiser was insert/update-only, so nodes/edges that no longer come out
+  of the sources (e.g. the dimension nodes removed in 1.3.142) lingered in the
+  table and kept rendering even after a rebuild. Rebuild now deletes and re-inserts,
+  while preserving human decisions (verified/rejected matches and manual edges)
+  whose endpoints still exist.
+### Added
+- Asset Explorer: **full-height canvas with zoom and pan** — scroll to zoom,
+  drag to pan, and a Fit control for the high-level overview. Zoom buttons (＋ / − /
+  Fit) sit on the canvas; the view auto-fits on each build.
+
 ## [1.3.142] - 2026-10-24
 ### Fixed
 - Knowledge graph: the database adapter treated **every** `dimension` column as a
