@@ -7,6 +7,7 @@
 // agent discovers WHERE the token lives (e.g. tokens.access vs access_token).
 import { applyAuth, type AuthConfig } from '@/lib/api-auth'
 import { assertUrlSafe } from '@/lib/ssrf-guard'
+import { buildMtlsDispatcher, fetchWithDispatcher } from '@/lib/api-mtls'
 
 export interface ProbeInput {
   cacheKey: string
@@ -91,7 +92,10 @@ export async function runCandidateProbe(input: ProbeInput): Promise<ProbeOutcome
     if (['POST', 'PUT', 'PATCH'].includes(input.method) && input.reqBody) {
       opts.body = typeof input.reqBody === 'string' ? input.reqBody : JSON.stringify(input.reqBody)
     }
-    const res = await fetch(url, opts)
+    // x509 / mTLS: present the client cert during the TLS handshake via an
+    // undici dispatcher. Undefined for every non-mTLS service → plain fetch.
+    const dispatcher = buildMtlsDispatcher(input.authType, input.authConfig)
+    const res = await fetchWithDispatcher(url, opts as unknown as Record<string, unknown>, dispatcher)
     const latencyMs = Date.now() - start
     const ct = res.headers.get('content-type') || ''
     const outHeaders: Record<string, string> = {}

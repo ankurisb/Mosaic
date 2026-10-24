@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.150] - 2026-10-24
+### Added
+- API auth: **x509 / mutual-TLS (`mtls`)** — present a client certificate during
+  the TLS handshake, the way SAP on-prem gateways and other PKI-secured systems
+  authenticate the caller (no header credential). New `mtls` auth type stores the
+  client cert + private key (PEM), an optional key passphrase, and an optional
+  private CA to trust; a lab-only toggle can skip server-cert verification. The
+  transport builds an undici `Agent` (cached by cert fingerprint) and routes the
+  probe through undici's own `fetch` so the dispatcher is honoured reliably on
+  Node's global fetch. Available in both the manual service form (PEM textareas,
+  "x509 / mTLS" auth option) and Build-with-AI (cert/key surfaced as missing
+  secrets). (`lib/api-mtls`, wired into `lib/api-probe`; `lib/api-auth` adds the
+  type; `undici` added as a dependency.)
+### Tested
+- Real end-to-end mutual-TLS handshake against a client-cert-requiring HTTPS
+  server: a CA-signed client cert is accepted (server reads its CN), a request
+  with no cert / a rogue cert / an untrusted server CA is rejected, and the
+  verify-off toggle works. Full suite 448/448 green.
+
 ## [1.3.149] - 2026-10-24
 ### Added
 - API builder: ingest **OData `$metadata` (EDMX XML, V2 and V4)** — the format SAP

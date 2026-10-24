@@ -26,7 +26,7 @@ import { getDb, nowExpr } from '@/lib/db'
 
 // -- Types -------------------------------------------------------
 
-export type AuthType = 'bearer' | 'api_key_header' | 'basic' | 'oauth2_client' | 'session_token' | 'custom_headers' | 'prism'
+export type AuthType = 'bearer' | 'api_key_header' | 'basic' | 'oauth2_client' | 'session_token' | 'custom_headers' | 'prism' | 'mtls'
 
 export interface BearerAuth { token: string }
 export interface ApiKeyHeaderAuth { header: string; key: string }
@@ -60,10 +60,23 @@ export interface SessionTokenAuth {
   token_ttl_seconds?: string     // fallback lifetime when no expiry is discoverable (default 3600)
 }
 export type CustomHeadersAuth = Record<string, string>
+/**
+ * x509 / mutual-TLS client auth. There is no header for this: the client cert +
+ * private key are presented during the TLS handshake (see lib/api-mtls.ts).
+ * applyAuth therefore sets no headers for 'mtls'; the transport layer reads
+ * these fields to build the TLS dispatcher.
+ */
+export interface MtlsAuth {
+  client_cert: string            // client certificate chain, PEM
+  client_key: string             // client private key, PEM
+  client_key_passphrase?: string
+  ca_cert?: string               // extra CA(s) to trust, PEM
+  reject_unauthorized?: string   // 'false' to skip server-cert verification (lab only)
+}
 
 // Loose union -- auth_config blobs are user-provided JSON; runtime checks
 // inside applyAuth narrow per auth_type.
-export type AuthConfig = Partial<BearerAuth & ApiKeyHeaderAuth & BasicAuth & OAuth2ClientAuth & SessionTokenAuth> & Record<string, string | undefined>
+export type AuthConfig = Partial<BearerAuth & ApiKeyHeaderAuth & BasicAuth & OAuth2ClientAuth & SessionTokenAuth & MtlsAuth> & Record<string, string | undefined>
 
 // -- Parsing -----------------------------------------------------
 
@@ -583,6 +596,13 @@ export async function applyAuth(
     void recordAuthStatus(serviceId, true, null)
     // Prism uses X-Authorization, not Authorization
     headers['X-Authorization'] = `Bearer ${result.token}`
+    return { ok: true }
+  }
+
+  // mTLS / x509: authentication happens at the TLS layer, not via a header.
+  // The transport (lib/api-probe.ts) reads the cert/key from authConfig and
+  // presents them during the handshake; there is nothing to add here.
+  if (authType === 'mtls') {
     return { ok: true }
   }
 

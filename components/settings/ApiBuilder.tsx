@@ -13,7 +13,7 @@ import { INP, Btn, Field, Alert, Spinner } from './ui'
 
 // Credential fields per auth type — used to split a resumed draft's auth_config
 // into prefilled credential inputs (the structural fields stay in auth_config).
-const CRED_FIELDS: Record<string, { field: string; label: string; secret: boolean }[]> = {
+const CRED_FIELDS: Record<string, { field: string; label: string; secret: boolean; multiline?: boolean }[]> = {
   bearer: [{ field: 'token', label: 'Bearer token', secret: true }],
   api_key_header: [{ field: 'key', label: 'API key', secret: true }],
   basic: [{ field: 'username', label: 'Username', secret: false }, { field: 'password', label: 'Password', secret: true }],
@@ -24,9 +24,16 @@ const CRED_FIELDS: Record<string, { field: string; label: string; secret: boolea
     { field: 'password', label: 'Password', secret: true },
     { field: 'token_path', label: 'Token path in the login response (default: access_token)', secret: false },
   ],
+  // x509 / mutual-TLS — the PEM blocks are pasted into textareas, not inputs.
+  mtls: [
+    { field: 'client_cert', label: 'Client certificate (PEM)', secret: false, multiline: true },
+    { field: 'client_key', label: 'Client private key (PEM)', secret: true, multiline: true },
+    { field: 'client_key_passphrase', label: 'Private-key passphrase (if any)', secret: true },
+    { field: 'ca_cert', label: 'CA certificate(s) to trust — optional (PEM)', secret: false, multiline: true },
+  ],
 }
 
-interface MissingField { field: string; label?: string; secret?: boolean }
+interface MissingField { field: string; label?: string; secret?: boolean; multiline?: boolean }
 interface ConnDraft {
   label?: string; description?: string; base_path?: string
   pagination_style?: string; pagination_limit_param?: string
@@ -607,9 +614,16 @@ export default function ApiBuilder({ onClose, onRegistered, onDraftSaved, resume
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
                       {missing.map(m => (
                         <Field key={m.field} label={m.label || m.field}>
-                          <input type={m.secret ? 'password' : 'text'} autoComplete="off"
-                            value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
-                            placeholder={m.secret ? '••••••••' : ''} style={INP} />
+                          {m.multiline ? (
+                            <textarea autoComplete="off" rows={4}
+                              value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
+                              placeholder={'-----BEGIN CERTIFICATE-----\n...'}
+                              style={{ ...INP, resize: 'vertical', fontSize: 12, fontFamily: 'var(--font-mono)' }} />
+                          ) : (
+                            <input type={m.secret ? 'password' : 'text'} autoComplete="off"
+                              value={secrets[m.field] || ''} onChange={e => setSecrets(s => ({ ...s, [m.field]: e.target.value }))}
+                              placeholder={m.secret ? '••••••••' : ''} style={INP} />
+                          )}
                         </Field>
                       ))}
                     </div>

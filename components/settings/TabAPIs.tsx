@@ -82,7 +82,7 @@ interface ImportPreview {
   connections: ImportConnection[]
 }
 
-const SVC_EMPTY = { label: '', base_url: '', environment: 'production', auth_type: 'bearer', token: '', header_name: '', header_value: '', username: '', password: '', client_id: '', client_secret: '', token_url: '', refresh_token: '', header_prefix: 'Bearer', custom_headers: '', api_version: '', version_header: '', rate_limit_rpm: '', request_timeout_ms: '30000', retry_count: '3' }
+const SVC_EMPTY = { label: '', base_url: '', environment: 'production', auth_type: 'bearer', token: '', header_name: '', header_value: '', username: '', password: '', client_id: '', client_secret: '', token_url: '', refresh_token: '', header_prefix: 'Bearer', custom_headers: '', api_version: '', version_header: '', rate_limit_rpm: '', request_timeout_ms: '30000', retry_count: '3', client_cert: '', client_key: '', client_key_passphrase: '', ca_cert: '', reject_unauthorized: '' }
 const CONN_EMPTY = { label: '', description: '', base_path: '', pagination_style: 'none', pagination_limit_param: 'limit', pagination_cursor_param: 'cursor', pagination_data_path: '' }
 
 // SAP endpoint definitions with V2 and V4 paths where confirmed.
@@ -616,6 +616,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     if (t === 'api_key_header') return { header: svcForm.header_name, key: svcForm.header_value }
     if (t === 'basic') return { username: svcForm.username, password: svcForm.password }
     if (t === 'oauth2_client') return { client_id: svcForm.client_id, client_secret: svcForm.client_secret, token_url: svcForm.token_url, refresh_token: svcForm.refresh_token, header_prefix: svcForm.header_prefix || 'Bearer' }
+    if (t === 'mtls') return { client_cert: svcForm.client_cert, client_key: svcForm.client_key, client_key_passphrase: svcForm.client_key_passphrase, ca_cert: svcForm.ca_cert, reject_unauthorized: svcForm.reject_unauthorized }
     try { return JSON.parse(svcForm.custom_headers || '{}') } catch { return {} }
   }
 
@@ -786,6 +787,20 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
     basic: <Grid cols={2}><Field label="Username"><input style={INP} value={svcForm.username} onChange={e => setSvc('username', e.target.value)} /></Field><Field label="Password"><input style={INP} type="password" value={svcForm.password} onChange={e => setSvc('password', e.target.value)} /></Field></Grid>,
     oauth2_client: <Grid cols={2}><Field label="Client ID"><input style={INP} value={svcForm.client_id} onChange={e => setSvc('client_id', e.target.value)} /></Field><Field label="Client secret"><input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 12 }} type="password" value={svcForm.client_secret} onChange={e => setSvc('client_secret', e.target.value)} /></Field><Field label="Token URL" hint="e.g. https://api.hubapi.com/oauth/v1/token"><input style={INP} placeholder="https://..." value={svcForm.token_url} onChange={e => setSvc('token_url', e.target.value)} /></Field><Field label="Refresh token (optional)" hint="Required for refresh_token grant. Leave blank for client_credentials grant."><input style={{ ...INP, fontFamily: 'var(--font-mono)', fontSize: 12 }} type="password" placeholder="1000.xxx..." value={svcForm.refresh_token} onChange={e => setSvc('refresh_token', e.target.value)} /></Field><Field label="Auth header prefix" hint='Default "Bearer". Override only if your API requires a non-standard prefix.'><input style={INP} placeholder="Bearer" value={svcForm.header_prefix} onChange={e => setSvc('header_prefix', e.target.value)} /></Field><Field label="API version (optional)"><input style={INP} placeholder="e.g. 2024-11-20" value={svcForm.api_version} onChange={e => setSvc('api_version', e.target.value)} /></Field></Grid>,
     custom_headers: <Field label="Custom headers (JSON)"><textarea style={{ ...INP, resize: 'vertical', fontSize: 12, fontFamily: 'var(--font-mono)' }} rows={3} placeholder={'{"X-Custom-Auth": "token"}'} value={svcForm.custom_headers} onChange={e => setSvc('custom_headers', e.target.value)} /></Field>,
+    mtls: <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--text3)', lineHeight: 1.5 }}>The client certificate is presented during the TLS handshake — common for SAP gateways and other on-prem systems. No header is sent. Paste PEM blocks (-----BEGIN CERTIFICATE-----).</div>
+      <Field label="Client certificate (PEM)" required><textarea style={{ ...INP, resize: 'vertical', fontSize: 11, fontFamily: 'var(--font-mono)' }} rows={4} placeholder={'-----BEGIN CERTIFICATE-----\n...'} value={svcForm.client_cert} onChange={e => setSvc('client_cert', e.target.value)} /></Field>
+      <Field label="Client private key (PEM)" required><textarea style={{ ...INP, resize: 'vertical', fontSize: 11, fontFamily: 'var(--font-mono)' }} rows={4} placeholder={'-----BEGIN PRIVATE KEY-----\n...'} value={svcForm.client_key} onChange={e => setSvc('client_key', e.target.value)} /></Field>
+      <Grid cols={2}>
+        <Field label="Key passphrase (optional)"><input style={INP} type="password" placeholder="if the key is encrypted" value={svcForm.client_key_passphrase} onChange={e => setSvc('client_key_passphrase', e.target.value)} /></Field>
+        <Field label="Verify server cert" hint="Uncheck only for a lab with a self-signed server">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', cursor: 'pointer', paddingTop: 6 }}>
+            <input type="checkbox" checked={svcForm.reject_unauthorized !== 'false'} onChange={e => setSvc('reject_unauthorized', e.target.checked ? '' : 'false')} /> Verify
+          </label>
+        </Field>
+      </Grid>
+      <Field label="CA certificate(s) to trust — optional (PEM)" hint="Only if the server uses a private / self-signed CA"><textarea style={{ ...INP, resize: 'vertical', fontSize: 11, fontFamily: 'var(--font-mono)' }} rows={3} placeholder={'-----BEGIN CERTIFICATE-----\n...'} value={svcForm.ca_cert} onChange={e => setSvc('ca_cert', e.target.value)} /></Field>
+    </div>,
   }
 
   async function runTryIt() {
@@ -1614,7 +1629,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
           <Field label="Authentication type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-              {[['bearer','Bearer token'],['api_key_header','API key'],['oauth2_client','OAuth 2.0'],['basic','Basic'],['custom_headers','Custom']].map(([v,l]) => (
+              {[['bearer','Bearer token'],['api_key_header','API key'],['oauth2_client','OAuth 2.0'],['basic','Basic'],['mtls','x509 / mTLS'],['custom_headers','Custom']].map(([v,l]) => (
                 <button key={v} onClick={() => setSvc('auth_type', v)}
                   style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${svcForm.auth_type === v ? 'var(--purple)' : 'var(--border2)'}`, background: svcForm.auth_type === v ? 'var(--purple-bg)' : 'var(--bg)', color: svcForm.auth_type === v ? 'var(--purple-t)' : 'var(--text2)', fontSize: 12, fontWeight: svcForm.auth_type === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
                   {l}

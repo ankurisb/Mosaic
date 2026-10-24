@@ -24,7 +24,7 @@ You output ONLY a single JSON object (no prose, no markdown, no code fences) wit
   "service": {
     "label": "<short human name, e.g. 'Orders API'>",
     "base_url": "https://api.host.com",            // scheme + host (+ stable prefix), NO trailing slash
-    "auth_type": "bearer | api_key_header | basic | oauth2_client | session_token | custom_headers",
+    "auth_type": "bearer | api_key_header | basic | oauth2_client | session_token | custom_headers | mtls",
     "auth_config": { /* fields for the chosen auth_type — see below */ },
     "default_headers": { /* optional extra headers sent on every request, {} if none */ },
     "api_version": null,                             // or a version string if the API pins one
@@ -65,6 +65,9 @@ AUTH TYPES and their auth_config fields:
        "expiry_path": null,               // dot-path to a lifetime-in-seconds field, if returned
        "token_ttl_seconds": "3600" }      // fallback lifetime
 - custom_headers   -> an object of header:value pairs sent verbatim
+- mtls             -> x509 / mutual-TLS client certificate presented during the TLS handshake (NO header). Fields:
+     { "client_cert": "<PEM>", "client_key": "<PEM>", "client_key_passphrase"?, "ca_cert"?: "<PEM private CA>", "reject_unauthorized"?: "false" }
+     The cert + key are large PEM blocks the user must paste — mark them as 'missing' secrets; never invent them.
 
 CHOOSING auth_type:
 - A username/password that is POSTed to a login/authenticate endpoint which returns a token (then used as a Bearer) => session_token. This is common; prefer it over bearer when the docs show a login step.
@@ -72,6 +75,7 @@ CHOOSING auth_type:
 - A key sent in a header => api_key_header.
 - OAuth2 with client_id/secret and a token endpoint => oauth2_client.
 - HTTP Basic => basic.
+- A client X.509 / PKI certificate presented for TLS (common on SAP on-prem gateways and PKI-secured systems; docs mention "client certificate", "mutual TLS", "mTLS", or ".pem/.pfx/.p12") => mtls.
 
 RULES:
 - Infer base_url, auth, and endpoints from the description and any provided docs/sample. Quote real paths from the docs; do not invent endpoints.
