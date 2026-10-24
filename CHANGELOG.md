@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.147] - 2026-10-24
+### Changed
+- API builder spec ingestion: base-URL selection now **prefers a fully concrete
+  server** over a templated one, and **surfaces unresolved server variables**
+  (e.g. SAP's `{host}`/`{port}`) as fields to fill. SAP S/4HANA specs list a
+  templated `https://{host}:{port}/sap/opu/odata/sap/API_X` first and a concrete
+  `sandbox.api.sap.com` server second — the builder now picks the sandbox (so the
+  connection is testable immediately) while telling the user which variables to
+  set to point at their own host. Validated against 9 real S/4HANA OData specs
+  (78 KB–606 KB), each condensing to 3–8 KB with the right endpoints and auth.
+
 ## [1.3.146] - 2026-10-24
 ### Added
 - API builder: the single file-drop now understands **Postman collections** and

@@ -33,6 +33,9 @@ export interface OpenApiSummary {
   groups: string[]
   endpoints: EndpointRef[]
   endpointCount: number
+  // Unresolved server-URL variables (e.g. SAP's {host}/{port}) the caller must
+  // supply to target their own host. Empty when the base URL is fully concrete.
+  serverVariables?: { name: string; description?: string }[]
 }
 
 const LOGIN_RE = /(login|authenticate|signin|sign-in|token|session|oauth)/i
@@ -126,6 +129,47 @@ function resolveServerBase(spec: Obj, specUrl?: string): string {
   return (origin + (s.startsWith('/') ? s : '/' + s)).replace(/\/+$/, '')
 }
 
+interface ServerVar { name: string; description?: string }
+/**
+ * Choose the base URL from the servers list, substituting each server's variable
+ * defaults. PREFER a fully-concrete absolute server (no leftover {vars}) — e.g.
+ * SAP ships a templated "https://{host}:{port}/sap/opu/odata/sap/API_X" first and
+ * a concrete sandbox URL second; we pick the sandbox so the connection is testable
+ * out of the box. The unresolved variables from any server (e.g. {host}/{port})
+ * are returned so the builder can SURFACE them as fields to point at the user's
+ * own host.
+ */
+function pickServerBase(spec: Obj, specUrl?: string): { base: string; variables: ServerVar[] } {
+  const servers = Array.isArray(spec.servers) ? (spec.servers as Obj[]) : []
+  const resolved: { url: string; unresolved: ServerVar[] }[] = []
+  for (const s of servers) {
+    if (typeof s.url !== 'string') continue
+    const vars = isObj(s.variables) ? (s.variables as Obj) : {}
+    const unresolved: ServerVar[] = []
+    const url = s.url.replace(/\{([^}]+)\}/g, (_m: string, name: string) => {
+      const v = isObj(vars[name]) ? (vars[name] as Obj) : undefined
+      const def = v && typeof v.default === 'string' ? v.default.trim() : ''
+      if (!def) unresolved.push({ name, description: v && typeof v.description === 'string' ? v.description : undefined })
+      return def || `{${name}}`
+    }).replace(/\/+$/, '')
+    resolved.push({ url, unresolved })
+  }
+  const allVars = new Map<string, ServerVar>()
+  for (const r of resolved) for (const v of r.unresolved) if (!allVars.has(v.name)) allVars.set(v.name, v)
+
+  // 1. a fully concrete absolute server
+  const concrete = resolved.find(r => r.unresolved.length === 0 && /^https?:\/\//i.test(r.url) && !/\{[^}]+\}/.test(r.url))
+  if (concrete) return { base: concrete.url, variables: [...allVars.values()] }
+  // 2. first server (may be templated / relative — resolve relative against the spec origin)
+  if (resolved.length) {
+    let base = resolved[0].url
+    if (!/^https?:\/\//i.test(base) && specUrl) { try { base = (new URL(specUrl).origin + (base.startsWith('/') ? base : '/' + base)).replace(/\/+$/, '') } catch { /* keep */ } }
+    return { base, variables: [...allVars.values()] }
+  }
+  // 3. swagger2 host / spec origin fallback
+  return { base: resolveServerBase(spec, specUrl), variables: [] }
+}
+
 /**
  * Peel leading path segments shared by ALL endpoints when they are mount points
  * (api, v1, …) or when peeling turns a single top-level group into several real
@@ -202,7 +246,8 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 150, specUrl?: str
   // "connections" (endpoint groups) to register, one per group.
   const groups = Array.from(new Set(endpoints.map(e => e.path.split('/').filter(Boolean)[0] || '').filter(Boolean))).sort()
 
-  const serverBase = resolveServerBase(spec, specUrl)
+  const picked = pickServerBase(spec, specUrl)
+  const serverBase = picked.base
   const suggestedBaseUrl = serverBase ? (serverBase + prefix).replace(/\/+$/, '') || serverBase : (prefix || undefined)
 
   return {
@@ -217,6 +262,7 @@ export function summarizeOpenApi(spec: unknown, endpointCap = 150, specUrl?: str
     groups,
     endpoints: endpoints.slice(0, endpointCap),
     endpointCount: endpoints.length,
+    serverVariables: picked.variables.length ? picked.variables : undefined,
   }
 }
 
@@ -262,6 +308,7 @@ export function renderSummaryText(s: OpenApiSummary): string {
   const lines: string[] = []
   lines.push(`OpenAPI spec${s.title ? `: ${s.title}` : ''}${s.version ? ` (v${s.version})` : ''} — ${s.endpointCount} endpoints.`)
   if (s.suggestedBaseUrl) lines.push(`Base URL to call: ${s.suggestedBaseUrl}`)
+  if (s.serverVariables?.length) lines.push(`Base-URL variables the user must provide (e.g. to target their own host instead of the default/sandbox base): ${s.serverVariables.map(v => v.name + (v.description ? ` (${v.description})` : '')).join(', ')} — treat each as a required field to fill.`)
   const sec = Object.entries(s.securitySchemes || {})
   if (sec.length) lines.push(`Auth: ${sec.map(([k, v]) => `${k} (${[v.type, v.scheme, v.in && `in ${v.in}`, v.name].filter(Boolean).join(' ')})`).join('; ')}`)
   if (s.loginCandidates?.length) lines.push(`Login endpoints: ${s.loginCandidates.map(l => `${l.method} ${l.path} {${l.fields.map(f => f.name).join(', ')}}`).join('; ')}`)

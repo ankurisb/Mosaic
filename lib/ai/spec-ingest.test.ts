@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSpec, isOpenApiSpec, extractSpecFromMaterials, condenseSpecMaterials } from './openapi-summary'
+import { parseSpec, isOpenApiSpec, extractSpecFromMaterials, condenseSpecMaterials, summarizeOpenApi } from './openapi-summary'
 
 const YAML_SPEC = `openapi: 3.0.0
 info:
@@ -46,5 +46,27 @@ describe('spec ingestion (YAML + condense)', () => {
   it('leaves non-spec materials unchanged', () => {
     const docs = 'Here are some API docs in prose. Base URL is https://x.com.'
     expect(condenseSpecMaterials(docs)).toBe(docs)
+  })
+})
+
+describe('server selection (templated host)', () => {
+  const sap = {
+    openapi: '3.0.0', info: { title: 'X', version: '1' },
+    servers: [
+      { url: 'https://{host}:{port}/sap/opu/odata/sap/API_X', variables: { host: { default: '' }, port: { default: '' } } },
+      { url: 'https://sandbox.api.sap.com/s4/sap/opu/odata/sap/API_X' },
+    ],
+    paths: { '/A_Thing': { get: { summary: 'list' } } },
+  }
+  it('prefers the concrete server and surfaces the templated vars', () => {
+    const s = summarizeOpenApi(sap, 50)
+    expect(s.suggestedBaseUrl).toBe('https://sandbox.api.sap.com/s4/sap/opu/odata/sap/API_X')
+    expect((s.serverVariables || []).map(v => v.name).sort()).toEqual(['host', 'port'])
+  })
+  it('falls back to the templated base when no concrete server exists', () => {
+    const only = { ...sap, servers: [sap.servers[0]] }
+    const s = summarizeOpenApi(only, 50)
+    expect(s.suggestedBaseUrl).toContain('{host}')
+    expect((s.serverVariables || []).length).toBe(2)
   })
 })
