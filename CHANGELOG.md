@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.146] - 2026-10-24
+### Added
+- API builder: the single file-drop now understands **Postman collections** and
+  **HAR captures** as well as OpenAPI/Swagger. Each is detected and condensed to a
+  compact structure (endpoints, base URL, auth type / observed auth header names)
+  before the AI drafts — HAR secrets are never surfaced, only header names. One
+  drop zone, any common API artifact. (`lib/ai/api-materials`.)
+
 ## [1.3.145] - 2026-10-24
 ### Fixed
 - API builder: a dropped OpenAPI/Swagger spec (YAML or JSON) is now **parsed and

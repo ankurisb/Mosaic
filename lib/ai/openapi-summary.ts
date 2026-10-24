@@ -240,7 +240,7 @@ export function isOpenApiSpec(o: unknown): boolean {
 
 // Materials from the builder are a concatenation of "===== name =====" blocks.
 // Split them back out (or return the whole string when there are no headers).
-function splitMaterialBlocks(materials: string): string[] {
+export function splitMaterialBlocks(materials: string): string[] {
   const parts = materials.split(/[ \t]*={3,}[^\n]*={3,}[ \t]*\r?\n?/g).map(s => s.trim()).filter(Boolean)
   return parts.length ? parts : (materials.trim() ? [materials.trim()] : [])
 }

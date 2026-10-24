@@ -17,7 +17,7 @@ import { discoverEndpoints } from '@/lib/api-discover'
 import { mapLimit } from '@/lib/concurrency'
 import type { AuthConfig } from '@/lib/api-auth'
 import { extractUrls, fetchUrlText, gatherMaterials, type FetchedDoc } from '@/lib/doc-fetch'
-import { condenseSpecMaterials } from '@/lib/ai/openapi-summary'
+import { condenseApiMaterials } from '@/lib/ai/api-materials'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         fetched = g.fetched
         fetchedText = g.text
       }
-      const combined = condenseSpecMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
+      const combined = condenseApiMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
       const r = await generateApiCandidate(String(description), combined || undefined)
       if (!r.ok) return Response.json({ error: r.reason, fetched }, { status: 502 })
       return Response.json({ ok: true, candidate: r.candidate, fetched })
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       const urls = extractUrls(String(description))
       let fetchedText = ''; let fetched: FetchedDoc[] = []
       if (urls.length) { const g = await gatherMaterials(urls); fetchedText = g.text; fetched = g.fetched }
-      const combined = condenseSpecMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
+      const combined = condenseApiMaterials([materials ? String(materials) : '', fetchedText].filter(Boolean).join('\n\n'))
       const creds = (credentials && typeof credentials === 'object') ? credentials as Record<string, string> : undefined
       const r = await runApiAgent({ description: String(description), materials: combined || undefined, credentials: creds })
       return Response.json({ ok: r.ok, candidate: r.candidate, transcript: r.transcript, probe: r.probe, reason: r.reason, fetched })
