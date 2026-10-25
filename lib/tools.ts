@@ -2568,11 +2568,13 @@ export async function extractFileText(buf: Buffer, filename: string, maxChars = 
   if (['txt', 'md', 'log'].includes(ext)) {
     return buf.toString('utf8').slice(0, maxChars)
   }
-  // DOCX / PPTX: both are ZIP archives of XML. We already ship jszip, so extract
-  // text with no extra dependency (no mammoth / python). DOCX text lives in
-  // word/document.xml as <w:t>; PPTX text is spread across ppt/slides/slideN.xml
-  // as <a:t>. Word/PowerPoint split runs across many tags, so we join them.
+  // DOCX / PPTX: prefer the MarkItDown sidecar — it returns clean Markdown with
+  // TABLES and headings preserved, which the model reasons over far better than a
+  // flat run of text. Fall back to the dependency-free jszip text extraction below
+  // if the sidecar is unavailable, so chat attachments never hard-depend on it.
   if (ext === 'docx' || ext === 'pptx') {
+    const md = await convertViaMarkItDown(buf, filename)
+    if (md && md.trim()) return md.slice(0, maxChars)
     try {
       const JSZip = (await import('jszip')).default
       const zip = await JSZip.loadAsync(buf)
@@ -2612,6 +2614,12 @@ export async function extractFileText(buf: Buffer, filename: string, maxChars = 
     parsed = await parseFileContent(buf, filename, 500, undefined)
   } catch (e) {
     return `(could not extract ${ext || 'file'}: ${(e as Error).message})`
+  }
+  // Clean Markdown from the MarkItDown sidecar (pdf/html/xlsx) — preserves tables
+  // and structure, best for inference. Return it directly rather than JSON-dumping
+  // the whole parse result (which would bury the content among metadata keys).
+  if (typeof parsed.content === 'string' && parsed.content.trim() && parsed.content_type === 'markdown') {
+    return (parsed.content as string).slice(0, maxChars)
   }
   // Prefer an explicit text field (pdf/xml); otherwise serialise structured data
   // (csv/xlsx/json rows) compactly.

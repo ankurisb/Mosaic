@@ -5,7 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.153] - 2026-10-25
+## [1.3.154] - 2026-10-25
+### Changed
+- **Chat attachments now use the MarkItDown markdown converter for document types**,
+  so the model reasons over clean Markdown (tables and headings preserved) instead
+  of flattened text — better inference. Two gaps closed in the chat extraction path
+  (`extractFileText`):
+  - **DOCX/PPTX** were extracting raw text via jszip and never touching MarkItDown;
+    they now go through the sidecar `/convert` first, falling back to the
+    dependency-free jszip extractor only if the sidecar is unavailable.
+  - **PDF/HTML/XLSX** already produced Markdown via the sidecar inside
+    `parseFileContent`, but `extractFileText` ignored that `content` field and
+    JSON-dumped the whole parse result; it now returns the Markdown cleanly.
+  CSV/JSON/XML keep their structured parsing (more useful as data); images still go
+  to native vision; TXT/MD/LOG are already text. Graceful fallback throughout, so
+  attachment handling never hard-depends on the sidecar.
 ### Added
 - **Chat file upload: drag-and-drop.** Files can now be dropped anywhere on the
   chat pane (not only via the + / upload button). A dashed "Drop files to attach"
