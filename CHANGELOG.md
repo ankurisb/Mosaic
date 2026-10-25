@@ -5,7 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.152] - 2026-10-25
+## [1.3.153] - 2026-10-25
+### Added
+- **Chat file upload: drag-and-drop.** Files can now be dropped anywhere on the
+  chat pane (not only via the + / upload button). A dashed "Drop files to attach"
+  overlay appears while dragging; dropping routes through the same `handleFiles`
+  pipeline (multi-file, image downscale/HEIC, size/count guards, error chips).
+- **Chat shows the files you sent.** The submitted user message now renders the
+  uploaded files as chips (image thumbnail or file icon + name) in a horizontally
+  scrollable row, so a long list stays on one line and the user has clear
+  confirmation the upload landed — previously the files vanished from view on send.
+  (`Message.attachments`; recorded on send, rendered in the user bubble.)
 ### Fixed
 - **API ingestion hardening (adversarial audit).** Ran a 33-case adversarial suite
   across the whole ingestion funnel (malformed inputs, degenerate specs, detection

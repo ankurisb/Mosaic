@@ -114,7 +114,8 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
 ]
 
 interface ToolCall { name: string; input: unknown; result?: unknown }
-interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal; dashboardSaved?: { id: string; title: string } }
+interface MsgAttachment { name: string; type: string; preview?: string }
+interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal; dashboardSaved?: { id: string; title: string }; attachments?: MsgAttachment[] }
 interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
 interface Folder { id: string; name: string; position?: number }
 
@@ -1141,6 +1142,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const [research, setResearch] = useState<ResearchState | null>(null)
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; description: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
   const plusRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -1526,9 +1529,12 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     let cid = activeId
     const isFirstMsg = (convs.find(c => c.id === cid)?.messages.length ?? 0) === 0
     const newTitle = isFirstMsg ? text.slice(0, 42) : undefined
+    // Record the uploaded files ON the user message so the chat shows what was
+    // sent — confirmation that the upload landed (names + image thumbnails).
+    const msgAttachments: MsgAttachment[] = readyAttachments.map(a => ({ name: a.name, type: a.type, preview: a.preview }))
     setConvs(p => p.map(c => {
       if (c.id !== cid) return c
-      return { ...c, title: isFirstMsg ? text.slice(0, 42) : c.title, messages: [...c.messages, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [], startedAt: Date.now() }] }
+      return { ...c, title: isFirstMsg ? text.slice(0, 42) : c.title, messages: [...c.messages, { role: 'user', content: text, attachments: msgAttachments.length ? msgAttachments : undefined }, { role: 'assistant', content: '', tools: [], startedAt: Date.now() }] }
     }))
     setInput(''); setStreaming(true)
     if (taRef.current) { taRef.current.style.height = 'auto' }
@@ -1882,7 +1888,19 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       </div>
 
       {/* -- Main -- */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative' }}
+        onDragEnter={e => { if (Array.from(e.dataTransfer.types || []).includes('Files')) { e.preventDefault(); dragDepth.current += 1; setDragging(true) } }}
+        onDragOver={e => { if (Array.from(e.dataTransfer.types || []).includes('Files')) e.preventDefault() }}
+        onDragLeave={e => { if (Array.from(e.dataTransfer.types || []).includes('Files')) { dragDepth.current -= 1; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false) } } }}
+        onDrop={e => { if (Array.from(e.dataTransfer.types || []).includes('Files')) { e.preventDefault(); dragDepth.current = 0; setDragging(false); handleFiles(e.dataTransfer.files) } }}>
+        {dragging && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 200, background: 'var(--accent-bg, rgba(99,102,241,0.08))', border: '2px dashed var(--accent, #6366f1)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', backdropFilter: 'blur(1px)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--accent, #6366f1)', fontWeight: 600, fontSize: 15 }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+              Drop files to attach
+            </div>
+          </div>
+        )}
 
         {/* Mobile top bar — hamburger opens the chat drawer; + starts a new chat. */}
         {isMobile && (
@@ -1987,6 +2005,19 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   {/* Message bubble */}
                   {msg.role === 'user' ? (
                     <div style={{ display: 'inline-block', background: 'var(--bg4)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 14, color: 'var(--text)', lineHeight: 1.7, maxWidth: '80%' }}>
+                      {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', maxWidth: '100%', paddingBottom: msg.content ? 8 : 0, marginBottom: msg.content ? 2 : 0 }}>
+                          {msg.attachments.map((a, ai) => (
+                            <span key={ai} title={a.name}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: 180, padding: '4px 9px', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 500, color: 'var(--text2)' }}>
+                              {a.preview
+                                ? <img src={a.preview} alt="" style={{ width: 16, height: 16, borderRadius: 2, objectFit: 'cover', flexShrink: 0 }} />
+                                : <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M2 1h5l3 3v7H2V1z"/><path d="M7 1v3h3"/></svg>}
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {msg.content}
                     </div>
                   ) : (
