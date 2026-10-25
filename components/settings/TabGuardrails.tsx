@@ -63,7 +63,7 @@ function ActionBtn({ label, onClick, variant = 'neutral' }: { label: string; onC
     cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s', lineHeight: 1.4,
   }
   const styles = variant === 'danger'
-    ? { ...base, background: hover ? '#fef2f2' : 'transparent', color: 'var(--red-t, #dc2626)', borderColor: hover ? 'rgba(220,38,38,.4)' : 'var(--border)' }
+    ? { ...base, background: hover ? 'var(--red-bg)' : 'transparent', color: 'var(--red-t, #dc2626)', borderColor: hover ? 'rgba(220,38,38,.4)' : 'var(--border)' }
     : { ...base, background: hover ? 'var(--bg3)' : 'transparent', color: 'var(--blue-t, #2563eb)', borderColor: hover ? 'var(--border2)' : 'var(--border)' }
   return <button style={styles} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onClick}>{label}</button>
 }
@@ -349,7 +349,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{p.name}</span>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: p.mode === 'blocklist' ? '#fef2f2' : '#eff6ff', color: p.mode === 'blocklist' ? '#dc2626' : '#2563eb', border: `1px solid ${p.mode === 'blocklist' ? 'rgba(220,38,38,.2)' : 'rgba(37,99,235,.2)'}` }}>{p.mode}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: p.mode === 'blocklist' ? 'var(--red-bg)' : 'var(--blue-bg)', color: p.mode === 'blocklist' ? 'var(--red-t)' : 'var(--blue-t)', border: `1px solid ${p.mode === 'blocklist' ? 'rgba(220,38,38,.2)' : 'rgba(37,99,235,.2)'}` }}>{p.mode}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(JSON.parse(typeof p.patterns === 'string' ? p.patterns : JSON.stringify(p.patterns)) as string[]).join(', ') || 'No patterns'}</div>
             </div>
@@ -501,7 +501,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
             <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 11, flexShrink: 0 }}>{r.source_id || 'all'}</span>
             <div style={{ flex: 1, display: 'flex', gap: 8, overflow: 'hidden' }}>
               {(JSON.parse(typeof r.allowed_tables==='string'?r.allowed_tables:JSON.stringify(r.allowed_tables)) as string[]).length > 0 && <span style={{ color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>allow: {(JSON.parse(typeof r.allowed_tables==='string'?r.allowed_tables:JSON.stringify(r.allowed_tables)) as string[]).join(', ')}</span>}
-              {(JSON.parse(typeof r.blocked_columns==='string'?r.blocked_columns:JSON.stringify(r.blocked_columns)) as string[]).length > 0 && <span style={{ color: '#dc2626', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>block cols: {(JSON.parse(typeof r.blocked_columns==='string'?r.blocked_columns:JSON.stringify(r.blocked_columns)) as string[]).join(', ')}</span>}
+              {(JSON.parse(typeof r.blocked_columns==='string'?r.blocked_columns:JSON.stringify(r.blocked_columns)) as string[]).length > 0 && <span style={{ color: 'var(--red-t)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>block cols: {(JSON.parse(typeof r.blocked_columns==='string'?r.blocked_columns:JSON.stringify(r.blocked_columns)) as string[]).join(', ')}</span>}
               {r.row_filter && <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>WHERE {String(r.row_filter).slice(0,40)}</span>}
             </div>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>

@@ -200,11 +200,11 @@ function SubcauseR({ data, insight }: { data: Extract<RendererPayload,{type:'sub
 // -- R4: FISHBONE ----------------------------------------------------------
 const BONE_COL: Record<string, { stroke: string; light: string }> = {
   Machine:     { stroke: '#1d5fa0', light: '#eef3fb' },
-  Method:      { stroke: '#2d8a5e', light: '#edf7f2' },
+  Method:      { stroke: '#2d8a5e', light: 'var(--green-bg)' },
   Material:    { stroke: '#6b4ea0', light: '#f3eefb' },
   Manpower:    { stroke: '#b0451a', light: '#fdf3ec' },
-  Measurement: { stroke: '#8a6000', light: '#fdf7e6' },
-  Environment: { stroke: '#2d6a4f', light: '#edf7f2' },
+  Measurement: { stroke: 'var(--amber-t)', light: '#fdf7e6' },
+  Environment: { stroke: '#2d6a4f', light: 'var(--green-bg)' },
 }
 const DEFAULT_COL = { stroke: '#6b6760', light: '#f5f5f3' }
 function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fishbone'}>['data']; insight?: string }) {
@@ -243,10 +243,10 @@ function FishboneR({ data, insight }: { data: Extract<RendererPayload,{type:'fis
         <svg viewBox="0 0 880 380" style={{ width: '100%', display: 'block' }}>
           <line x1="55" y1="190" x2="810" y2="190" stroke="#b0aca4" strokeWidth="2.5" />
           <polygon points="810,190 797,183 797,197" fill="#b0aca4" />
-          <rect x="816" y="163" width="60" height="54" rx="7" fill="#fdf0ee" stroke="#f5c4be" strokeWidth="1.5" />
-          <text x="846" y="187" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fontWeight="600" fill="#c0392b">{problem.slice(0,14)}</text>
-          <text x="846" y="200" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{problem.slice(14,28)}</text>
-          <text x="846" y="212" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="#c0392b">{problem.slice(28,42)}</text>
+          <rect x="816" y="163" width="60" height="54" rx="7" fill="var(--red-bg)" stroke="#f5c4be" strokeWidth="1.5" />
+          <text x="846" y="187" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fontWeight="600" fill="var(--red-t)">{problem.slice(0,14)}</text>
+          <text x="846" y="200" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="var(--red-t)">{problem.slice(14,28)}</text>
+          <text x="846" y="212" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fill="var(--red-t)">{problem.slice(28,42)}</text>
           {top.map((bone, bi) => {
             const x = xPos[bi], col = BONE_COL[bone.name] ?? DEFAULT_COL
             return (
@@ -341,7 +341,7 @@ function FiveWhysR({ data, insight }: { data: Extract<RendererPayload,{type:'fiv
 // -- R6: CAP ---------------------------------------------------------------
 const CAUSE_COL: Record<string, string> = {
   Measurement: 'var(--blue)', Machine: '#1a6b6b', Method: 'var(--purple)',
-  Manpower: '#c45c1a', Material: '#8a6000', Environment: 'var(--green)',
+  Manpower: '#c45c1a', Material: 'var(--amber-t)', Environment: 'var(--green)',
 }
 function CapR({ data, insight }: { data: Extract<RendererPayload,{type:'cap'}>['data']; insight?: string }) {
   const priBg: Record<string, React.CSSProperties> = {
@@ -515,7 +515,7 @@ function TrendR({ data, insight }: { data: Extract<RendererPayload,{type:'trend'
       <Card>
         <div style={{ padding: '12px 14px 8px' }}>
           <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-            {event_idx !== undefined && <rect x={xi(event_idx) - 18} y={pT} width="36" height={cH} fill="#fdf0ee" opacity="0.8" />}
+            {event_idx !== undefined && <rect x={xi(event_idx) - 18} y={pT} width="36" height={cH} fill="var(--red-bg)" opacity="0.8" />}
             {[0, 0.25, 0.5, 0.75, 1].map(f => <line key={f} x1={pL} y1={pT + cH * (1 - f)} x2={pL + cW} y2={pT + cH * (1 - f)} stroke={V.border} strokeWidth="1" />)}
             {series.map(sr => {
               const isRight = sr.axis === 'right', yFn = isRight ? yR : yL
@@ -567,7 +567,7 @@ function ScatterR({ data, insight }: { data: Extract<RendererPayload,{type:'scat
         <div style={{ padding: '12px 14px 8px' }}>
           <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
             {tolerance_y && <line x1={pL} y1={sy(tolerance_y)} x2={pL+cW} y2={sy(tolerance_y)} stroke={V.red} strokeWidth="1.5" strokeDasharray="5,4" opacity="0.6" />}
-            <line x1={sx(minX+0.1)} y1={sy(slope*(minX+0.1)+intercept)} x2={sx(maxX-0.1)} y2={sy(slope*(maxX-0.1)+intercept)} stroke="#8a6000" strokeWidth="1.5" opacity="0.6" />
+            <line x1={sx(minX+0.1)} y1={sy(slope*(minX+0.1)+intercept)} x2={sx(maxX-0.1)} y2={sy(slope*(maxX-0.1)+intercept)} stroke="var(--amber-t)" strokeWidth="1.5" opacity="0.6" />
             {[0,0.25,0.5,0.75,1].map(f => <line key={f} x1={pL} y1={pT+cH*(1-f)} x2={pL+cW} y2={pT+cH*(1-f)} stroke={V.border} strokeWidth="1" />)}
             {points.map((p,i) => <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r="4" fill={tolerance_y && p.y > tolerance_y ? V.red : V.blue} opacity="0.75" stroke="#fff" strokeWidth="1" />)}
             <text x={pL+cW/2} y={H-2} textAnchor="middle" fontFamily="sans-serif" fontSize="10" fill={V.text2}>{xLabel}</text>

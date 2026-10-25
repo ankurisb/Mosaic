@@ -9,7 +9,7 @@ interface QueryResult { columns: string[]; rows: Record<string, any>[]; rowCount
 interface SavedQuery { id: string; label: string; connectionId: string; connectionLabel: string; connectionType?: string; query: string; savedAt: string }
 
 const DIALECT_LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server', sqlite: 'SQLite', mongodb: 'MongoDB', clickhouse: 'ClickHouse', influxdb: 'InfluxDB', elasticsearch: 'Elasticsearch', api: 'REST API', file: 'File' }
-const ENV_DOT: Record<string, string> = { production: '#e24b4a', staging: '#ef9f27', development: '#1D9E75' }
+const ENV_DOT: Record<string, string> = { production: 'var(--red-t)', staging: 'var(--amber)', development: '#1D9E75' }
 
 function dbHint(d: string) {
   if (d === 'mssql') return 'SELECT TOP 100 * FROM your_table'

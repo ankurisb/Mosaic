@@ -1083,7 +1083,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
               ))}
             </div>
             {sapOdataVer === 'v4' && (
-              <div style={{ marginTop: 7, fontSize: 11, color: '#92610a', background: '#fffbeb', border: '1px solid rgba(245,158,11,.2)', borderRadius: 'var(--radius-sm)', padding: '5px 10px' }}>
+              <div style={{ marginTop: 7, fontSize: 11, color: 'var(--amber-t)', background: 'var(--amber-bg)', border: '1px solid rgba(245,158,11,.2)', borderRadius: 'var(--radius-sm)', padding: '5px 10px' }}>
                  V4 is only available for {SAP_CONNECTIONS.filter(c => c.v4confirmed).length} of {SAP_CONNECTIONS.length} endpoints.
                 The rest will automatically use V2. Requires SAP S/4HANA 2021+ and <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>/IWBEP/V4_ADMIN</code> activation.
               </div>
@@ -1122,11 +1122,11 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
                           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>{c.label}</span>
                           {willUseV4
-                            ? <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 99, background: '#eff6ff', border: '1px solid rgba(37,99,235,.2)', color: '#2563eb', fontWeight: 600 }}>V4</span>
+                            ? <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 99, background: 'var(--blue-bg)', border: '1px solid rgba(37,99,235,.2)', color: 'var(--blue-t)', fontWeight: 600 }}>V4</span>
                             : <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text4)', fontWeight: 600 }}>V2</span>
                           }
                           {sapOdataVer === 'v4' && !hasV4 && (
-                            <span style={{ fontSize: 9, color: '#92610a' }}> V2 fallback</span>
+                            <span style={{ fontSize: 9, color: 'var(--amber-t)' }}> V2 fallback</span>
                           )}
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--text3)' }}>{c.desc}</div>
@@ -1532,10 +1532,10 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
 
                 {/* Security rejection banner */}
                 {securityBannerText && (
-                  <div style={{ display: 'flex', gap: 10, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 10, background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 10 }}>
                     <span style={{ fontSize: 16, flexShrink: 0 }}>🛡️</span>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', marginBottom: 2 }}>Request blocked by security policy</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--red-t)', marginBottom: 2 }}>Request blocked by security policy</div>
                       <div style={{ fontSize: 12, color: '#991b1b', lineHeight: 1.5 }}>{securityBannerText}</div>
                     </div>
                   </div>

@@ -6,11 +6,11 @@ import React, { useState, useEffect, useCallback } from 'react'
 const ITEMS_PER_PAGE = 12
 
 const CATEGORY_COLORS: Record<string, string> = {
-  spc:         '#2563eb',
-  time_series: '#7c3aed',
-  reliability: '#dc2626',
-  quality:     '#d97706',
-  correlation: '#059669',
+  spc:         'var(--blue-t)',
+  time_series: 'var(--purple-t)',
+  reliability: 'var(--red-t)',
+  quality:     'var(--amber-t)',
+  correlation: 'var(--green-t)',
   oee:         '#0891b2',
   hypothesis:  '#db2777',
 }
@@ -148,13 +148,13 @@ function SparkLine({ values, color, width=200, height=50, ucl, lcl, mean: meanLi
   const pts = values.map((v, i) => `${(i / (values.length - 1)) * width},${scale(v)}`).join(' ')
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible' }}>
-      {ucl !== undefined && <line x1={0} y1={scale(ucl)} x2={width} y2={scale(ucl)} stroke="#dc2626" strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />}
-      {lcl !== undefined && <line x1={0} y1={scale(lcl)} x2={width} y2={scale(lcl)} stroke="#dc2626" strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />}
+      {ucl !== undefined && <line x1={0} y1={scale(ucl)} x2={width} y2={scale(ucl)} stroke="var(--red-t)" strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />}
+      {lcl !== undefined && <line x1={0} y1={scale(lcl)} x2={width} y2={scale(lcl)} stroke="var(--red-t)" strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />}
       {meanLine !== undefined && <line x1={0} y1={scale(meanLine)} x2={width} y2={scale(meanLine)} stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.5} />}
       <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
       {values.map((v, i) => {
         const isOut = (ucl !== undefined && v > ucl) || (lcl !== undefined && v < lcl)
-        return isOut ? <circle key={i} cx={(i/(values.length-1))*width} cy={scale(v)} r={3.5} fill="#dc2626" /> : null
+        return isOut ? <circle key={i} cx={(i/(values.length-1))*width} cy={scale(v)} r={3.5} fill="var(--red-t)" /> : null
       })}
     </svg>
   )
@@ -197,12 +197,12 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
           ))}
         </div>
         {ooc.length > 0 && (
-          <div style={{ marginTop: 10, padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, color: '#dc2626' }}>
+          <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 6, fontSize: 12, color: 'var(--red-t)' }}>
             {ooc.length} out-of-control point{ooc.length>1?'s':''} detected — {ooc[0].violations[0]}
           </div>
         )}
         {ooc.length === 0 && (
-          <div style={{ marginTop: 10, padding: '8px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#15803d' }}>
+          <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--green-bg)', border: '1px solid color-mix(in srgb, var(--green-t) 35%, transparent)', borderRadius: 6, fontSize: 12, color: 'var(--green-t)' }}>
             Process in statistical control — no violations detected
           </div>
         )}
@@ -213,7 +213,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
   if (name === 'process_capability') {
     const cpk = r.cpk as number
     const rating = r.capability_rating as string
-    const color2 = cpk >= 1.33 ? '#16a34a' : cpk >= 1.0 ? '#d97706' : '#dc2626'
+    const color2 = cpk >= 1.33 ? 'var(--green-t)' : cpk >= 1.0 ? 'var(--amber-t)' : 'var(--red-t)'
     return (
       <div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 12 }}>
@@ -246,7 +246,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 10, padding: '8px 10px', background: sig ? '#fff7ed' : '#f0fdf4', border: `1px solid ${sig ? '#fed7aa':'#bbf7d0'}`, borderRadius: 6, fontSize: 12, color: sig ? '#c2410c' : '#15803d' }}>
+        <div style={{ marginTop: 10, padding: '8px 10px', background: sig ? 'var(--amber-bg)' : 'var(--green-bg)', border: `1px solid ${sig ? 'color-mix(in srgb, var(--amber-t) 35%, transparent)':'color-mix(in srgb, var(--green-t) 35%, transparent)'}`, borderRadius: 6, fontSize: 12, color: sig ? 'var(--amber-t)' : 'var(--green-t)' }}>
           {sig ? `Significant ${dir} trend detected (p<0.05)` : 'No statistically significant trend'}
           {r.days_to_threshold ? ` — reaches threshold in ~${r.days_to_threshold} shifts` : ''}
         </div>
@@ -264,12 +264,12 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
           {[['Anomalies',String(r.anomaly_count)],['Rate',`${r.anomaly_rate}%`],['Mean',`${(r.mean as number)?.toFixed(2)} mm/s`]].map(([k,v])=>(
             <div key={k} style={{ background: 'var(--bg3)', borderRadius: 6, padding: '8px 10px' }}>
               <div style={{ fontSize: 10, color: 'var(--text4)', marginBottom: 2 }}>{k}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: k==='Anomalies' && (r.anomaly_count as number)>0 ? '#dc2626':'var(--text)' }}>{v}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: k==='Anomalies' && (r.anomaly_count as number)>0 ? 'var(--red-t)':'var(--text)' }}>{v}</div>
             </div>
           ))}
         </div>
         {anomalies.map((a,i) => (
-          <div key={i} style={{ marginTop: 6, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, color: '#dc2626' }}>
+          <div key={i} style={{ marginTop: 6, padding: '6px 10px', background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 6, fontSize: 11, color: 'var(--red-t)' }}>
             Point {a.index+1}: {a.value} mm/s · z-score {a.z_score.toFixed(1)}σ
           </div>
         ))}
@@ -284,11 +284,11 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
       <div>
         <SparkLine values={vals} color={color} mean={r.overall_mean as number} width={320} height={70} />
         {cps.length > 0 ? cps.map((cp,i) => (
-          <div key={i} style={{ marginTop: 10, padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, color: '#dc2626' }}>
+          <div key={i} style={{ marginTop: 10, padding: '8px 10px', background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 6, fontSize: 12, color: 'var(--red-t)' }}>
             Shift detected at {cp.label} — {cp.before_mean.toFixed(1)}% → {cp.after_mean.toFixed(1)}% ({cp.direction}, Δ{cp.magnitude.toFixed(1)}pp)
           </div>
         )) : (
-          <div style={{ marginTop: 10, padding: '8px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#15803d' }}>No changepoints detected — process is stable</div>
+          <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--green-bg)', border: '1px solid color-mix(in srgb, var(--green-t) 35%, transparent)', borderRadius: 6, fontSize: 12, color: 'var(--green-t)' }}>No changepoints detected — process is stable</div>
         )}
       </div>
     )
@@ -368,7 +368,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
             </div>
           ))}
         </div>
-        <div style={{ padding: '8px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, fontSize: 12, color: '#c2410c' }}>
+        <div style={{ padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid color-mix(in srgb, var(--amber-t) 35%, transparent)', borderRadius: 6, fontSize: 12, color: 'var(--amber-t)' }}>
           β={beta?.toFixed(2)} → {fc}
         </div>
       </div>
@@ -377,7 +377,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
 
   if (name === 'mtbf') {
     const avail = r.availability_pct as number
-    const color2 = avail >= 95 ? '#16a34a' : avail >= 90 ? '#d97706' : '#dc2626'
+    const color2 = avail >= 95 ? 'var(--green-t)' : avail >= 90 ? 'var(--amber-t)' : 'var(--red-t)'
     return (
       <div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
@@ -397,7 +397,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
 
   if (name === 'oee_decomposition') {
     const oee = r.oee as number
-    const oeeColor = oee >= 85 ? '#16a34a' : oee >= 70 ? '#d97706' : '#dc2626'
+    const oeeColor = oee >= 85 ? 'var(--green-t)' : oee >= 70 ? 'var(--amber-t)' : 'var(--red-t)'
     const losses = r.losses as {availability_loss:number;performance_loss:number;quality_loss:number} || {}
     return (
       <div>
@@ -416,7 +416,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
             ))}
           </div>
         </div>
-        <div style={{ padding:'8px 12px', background: '#fff7ed', border:'1px solid #fed7aa', borderRadius:6, fontSize:12, color:'#c2410c' }}>
+        <div style={{ padding:'8px 12px', background: 'var(--amber-bg)', border:'1px solid color-mix(in srgb, var(--amber-t) 35%, transparent)', borderRadius:6, fontSize:12, color:'var(--amber-t)' }}>
           Biggest loss driver: {(r.biggest_loss_driver as string)?.replace('_loss','').replace('_',' ')} ({(Object.values(losses)[Object.keys(losses).indexOf(r.biggest_loss_driver as string)] as number)?.toFixed(1)}% loss)
         </div>
       </div>
@@ -436,7 +436,7 @@ function DemoResult({ name, result, color }: { name: string; result: Record<stri
             </div>
           ))}
         </div>
-        <div style={{ padding:'8px 12px', background: (r.significant as boolean) ? '#fef2f2':'#f0fdf4', border:`1px solid ${(r.significant as boolean)?'#fecaca':'#bbf7d0'}`, borderRadius:6, fontSize:12, color:(r.significant as boolean)?'#dc2626':'#15803d' }}>
+        <div style={{ padding:'8px 12px', background: (r.significant as boolean) ? 'var(--red-bg)':'var(--green-bg)', border:`1px solid ${(r.significant as boolean)?'color-mix(in srgb, var(--red-t) 35%, transparent)':'color-mix(in srgb, var(--green-t) 35%, transparent)'}`, borderRadius:6, fontSize:12, color:(r.significant as boolean)?'var(--red-t)':'var(--green-t)' }}>
           {r.conclusion as string}
         </div>
         <div style={{ marginTop:6, fontSize:11, color:'var(--text3)' }}>
@@ -529,7 +529,7 @@ function DemoModal({ item, color, onClose }: { item: AnalysisDef; color: string;
             </div>
           )}
           {error && (
-            <div style={{ padding:'12px 14px', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, fontSize:12, color:'#dc2626' }}>
+            <div style={{ padding:'12px 14px', background:'var(--red-bg)', border:'1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius:8, fontSize:12, color:'var(--red-t)' }}>
               <div style={{ fontWeight:600, marginBottom:4 }}>Analysis failed</div>
               <div>{error}</div>
               {error.includes('503') || error.includes('offline') || error.includes('fetch') ? (
@@ -538,7 +538,7 @@ function DemoModal({ item, color, onClose }: { item: AnalysisDef; color: string;
                   <code style={{ fontFamily:'monospace' }}>cd services/stats-sidecar && python3 main.py</code>
                 </div>
               ) : null}
-              <button onClick={run} style={{ marginTop:8, padding:'4px 10px', borderRadius:6, border:'1px solid #fecaca', background:'white', cursor:'pointer', fontSize:11, color:'#dc2626' }}>Retry</button>
+              <button onClick={run} style={{ marginTop:8, padding:'4px 10px', borderRadius:6, border:'1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', background:'white', cursor:'pointer', fontSize:11, color:'var(--red-t)' }}>Retry</button>
             </div>
           )}
           {result && <DemoResult name={item.name} result={result} color={color} />}
@@ -562,11 +562,11 @@ function DemoModal({ item, color, onClose }: { item: AnalysisDef; color: string;
 function AnalysisIcon({ name, color }: { name: string; color: string }) {
   const p = { width:32, height:32, viewBox:'0 0 32 32', fill:'none', stroke:color, strokeWidth:1.6, strokeLinecap:'round' as const, strokeLinejoin:'round' as const }
   switch (name) {
-    case 'control_chart': return <svg {...p}><path d="M4 16h24M4 8h24" strokeDasharray="2 2" opacity={0.3}/><path d="M4 12h24" strokeDasharray="3 2" opacity={0.5}/><polyline points="4,20 8,14 12,18 16,10 20,22 24,12 28,16" strokeWidth={2} stroke={color}/><circle cx="16" cy="10" r="2" fill={color} stroke="none"/><circle cx="20" cy="22" r="2" fill="#dc2626" stroke="none"/></svg>
+    case 'control_chart': return <svg {...p}><path d="M4 16h24M4 8h24" strokeDasharray="2 2" opacity={0.3}/><path d="M4 12h24" strokeDasharray="3 2" opacity={0.5}/><polyline points="4,20 8,14 12,18 16,10 20,22 24,12 28,16" strokeWidth={2} stroke={color}/><circle cx="16" cy="10" r="2" fill={color} stroke="none"/><circle cx="20" cy="22" r="2" fill="var(--red-t)" stroke="none"/></svg>
     case 'process_capability': return <svg {...p}><path d="M4 24 Q16 4 28 24"/><line x1="10" y1="4" x2="10" y2="26" strokeDasharray="3 2"/><line x1="22" y1="4" x2="22" y2="26" strokeDasharray="3 2"/><line x1="16" y1="8" x2="16" y2="26"/><text x="9" y="29" fontSize="5" fill={color} stroke="none">LSL</text><text x="21" y="29" fontSize="5" fill={color} stroke="none">USL</text></svg>
     case 'trend': return <svg {...p}><polyline points="4,22 10,18 14,20 18,14 22,16 28,8"/><line x1="4" y1="24" x2="28" y2="10" strokeDasharray="3 2" opacity={0.5}/><circle cx="28" cy="8" r="2" fill={color} stroke="none"/></svg>
-    case 'anomaly_detection': return <svg {...p}><polyline points="4,16 8,15 12,16 16,15 20,26 24,15 28,16"/><circle cx="20" cy="26" r="3" stroke="#dc2626" strokeWidth={2}/><line x1="20" y1="22" x2="20" y2="18" stroke="#dc2626"/></svg>
-    case 'changepoint_detection': return <svg {...p}><polyline points="4,18 8,17 12,18 16,17"/><line x1="16" y1="6" x2="16" y2="26" strokeDasharray="3 2" stroke="#dc2626"/><polyline points="16,10 20,9 24,8 28,7"/></svg>
+    case 'anomaly_detection': return <svg {...p}><polyline points="4,16 8,15 12,16 16,15 20,26 24,15 28,16"/><circle cx="20" cy="26" r="3" stroke="var(--red-t)" strokeWidth={2}/><line x1="20" y1="22" x2="20" y2="18" stroke="var(--red-t)"/></svg>
+    case 'changepoint_detection': return <svg {...p}><polyline points="4,18 8,17 12,18 16,17"/><line x1="16" y1="6" x2="16" y2="26" strokeDasharray="3 2" stroke="var(--red-t)"/><polyline points="16,10 20,9 24,8 28,7"/></svg>
     case 'pareto': return <svg {...p}><rect x="4" y="8" width="4" height="16" fill={color} opacity={0.8} stroke="none"/><rect x="10" y="12" width="4" height="12" fill={color} opacity={0.6} stroke="none"/><rect x="16" y="16" width="4" height="8" fill={color} opacity={0.4} stroke="none"/><rect x="22" y="19" width="4" height="5" fill={color} opacity={0.3} stroke="none"/><path d="M4 8 Q10 8 14 12 Q18 16 28 19" strokeWidth={1.5} strokeDasharray="2 1"/></svg>
     case 'correlation': return <svg {...p}><circle cx="8" cy="22" r="1.5" fill={color} stroke="none"/><circle cx="11" cy="19" r="1.5" fill={color} stroke="none"/><circle cx="14" cy="16" r="1.5" fill={color} stroke="none"/><circle cx="17" cy="14" r="1.5" fill={color} stroke="none"/><circle cx="20" cy="11" r="1.5" fill={color} stroke="none"/><circle cx="23" cy="9" r="1.5" fill={color} stroke="none"/><line x1="6" y1="24" x2="26" y2="7" strokeDasharray="3 2" opacity={0.5}/></svg>
     case 'regression': return <svg {...p}><circle cx="7" cy="21" r="1.5" fill={color} stroke="none"/><circle cx="10" cy="18" r="1.5" fill={color} stroke="none"/><circle cx="13" cy="17" r="1.5" fill={color} stroke="none"/><circle cx="16" cy="13" r="1.5" fill={color} stroke="none"/><circle cx="19" cy="12" r="1.5" fill={color} stroke="none"/><circle cx="22" cy="9" r="1.5" fill={color} stroke="none"/><line x1="5" y1="23" x2="25" y2="8" strokeWidth={2}/></svg>
@@ -663,14 +663,14 @@ export default function TabAnalytics() {
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: sidecarOk === null ? 'var(--text4)' : sidecarOk ? '#16a34a' : '#dc2626' }} />
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: sidecarOk === null ? 'var(--text4)' : sidecarOk ? 'var(--green-t)' : 'var(--red-t)' }} />
             <span style={{ color: 'var(--text2)', fontWeight: 500 }}>
               {sidecarOk === null ? 'Checking…' : sidecarOk ? 'Stats engine online' : 'Stats engine offline'}
             </span>
           </div>
         </div>
         {sidecarOk === false && (
-          <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626', marginTop: 12 }}>
+          <div style={{ padding: '10px 14px', background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 8, fontSize: 12, color: 'var(--red-t)', marginTop: 12 }}>
             Statistical analyses are unavailable. Start the engine: <code style={{ background: 'rgba(220,38,38,.1)', padding: '1px 5px', borderRadius: 4 }}>cd services/stats-sidecar && python3 main.py</code>
           </div>
         )}

@@ -15,10 +15,10 @@ const STATUS_LABEL: Record<SourceStatus, string> = { ok: 'OK', auth_failed: 'Aut
 // dot color / badge bg+fg per status
 function statusColors(s: SourceStatus): { dot: string; bg: string; fg: string } {
   switch (s) {
-    case 'ok': return { dot: 'var(--green-t,#16a34a)', bg: 'var(--green-bg,#ecfdf5)', fg: 'var(--green-t,#16a34a)' }
+    case 'ok': return { dot: 'var(--green-t,var(--green-t))', bg: 'var(--green-bg,var(--green-bg))', fg: 'var(--green-t,var(--green-t))' }
     case 'auth_failed':
-    case 'degraded': return { dot: 'var(--amber-t,#d97706)', bg: 'var(--amber-bg,#fffbeb)', fg: 'var(--amber-t,#d97706)' }
-    case 'down': return { dot: 'var(--red-t,#dc2626)', bg: 'var(--red-bg,#fef2f2)', fg: 'var(--red-t,#dc2626)' }
+    case 'degraded': return { dot: 'var(--amber-t,var(--amber-t))', bg: 'var(--amber-bg,var(--amber-bg))', fg: 'var(--amber-t,var(--amber-t))' }
+    case 'down': return { dot: 'var(--red-t,var(--red-t))', bg: 'var(--red-bg,var(--red-bg))', fg: 'var(--red-t,var(--red-t))' }
     default: return { dot: 'var(--text3)', bg: 'var(--bg3)', fg: 'var(--text3)' }
   }
 }
@@ -63,7 +63,7 @@ export default function SourceHealthCard({ data }: { data: HealthData }) {
     <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)', padding: '14px 16px', margin: '6px 0 12px', maxWidth: 640 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Data source health</div>
-        <span style={{ fontSize: 11, fontWeight: 600, color: allOk ? 'var(--green-t,#16a34a)' : 'var(--text2)', background: allOk ? 'var(--green-bg,#ecfdf5)' : 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '1px 9px' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: allOk ? 'var(--green-t,var(--green-t))' : 'var(--text2)', background: allOk ? 'var(--green-bg,var(--green-bg))' : 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '1px 9px' }}>
           {ok}/{total} reachable
         </span>
       </div>

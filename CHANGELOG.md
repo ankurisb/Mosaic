@@ -5,7 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.155] - 2026-10-25
+## [1.3.156] - 2026-10-25
+### Changed
+- **Theme consistency brought to 100% across Mosaic's own UI.** Following the
+  Customization/theme-selector prototype, the two remaining gaps are closed so the
+  selected theme (Mosaic or Microsoft 365) applies uniformly everywhere:
+  - **Charts are now theme-aware.** The series palette and the box-plot / sankey /
+    donut semantic colours are driven by a `useChartColors` hook (series set per
+    theme family; axis/grid/mean/outlier/whisker read from the live CSS tokens),
+    so every chart follows the theme and light/dark mode. M365 gets a Fluent
+    categorical palette (blue/teal/magenta/…). (`PanelChart`.)
+  - **Hardcoded status colours migrated to tokens** — 238 raw red/green/amber/blue
+    hex values across 18 components (TabAnalytics, RulesPage, TabDatabases,
+    RcaRenderer, reports, and more) replaced with the `--red/green/amber/blue`
+    tokens, with `color-mix` for subtle tinted borders. Brand/connector colours
+    (HubSpot, Stripe, SAP, …) and neutrals are intentionally left fixed.
+  Embedded Superset dashboards and map tiles keep their own styling (separate
+  frames — a hard limit, not a gap). Full suite 503/503.
 ### Added
 - **Customization settings + theme selector (prototype).** New Settings →
   **Customization** tab: light/dark mode as the first setting, then a theme

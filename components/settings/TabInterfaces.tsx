@@ -16,9 +16,9 @@ const META: Record<Surface, { label: string; desc: string; href: string; externa
 // Map a health status to a dot colour + human label.
 type Health = 'ok' | 'degraded' | 'error' | 'unconfigured' | 'unknown'
 const DOT: Record<Health, { color: string; title: string }> = {
-  ok:           { color: '#16a34a', title: 'Reachable' },
-  degraded:     { color: '#d97706', title: 'Degraded' },
-  error:        { color: '#dc2626', title: 'Unreachable' },
+  ok:           { color: 'var(--green-t)', title: 'Reachable' },
+  degraded:     { color: 'var(--amber-t)', title: 'Degraded' },
+  error:        { color: 'var(--red-t)', title: 'Unreachable' },
   unconfigured: { color: 'var(--border2)', title: 'Not configured' },
   unknown:      { color: 'var(--border2)', title: 'Status unknown' },
 }

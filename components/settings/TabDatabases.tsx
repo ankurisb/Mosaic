@@ -591,7 +591,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                   <Btn size="sm" onClick={() => test(c.id)} disabled={testing === c.id}>{testing === c.id ? <Spinner size={11} /> : 'Test'}</Btn>
                   {user.role === 'admin' && c.dialect !== 'elasticsearch' && coverage[c.id] && (
                     coverage[c.id].needs_config
-                      ? <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--warning,#d97706)', background: 'color-mix(in srgb, var(--warning,#d97706) 12%, transparent)', color: 'var(--warning,#d97706)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>⚠ Semantics</button>
+                      ? <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--warning,var(--amber-t))', background: 'color-mix(in srgb, var(--warning,var(--amber-t)) 12%, transparent)', color: 'var(--warning,var(--amber-t))', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>⚠ Semantics</button>
                       : <span title={`${coverage[c.id].verified} verified field(s)`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--green)', background: 'var(--green-bg)', color: 'var(--green-t)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>✓ Semantics</span>
                   )}
                   {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
@@ -714,9 +714,9 @@ function abSlug(name: string) {
 function AbStatusBadge({ status }: { status: string }) {
   const s = (status || '').toLowerCase()
   const map: Record<string,[string,string]> = {
-    active: ['#f0fdf4','#15803d'], inactive: ['#fef2f2','#dc2626'],
-    succeeded: ['#f0fdf4','#15803d'], failed: ['#fef2f2','#dc2626'],
-    running: ['#eff6ff','#2563eb'], pending: ['#fffbeb','#d97706'],
+    active: ['var(--green-bg)','var(--green-t)'], inactive: ['var(--red-bg)','var(--red-t)'],
+    succeeded: ['var(--green-bg)','var(--green-t)'], failed: ['var(--red-bg)','var(--red-t)'],
+    running: ['var(--blue-bg)','var(--blue-t)'], pending: ['var(--amber-bg)','var(--amber-t)'],
   }
   const [bg,fg] = map[s] || ['var(--bg4)','var(--text3)']
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: bg, color: fg }}>{status || '—'}</span>
@@ -937,7 +937,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   return (
     <div>
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, padding: '10px 18px', borderRadius: 10, background: toast.ok ? '#f0fdf4' : '#fef2f2', border: `1px solid ${toast.ok ? '#bbf7d0' : '#fecaca'}`, color: toast.ok ? '#15803d' : '#dc2626', fontSize: 13, fontWeight: 500, boxShadow: '0 4px 20px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, padding: '10px 18px', borderRadius: 10, background: toast.ok ? 'var(--green-bg)' : 'var(--red-bg)', border: `1px solid ${toast.ok ? 'color-mix(in srgb, var(--green-t) 35%, transparent)' : 'color-mix(in srgb, var(--red-t) 35%, transparent)'}`, color: toast.ok ? 'var(--green-t)' : 'var(--red-t)', fontSize: 13, fontWeight: 500, boxShadow: '0 4px 20px rgba(0,0,0,.12)' }}>
           {toast.msg}
         </div>
       )}
@@ -969,7 +969,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
                   {inst.url}{inst.workspace_id ? ` · ws:${inst.workspace_id.slice(0,8)}` : ''}
                 </div>
               </div>
-              {ps && ps !== 'loading' && <span style={{ fontSize: 11, color: (ps as any).ok ? '#15803d' : '#dc2626', fontWeight: 500 }}>{(ps as any).msg}</span>}
+              {ps && ps !== 'loading' && <span style={{ fontSize: 11, color: (ps as any).ok ? 'var(--green-t)' : 'var(--red-t)', fontWeight: 500 }}>{(ps as any).msg}</span>}
               {ps === 'loading' && <Spinner size={12} />}
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', flexShrink: 0 }}>
                 <Btn size="sm" onClick={() => ping(inst.id)} disabled={ps === 'loading'}>Test</Btn>
@@ -1221,7 +1221,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
               <div style={{ fontWeight: 700, fontSize: 16 }}>{editing ? 'Edit Airbyte instance' : 'Connect Airbyte instance'}</div>
               <button onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, fontSize: 12, color: '#15803d', lineHeight: 1.5, marginBottom: 16, border: '1px solid #bbf7d0' }}>
+            <div style={{ padding: '8px 12px', background: 'var(--green-bg)', borderRadius: 8, fontSize: 12, color: 'var(--green-t)', lineHeight: 1.5, marginBottom: 16, border: '1px solid color-mix(in srgb, var(--green-t) 35%, transparent)' }}>
               <strong>Docker Compose</strong> — use Username: <code style={{fontFamily:'var(--font-mono)'}}>airbyte</code> / Password: <code style={{fontFamily:'var(--font-mono)'}}>password</code><br/>
               <strong>abctl (Kubernetes)</strong> — use your email + password from <code style={{fontFamily:'var(--font-mono)'}}>abctl local credentials</code>, plus Client ID &amp; Secret below.<br/>
               <strong>Airbyte Cloud</strong> — URL <code style={{fontFamily:'var(--font-mono)'}}>https://api.airbyte.com</code> + the Client ID &amp; Secret from an Application (Cloud → Settings → Applications). Standard 300+ connectors; AI custom connectors are Enterprise (self-hosted) only.
@@ -1235,13 +1235,13 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
               { key: 'client_secret', label: 'Client Secret',    ph: editing ? '(unchanged)' : 'abctl only', type: 'password', hint: editing ? 'Leave blank to keep existing' : 'OAuth2 client secret' },
             ] as const).map(f => (
               <div key={f.key} style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>{f.label}{(f as any).req && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>{f.label}{(f as any).req && <span style={{ color: 'var(--red-t)' }}> *</span>}</label>
                 <input type={f.type} value={form[f.key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.ph}
                   style={{ width: '100%', padding: '8px 11px', border: '1.5px solid var(--border2)', borderRadius: 8, fontSize: 13, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }} />
                 {f.hint && <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 3 }}>{f.hint}</div>}
               </div>
             ))}
-            <div style={{ padding: '10px 12px', background: '#eff6ff', borderRadius: 8, fontSize: 12, color: '#2563eb', lineHeight: 1.6, marginBottom: 20 }}>
+            <div style={{ padding: '10px 12px', background: 'var(--blue-bg)', borderRadius: 8, fontSize: 12, color: 'var(--blue-t)', lineHeight: 1.6, marginBottom: 20 }}>
               Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(37,99,235,.12)', padding: '1px 5px', borderRadius: 4 }}>docker compose up -d</code> in your Airbyte directory.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

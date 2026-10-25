@@ -14,14 +14,14 @@ function fmtSize(bytes: unknown) {
 }
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, [string, string]> = {
-    completed: ['#f0fdf4', '#16a34a'], pending: ['#fffbeb', '#d97706'],
-    failed: ['#fef2f2', '#dc2626'], running: ['#eff6ff', '#2563eb'],
+    completed: ['var(--green-bg)', 'var(--green-t)'], pending: ['var(--amber-bg)', 'var(--amber-t)'],
+    failed: ['var(--red-bg)', 'var(--red-t)'], running: ['var(--blue-bg)', 'var(--blue-t)'],
   }
   const [bg, fg] = map[status] || ['var(--bg3)', 'var(--text3)']
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: bg, color: fg }}>{status}</span>
 }
 function TypeBadge({ type }: { type: string }) {
-  const map: Record<string, string> = { rca: '#7c3aed', operational: '#2563eb', maintenance: '#dc2626', scheduled: '#059669' }
+  const map: Record<string, string> = { rca: 'var(--purple-t)', operational: 'var(--blue-t)', maintenance: 'var(--red-t)', scheduled: 'var(--green-t)' }
   const color = map[type] || '#6366f1'
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: color + '18', color, border: `1px solid ${color}30` }}>{type}</span>
 }
@@ -205,7 +205,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
                         </button>
                         <button onClick={() => router.push(`/reports/template/edit/${id}`)} style={btn}>Edit</button>
                         <button onClick={() => toggleActive(id, !active)} style={btn}>{active ? 'Pause' : 'Resume'}</button>
-                        <button onClick={() => deleteTemplate(id)} style={{ ...btn, color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2' }}>Delete</button>
+                        <button onClick={() => deleteTemplate(id)} style={{ ...btn, color: 'var(--red-t)', borderColor: 'color-mix(in srgb, var(--red-t) 35%, transparent)', background: 'var(--red-bg)' }}>Delete</button>
                       </div>
                     )}
                   </div>

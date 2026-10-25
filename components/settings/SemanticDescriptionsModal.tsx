@@ -194,7 +194,7 @@ function ColumnRow({ r, onPatch, onVerify }: { r: Row; onPatch: (k: string, p: P
   const proposed = r.status === 'proposed'
   const conf = r.confidence != null ? Math.round(r.confidence * 100) : null
   return (
-    <div style={{ padding: '8px 8px 10px', borderRadius: 'var(--radius-sm)', marginBottom: 6, background: proposed ? 'color-mix(in srgb, var(--warning,#d97706) 7%, transparent)' : 'transparent', border: `1px solid ${r._dirty ? 'var(--accent-bg)' : 'var(--border2)'}` }}>
+    <div style={{ padding: '8px 8px 10px', borderRadius: 'var(--radius-sm)', marginBottom: 6, background: proposed ? 'color-mix(in srgb, var(--warning,var(--amber-t)) 7%, transparent)' : 'transparent', border: `1px solid ${r._dirty ? 'var(--accent-bg)' : 'var(--border2)'}` }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <StatusChip status={r.status} />
         <code style={{ ...codeCell, width: 170 }}>{r.object_key}</code>
@@ -211,7 +211,7 @@ function ColumnRow({ r, onPatch, onVerify }: { r: Row; onPatch: (k: string, p: P
             <option value="">accum</option>{ACCS.map(x => <option key={x} value={x}>{x}</option>)}
           </select>
         </>}
-        {conf != null && proposed && <span style={{ fontSize: 10, color: conf >= 80 ? 'var(--text3)' : 'var(--warning,#d97706)', marginLeft: 'auto' }}>{conf}%</span>}
+        {conf != null && proposed && <span style={{ fontSize: 10, color: conf >= 80 ? 'var(--text3)' : 'var(--warning,var(--amber-t))', marginLeft: 'auto' }}>{conf}%</span>}
         {proposed && <button onClick={() => onVerify(r.object_key)} style={verifyBtn}>Verify</button>}
       </div>
       <input value={r.description ?? ''} onChange={e => onPatch(r.object_key, { description: e.target.value })}
@@ -222,7 +222,7 @@ function ColumnRow({ r, onPatch, onVerify }: { r: Row; onPatch: (k: string, p: P
 }
 
 function StatusChip({ status }: { status?: Status | null }) {
-  const map = { verified: ['✓', 'var(--success,#16a34a)'], proposed: ['⚠', 'var(--warning,#d97706)'], rejected: ['✕', 'var(--text4)'] } as const
+  const map = { verified: ['✓', 'var(--success,var(--green-t))'], proposed: ['⚠', 'var(--warning,var(--amber-t))'], rejected: ['✕', 'var(--text4)'] } as const
   const [icon, color] = status && map[status] ? map[status] : ['•', 'var(--text4)']
   return <span title={status || 'unset'} style={{ flexShrink: 0, width: 14, textAlign: 'center', color, fontSize: 12 }}>{icon}</span>
 }
@@ -235,7 +235,7 @@ function sortRows(rows: Row[]): Row[] {
 const codeCell: React.CSSProperties = { flexShrink: 0, width: 200, fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 const descInput = (dirty?: boolean): React.CSSProperties => ({ flex: 1, padding: '6px 10px', border: `1px solid ${dirty ? 'var(--accent-bg)' : 'var(--border2)'}`, borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', outline: 'none' })
 const sel: React.CSSProperties = { padding: '5px 6px', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, fontFamily: 'inherit', outline: 'none' }
-const verifyBtn: React.CSSProperties = { padding: '4px 8px', border: '1px solid var(--success,#16a34a)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--success,#16a34a)', fontSize: 11, cursor: 'pointer' }
+const verifyBtn: React.CSSProperties = { padding: '4px 8px', border: '1px solid var(--success,var(--green-t))', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--success,var(--green-t))', fontSize: 11, cursor: 'pointer' }
 const segBtn = (on: boolean): React.CSSProperties => ({ padding: '4px 9px', border: 'none', borderRadius: 'var(--radius-sm)', background: on ? 'var(--surface)' : 'transparent', color: on ? 'var(--text)' : 'var(--text3)', fontSize: 11, cursor: 'pointer', fontWeight: on ? 600 : 400 })
 
 const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }

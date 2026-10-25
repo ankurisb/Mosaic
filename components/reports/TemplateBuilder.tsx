@@ -192,7 +192,7 @@ function SectionCard({
           <button onClick={onMoveDown} disabled={index === total - 1} title="Move down"
             style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg)', cursor: index === total - 1 ? 'default' : 'pointer', opacity: index === total - 1 ? 0.35 : 1, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↓</button>
           <button onClick={onRemove} title="Remove section"
-            style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', background: 'var(--red-bg)', color: 'var(--red-t)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
         <span style={{ color: 'var(--text3)', fontSize: 11, marginLeft: 4 }}>{open ? '▲' : '▼'}</span>
       </div>
@@ -213,7 +213,7 @@ function SectionCard({
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['database', 'api'] as const).map(st => (
                   <button key={st} onClick={() => up('source_type', st)}
-                    style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.source_type === st ? 'var(--blue)' : 'var(--border2)'}`, background: section.source_type === st ? '#eff6ff' : 'var(--bg)', color: section.source_type === st ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.source_type === st ? 600 : 400 }}>
+                    style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.source_type === st ? 'var(--blue)' : 'var(--border2)'}`, background: section.source_type === st ? 'var(--blue-bg)' : 'var(--bg)', color: section.source_type === st ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.source_type === st ? 600 : 400 }}>
                     {st === 'database' ? 'Database' : 'API'}
                   </button>
                 ))}
@@ -271,7 +271,7 @@ function SectionCard({
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['bar', 'line', 'pie', 'number'] as const).map(ct => (
                   <button key={ct} onClick={() => up('chart_type', ct)}
-                    style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.chart_type === ct ? 'var(--blue)' : 'var(--border2)'}`, background: section.chart_type === ct ? '#eff6ff' : 'var(--bg)', color: section.chart_type === ct ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.chart_type === ct ? 600 : 400 }}>
+                    style={{ padding: '5px 12px', borderRadius: 6, border: `1.5px solid ${section.chart_type === ct ? 'var(--blue)' : 'var(--border2)'}`, background: section.chart_type === ct ? 'var(--blue-bg)' : 'var(--bg)', color: section.chart_type === ct ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: section.chart_type === ct ? 600 : 400 }}>
                     {ct === 'bar' ? 'Bar' : ct === 'line' ? 'Line' : ct === 'pie' ? 'Pie' : 'Number'}
                   </button>
                 ))}
@@ -366,7 +366,7 @@ function ScheduleBuilder({ state, onChange }: { state: ScheduleState; onChange: 
             <div style={{ display: 'flex', gap: 6 }}>
               {(['daily', 'weekly', 'monthly'] as const).map(f => (
                 <button key={f} onClick={() => up('frequency', f)}
-                  style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: `1.5px solid ${state.frequency === f ? 'var(--blue)' : 'var(--border2)'}`, background: state.frequency === f ? '#eff6ff' : 'var(--bg)', color: state.frequency === f ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: state.frequency === f ? 600 : 400, textTransform: 'capitalize' }}>
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: `1.5px solid ${state.frequency === f ? 'var(--blue)' : 'var(--border2)'}`, background: state.frequency === f ? 'var(--blue-bg)' : 'var(--bg)', color: state.frequency === f ? 'var(--blue-t)' : 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: state.frequency === f ? 600 : 400, textTransform: 'capitalize' }}>
                   {f}
                 </button>
               ))}
@@ -380,7 +380,7 @@ function ScheduleBuilder({ state, onChange }: { state: ScheduleState; onChange: 
               <div style={{ display: 'flex', gap: 4 }}>
                 {DAY_LABELS.map((d, i) => (
                   <button key={d} onClick={() => toggleDay(i)}
-                    style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: `1.5px solid ${state.days.includes(i) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(i) ? '#eff6ff' : 'var(--bg)', color: state.days.includes(i) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 10, fontWeight: state.days.includes(i) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: `1.5px solid ${state.days.includes(i) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(i) ? 'var(--blue-bg)' : 'var(--bg)', color: state.days.includes(i) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 10, fontWeight: state.days.includes(i) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
                     {d}
                   </button>
                 ))}
@@ -395,7 +395,7 @@ function ScheduleBuilder({ state, onChange }: { state: ScheduleState; onChange: 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
                   <button key={d} onClick={() => toggleDay(d)}
-                    style={{ width: 28, height: 28, borderRadius: 5, border: `1.5px solid ${state.days.includes(d) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(d) ? '#eff6ff' : 'var(--bg)', color: state.days.includes(d) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 11, fontWeight: state.days.includes(d) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    style={{ width: 28, height: 28, borderRadius: 5, border: `1.5px solid ${state.days.includes(d) ? 'var(--blue)' : 'var(--border2)'}`, background: state.days.includes(d) ? 'var(--blue-bg)' : 'var(--bg)', color: state.days.includes(d) ? 'var(--blue-t)' : 'var(--text3)', fontSize: 11, fontWeight: state.days.includes(d) ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {d}
                   </button>
                 ))}
@@ -422,7 +422,7 @@ function ScheduleBuilder({ state, onChange }: { state: ScheduleState; onChange: 
           </div>
 
           {/* Human summary */}
-          <div style={{ fontSize: 11, color: 'var(--blue-t)', padding: '6px 10px', background: '#eff6ff', borderRadius: 6, border: '1px solid rgba(37,99,235,.15)' }}>
+          <div style={{ fontSize: 11, color: 'var(--blue-t)', padding: '6px 10px', background: 'var(--blue-bg)', borderRadius: 6, border: '1px solid rgba(37,99,235,.15)' }}>
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><circle cx="6" cy="6" r="5"/><path d="M6 4v3l2 1"/></svg>
             {fmtSummary()}
           </div>
@@ -469,7 +469,7 @@ function RecipientsEditor({
       {value.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
           {value.map((r, i) => (
-            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px 3px 9px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: r.type === 'group' ? '#eff6ff' : 'var(--bg3)', border: `1px solid ${r.type === 'group' ? 'rgba(37,99,235,.2)' : 'var(--border)'}`, color: r.type === 'group' ? 'var(--blue-t)' : 'var(--text2)' }}>
+            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px 3px 9px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: r.type === 'group' ? 'var(--blue-bg)' : 'var(--bg3)', border: `1px solid ${r.type === 'group' ? 'rgba(37,99,235,.2)' : 'var(--border)'}`, color: r.type === 'group' ? 'var(--blue-t)' : 'var(--text2)' }}>
               {r.type === 'group'
                 ? <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="4.5" cy="4" r="2"/><path d="M1 10c0-2 1.6-3 3.5-3s3.5 1 3.5 3"/><circle cx="9" cy="4" r="1.5"/><path d="M9 7.5c1.2.2 2 .9 2 2"/></svg>
                 : <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="2" width="10" height="8" rx="1.5"/><path d="M1 4l5 3 5-3"/></svg>
@@ -766,7 +766,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         </div>
 
         {error && (
-          <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, fontSize: 12, color: '#dc2626' }}>
+          <div style={{ padding: '8px 12px', background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red-t) 35%, transparent)', borderRadius: 7, fontSize: 12, color: 'var(--red-t)' }}>
             {error}
           </div>
         )}

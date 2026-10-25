@@ -1,9 +1,10 @@
 'use client'
-import React, { useRef, useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect, useMemo } from 'react'
 import {
   ResponsiveContainer, LineChart as RLine, AreaChart as RArea, BarChart as RBar,
   Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
+import { useTheme } from '@/lib/theme'
 
 interface Panel {
   id: string; title: string; subtitle: string; source_type?: string; source_id?: string; query?: string; refresh_sec?: number | null
@@ -30,8 +31,45 @@ interface Props {
   isDragging?: boolean
 }
 
-// -- Colour palette --------------------------------------------
-const COLOURS = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3','#e11d48','#4f46e5','#65a30d','#0369a1']
+// -- Colour palette (theme-aware) ------------------------------
+// Series colours are a categorical set per theme family; the box-plot / semantic
+// colours are read from the live CSS tokens so every chart follows the selected
+// theme and light/dark mode. Recharts and our hand-drawn SVG need concrete colour
+// strings (CSS var() does not resolve in SVG presentation attributes), so we
+// resolve tokens to values here and re-read whenever the theme/mode changes.
+const SERIES_MOSAIC = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3','#e11d48','#4f46e5','#65a30d','#0369a1']
+const SERIES_M365   = ['#0f6cbd','#038387','#b4009e','#8764b8','#e3008c','#00b7c3','#ca5010','#498205','#005b70','#c239b3','#986f0b','#4f6bed']
+
+function hexToRgba(hex: string, a: number): string {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim())
+  if (!m) return hex
+  let h = m[1]
+  if (h.length === 3) h = h.split('').map(c => c + c).join('')
+  const n = parseInt(h, 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+}
+
+function useChartColors() {
+  const { theme, palette } = useTheme()
+  return useMemo(() => {
+    const read = (name: string, fb: string) => {
+      if (typeof window === 'undefined') return fb
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      return v || fb
+    }
+    const primary = read('--blue-t', '#2563eb')
+    return {
+      series: palette === 'm365' ? SERIES_M365 : SERIES_MOSAIC,
+      primary,
+      iqrFill: hexToRgba(primary, 0.14),
+      mean: read('--amber-t', '#d97706'),
+      outlier: read('--red-t', '#dc2626'),
+      whisker: read('--text4', '#9ca3af'),
+      grid: read('--border', 'rgba(0,0,0,0.08)'),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, palette])
+}
 
 // -- Shared chart helpers --------------------------------------
 // Compact number for axis ticks: 323440 → "323k", 1_250_000 → "1.3M".
@@ -110,6 +148,7 @@ function pivotSeries(rows: Record<string, unknown>[], labelKey: string, seriesKe
 
 // -- Bar chart (recharts) --------------------------------------
 function BarChart({ rows, keys, config, height = 190, seriesLabels }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; seriesLabels?: Record<string, string> }) {
+  const C = useChartColors()
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
   const labelKey = (config.label_key as string) || (config.x as string) || keys[0]
   const seriesKey = config.series as string | undefined
@@ -131,7 +170,7 @@ function BarChart({ rows, keys, config, height = 190, seriesLabels }: { rows: Re
         <YAxis tickFormatter={(v: number) => fmtCompact(v) + unit} tick={AXIS_TICK} width={50} tickLine={false} axisLine={false} domain={[0, 'auto']} />
         <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'var(--bg3)', opacity: 0.5 }} labelFormatter={(l) => fmtAxis(l)} formatter={(v: number, n: string) => [fmtCompact(Number(v)) + unit, nameOf(n)]} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => nameOf(String(v))} />}
-        {series.map((s, i) => <Bar key={s} dataKey={s} name={nameOf(s)} fill={COLOURS[i % COLOURS.length]} radius={[2, 2, 0, 0]} isAnimationActive={false} />)}
+        {series.map((s, i) => <Bar key={s} dataKey={s} name={nameOf(s)} fill={C.series[i % C.series.length]} radius={[2, 2, 0, 0]} isAnimationActive={false} />)}
       </RBar>
     </ResponsiveContainer>
   )
@@ -142,6 +181,7 @@ function BarChart({ rows, keys, config, height = 190, seriesLabels }: { rows: Re
 // pivots the fanned-out device rows into one line per device, aligned by timestamp.
 // Multi-metric mode draws one line per value column. Tooltip + legend; responsive.
 function LineChart({ rows, keys, config, height = 190, fill = false, seriesLabels }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown>; width?: number; height?: number; fill?: boolean; seriesLabels?: Record<string, string> }) {
+  const C = useChartColors()
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
   const labelKey = (config.x as string) || (config.label_key as string) || keys[0]
   const seriesKey = config.series as string | undefined
@@ -172,12 +212,12 @@ function LineChart({ rows, keys, config, height = 190, fill = false, seriesLabel
       {fill ? (
         <RArea {...common}>
           {axes}
-          {series.map((s, i) => <Area key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={COLOURS[i % COLOURS.length]} fill={COLOURS[i % COLOURS.length]} fillOpacity={0.14} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
+          {series.map((s, i) => <Area key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={C.series[i % C.series.length]} fill={C.series[i % C.series.length]} fillOpacity={0.14} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
         </RArea>
       ) : (
         <RLine {...common}>
           {axes}
-          {series.map((s, i) => <Line key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={COLOURS[i % COLOURS.length]} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
+          {series.map((s, i) => <Line key={s} type="monotone" dataKey={s} name={nameOf(s)} stroke={C.series[i % C.series.length]} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />)}
         </RLine>
       )}
     </ResponsiveContainer>
@@ -242,6 +282,7 @@ function TableView({ rows, keys, seriesLabels }: { rows: Record<string, unknown>
 
 // -- Donut chart -----------------------------------------------
 function DonutChart({ rows, keys, config }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown> }) {
+  const C = useChartColors()
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need 2 columns" />
   const labelKey = config.label_key as string || keys[0]
   const valueKey = config.value_key as string || keys[1]
@@ -258,7 +299,7 @@ function DonutChart({ rows, keys, config }: { rows: Record<string, unknown>[]; k
     const large = sweep > Math.PI ? 1 : 0
     const path = `M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${large} 1 ${x2.toFixed(1)},${y2.toFixed(1)} L${xi2.toFixed(1)},${yi2.toFixed(1)} A${ir},${ir} 0 ${large} 0 ${xi1.toFixed(1)},${yi1.toFixed(1)} Z`
     angle += sweep
-    return { path, color: COLOURS[i % COLOURS.length], label: String(row[labelKey] || ''), pct: Math.round(v / total * 100) }
+    return { path, color: C.series[i % C.series.length], label: String(row[labelKey] || ''), pct: Math.round(v / total * 100) }
   })
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -407,6 +448,7 @@ function HeatmapChart({ data }: { data: unknown }) {
 
 // -- Box plot --------------------------------------------------
 function BoxplotChart({ rows, keys, config }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown> }) {
+  const C = useChartColors()
   if (!rows.length || keys.length < 2) return <EmptyChart label="Need group + value columns" />
   const gKey = (config.group_key as string) || keys[0]
   const vKey = (config.value_key as string) || keys[1]
@@ -451,7 +493,7 @@ function BoxplotChart({ rows, keys, config }: { rows: Record<string, unknown>[];
           const v = minV + (maxV - minV) * f
           return (
             <g key={f}>
-              <line x1={pL} y1={yf(v)} x2={pL + cW} y2={yf(v)} stroke="rgba(0,0,0,.06)" strokeWidth={1} />
+              <line x1={pL} y1={yf(v)} x2={pL + cW} y2={yf(v)} stroke={C.grid} strokeWidth={1} />
               <text x={pL - 4} y={yf(v) + 3} textAnchor="end" fontFamily="var(--font-mono)" fontSize="7.5" fill="var(--text4)">{Math.round(v)}</text>
             </g>
           )
@@ -462,33 +504,33 @@ function BoxplotChart({ rows, keys, config }: { rows: Record<string, unknown>[];
           const boxH = Math.abs(yf(s.q1) - yf(s.q3))
           return (
             <g key={g}>
-              <line x1={cx} y1={yf(s.lo)} x2={cx} y2={yf(s.hi)} stroke="#9ca3af" strokeWidth={1.2} strokeDasharray="3,2" />
-              <line x1={cx - bW * 0.3} y1={yf(s.lo)} x2={cx + bW * 0.3} y2={yf(s.lo)} stroke="#9ca3af" strokeWidth={1.5} />
-              <line x1={cx - bW * 0.3} y1={yf(s.hi)} x2={cx + bW * 0.3} y2={yf(s.hi)} stroke="#9ca3af" strokeWidth={1.5} />
-              <rect x={x0} y={boxT} width={bW} height={boxH} fill="rgba(37,99,235,.12)" stroke="#2563eb" strokeWidth={1.5} rx={2} />
-              <line x1={x0} y1={yf(s.med)} x2={x1} y2={yf(s.med)} stroke="#2563eb" strokeWidth={2.5} />
-              <circle cx={cx} cy={yf(s.mean)} r={2.5} fill="#d97706" stroke="var(--surface)" strokeWidth={1} />
+              <line x1={cx} y1={yf(s.lo)} x2={cx} y2={yf(s.hi)} stroke={C.whisker} strokeWidth={1.2} strokeDasharray="3,2" />
+              <line x1={cx - bW * 0.3} y1={yf(s.lo)} x2={cx + bW * 0.3} y2={yf(s.lo)} stroke={C.whisker} strokeWidth={1.5} />
+              <line x1={cx - bW * 0.3} y1={yf(s.hi)} x2={cx + bW * 0.3} y2={yf(s.hi)} stroke={C.whisker} strokeWidth={1.5} />
+              <rect x={x0} y={boxT} width={bW} height={boxH} fill={C.iqrFill} stroke={C.primary} strokeWidth={1.5} rx={2} />
+              <line x1={x0} y1={yf(s.med)} x2={x1} y2={yf(s.med)} stroke={C.primary} strokeWidth={2.5} />
+              <circle cx={cx} cy={yf(s.mean)} r={2.5} fill={C.mean} stroke="var(--surface)" strokeWidth={1} />
               {s.outliers.map((ov, oi) => (
-                <circle key={oi} cx={cx} cy={yf(ov)} r={2} fill="none" stroke="#dc2626" strokeWidth={1.2} />
+                <circle key={oi} cx={cx} cy={yf(ov)} r={2} fill="none" stroke={C.outlier} strokeWidth={1.2} />
               ))}
               <text x={cx} y={H - 8} textAnchor="middle" fontFamily="var(--font-sans)" fontSize="8.5" fill="var(--text2)">{g}</text>
-              <text x={x1 + 3} y={yf(s.med) + 3} fontFamily="var(--font-mono)" fontSize="7.5" fill="#2563eb">{Math.round(s.med)}{unit}</text>
+              <text x={x1 + 3} y={yf(s.med) + 3} fontFamily="var(--font-mono)" fontSize="7.5" fill={C.primary}>{Math.round(s.med)}{unit}</text>
             </g>
           )
         })}
       </svg>
       <div style={{ display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)' }}>
-          <div style={{ width: 10, height: 10, background: 'rgba(37,99,235,.15)', border: '1px solid #2563eb', borderRadius: 1 }} />IQR
+          <div style={{ width: 10, height: 10, background: 'var(--blue-bg)', border: '1px solid var(--blue-t)', borderRadius: 1 }} />IQR
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)' }}>
-          <div style={{ width: 12, height: 2, background: '#2563eb' }} />Median
+          <div style={{ width: 12, height: 2, background: 'var(--blue-t)' }} />Median
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#d97706' }} />Mean
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber-t)' }} />Mean
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', border: '1px solid #dc2626' }} />Outlier
+          <div style={{ width: 6, height: 6, borderRadius: '50%', border: '1px solid var(--red-t)' }} />Outlier
         </div>
       </div>
     </div>
@@ -497,6 +539,7 @@ function BoxplotChart({ rows, keys, config }: { rows: Record<string, unknown>[];
 
 // -- Sankey chart ----------------------------------------------
 function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; keys: string[]; config: Record<string, unknown> }) {
+  const C = useChartColors()
   if (!rows.length) return <EmptyChart label="No data" />
   const sKey = (config.source_key as string) || keys[0]
   const tKey = (config.target_key as string) || keys[1]
@@ -536,7 +579,7 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
         const fH = Math.max(2, (f.v / totalFlow) * cH * 0.85)
         const lY = lOff[f.s], rY = rOff[f.t]
         lOff[f.s] += fH + 1; rOff[f.t] += fH + 1
-        const col = COLOURS[lNodes.indexOf(f.s) % COLOURS.length]
+        const col = C.series[lNodes.indexOf(f.s) % C.series.length]
         const path = `M ${lX},${lY + fH / 2} C ${mx},${lY + fH / 2} ${mx},${rY + fH / 2} ${rX},${rY + fH / 2}`
         return (
           <g key={fi}>
@@ -552,7 +595,7 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
       })}
       {lNodes.map((n, i) => {
         const nH = Math.max(10, (lTotals[n] / totalFlow) * cH * 0.85)
-        const y = lPos[n] - nH / 2, col = COLOURS[i % COLOURS.length]
+        const y = lPos[n] - nH / 2, col = C.series[i % C.series.length]
         return (
           <g key={n}>
             <rect x={pL} y={y} width={nW} height={nH} fill={col} rx={2} />
@@ -566,7 +609,7 @@ function SankeyChart({ rows, keys, config }: { rows: Record<string, unknown>[]; 
         const y = rPos[n] - nH / 2
         return (
           <g key={n}>
-            <rect x={rX} y={y} width={nW} height={nH} fill="#94a3b8" rx={2} />
+            <rect x={rX} y={y} width={nW} height={nH} fill={C.whisker} rx={2} />
             <text x={rX - 5} y={y + nH / 2 + 3.5} textAnchor="end" fontFamily="var(--font-sans)" fontSize="9" fill="var(--text)" fontWeight="500">{n}</text>
             <text x={rX - 5} y={y + nH / 2 + 13.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="7.5" fill="var(--text3)">{Math.round(rTotals[n])}{unit}</text>
           </g>

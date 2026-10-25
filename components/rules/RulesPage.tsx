@@ -428,12 +428,12 @@ export default function RulesPage({ user }: { user: SessionUser }) {
         return (
           <div key={rule.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginBottom: 8, boxShadow: 'var(--shadow)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 5, background: rule.active ? '#16a34a' : '#d0d0d0' }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 5, background: rule.active ? 'var(--green-t)' : '#d0d0d0' }} />
               <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { const next = { ...expandedAlerts, [rule.id]: !expanded }; setExpandedAlerts(next); if (!expanded && !alertRunLogs[rule.id]) loadAlertRuns(rule.id) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.trigger_type === 'threshold' ? '#fef2f2' : rule.trigger_type === 'schedule' ? '#eff6ff' : '#f5f3ff', color: rule.trigger_type === 'threshold' ? '#dc2626' : rule.trigger_type === 'schedule' ? '#1d4ed8' : '#7c3aed', border: `1px solid ${rule.trigger_type === 'threshold' ? 'rgba(220,38,38,.2)' : rule.trigger_type === 'schedule' ? 'rgba(29,78,216,.2)' : 'rgba(124,58,237,.2)'}`, fontWeight: 600 }}>{triggerLabel(rule.trigger_type)}</span>
+                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.trigger_type === 'threshold' ? 'var(--red-bg)' : rule.trigger_type === 'schedule' ? 'var(--blue-bg)' : 'var(--purple-bg)', color: rule.trigger_type === 'threshold' ? 'var(--red-t)' : rule.trigger_type === 'schedule' ? 'var(--blue-t)' : 'var(--purple-t)', border: `1px solid ${rule.trigger_type === 'threshold' ? 'rgba(220,38,38,.2)' : rule.trigger_type === 'schedule' ? 'rgba(29,78,216,.2)' : 'rgba(124,58,237,.2)'}`, fontWeight: 600 }}>{triggerLabel(rule.trigger_type)}</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{rule.name}</span>
-                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.active ? '#f0fdf4' : 'var(--bg3)', color: rule.active ? '#16a34a' : 'var(--text3)', border: `1px solid ${rule.active ? 'rgba(22,163,74,.2)' : 'var(--border)'}` }}>{rule.active ? 'Active' : 'Paused'}</span>
+                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: rule.active ? 'var(--green-bg)' : 'var(--bg3)', color: rule.active ? 'var(--green-t)' : 'var(--text3)', border: `1px solid ${rule.active ? 'rgba(22,163,74,.2)' : 'var(--border)'}` }}>{rule.active ? 'Active' : 'Paused'}</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 12 }}>
                   <span>{conditionSummary(rule)}</span>
@@ -445,7 +445,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => toggleAlert(rule.id)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>{rule.active ? 'Pause' : 'Resume'}</button>
                   <button onClick={() => { setAlertEditing(rule.id); setAlertForm({ name: rule.name, active: rule.active, trigger_type: rule.trigger_type, source_type: rule.source_type, source_id: rule.source_id || '', query: rule.query || '', saved_query_id: rule.saved_query_id || '', channel_id: rule.channel_id, message_template: rule.message_template, op: String(rule.condition.operator || '<'), threshold: String(rule.condition.value || ''), column: String(rule.condition.column || ''), match_mode: String(rule.condition.match_mode || 'first'), interval: String(rule.condition.interval_sec || 3600), file_format: String(rule.condition.file_format || 'csv') }); if (rule.saved_query_id) fetchColumns(rule.saved_query_id); setShowAlertForm(true) }} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
-                  <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+                  <button onClick={() => deleteAlert(rule.id, rule.name)} style={{ padding: '4px 10px', fontSize: 11, border: '1px solid rgba(220,38,38,.2)', borderRadius: 'var(--radius-pill)', background: 'var(--red-bg)', color: 'var(--red-t)', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
                 </div>
               )}
             </div>
@@ -456,10 +456,10 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                   <div style={{ fontSize: 12, color: 'var(--text4)' }}>No runs yet</div>
                 ) : (alertRunLogs[rule.id] || []).map(run => (
                   <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 11 }}>
-                    <span style={{ fontWeight: 600, color: run.status === 'sent' ? '#16a34a' : run.status === 'error' ? '#dc2626' : run.status === 'partial' ? '#d97706' : 'var(--text3)', flexShrink: 0 }}>{run.status}</span>
+                    <span style={{ fontWeight: 600, color: run.status === 'sent' ? 'var(--green-t)' : run.status === 'error' ? 'var(--red-t)' : run.status === 'partial' ? 'var(--amber-t)' : 'var(--text3)', flexShrink: 0 }}>{run.status}</span>
                     <span style={{ color: 'var(--text3)', flexShrink: 0 }}>{fmtDateAlert(run.triggered_at)}</span>
                     {run.message_sent && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>{run.message_sent}</span>}
-                    {run.error && <span style={{ color: run.status === 'partial' ? '#d97706' : '#dc2626', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fmtDeliveryError(run.error)}>{fmtDeliveryError(run.error)}</span>}
+                    {run.error && <span style={{ color: run.status === 'partial' ? 'var(--amber-t)' : 'var(--red-t)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fmtDeliveryError(run.error)}>{fmtDeliveryError(run.error)}</span>}
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text4)', flexShrink: 0 }}>{run.latency_ms}ms</span>
                   </div>
                 ))}
@@ -504,7 +504,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>n8n instance</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: (n8nStatus.n8nStatus as string) === 'online' ? '#16a34a' : '#dc2626' }} />
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: (n8nStatus.n8nStatus as string) === 'online' ? 'var(--green-t)' : 'var(--red-t)' }} />
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
                   {(n8nStatus.n8nStatus as string) === 'online' ? 'Online' : 'Offline'}
                 </span>
@@ -517,7 +517,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>API key</div>
-              <div style={{ fontSize: 13, color: (n8nStatus.apiKeyConfigured as boolean) ? '#16a34a' : '#dc2626', fontWeight: 500 }}>
+              <div style={{ fontSize: 13, color: (n8nStatus.apiKeyConfigured as boolean) ? 'var(--green-t)' : 'var(--red-t)', fontWeight: 500 }}>
                 {(n8nStatus.apiKeyConfigured as boolean) ? 'Configured' : 'Not set'}
               </div>
             </div>
@@ -556,7 +556,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 10 }}>Recent executions</div>
           {(n8nStatus.recentExecutions as Array<Record<string,string>>).map(ex => (
             <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: ex.status === 'success' ? '#16a34a' : ex.status === 'running' ? '#2563eb' : '#dc2626' }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: ex.status === 'success' ? 'var(--green-t)' : ex.status === 'running' ? 'var(--blue-t)' : 'var(--red-t)' }} />
               <span style={{ flex: 1, color: 'var(--text)', fontWeight: 500 }}>{ex.workflowName}</span>
               <span style={{ color: 'var(--text3)' }}>{ex.status}</span>
               <span style={{ color: 'var(--text4)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
@@ -616,11 +616,11 @@ export default function RulesPage({ user }: { user: SessionUser }) {
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-md)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4, background: g.active ? (g.fire_count_today > 0 ? '#dc2626' : '#16a34a') : '#d0d0d0' }} />
+                <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4, background: g.active ? (g.fire_count_today > 0 ? 'var(--red-t)' : 'var(--green-t)') : '#d0d0d0' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{g.name}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: g.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: g.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1px solid ${g.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}` }}>{g.logic}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: g.logic === 'OR' ? 'var(--amber-bg)' : 'var(--blue-bg)', color: g.logic === 'OR' ? 'var(--amber-t)' : 'var(--blue-t)', border: `1px solid ${g.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}` }}>{g.logic}</span>
                     <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)' }}>{TRIGGER_LABELS[g.trigger?.type] ?? g.trigger?.type}</span>
                   </div>
                   {g.description && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 5 }}>{g.description}</div>}
@@ -628,7 +628,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
                     <span>{g.conditions.length} condition{g.conditions.length !== 1 ? 's' : ''}</span>
                     <span>{g.actions.length} action{g.actions.length !== 1 ? 's' : ''}</span>
                     <span>Last fired: {fmtDate(g.last_fired_at)}</span>
-                    {g.fire_count_today > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>{g.fire_count_today} today</span>}
+                    {g.fire_count_today > 0 && <span style={{ color: 'var(--red-t)', fontWeight: 600 }}>{g.fire_count_today} today</span>}
                   </div>
                 </div>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text4)" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 4 }}><path d="M4 2l4 4-4 4"/></svg>
@@ -650,10 +650,10 @@ export default function RulesPage({ user }: { user: SessionUser }) {
           : active.conditions.map((c, ci) => (
             <div key={c.id}>
               {ci > 0 && (
-                <div style={{ fontSize: 9, fontWeight: 700, padding: '2px 0 2px 8px', letterSpacing: '.06em', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8' }}>{c.logic}</div>
+                <div style={{ fontSize: 9, fontWeight: 700, padding: '2px 0 2px 8px', letterSpacing: '.06em', color: c.logic === 'OR' ? 'var(--amber-t)' : 'var(--blue-t)' }}>{c.logic}</div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 7, marginBottom: 3 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: c.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8', flexShrink: 0 }}>IF</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: c.logic === 'OR' ? 'var(--amber-bg)' : 'var(--blue-bg)', color: c.logic === 'OR' ? 'var(--amber-t)' : 'var(--blue-t)', flexShrink: 0 }}>IF</span>
                 <code style={{ fontSize: 12, flex: 1 }}>{c.field} {OP_LABELS[c.op] ?? c.op} {c.value}</code>
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>{c.source_type}</span>
               </div>
@@ -679,7 +679,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       {/* Actions */}
       <Section title="Actions">
         {active.actions.map((a, i) => {
-          const cls = { notify: '#f0fdf4', api_call: '#eff6ff', rca: '#f5f3ff', query: '#fff7ed' }[a.type] ?? 'var(--bg)'
+          const cls = { notify: 'var(--green-bg)', api_call: 'var(--blue-bg)', rca: 'var(--purple-bg)', query: 'var(--amber-bg)' }[a.type] ?? 'var(--bg)'
           const border = { notify: 'rgba(22,163,74,.2)', api_call: 'rgba(37,99,235,.2)', rca: 'rgba(109,40,217,.2)', query: 'rgba(194,65,12,.2)' }[a.type] ?? 'var(--border)'
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: cls, border: `1px solid ${border}`, borderRadius: 7, marginBottom: 5 }}>
@@ -694,8 +694,8 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       <Section title="Notifications">
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
           {active.recipients.map((r, i) => {
-            const bg = r.type === 'group' ? '#f5f3ff' : r.type === 'role' ? '#eff6ff' : 'var(--bg3)'
-            const co = r.type === 'group' ? '#6d28d9' : r.type === 'role' ? '#1d4ed8' : 'var(--text2)'
+            const bg = r.type === 'group' ? 'var(--purple-bg)' : r.type === 'role' ? 'var(--blue-bg)' : 'var(--bg3)'
+            const co = r.type === 'group' ? '#6d28d9' : r.type === 'role' ? 'var(--blue-t)' : 'var(--text2)'
             return <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: bg, color: co, border: `1px solid ${co}30` }}>{r.label}</span>
           })}
         </div>
@@ -706,7 +706,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)' }}>
         <span>Last fired: {fmtDate(active.last_fired_at)}</span>
-        <span style={{ color: active.fire_count_today > 0 ? '#dc2626' : 'var(--text4)' }}>{active.fire_count_today} fire{active.fire_count_today !== 1 ? 's' : ''} today</span>
+        <span style={{ color: active.fire_count_today > 0 ? 'var(--red-t)' : 'var(--text4)' }}>{active.fire_count_today} fire{active.fire_count_today !== 1 ? 's' : ''} today</span>
       </div>
     </div>
   ) : null
@@ -749,12 +749,12 @@ export default function RulesPage({ user }: { user: SessionUser }) {
       </Section>
 
       {/* Conditions */}
-      <Section title={<span>Conditions <button onClick={() => setForm(p => ({ ...p, logic: p.logic === 'AND' ? 'OR' : 'AND' }))} style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 99, background: form.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: form.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1.5px solid ${form.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{form.logic} -- click to toggle</button></span>}>
+      <Section title={<span>Conditions <button onClick={() => setForm(p => ({ ...p, logic: p.logic === 'AND' ? 'OR' : 'AND' }))} style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 99, background: form.logic === 'OR' ? 'var(--amber-bg)' : 'var(--blue-bg)', color: form.logic === 'OR' ? 'var(--amber-t)' : 'var(--blue-t)', border: `1.5px solid ${form.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{form.logic} -- click to toggle</button></span>}>
         {form.conditions.map((c, ci) => (
           <div key={c.id}>
             {ci > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 0 2px 8px' }}>
-                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, logic: x.logic === 'AND' ? 'OR' : 'AND' } : x) }))} style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: c.logic === 'OR' ? '#fff7ed' : '#eff6ff', color: c.logic === 'OR' ? '#c2410c' : '#1d4ed8', border: `1.5px solid ${c.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{c.logic}</button>
+                <button onClick={() => setForm(p => ({ ...p, conditions: p.conditions.map((x, i) => i === ci ? { ...x, logic: x.logic === 'AND' ? 'OR' : 'AND' } : x) }))} style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: c.logic === 'OR' ? 'var(--amber-bg)' : 'var(--blue-bg)', color: c.logic === 'OR' ? 'var(--amber-t)' : 'var(--blue-t)', border: `1.5px solid ${c.logic === 'OR' ? 'rgba(194,65,12,.3)' : 'rgba(29,78,216,.3)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>{c.logic}</button>
                 <span style={{ fontSize: 10, color: 'var(--text4)' }}>click to toggle</span>
               </div>
             )}

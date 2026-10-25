@@ -370,9 +370,9 @@ function AnalysisChip({ input, result }: { input: unknown; result?: unknown }) {
   return (
     <div style={{ border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 11px', background: 'linear-gradient(135deg, rgba(37,99,235,0.05), rgba(37,99,235,0.01))' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: metrics.length ? 7 : 0 }}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#2563eb" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 13h12M4 13V8M8 13V4M12 13V6"/></svg>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--blue-t)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 13h12M4 13V8M8 13V4M12 13V6"/></svg>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>{pretty}</span>
-        <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: '#2563eb', background: 'rgba(37,99,235,0.1)', padding: '1px 6px', borderRadius: 999 }}>Computed</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: 'var(--blue-t)', background: 'rgba(37,99,235,0.1)', padding: '1px 6px', borderRadius: 999 }}>Computed</span>
         {pending && <span style={{ fontSize: 10, color: 'var(--text3)' }}>running…</span>}
         {hasError && <span style={{ fontSize: 10, color: 'var(--red-t)' }}>failed</span>}
       </div>
@@ -688,10 +688,10 @@ function ResearchPanel({ research, onClose, panelW, setPanelW, mobile }: { resea
   // status / verdict badge
   const badge = (s: ResearchSubtask) => {
     if (s.status !== 'done') return s.status === 'running' ? { bg: 'var(--accent-bg)', c: 'var(--accent-fg,#fff)', t: dx ? 'Testing' : 'Researching' } : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Queued' }
-    if (dx && s.verdict) return s.verdict === 'supported' ? { bg: 'var(--amber-bg,#fffbeb)', c: 'var(--amber-t,#d97706)', t: 'Likely' }
+    if (dx && s.verdict) return s.verdict === 'supported' ? { bg: 'var(--amber-bg,var(--amber-bg))', c: 'var(--amber-t,var(--amber-t))', t: 'Likely' }
       : s.verdict === 'refuted' ? { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Ruled out' }
       : { bg: 'var(--bg3)', c: 'var(--text3)', t: 'Inconclusive' }
-    return { bg: 'var(--green-bg,#ecfdf5)', c: 'var(--green-t,#16a34a)', t: 'Done' }
+    return { bg: 'var(--green-bg,var(--green-bg))', c: 'var(--green-t,var(--green-t))', t: 'Done' }
   }
   const pct = (c?: number) => Math.round((c ?? 0) * 100)
   return (
@@ -708,7 +708,7 @@ function ResearchPanel({ research, onClose, panelW, setPanelW, mobile }: { resea
       </div>
       {/* Overall progress bar */}
       <div style={{ height: 3, background: 'var(--bg3)', flexShrink: 0 }} role="progressbar" aria-valuenow={pctRun} aria-valuemin={0} aria-valuemax={100}>
-        <div style={{ height: '100%', width: `${pctRun}%`, background: research.phase === 'done' ? 'var(--green-t,#16a34a)' : 'var(--accent-bg)', transition: 'width .4s ease' }} />
+        <div style={{ height: '100%', width: `${pctRun}%`, background: research.phase === 'done' ? 'var(--green-t,var(--green-t))' : 'var(--accent-bg)', transition: 'width .4s ease' }} />
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg3)', marginBottom: 14 }}>
@@ -733,7 +733,7 @@ function ResearchPanel({ research, onClose, panelW, setPanelW, mobile }: { resea
               <div>
                 {dx && s.status === 'done' && typeof s.confidence === 'number' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                    <div style={{ flex: 1, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct(s.confidence)}%`, background: s.verdict === 'supported' ? 'var(--amber-t,#d97706)' : 'var(--text3)' }} /></div>
+                    <div style={{ flex: 1, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct(s.confidence)}%`, background: s.verdict === 'supported' ? 'var(--amber-t,var(--amber-t))' : 'var(--text3)' }} /></div>
                     <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct(s.confidence)}%</span>
                   </div>
                 )}

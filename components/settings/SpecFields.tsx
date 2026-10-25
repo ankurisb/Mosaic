@@ -55,7 +55,7 @@ function Leaf({ name, schema, value, required, onChange }: {
   const secret = isSecret(name, schema)
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={lbl}>{schema.title || name}{required && <span style={{ color: '#dc2626' }}> *</span>}</label>
+      <label style={lbl}>{schema.title || name}{required && <span style={{ color: 'var(--red-t)' }}> *</span>}</label>
       {schema.enum ? (
         <select value={String(value ?? schema.default ?? '')} onChange={e => onChange(e.target.value)} style={inp}>
           <option value="">— select —</option>

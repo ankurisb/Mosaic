@@ -56,6 +56,6 @@ export default function SemanticCoverageBanner({ role }: { role?: string }) {
   )
 }
 
-const bar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', background: 'color-mix(in srgb, var(--warning,#d97706) 12%, var(--surface))', borderBottom: '1px solid color-mix(in srgb, var(--warning,#d97706) 35%, transparent)', color: 'var(--text)' }
-const cta: React.CSSProperties = { padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--warning,#d97706)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
+const bar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', background: 'color-mix(in srgb, var(--warning,var(--amber-t)) 12%, var(--surface))', borderBottom: '1px solid color-mix(in srgb, var(--warning,var(--amber-t)) 35%, transparent)', color: 'var(--text)' }
+const cta: React.CSSProperties = { padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--warning,var(--amber-t))', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
 const later: React.CSSProperties = { padding: '5px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }
