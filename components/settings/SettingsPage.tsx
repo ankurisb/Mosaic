@@ -27,6 +27,7 @@ import TabBackup from './TabBackup'
 import TabInterfaces from './TabInterfaces'
 import TabAccount from './TabAccount'
 import TabMemory from './TabMemory'
+import TabCustomization from './TabCustomization'
 import { APP_VERSION } from '@/lib/version'
 
 const ALL_TABS = [
@@ -38,6 +39,7 @@ const ALL_TABS = [
   // UX, so users aren't shown controls that would just reject them.
   { id: 'setup',         label: 'Setup',                adminOnly: true  },
   { id: 'account',       label: 'Password',             adminOnly: false },
+  { id: 'customization', label: 'Customization',        adminOnly: false },
   { id: 'keys',          label: 'API keys',             adminOnly: true  },
   { id: 'auth',          label: 'Authentication',       adminOnly: true, enterpriseOnly: true  },
   { id: 'users',         label: 'Users',                adminOnly: true, enterpriseOnly: true  },
@@ -88,6 +90,7 @@ function TabIcon({ id }: { id: string }) {
     case 'backup':       return <svg {...p}><path d="M7 1v8M4 6l3 3 3-3"/><path d="M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>
     case 'about':        return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 6.5v4M7 4.5v.5"/></svg>
     case 'memory':       return <svg {...p}><path d="M4.5 2.5h5a1 1 0 011 1v9l-3.5-2-3.5 2v-9a1 1 0 011-1z"/></svg>
+    case 'customization':return <svg {...p}><circle cx="7" cy="7" r="5.5"/><circle cx="4.7" cy="5.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="7" cy="4.4" r="0.9" fill="currentColor" stroke="none"/><circle cx="9.3" cy="5.5" r="0.9" fill="currentColor" stroke="none"/><path d="M7 12.5c1 0 1.3-1 .8-1.7-.4-.6-.1-1.3.7-1.3h.5"/></svg>
     default:             return null
   }
 }
@@ -238,6 +241,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'interfaces'    && <TabInterfaces />}
           {tab === 'account'       && <TabAccount user={user} />}
+          {tab === 'customization' && <TabCustomization />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}

@@ -5,7 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.154] - 2026-10-25
+## [1.3.155] - 2026-10-25
+### Added
+- **Customization settings + theme selector (prototype).** New Settings →
+  **Customization** tab: light/dark mode as the first setting, then a theme
+  selector with live preview swatches — **Mosaic** (default, editorial) and
+  **Microsoft 365** (Fluent: blue accent, Segoe typography, squared corners).
+- **Two-axis theming.** The theme mechanism now carries an independent *palette*
+  axis (`data-palette`) alongside the existing light/dark *mode*, both persisted
+  and set pre-hydration to avoid any flash. Because Mosaic's styling is fully
+  token-driven (`app/globals.css`), selecting a palette re-skins the whole app
+  from one token override block — no per-component changes.
+  - Known not-yet-migrated gaps (deliberate, for the prototype): the chart series
+    palette (`PanelChart` `COLOURS`) and a handful of hardcoded status colours in
+    a few tabs don't follow the palette yet; embedded Superset dashboards and map
+    tiles render in their own frames and always keep their own styling.
 ### Changed
 - **Chat attachments now use the MarkItDown markdown converter for document types**,
   so the model reasons over clean Markdown (tables and headings preserved) instead

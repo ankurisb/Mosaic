@@ -136,6 +136,114 @@ body {
   --highlight-border: rgba(167,139,250,0.4);
 }
 
+/* ============================================================================
+   THEME: Microsoft 365 / Fluent  (data-palette="m365")
+   A selectable theme family layered over the two modes. Colours live in the
+   mode-specific compound selectors below; the palette block carries the
+   mode-independent identity (squared radii + Segoe typography). The compound
+   selectors are 0,2,0 specificity so they reliably beat the base :root and
+   [data-theme="dark"] blocks (0,1,0) regardless of source order.
+   ========================================================================== */
+[data-palette="m365"] {
+  /* Fluent uses tight, near-square corners and Segoe UI throughout (no serif). */
+  --radius-sm: 2px;
+  --radius:    4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 999px;
+  --font-sans:  'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  --font-serif: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  --font-mono:  'Cascadia Code', 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+/* M365 — light */
+[data-palette="m365"]:not([data-theme="dark"]) {
+  --bg:        #faf9f8;
+  --bg2:       #ffffff;
+  --bg3:       #f3f2f1;
+  --bg4:       #edebe9;
+  --surface:   #ffffff;
+  --surface2:  #faf9f8;
+
+  --border:    #e1dfdd;
+  --border2:   #c8c6c4;
+  --shadow:    0 1.6px 3.6px rgba(0,0,0,0.13), 0 0.3px 0.9px rgba(0,0,0,0.11);
+  --shadow-md: 0 3.2px 7.2px rgba(0,0,0,0.13), 0 0.6px 1.8px rgba(0,0,0,0.11);
+  --shadow-lg: 0 6.4px 14.4px rgba(0,0,0,0.13), 0 1.2px 3.6px rgba(0,0,0,0.11);
+
+  --text:      #323130;
+  --text2:     #605e5c;
+  --text3:     #797775;
+  --text4:     #a19f9d;
+
+  --accent:    #0f6cbd;
+  --accent-bg: #0f6cbd;
+  --accent-fg: #ffffff;
+
+  --green:     #107c10;
+  --green-bg:  #dff6dd;
+  --green-t:   #0e700e;
+  --red:       #d13438;
+  --red-bg:    #fde7e9;
+  --red-t:     #a4262c;
+  --amber:     #f7630c;
+  --amber-bg:  #fff4ce;
+  --amber-t:   #8a6410;
+  --blue:      #0f6cbd;
+  --blue-bg:   #eff6fc;
+  --blue-t:    #0f6cbd;
+  --purple:    #8764b8;
+  --purple-bg: #f0ebf9;
+  --purple-t:  #674b9b;
+
+  --highlight: rgba(15,108,189,0.12);
+  --highlight-border: rgba(15,108,189,0.40);
+}
+
+/* M365 — dark */
+[data-palette="m365"][data-theme="dark"] {
+  --bg:        #1b1a19;
+  --bg2:       #252423;
+  --bg3:       #292827;
+  --bg4:       #323130;
+  --surface:   #252423;
+  --surface2:  #292827;
+
+  --border:    rgba(255,255,255,0.09);
+  --border2:   rgba(255,255,255,0.16);
+  --shadow:    0 1.6px 3.6px rgba(0,0,0,0.40), 0 0.3px 0.9px rgba(0,0,0,0.32);
+  --shadow-md: 0 3.2px 7.2px rgba(0,0,0,0.40), 0 0.6px 1.8px rgba(0,0,0,0.32);
+  --shadow-lg: 0 6.4px 14.4px rgba(0,0,0,0.48), 0 1.2px 3.6px rgba(0,0,0,0.32);
+
+  --text:      #ffffff;
+  --text2:     #d2d0ce;
+  --text3:     #a19f9d;
+  --text4:     #797775;
+
+  --accent:    #2899f5;
+  --accent-bg: #2899f5;
+  --accent-fg: #ffffff;
+
+  --green:     #54b054;
+  --green-bg:  rgba(16,124,16,0.22);
+  --green-t:   #92c353;
+  --red:       #f1707b;
+  --red-bg:    rgba(209,52,56,0.22);
+  --red-t:     #f1707b;
+  --amber:     #ffaa44;
+  --amber-bg:  rgba(247,99,12,0.18);
+  --amber-t:   #ffaa44;
+  --blue:      #2899f5;
+  --blue-bg:   rgba(40,153,245,0.16);
+  --blue-t:    #2899f5;
+  --purple:    #b4a0e0;
+  --purple-bg: rgba(135,100,184,0.22);
+  --purple-t:  #b4a0e0;
+
+  --highlight: rgba(40,153,245,0.18);
+  --highlight-border: rgba(40,153,245,0.45);
+}
+
 html, body { height: 100%; }
 body {
   background: var(--bg);
