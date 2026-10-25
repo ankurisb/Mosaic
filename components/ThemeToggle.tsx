@@ -10,7 +10,7 @@ export default function ThemeToggle({ style }: { style?: React.CSSProperties }) 
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         width: 32, height: 32, borderRadius: 'var(--radius-pill)',
-        border: '1px solid var(--border2)', background: 'var(--surface)',
+        border: '1px solid var(--border)', background: 'var(--surface)',
         cursor: 'pointer', fontSize: 15, flexShrink: 0,
         color: 'var(--text2)',
         boxShadow: 'var(--shadow)', transition: 'background .15s',

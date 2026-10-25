@@ -5,7 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.156] - 2026-10-25
+## [1.3.157] - 2026-10-25
+### Changed
+- **Softened the chat chrome's borders.** The icon buttons (new chat, sidebar
+  toggle, theme toggle), the message input box and its + button, the follow-up
+  suggestion pills, and the scope chip used the heavier `--border2` outline on top
+  of a drop shadow, which read as a hard dark boundary. Switched these to the
+  lighter `--border`, keeping definition without the heavy outline (applies in both
+  themes and modes).
 ### Changed
 - **Theme consistency brought to 100% across Mosaic's own UI.** Following the
   Customization/theme-selector prototype, the two remaining gaps are closed so the
