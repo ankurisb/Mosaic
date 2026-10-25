@@ -5,7 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.157] - 2026-10-25
+## [1.3.158] - 2026-10-25
+### Changed
+- **Extended the softer borders app-wide** (follow-up to v1.3.157). The same
+  `--border2`→`--border` softening is now applied to the icon buttons and chrome
+  controls in the main app shell, Settings, and the database/API/memory tabs
+  (new-chat / sidebar-toggle icons, the shared secondary button, connector preset
+  chips, the memory and customization segmented toggles, and the settings/database
+  icon buttons), so the lighter edges are consistent everywhere. Modal and dropdown
+  containers keep their defined edge (elevated surfaces, already separated by a
+  larger shadow).
 ### Changed
 - **Softened the chat chrome's borders.** The icon buttons (new chat, sidebar
   toggle, theme toggle), the message input box and its + button, the follow-up

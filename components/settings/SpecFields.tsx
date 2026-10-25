@@ -198,7 +198,7 @@ function ArrayField({ name, schema, value, onChange }: {
               : <SpecField name={`${name}[${i}]`} schema={item} value={row} required={false} onChange={v => { const n = [...value]; n[i] = v; onChange(n) }} />}
           </div>
           <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))}
-            style={{ marginTop: 2, width: 28, height: 34, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)' }}>×</button>
+            style={{ marginTop: 2, width: 28, height: 34, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)' }}>×</button>
         </div>
       ))}
       <button type="button" onClick={() => onChange([...value, isScalar ? '' : {}])}

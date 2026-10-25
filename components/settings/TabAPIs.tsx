@@ -1610,7 +1610,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {PRESETS.map(p => (
                   <button key={p.label} onClick={() => setSvcForm(f => ({ ...f, label: p.label, base_url: p.base_url, auth_type: p.auth_type }))}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 13, color: 'var(--text)', fontFamily: 'inherit', boxShadow: 'var(--shadow)', fontWeight: 500, transition: 'box-shadow .15s' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 13, color: 'var(--text)', fontFamily: 'inherit', boxShadow: 'var(--shadow)', fontWeight: 500, transition: 'box-shadow .15s' }}
                     onMouseEnter={e => (e.currentTarget.style.boxShadow = 'var(--shadow-md)')}
                     onMouseLeave={e => (e.currentTarget.style.boxShadow = 'var(--shadow)')}>
                     <span style={{ width: 20, height: 20, borderRadius: 5, background: p.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{p.icon}</span>

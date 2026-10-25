@@ -53,7 +53,7 @@ export default function TabMemory() {
         const on = category === c
         return (
           <button key={c} onClick={() => setCategory(c)} type="button"
-            style={{ padding: '5px 12px', fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer', borderRadius: 'calc(var(--radius-sm) - 2px)', border: '1px solid ' + (on ? 'var(--border2)' : 'transparent'), background: on ? 'var(--surface)' : 'transparent', color: on ? 'var(--text)' : 'var(--text3)', fontWeight: on ? 600 : 500, boxShadow: on ? 'var(--shadow)' : 'none', transition: 'all .12s' }}>
+            style={{ padding: '5px 12px', fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer', borderRadius: 'calc(var(--radius-sm) - 2px)', border: '1px solid ' + (on ? 'var(--border)' : 'transparent'), background: on ? 'var(--surface)' : 'transparent', color: on ? 'var(--text)' : 'var(--text3)', fontWeight: on ? 600 : 500, boxShadow: on ? 'var(--shadow)' : 'none', transition: 'all .12s' }}>
             {CAT_SHORT[c]}
           </button>
         )

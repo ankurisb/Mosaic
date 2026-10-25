@@ -221,7 +221,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(var(--safe-top) + 8px) 12px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 10 }}>
             <button onClick={() => setMobileNav(true)} title="Settings menu" aria-label="Open settings menu"
-              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
             </button>
             <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{TABS.find(t => t.id === tab)?.label || 'Settings'}</span>

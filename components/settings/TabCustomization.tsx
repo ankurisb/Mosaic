@@ -28,7 +28,7 @@ export default function TabCustomization() {
             <button key={m} onClick={() => setMode(m)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 'calc(var(--radius) - 3px)',
-                border: '1px solid ' + (theme === m ? 'var(--border2)' : 'transparent'),
+                border: '1px solid ' + (theme === m ? 'var(--border)' : 'transparent'),
                 background: theme === m ? 'var(--surface)' : 'transparent',
                 color: theme === m ? 'var(--text)' : 'var(--text2)',
                 fontSize: 13, fontWeight: theme === m ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit',

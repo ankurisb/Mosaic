@@ -66,10 +66,10 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0 }}>
             {!collapsed && (
               <button onClick={() => router.push('/')} title="New conversation"
-                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
+                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
             )}
             <button onClick={() => setCollapsed(s => !s)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border2)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)' }}>
+              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
                 <rect x="1" y="1" width="12" height="12" rx="2"/>
                 <line x1="5" y1="1" x2="5" y2="13"/>
@@ -121,7 +121,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
           <div style={{ position: 'relative', flex: 1 }}>
             <button onClick={() => setShowUserMenu(v => !v)}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg4)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg4)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>
                 {user.name.slice(0,2).toUpperCase()}
               </div>
               <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
@@ -173,7 +173,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(var(--safe-top) + 8px) 12px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
             <button onClick={() => setMobileNav(true)} title="Menu" aria-label="Open menu"
-              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
+              style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0 }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
             </button>
             <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{SECTION_TITLES[pathname] || (pathname.startsWith('/settings') ? 'Settings' : 'Mosaic')}</span>

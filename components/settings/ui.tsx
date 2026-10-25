@@ -69,7 +69,7 @@ export function Btn({ children, onClick, variant = 'secondary', disabled, style,
   }
   const variants: Record<BtnVariant, React.CSSProperties> = {
     primary:   { background: 'var(--accent-bg)', color: 'var(--accent-fg)', boxShadow: 'var(--shadow)' },
-    secondary: { background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow)' },
+    secondary: { background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' },
     ghost:     { background: 'transparent', color: 'var(--text2)' },
     danger:    { background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(220,38,38,.2)' },
   }

@@ -1146,7 +1146,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
                 <div style={{ fontWeight: 700, fontSize: 15 }}>Add data source</div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Step {wizardStep} of 2 — {wizardStep === 1 ? 'Choose connector' : 'Configure source'}</div>
               </div>
-              <button onClick={() => setShowWizard(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <button onClick={() => setShowWizard(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
 
             {wizardStep === 1 && (
@@ -1219,7 +1219,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 420, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 16 }}>{editing ? 'Edit Airbyte instance' : 'Connect Airbyte instance'}</div>
-              <button onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <button onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
             <div style={{ padding: '8px 12px', background: 'var(--green-bg)', borderRadius: 8, fontSize: 12, color: 'var(--green-t)', lineHeight: 1.5, marginBottom: 16, border: '1px solid color-mix(in srgb, var(--green-t) 35%, transparent)' }}>
               <strong>Docker Compose</strong> — use Username: <code style={{fontFamily:'var(--font-mono)'}}>airbyte</code> / Password: <code style={{fontFamily:'var(--font-mono)'}}>password</code><br/>
