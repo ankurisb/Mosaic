@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.163] - 2026-10-26
+### Changed
+- **AI Provider tab polish** — softened the selected-provider card (subtle accent
+  border + faint tint on the surface instead of a solid blue fill that washed out
+  the blurb text) and removed the redundant subtitle line.
+
 ## [1.3.162] - 2026-10-26
 ### Added
 - **Multi-provider LLM support — Anthropic API, Amazon Bedrock, and Azure AI

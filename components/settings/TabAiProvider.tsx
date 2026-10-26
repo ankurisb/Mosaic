@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
-import { PageTitle, PageSub, SectionLabel, Card, INP, Btn, Badge, Alert, Spinner } from './ui'
+import { PageTitle, SectionLabel, Card, INP, Btn, Badge, Alert, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
 
 type Provider = 'anthropic' | 'bedrock' | 'foundry'
@@ -130,7 +130,6 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
   return (
     <div className="fade-in">
       <PageTitle>AI Provider</PageTitle>
-      <PageSub>Choose where Claude runs. Bedrock and Foundry keep all prompts and data inside your own cloud account. Stored encrypted — no .env edit needed.</PageSub>
 
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 2000, padding: '10px 18px', background: 'var(--green-bg)', border: '1px solid rgba(22,163,74,.2)', borderRadius: 'var(--radius)', fontSize: 13, color: 'var(--green-t)', fontWeight: 500, boxShadow: 'var(--shadow-lg)' }}>
@@ -149,9 +148,11 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
               return (
                 <button key={p.id} onClick={() => selectProvider(p.id)}
                   style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 'var(--radius)', cursor: 'pointer',
-                    border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
-                    background: active ? 'var(--accent-bg, var(--bg2))' : 'var(--surface)',
-                    boxShadow: active ? 'var(--shadow)' : 'none', transition: 'all .12s' }}>
+                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    boxShadow: active ? 'var(--shadow)' : 'none',
+                    outline: active ? '3px solid var(--accent-bg, rgba(37,99,235,.08))' : 'none', outlineOffset: -1,
+                    transition: 'all .12s' }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                     {p.name}
                     {active && <Badge label="active" color="green" />}
