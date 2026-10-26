@@ -5,7 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.159] - 2026-10-26
+## [1.3.160] - 2026-10-26
+### Added
+- **Aubergine now has a dark menu with a light page** — the signature workspace-chat
+  look. Introduced `--nav-*` tokens (nav background, border, text, muted, hover,
+  active) that default to the current light chrome, so Mosaic and Fluent sidebars
+  are unchanged, and Aubergine overrides them to a dark aubergine rail (`#3f0e40`)
+  with light text in both light and dark modes. Both sidebars — the app shell
+  (dashboards/digests/settings/…) and the chat home page (nav, folders, chat list,
+  footer) — are wired to these tokens. The search field and pop-over menus stay on
+  their own light surfaces. (Fluent keeps a light nav by design, matching its
+  reference admin console.)
 ### Changed
 - **Renamed the "Microsoft 365" theme to "Fluent"** (no third-party brand name in
   the UI; internal id `m365` → `fluent` across tokens, chart palette and the

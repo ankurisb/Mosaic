@@ -1351,16 +1351,16 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   // grouped (folder) and ungrouped lists.
   const renderConvRow = (conv: Conv) => (
     <div key={conv.id} className="conv-row" onClick={() => { setActiveId(conv.id); if (isMobile) setMobileNav(false) }}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--bg3)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--border2)' : 'transparent'}`, transition: 'background .12s' }}>
-      <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--nav-active-bg)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--nav-border)' : 'transparent'}`, transition: 'background .12s' }}>
+      <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--nav-text-strong)' : 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
       {!conv.id.startsWith('local-') && (
         <button onClick={e => { e.stopPropagation(); setMoveMenuFor(moveMenuFor === conv.id ? null : conv.id) }} title="Move to folder" className="conv-row-btn"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', paddingLeft: 2, flexShrink: 0, opacity: moveMenuFor === conv.id ? 1 : 0, display: 'flex' }}>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', paddingLeft: 2, flexShrink: 0, opacity: moveMenuFor === conv.id ? 1 : 0, display: 'flex' }}>
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
         </button>
       )}
       <button onClick={e => delConv(conv.id, e)} title="Delete" className="conv-row-btn"
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', fontSize: 14, paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', fontSize: 14, paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
       </button>
       {moveMenuFor === conv.id && (
@@ -1708,25 +1708,25 @@ export default function ChatPage({ user }: { user: SessionUser }) {
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* -- Sidebar -- */}
       <div style={isMobile
-        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)' }
-        : { width: sidebarCollapsed ? 56 : sidebarWidth, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: sidebarCollapsed ? 'width .2s ease' : 'none', overflow: 'visible' }}>
+        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--nav-bg)', borderRight: '1px solid var(--nav-border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)' }
+        : { width: sidebarCollapsed ? 56 : sidebarWidth, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--nav-bg)', borderRight: '1px solid var(--nav-border)', transition: sidebarCollapsed ? 'width .2s ease' : 'none', overflow: 'visible' }}>
         {!isMobile && !sidebarCollapsed && <ResizeHandle width={sidebarWidth} setWidth={setSidebarWidth} min={200} max={460} dir={1} side="right" />}
 
         {/* Logo — extra top padding so the wordmark clears the window's top edge /
             macOS traffic-light title bar in the Electron desktop app. */}
-        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--nav-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
           {!sidebarCollapsed && (
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, overflow: 'hidden' }}>
-              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>
+              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--nav-text-strong)', whiteSpace: 'nowrap' }}>Mosaic</span>
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: sidebarCollapsed ? 'auto' : 0, marginRight: sidebarCollapsed ? 'auto' : 0 }}>
             {!sidebarCollapsed && (
               <button onClick={newConv} title="New conversation"
-                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
+                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', fontSize: 16, color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
             )}
             <button onClick={() => setSidebarCollapsed(s => !s)} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)' }}>
+              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarCollapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
                 <rect x="1" y="1" width="12" height="12" rx="2"/>
                 <line x1="5" y1="1" x2="5" y2="13"/>
@@ -1737,7 +1737,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         </div>
 
         {/* Primary nav */}
-        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--nav-border)' }}>
           {([ 
             { label: 'Chats',         href: null,              active: true,  icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg> },
             { label: 'Dashboards',    href: '/dashboards',     active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg> },
@@ -1750,8 +1750,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
             <button key={item.label}
               onClick={() => item.href ? router.push(item.href) : undefined}
               title={sidebarCollapsed ? item.label : undefined}
-              style={{ width: '100%', padding: '7px 10px', background: item.active ? 'var(--bg3)' : 'none', border: `1px solid ${item.active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: item.href ? 'pointer' : 'default', fontSize: 12, color: item.active ? 'var(--text)' : 'var(--text2)', fontWeight: item.active ? 500 : 400, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 1 }}
-              onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = 'var(--bg3)' }}
+              style={{ width: '100%', padding: '7px 10px', background: item.active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${item.active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: item.href ? 'pointer' : 'default', fontSize: 12, color: item.active ? 'var(--nav-text-strong)' : 'var(--nav-text)', fontWeight: item.active ? 500 : 400, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 1 }}
+              onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = 'var(--nav-hover)' }}
               onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = 'none' }}>
               <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{item.icon}</span>
               {!sidebarCollapsed && item.label}
@@ -1780,8 +1780,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               </div>
               <style>{`.conv-row:hover .conv-row-btn{opacity:1 !important}`}</style>
               <button onClick={createFolder} title="New folder"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 6, background: 'none', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text3)', fontSize: 11, fontFamily: 'inherit' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 6, background: 'none', border: '1px dashed var(--nav-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--nav-muted)', fontSize: 11, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--nav-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
                 <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7 3.5v7M3.5 7h7"/></svg> New folder
               </button>
               {(() => {
@@ -1798,32 +1798,32 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                         <div key={f.id} style={{ marginBottom: 2 }}>
                           <div onClick={() => toggleFolder(f.id)} className="conv-row"
                             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <span style={{ fontSize: 9, color: 'var(--text4)', width: 10, flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>▶</span>
-                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text3)', flexShrink: 0 }}><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--nav-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            <span style={{ fontSize: 9, color: 'var(--nav-muted)', width: 10, flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>▶</span>
+                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--nav-muted)', flexShrink: 0 }}><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
                             {renamingFolder === f.id ? (
                               <input autoFocus defaultValue={f.name} onClick={e => e.stopPropagation()}
                                 onBlur={e => { renameFolder(f.id, e.target.value); setRenamingFolder(null) }}
                                 onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, (e.target as HTMLInputElement).value); setRenamingFolder(null) } if (e.key === 'Escape') setRenamingFolder(null) }}
                                 style={{ flex: 1, fontSize: 12, padding: '1px 4px', border: '1px solid var(--border2)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', minWidth: 0 }} />
                             ) : (
-                              <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                              <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                             )}
-                            <span style={{ fontSize: 10, color: 'var(--text4)', flexShrink: 0 }}>{items.length}</span>
+                            <span style={{ fontSize: 10, color: 'var(--nav-muted)', flexShrink: 0 }}>{items.length}</span>
                             <button onClick={e => { e.stopPropagation(); setRenamingFolder(f.id) }} title="Rename folder" className="conv-row-btn"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
                               <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2l3 3-7 7H2v-3z"/></svg>
                             </button>
                             <button onClick={e => { e.stopPropagation(); if (confirm(`Delete folder "${f.name}"? Chats inside move to Ungrouped (they are not deleted).`)) deleteFolder(f.id) }} title="Delete folder" className="conv-row-btn"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text4)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', padding: '0 1px', display: 'flex', opacity: 0, flexShrink: 0 }}>
                               <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3.5h10M5 3.5V2h4v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5"/></svg>
                             </button>
                           </div>
-                          {open && <div style={{ paddingLeft: 10 }}>{items.length ? items.map(renderConvRow) : <div style={{ fontSize: 11, color: 'var(--text4)', padding: '4px 10px' }}>Empty — move chats here from the ⋯ menu</div>}</div>}
+                          {open && <div style={{ paddingLeft: 10 }}>{items.length ? items.map(renderConvRow) : <div style={{ fontSize: 11, color: 'var(--nav-muted)', padding: '4px 10px' }}>Empty — move chats here from the ⋯ menu</div>}</div>}
                         </div>
                       )
                     })}
-                    {folders.length > 0 && ungrouped.length > 0 && <div style={{ fontSize: 10, color: 'var(--text4)', padding: '8px 8px 3px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Ungrouped</div>}
+                    {folders.length > 0 && ungrouped.length > 0 && <div style={{ fontSize: 10, color: 'var(--nav-muted)', padding: '8px 8px 3px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Ungrouped</div>}
                     {ungrouped.map(renderConvRow)}
                   </>
                 )
@@ -1833,17 +1833,17 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         </div>
 
         {/* User + theme */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', gap: 8 }}>
+        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', gap: 8 }}>
           <div style={{ position: 'relative', flex: sidebarCollapsed ? 'none' : 1 }}>
             <button onClick={() => setShowUserMenu(v => !v)} title={sidebarCollapsed ? user.name : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg4)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--nav-hover)', border: '1px solid var(--nav-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--nav-text)', flexShrink: 0 }}>
                 {user.name.slice(0, 2).toUpperCase()}
               </div>
               {!sidebarCollapsed && (
                 <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--nav-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+                  <div style={{ fontSize: 10, color: 'var(--nav-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role}</div>
                   {deploy.updateAvailable ? (
                     <button onClick={e => { e.stopPropagation(); setShowUpdate(true) }}
                       title={`Version ${deploy.latestVersion} is available`}
@@ -1852,7 +1852,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                       Update to v{deploy.latestVersion}
                     </button>
                   ) : (
-                    <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || APP_VERSION}</div>
+                    <div style={{ fontSize: 10, color: 'var(--nav-muted)' }}>v{deploy.currentVersion || APP_VERSION}</div>
                   )}
                 </div>
               )}

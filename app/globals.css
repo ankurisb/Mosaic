@@ -136,6 +136,23 @@ body {
   --highlight-border: rgba(167,139,250,0.4);
 }
 
+/* ----------------------------------------------------------------------------
+   NAV / sidebar tokens. Default to the current light-chrome look (so Mosaic and
+   Fluent sidebars are unchanged); a palette can override these to give the menu
+   its own colour — e.g. Aubergine makes the rail a dark aubergine while the main
+   content stays light. Kept separate from the surface tokens so "dark menu, light
+   page" is possible without touching the content area.
+   -------------------------------------------------------------------------- */
+:root {
+  --nav-bg:          var(--surface);
+  --nav-border:      var(--border);
+  --nav-text:        var(--text2);
+  --nav-text-strong: var(--text);
+  --nav-muted:       var(--text3);
+  --nav-hover:       var(--bg3);
+  --nav-active-bg:   var(--bg3);
+}
+
 /* ============================================================================
    THEME: Fluent  (data-palette="fluent")
    A selectable theme family layered over the two modes. Colours live in the
@@ -258,6 +275,15 @@ body {
   --font-sans:  'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
   --font-serif: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
   --font-mono:  'Cascadia Code', 'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Dark aubergine rail in BOTH modes (the signature "dark menu, light page"). */
+  --nav-bg:          #3f0e40;
+  --nav-border:      rgba(255,255,255,0.10);
+  --nav-text:        rgba(255,255,255,0.74);
+  --nav-text-strong: #ffffff;
+  --nav-muted:       rgba(255,255,255,0.55);
+  --nav-hover:       rgba(255,255,255,0.08);
+  --nav-active-bg:   #611f69;
 }
 
 /* Aubergine — light */

@@ -41,8 +41,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
     const showCollapsed = collapsed && !isMobile
     return (
       <button onClick={() => { router.push(path); setMobileNav(false) }} title={showCollapsed ? label : undefined}
-        style={{ width: '100%', padding: showCollapsed ? '8px 0' : '8px 10px', background: active ? 'var(--bg3)' : 'none', border: `1px solid ${active ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--text)' : 'var(--text2)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: showCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg3)' }}
+        style={{ width: '100%', padding: showCollapsed ? '8px 0' : '8px 10px', background: active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--nav-text-strong)' : 'var(--nav-text)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: showCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--nav-hover)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
         {icon}{!showCollapsed && label}
       </button>
@@ -58,18 +58,18 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
       {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
       {/* Sidebar */}
       <div style={isMobile
-        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)', overflow: 'hidden' }
-        : { width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRight: '1px solid var(--border)', transition: 'width .2s ease', overflow: 'hidden' }}>
+        ? { position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(84vw, 320px)', zIndex: 100, transform: mobileNav ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease', display: 'flex', flexDirection: 'column', background: 'var(--nav-bg)', borderRight: '1px solid var(--nav-border)', boxShadow: mobileNav ? 'var(--shadow-lg)' : 'none', paddingTop: 'var(--safe-top)', overflow: 'hidden' }
+        : { width: collapsed ? 56 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--nav-bg)', borderRight: '1px solid var(--nav-border)', transition: 'width .2s ease', overflow: 'hidden' }}>
         {/* Logo — top padding clears the window edge / macOS title bar (Electron app). */}
-        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
-          {!collapsed && <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)', whiteSpace: 'nowrap' }}>Mosaic</span>}
+        <div style={{ padding: '28px 16px 14px', borderBottom: '1px solid var(--nav-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+          {!collapsed && <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--nav-text-strong)', whiteSpace: 'nowrap' }}>Mosaic</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: collapsed ? 'auto' : 0, marginRight: collapsed ? 'auto' : 0 }}>
             {!collapsed && (
               <button onClick={() => router.push('/')} title="New conversation"
-                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)', lineHeight: 1 }}>+</button>
+                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', fontSize: 16, color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
             )}
             <button onClick={() => setCollapsed(s => !s)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow)' }}>
+              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
                 <rect x="1" y="1" width="12" height="12" rx="2"/>
                 <line x1="5" y1="1" x2="5" y2="13"/>
@@ -79,7 +79,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
           </div>
         </div>
         {/* Nav */}
-        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--nav-border)' }}>
           {navBtn('/',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg>,
             'Chats'
@@ -110,23 +110,23 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
           {!collapsed && convs.map(c => (
             <div key={c.id} onClick={() => { router.push(`/?conv=${c.id}`); setMobileNav(false) }}
               style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--nav-hover)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
+              <span style={{ fontSize: 12, color: 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
             </div>
           ))}
         </div>
         {/* User + theme */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <button onClick={() => setShowUserMenu(v => !v)}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg4)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text2)', flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--nav-hover)', border: '1px solid var(--nav-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--nav-text)', flexShrink: 0 }}>
                 {user.name.slice(0,2).toUpperCase()}
               </div>
               <div style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)' }}>{user.role}</div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--nav-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--nav-muted)' }}>{user.role}</div>
                 {deploy.updateAvailable ? (
                   <button onClick={e => { e.stopPropagation(); setShowUpdate(true) }}
                     title={`Version ${deploy.latestVersion} is available`}
@@ -135,7 +135,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
                     Update to v{deploy.latestVersion}
                   </button>
                 ) : (
-                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>v{deploy.currentVersion || '—'}</div>
+                  <div style={{ fontSize: 10, color: 'var(--nav-muted)' }}>v{deploy.currentVersion || '—'}</div>
                 )}
               </div>
             </button>
