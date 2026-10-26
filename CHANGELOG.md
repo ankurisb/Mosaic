@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.165] - 2026-10-26
+### Fixed
+- **Chat file uploads no longer truncate API specs at 12k characters.** The
+  chat-attachment path (`lib/attachments`) still hard-capped each uploaded file at
+  12,000 chars (~3k tokens), so a SAP OData `$metadata` or OpenAPI spec was cut to
+  its first few entities ("Only what was visible in the first 12,000 characters").
+  This was a separate path from the API-ingestion builder (where the cap was
+  already lifted). Raised the per-document cap to 200,000 chars and added a
+  500,000-char per-message aggregate budget so a full spec goes through intact
+  while several large files still can't overflow the context window. Both are
+  env-tunable (`CHAT_ATTACHMENT_MAX_CHARS`, `CHAT_ATTACHMENTS_TOTAL_CHARS`); the
+  truncation note now only appears for genuinely huge files.
+
 ## [1.3.164] - 2026-10-26
 ### Changed
 - **White-label the LLM in customer-facing UI** — replaced visible "Claude"

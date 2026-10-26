@@ -35,7 +35,19 @@ export interface IncomingAttachment {
   data: string   // base64 (no data: prefix)
 }
 
-const MAX_DOC_CHARS = 12000  // cap extracted text per document to bound tokens
+// Per-document extraction cap. 12k chars (~3k tokens) was far too small for real
+// API specs — a SAP OData $metadata or an OpenAPI doc is routinely tens to a few
+// hundred KB, and cutting it to 12k meant the model only ever saw the first few
+// entities ("Only what was visible in the first 12,000 characters"). We raise it
+// to a generous ceiling so a full spec goes through intact, and bound the whole
+// turn with an aggregate cap below so several large files still can't blow the
+// context window. Both are env-tunable for smaller-context deployments.
+const MAX_DOC_CHARS = Math.max(1000, Number(process.env.CHAT_ATTACHMENT_MAX_CHARS) || 200_000)
+// Total extracted-text budget across ALL attachments in one turn (~125k tokens by
+// default, leaving ample room in a 200k window for history, system prompt and the
+// reply). Each document draws from what's left, so N huge files degrade gracefully
+// instead of overflowing.
+const MAX_TOTAL_DOC_CHARS = Math.max(MAX_DOC_CHARS, Number(process.env.CHAT_ATTACHMENTS_TOTAL_CHARS) || 500_000)
 
 // Phase 7 (gated by ANTHROPIC_CITATIONS): when on, extracted document text is sent
 // as a native `document` content block with citations enabled, so the model can
@@ -70,6 +82,10 @@ export async function buildUserContent(
 
   const blocks: Anthropic.ContentBlockParam[] = []
   if (text && text.trim()) blocks.push({ type: 'text', text })
+
+  // Remaining shared text budget for this turn; each document takes min(per-doc,
+  // what's left) so a few very large files can't overflow the context window.
+  let remainingDocBudget = MAX_TOTAL_DOC_CHARS
 
   for (const att of attachments) {
     const mime = (att.type || '').toLowerCase()
@@ -112,9 +128,15 @@ export async function buildUserContent(
     // -- Documents / text / unknown: extract to text server-side -------------
     try {
       const buf = Buffer.from(att.data, 'base64')
-      const extracted = await extractFileText(buf, att.name, MAX_DOC_CHARS)
+      // Draw this document's cap from the remaining shared budget.
+      const perDocCap = Math.max(0, Math.min(MAX_DOC_CHARS, remainingDocBudget))
+      const extracted = perDocCap > 0 ? await extractFileText(buf, att.name, perDocCap) : ''
+      remainingDocBudget -= extracted.length
       const label = `[Attached file: ${att.name}]`
-      if (extracted && extracted.trim() && CITATIONS_ENABLED) {
+      if (perDocCap === 0) {
+        // Earlier attachments already consumed the whole turn budget.
+        blocks.push({ type: 'text', text: `${label}\n[Not analysed: the combined size of the attached files exceeds the per-message limit. Send this file in a separate message.]` })
+      } else if (extracted && extracted.trim() && CITATIONS_ENABLED) {
         blocks.push({
           type: 'document',
           title: att.name,
@@ -122,9 +144,10 @@ export async function buildUserContent(
           citations: { enabled: true },
         })
       } else if (extracted && extracted.trim()) {
-        // Flag truncation so partial analysis is never a silent surprise.
-        const truncated = extracted.length >= MAX_DOC_CHARS
-          ? `\n[Note: this file was truncated to the first ${MAX_DOC_CHARS.toLocaleString()} characters for analysis.]`
+        // Flag truncation so partial analysis is never a silent surprise. With the
+        // raised cap this only fires on genuinely huge files.
+        const truncated = extracted.length >= perDocCap
+          ? `\n[Note: this file was large and only the first ${perDocCap.toLocaleString()} characters were included. Ask about a specific section, or split the file, to see more.]`
           : ''
         blocks.push({ type: 'text', text: `${label}\n${extracted}${truncated}` })
       } else {
