@@ -116,13 +116,26 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
     const { Client } = await import('pg')
     const c = new Client(cs ?? { host: conn.host, port: conn.port, database: conn.database_name, user: conn.username, password: pwd, ssl: conn.ssl_mode && conn.ssl_mode !== 'disable' ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: conn.connect_timeout_ms ?? 5000, query_timeout: conn.query_timeout_ms ?? 30000 })
     await c.connect()
-    try { const r = await c.query(injectLimit(query, limit)); rows = r.rows; columns = r.fields.map((f: any) => f.name) } finally { await c.end() }
+    try {
+      // Driver-level read-only enforcement (defence-in-depth on top of the
+      // readOnlyViolation parser guard above): inside a READ ONLY transaction the
+      // DB itself rejects any write, so a parser miss cannot mutate data.
+      if (conn.read_only) await c.query('BEGIN READ ONLY')
+      const r = await c.query(injectLimit(query, limit)); rows = r.rows; columns = r.fields.map((f: any) => f.name)
+      if (conn.read_only) await c.query('COMMIT')
+    } finally { await c.end() }
   }
   else if (conn.dialect === 'mysql') {
     const mysql = await import('mysql2/promise')
     const cfg: any = cs ?? { host: conn.host, port: conn.port, database: conn.database_name, user: conn.username, password: pwd, connectTimeout: conn.connect_timeout_ms ?? 5000 }
     const c = await mysql.createConnection(cfg)
-    try { const [r, f] = await c.execute(injectLimit(query, limit)) as any; rows = r; columns = f?.map((x: any) => x.name) ?? Object.keys(r[0] ?? {}) } finally { await c.end() }
+    try {
+      // Driver-level read-only (defence-in-depth): a READ ONLY transaction makes
+      // the server reject any write even if the parser guard is bypassed.
+      if (conn.read_only) await c.query('START TRANSACTION READ ONLY')
+      const [r, f] = await c.execute(injectLimit(query, limit)) as any; rows = r; columns = f?.map((x: any) => x.name) ?? Object.keys(r[0] ?? {})
+      if (conn.read_only) await c.query('COMMIT')
+    } finally { await c.end() }
   }
   else if (conn.dialect === 'mssql') {
     const sql = await import('mssql')

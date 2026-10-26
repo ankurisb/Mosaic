@@ -2291,11 +2291,13 @@ async function listFiles(
   if (transport === 'smb') {
     // SMB: use smbclient if available, fall back to mock for development
     try {
-      const { execSync } = await import('child_process')
+      // execFileSync with an argument array (no shell) — basePath/username/password
+      // are config values and MUST NOT be interpolated into a shell string (that is
+      // a command-injection / RCE path). stderr is discarded (the old `2>/dev/null`).
+      const { execFileSync } = await import('child_process')
       const pwd = fs.password_enc ? decrypt(fs.password_enc as string) : ''
       const user = fs.username ? `${fs.username}%${pwd}` : ''
-      const cmd = `smbclient "${basePath}" -U "${user}" -c "ls"  2>/dev/null`
-      const output = execSync(cmd, { timeout: 10000, encoding: 'utf8' })
+      const output = execFileSync('smbclient', [basePath, '-U', user, '-c', 'ls'], { timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       const files: FileEntry[] = []
       for (const line of output.split('\n')) {
         const m = line.match(/^\s+(.+?)\s+[ADRHS]+\s+(\d+)\s+(.+)$/)

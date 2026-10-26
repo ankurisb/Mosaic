@@ -14,12 +14,28 @@ const SECRET_FILE = join(MOSAIC_DIR, 'secret.key')
 
 let _cached: string | null = null
 
+// Known weak/placeholder values that must never be used as the production secret
+// (forgeable JWTs + weak derived encryption key). Checked at boot.
+const WEAK_SECRETS = new Set(['changeme', 'secret', 'password', 'ci-test-secret-key-32-chars-padding', 'test', 'mosaic', 'admin'])
+
+/** Warn loudly when an explicitly-set AUTH_SECRET is weak in production. We WARN
+ *  rather than crash so a config typo never bricks a customer box, but the signal
+ *  is unmistakable in the logs. */
+function validateStrength(secret: string): void {
+  if (process.env.NODE_ENV !== 'production') return
+  const weak = secret.trim().length < 32 || WEAK_SECRETS.has(secret.trim().toLowerCase())
+  if (weak) {
+    log.error({ service: 'secret' }, '[mosaic] SECURITY: AUTH_SECRET is weak (short or a known placeholder). JWTs are forgeable and encryption is weakened. Set AUTH_SECRET to a high-entropy value of at least 32 characters (e.g. `openssl rand -hex 32`).')
+  }
+}
+
 export function getSecret(): string {
   if (_cached) return _cached
 
   // 1. Env var still takes precedence (Docker / CI / explicit override)
   if (process.env.AUTH_SECRET) {
     _cached = process.env.AUTH_SECRET
+    validateStrength(_cached)
     return _cached
   }
 

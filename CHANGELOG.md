@@ -5,7 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.160] - 2026-10-26
+## [1.3.161] - 2026-10-26
+### Security
+- **Pre-customer hardening sprint.** Re-verified the July security review against
+  current code and closed the open code-level items:
+  - **SMB file-listing command injection (H1)** — switched from a shell string to
+    `execFileSync` with an argument array (no shell); config values can no longer
+    break out into commands. (`lib/tools`)
+  - **Read-only DB enforcement (H3)** — on top of the existing `readOnlyViolation`
+    parser (rejects stacked statements + all write/DDL keywords), added a
+    driver-level `READ ONLY` transaction for Postgres and MySQL, so the database
+    itself rejects any write even if the parser is bypassed. (`query-runner`)
+  - **Dependency CVEs (H2)** — both criticals fixed (`next`→15.5.28,
+    `fast-xml-parser`→4.5.7) plus `js-yaml`. Residual highs are transitive with no
+    upstream fix (puppeteer chain, Next build internals) or `xlsx` (SheetJS CDN
+    build, a deploy step) — documented with risk rationale.
+  - **AUTH_SECRET (M4)** — boot-time validation warns loudly when a production
+    secret is weak or a known placeholder (never crashes on a config typo).
+  - **Watchdog docker calls (L2)** — `execFileSync`/`spawnSync` + strict name
+    validation instead of shell strings.
+  - **Tracked `.env.vercel` (M6)** — untracked and git-ignored.
+  - Updated `claude/mosaic-security-review.md` with the current status, residual
+    risks, the LLM data-residency approach (Claude via Bedrock / Azure Foundry),
+    and a per-customer pre-deployment checklist.
+  - (Already fixed earlier and re-verified: C1 unauthenticated SSRF, M1 test-api
+    SSRF — both now go through the central `assertUrlSafe` guard.)
 ### Added
 - **Aubergine now has a dark menu with a light page** — the signature workspace-chat
   look. Introduced `--nav-*` tokens (nav background, border, text, muted, hover,

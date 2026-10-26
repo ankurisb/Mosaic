@@ -6,7 +6,10 @@ const http = require('http')
 const https = require('https')
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
+const { execSync, execFileSync, spawnSync } = require('child_process')
+// Docker object names only ever contain this charset; reject anything else before
+// it reaches a docker arg (defence against arg/command injection via a crafted name).
+const safeName = (n) => (/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(String(n || '')) ? String(n) : null)
 
 const PORT = Number(process.env.PORT || 3099)          // HTTPS when a cert is available, else HTTP
 const HTTP_PORT = Number(process.env.HTTP_PORT || 3098) // always-plain-HTTP port for localhost scripts/health checks
@@ -52,13 +55,20 @@ const BENIGN_PATTERNS = [
 
 // ── Docker helpers ─────────────────────────────────────────────
 function dockerInspect(name, format) {
-  try { return execSync(`docker inspect ${name} --format '${format}'`, { timeout: 3000 }).toString().trim() }
+  const n = safeName(name); if (!n) return ''
+  // execFileSync with an argument array — no shell, so name/format are never
+  // interpreted as shell. format is a fixed Go template supplied by callers.
+  try { return execFileSync('docker', ['inspect', n, '--format', String(format)], { timeout: 3000 }).toString().trim() }
   catch { return '' }
 }
 
 function dockerLogs(name, since = '5m') {
+  const n = safeName(name); if (!n) return []
+  const sinceArg = /^[0-9]+[smhd]?$/.test(String(since)) ? String(since) : '5m'
   try {
-    const raw = execSync(`docker logs ${name} --since ${since} 2>&1`, { timeout: 5000 }).toString()
+    // spawnSync (no shell); merge stdout+stderr to replicate the old `2>&1`.
+    const r = spawnSync('docker', ['logs', n, '--since', sinceArg], { timeout: 5000, encoding: 'utf8' })
+    const raw = (r.stdout || '') + (r.stderr || '')
     return raw.split('\n')
       .filter(l => /error|fatal|exception|failed|panic/i.test(l))
       .filter(l => !BENIGN_PATTERNS.some(p => l.includes(p)))
@@ -513,7 +523,7 @@ function renderBundle() {
   const lines = [`Mosaic Support Bundle — ${new Date().toISOString()}`, '='.repeat(60), '']
   try { lines.push('## Container states'); lines.push(execSync('docker ps -a --format "{{.Names}}\\t{{.Status}}\\t{{.Image}}"', { timeout: 5000 }).toString()) } catch { lines.push('(unavailable)') }
   for (const svc of CORE_SERVICES) {
-    try { lines.push(`## Logs: ${svc.name} (last 30 lines)`); lines.push(execSync(`docker logs ${svc.name} --tail 30 2>&1`, { timeout: 5000 }).toString()) } catch { lines.push('(unavailable)') }
+    try { lines.push(`## Logs: ${svc.name} (last 30 lines)`); const sn = safeName(svc.name); const lr = sn ? spawnSync('docker', ['logs', sn, '--tail', '30'], { timeout: 5000, encoding: 'utf8' }) : { stdout: '', stderr: '' }; lines.push((lr.stdout || '') + (lr.stderr || '')) } catch { lines.push('(unavailable)') }
   }
   try { lines.push('## Disk'); lines.push(execSync('df -h', { timeout: 2000 }).toString()) } catch {}
   return lines.join('\n')
