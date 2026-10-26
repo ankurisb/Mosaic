@@ -91,7 +91,7 @@ const SECTION_DESC: Record<SectionType, string> = {
   kpi:          'Run a query and render results as metric cards',
   table:        'Run a query and render results as a formatted table',
   chart:        'Run a query and render as bar, line, or pie chart',
-  ai_narrative: 'Claude reads the query results and writes a narrative summary',
+  ai_narrative: 'Mosaic reads the query results and writes a narrative summary',
   text:         'Static markdown/HTML text — no data binding needed',
 }
 
@@ -283,7 +283,7 @@ function SectionCard({
           {needsPrompt && (
             <div style={FIELD}>
               <label style={LABEL}>
-                What to summarise <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(the query results are given to Claude automatically)</span>
+                What to summarise <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>(the query results are given to Mosaic automatically)</span>
               </label>
               <textarea style={{ ...TEXTAREA, minHeight: 90 }}
                 placeholder={'Summarise this week’s OEE data: call out the top 2 underperforming machines, the likely causes, and the immediate actions to take. Be concise and use plant terminology.'}
@@ -694,7 +694,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
         {template.sections.length === 0 && (
           <div style={{ padding: '32px 20px', border: '1.5px dashed var(--border2)', borderRadius: 10, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
             A digest is one or more AI summaries, emailed on a schedule.
-            <br />Add a summary: pick a saved query and tell Claude what to highlight.
+            <br />Add a summary: pick a saved query and tell Mosaic what to highlight.
           </div>
         )}
 

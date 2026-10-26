@@ -1197,7 +1197,7 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
                 ['CSRF tokens', 'Required for any write/POST -- handled by the Try It panel automatically'],
                 ['$format=json', 'Always appended by Mosaic -- avoids XML responses'],
                 ['SAP Client (mandt)', 'Add ?sap-client=100 to all paths if multi-client system'],
-                ['Pagination', 'V4 returns @odata.nextLink -- Claude follows it automatically'],
+                ['Pagination', 'V4 returns @odata.nextLink -- Mosaic follows it automatically'],
                 ['Auth method', 'Basic auth works for dev; OAuth 2.0 (SOAUTH2) recommended for prod'],
                 ['Rate limiting', 'SAP Gateway has no built-in rate limit -- set $top in all queries'],
               ].map(([k, v]) => (

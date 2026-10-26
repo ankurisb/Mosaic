@@ -586,7 +586,7 @@ export default function TabGuardrails({ user }: { user: SessionUser }) {
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          {['Anthropic API (Claude)', 'Tavily Search API (when web search used)'].map(s => (
+          {['Anthropic API', 'Tavily Search API (when web search used)'].map(s => (
             <span key={s} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)' }}>{s}</span>
           ))}
         </div>

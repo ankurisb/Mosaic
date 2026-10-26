@@ -10,8 +10,8 @@ interface KeyStatus { configured: boolean; source?: 'kv' | 'env' | 'none'; previ
 
 const PROVIDERS: { id: Provider; name: string; blurb: string }[] = [
   { id: 'anthropic', name: 'Anthropic API',     blurb: 'Direct to Anthropic. Simplest to set up — just an API key.' },
-  { id: 'bedrock',   name: 'Amazon Bedrock',    blurb: 'Claude runs inside your AWS account. Data stays in your AWS region.' },
-  { id: 'foundry',   name: 'Azure AI Foundry',  blurb: 'Claude runs inside your Azure tenancy. Data stays in your Azure region.' },
+  { id: 'bedrock',   name: 'Amazon Bedrock',    blurb: 'Mosaic runs inside your AWS account. Data stays in your AWS region.' },
+  { id: 'foundry',   name: 'Azure AI Foundry',  blurb: 'Mosaic runs inside your Azure tenancy. Data stays in your Azure region.' },
 ]
 
 interface FieldDef { key: string; label: string; hint: string; placeholder: string; secret?: boolean; optional?: boolean }
@@ -21,7 +21,7 @@ const FIELDS: Record<Provider, FieldDef[]> = {
     { key: 'ANTHROPIC_API_KEY', label: 'API key', hint: 'From console.anthropic.com', placeholder: 'sk-ant-api03-...', secret: true },
   ],
   bedrock: [
-    { key: 'BEDROCK_REGION', label: 'AWS region', hint: 'Region where Claude models are enabled for your account', placeholder: 'us-east-1' },
+    { key: 'BEDROCK_REGION', label: 'AWS region', hint: 'Region where the Mosaic models are enabled for your account', placeholder: 'us-east-1' },
     { key: 'BEDROCK_MODEL', label: 'Model / inference-profile id', hint: 'The Bedrock model id used for chat & RCA', placeholder: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' },
     { key: 'BEDROCK_MODEL_FAST', label: 'Fast model id', hint: 'Cheaper model for routing & short helper calls', placeholder: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', optional: true },
     { key: 'BEDROCK_MODEL_TOP', label: 'Top model id', hint: 'Most capable model for the hardest queries', placeholder: 'us.anthropic.claude-opus-...-v1:0', optional: true },

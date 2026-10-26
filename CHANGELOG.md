@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.164] - 2026-10-26
+### Changed
+- **White-label the LLM in customer-facing UI** — replaced visible "Claude"
+  references with "Mosaic" across the AI Provider tab, setup checklist, report
+  builder, and API-builder help text. The Anthropic API-key label/doc and the
+  data-egress disclosure (which names the actual external recipient) are left
+  accurate; the egress chip now reads "Anthropic API" without the Claude tag.
+
 ## [1.3.163] - 2026-10-26
 ### Changed
 - **AI Provider tab polish** — softened the selected-provider card (subtle accent

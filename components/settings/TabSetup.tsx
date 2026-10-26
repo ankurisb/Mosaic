@@ -17,7 +17,7 @@ const ITEMS = [
   {
     key: 'anthropicKey' as const,
     label: 'AI provider',
-    description: 'Connect Claude via the Anthropic API, Amazon Bedrock, or Azure AI Foundry. Without this, Mosaic cannot answer any queries.',
+    description: 'Connect Mosaic via the Anthropic API, Amazon Bedrock, or Azure AI Foundry. Without this, Mosaic cannot answer any queries.',
     critical: true,
     href: '#ai-provider',
     action: 'Set up',
