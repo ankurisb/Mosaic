@@ -6,6 +6,7 @@ import { useIsMobile } from '@/lib/useIsMobile'
 import ThemeToggle from '../ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
 import TabKeys from './TabKeys'
+import TabAiProvider from './TabAiProvider'
 import TabAuth from './TabAuth'
 import TabUsers from './TabUsers'
 import TabUsage from './TabUsage'
@@ -40,6 +41,7 @@ const ALL_TABS = [
   { id: 'setup',         label: 'Setup',                adminOnly: true  },
   { id: 'account',       label: 'Password',             adminOnly: false },
   { id: 'customization', label: 'Customization',        adminOnly: false },
+  { id: 'ai-provider',   label: 'AI Provider',          adminOnly: true  },
   { id: 'keys',          label: 'API keys',             adminOnly: true  },
   { id: 'auth',          label: 'Authentication',       adminOnly: true, enterpriseOnly: true  },
   { id: 'users',         label: 'Users',                adminOnly: true, enterpriseOnly: true  },
@@ -70,6 +72,7 @@ function TabIcon({ id }: { id: string }) {
     case 'developer-api':return <svg {...p}><path d="M4 5l-3 2 3 2M10 5l3 2-3 2M7 3l-1 8"/></svg>
     case 'audit':        return <svg {...p}><path d="M2 4h10M2 7h7M2 10h5"/><path d="M11 8l1.5 1.5L15 7"/></svg>
     case 'transparency': return <svg {...p}><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/><path d="M4.5 10.5l-2 2"/></svg>
+    case 'ai-provider':  return <svg {...p}><rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><path d="M5.5 1.5v2M8.5 1.5v2M5.5 10.5v2M8.5 10.5v2M1.5 5.5h2M1.5 8.5h2M10.5 5.5h2M10.5 8.5h2"/></svg>
     case 'keys':         return <svg {...p}><circle cx="5.5" cy="5.5" r="2.5"/><path d="M7.5 7.5l4 4M9.5 9.5l1.5-1.5"/></svg>
     case 'auth':         return <svg {...p}><rect x="2" y="6" width="10" height="7" rx="1.5"/><path d="M4 6V4a3 3 0 016 0v2"/></svg>
     case 'users':        return <svg {...p}><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/><path d="M11 8.5c1.4 0 2.5.9 2.5 2"/></svg>
@@ -232,6 +235,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'developer-api'&& <TabDeveloperAPI user={user} />}
           {tab === 'audit'        && <TabAudit user={user} />}
           {tab === 'transparency' && <TabTransparency />}
+          {tab === 'ai-provider'  && <TabAiProvider user={user} />}
           {tab === 'keys'         && <TabKeys user={user} />}
           {tab === 'auth'      && <TabAuth user={user} />}
           {tab === 'users'     && <TabUsers user={user} />}

@@ -16,11 +16,11 @@ interface SetupStatus {
 const ITEMS = [
   {
     key: 'anthropicKey' as const,
-    label: 'Anthropic API key',
-    description: 'Required for all AI features. Without this, Mosaic cannot answer any queries.',
+    label: 'AI provider',
+    description: 'Connect Claude via the Anthropic API, Amazon Bedrock, or Azure AI Foundry. Without this, Mosaic cannot answer any queries.',
     critical: true,
-    href: '#keys',
-    action: 'Add key',
+    href: '#ai-provider',
+    action: 'Set up',
   },
   {
     key: 'dataSource' as const,

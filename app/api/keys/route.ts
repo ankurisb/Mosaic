@@ -17,8 +17,19 @@ async function ensureTable() {
 }
 
 const KNOWN_KEYS = [
-  // AI
+  // AI — provider selection + per-provider config. AI_PROVIDER picks the backend
+  // (anthropic|bedrock|foundry); each provider reads its own keys via getKey so
+  // they're runtime-settable here, never a .env hand-edit. See lib/models.ts.
+  'AI_PROVIDER',
   'ANTHROPIC_API_KEY',
+  // Amazon Bedrock. Keys are OPTIONAL — absent means the AWS default credential
+  // chain (IAM instance/task role), the clean no-secrets path on the customer's
+  // own AWS. BEDROCK_MODEL is the inference-profile/model id for this region.
+  'BEDROCK_REGION', 'BEDROCK_MODEL', 'BEDROCK_MODEL_FAST', 'BEDROCK_MODEL_TOP',
+  'BEDROCK_ACCESS_KEY_ID', 'BEDROCK_SECRET_ACCESS_KEY', 'BEDROCK_SESSION_TOKEN',
+  // Azure AI Foundry. Base URL is https://<resource>.services.ai.azure.com/anthropic;
+  // DEPLOYMENT names are the Azure deployment ids used as the model.
+  'FOUNDRY_BASE_URL', 'FOUNDRY_API_KEY', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP',
   // AI & Search — SEARCH_PROVIDER selects the backend (tavily|perplexity),
   // each provider's key read via getKey so it's runtime-settable here.
   'SEARCH_PROVIDER', 'TAVILY_API_KEY', 'PERPLEXITY_API_KEY',
@@ -82,7 +93,11 @@ export async function GET() {
   // Non-secret keys whose plain value the UI legitimately needs (e.g. to know
   // which provider is selected so it can show the right fields). These are not
   // credentials, so returning the value rather than a masked preview is safe.
-  const PLAIN_KEYS = new Set(['SEARCH_PROVIDER', 'GITHUB_REPO', 'N8N_URL', 'CISO_API_URL'])
+  const PLAIN_KEYS = new Set(['SEARCH_PROVIDER', 'GITHUB_REPO', 'N8N_URL', 'CISO_API_URL',
+    // AI provider config that isn't a secret — the UI needs the actual value to
+    // render the right provider panel and pre-fill region/model/deployment fields.
+    'AI_PROVIDER', 'BEDROCK_REGION', 'BEDROCK_MODEL', 'BEDROCK_MODEL_FAST', 'BEDROCK_MODEL_TOP',
+    'FOUNDRY_BASE_URL', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP'])
 
   // Bundled-service scaffolding keys. docker-compose.yml bakes default URLs/creds
   // for the bundled optional services into the mosaic container's env (e.g.

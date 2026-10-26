@@ -6,7 +6,7 @@
 // with a working candidate. Credentials are injected server-side — the model
 // never sees or emits them.
 import Anthropic from '@anthropic-ai/sdk'
-import { getDefaultModelId } from '@/lib/models'
+import { getDefaultModelId, getAiClient } from '@/lib/models'
 import { getKey } from '@/lib/keys'
 import { fetchUrlText, type UrlTextResult } from '@/lib/doc-fetch'
 import { summarizeOpenApi } from '@/lib/ai/openapi-summary'
@@ -293,7 +293,7 @@ async function driveAgent(opts: { system: string; seedUserText: string; creds: R
   }
 
   try {
-    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+    const client = await getAiClient()
     const model = await getDefaultModelId()
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.seedUserText }]
     let finished: AgentCandidate | undefined

@@ -5,7 +5,7 @@
 // NOTHING is auto-verified. A human verifies in the dictionary UI (or bulk-accepts the
 // high-confidence ones). The parse/validate half is pure and unit-tested.
 import Anthropic from '@anthropic-ai/sdk'
-import { getDefaultModelId } from '@/lib/models'
+import { getDefaultModelId, getAiClient } from '@/lib/models'
 import { getKey } from '@/lib/keys'
 import { coerceStructured } from '@/lib/semantic-model'
 
@@ -95,7 +95,7 @@ export function partitionByConfidence(items: StructuredDraftItem[], threshold = 
 
 export async function proposeStructured(schemaText: string, samples: Record<string, unknown[]>): Promise<StructuredProposalResult> {
   try {
-    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+    const client = await getAiClient()
     const sampleText = Object.entries(samples)
       .map(([t, rows]) => `# ${t}\n${JSON.stringify(rows, null, 0).slice(0, 2000)}`)
       .join('\n')

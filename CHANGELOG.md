@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.162] - 2026-10-26
+### Added
+- **Multi-provider LLM support — Anthropic API, Amazon Bedrock, and Azure AI
+  Foundry — configured entirely in-app.** Enterprise customers can now keep every
+  prompt and response inside their own AWS or Azure account for data residency,
+  without swapping Claude for a weaker on-prem model, and without editing any env
+  file.
+  - **`getAiClient()` factory** (`lib/models`) — one provider-configured client
+    that all ~18 AI call sites now use instead of `new Anthropic()`. All three
+    providers speak the same Messages API, so switching is config-only:
+    - *Anthropic* — direct, API key.
+    - *Bedrock* — `@anthropic-ai/bedrock-sdk`; uses the EC2/ECS **IAM role by
+      default** (no secrets stored) with optional static access keys as a fallback.
+    - *Foundry* — Anthropic SDK against the Azure resource endpoint, api-key auth.
+  - **Provider-aware model resolution** — `getDefaultModelId` / `getFastModelId` /
+    `getTopModelId` / `getAvailableModels` return the admin-configured Bedrock
+    model ids / Foundry deployment names for the non-direct providers (the live
+    Anthropic model list still drives the direct path, unchanged).
+  - **`isAiConfigured()`** replaces the old bare `ANTHROPIC_API_KEY` presence
+    checks across the chat, v1 (chat/query/rca) and query-builder routes, so the
+    no-key paths (Bedrock IAM role, Foundry base URL) are recognised as ready.
+  - **Settings → AI Provider** — a new admin tab to pick the provider, enter its
+    config (stored encrypted, never in `.env`), and run a live **Test connection**
+    (`/api/ai-provider/test`) that makes one tiny real request and returns an
+    actionable error on failure. The deployment setup checklist now points here.
+  - Fixed a hardcoded Haiku model id in `/api/v1/query` (now uses `getFastModelId`).
+
 ## [1.3.161] - 2026-10-26
 ### Security
 - **Pre-customer hardening sprint.** Re-verified the July security review against

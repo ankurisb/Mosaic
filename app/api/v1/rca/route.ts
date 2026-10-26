@@ -1,6 +1,6 @@
 import { validateDevApiKey, logDevApiUsage } from '@/lib/dev-api-auth'
 import { getKey } from '@/lib/keys'
-import { getDefaultModelId } from '@/lib/models'
+import { getDefaultModelId, getAiClient, isAiConfigured } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
@@ -30,9 +30,8 @@ export async function POST(req: Request) {
   if (!problem?.trim())
     return Response.json({ error: 'problem is required' }, { status: 400 })
 
-  const apiKey = await getKey('ANTHROPIC_API_KEY')
-  if (!apiKey)
-    return Response.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+  if (!(await isAiConfigured()))
+    return Response.json({ error: 'No LLM provider configured' }, { status: 503 })
 
   const sql = getDb()
 
@@ -62,7 +61,7 @@ export async function POST(req: Request) {
     context ? `\nAdditional context: ${context}` : '',
   ].join('')
 
-  const anthropic = new Anthropic({ apiKey })
+  const anthropic = await getAiClient()
 
   reqLog.info({ problem: problem.slice(0, 100), workflow_id }, 'RCA request received')
 

@@ -1,6 +1,6 @@
 import { validateDevApiKey, logDevApiUsage } from '@/lib/dev-api-auth'
 import { getKey } from '@/lib/keys'
-import { resolveModelId } from '@/lib/models'
+import { resolveModelId, getAiClient, isAiConfigured } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
@@ -33,9 +33,8 @@ export async function POST(req: Request) {
   if (!messages?.length)
     return Response.json({ error: 'messages is required' }, { status: 400 })
 
-  const apiKey = await getKey('ANTHROPIC_API_KEY')
-  if (!apiKey)
-    return Response.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+  if (!(await isAiConfigured()))
+    return Response.json({ error: 'No LLM provider configured' }, { status: 503 })
 
   // Build data source context
   const sql = getDb()
@@ -56,7 +55,7 @@ export async function POST(req: Request) {
 
   const defaultSystem = `You are Mosaic, an industrial AI assistant. Answer directly and accurately.${dbList}${apiList}`
 
-  const anthropic = new Anthropic({ apiKey })
+  const anthropic = await getAiClient()
   // Validate against the live model list (lib/models) — no hardcoded allow-list.
   const safeModel = await resolveModelId(model)
 

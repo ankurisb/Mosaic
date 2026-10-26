@@ -8,7 +8,7 @@ import { renderHtmlToPdf, htmlShell } from './pdf-renderer'
 import Anthropic            from '@anthropic-ai/sdk'
 import { runMessageBatch }  from './anthropic-batch'
 import type { BatchCapableClient } from './anthropic-batch'
-import { getDefaultModelId } from './models'
+import { getDefaultModelId, getAiClient } from './models'
 import { getKey } from './keys'
 import { writeFile, mkdir } from 'fs/promises'
 import { join }             from 'path'
@@ -98,7 +98,7 @@ function narrativeParams(prompt: string, rows: Row[], model: string) {
 }
 
 async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
-  const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+  const client = await getAiClient()
   const msg = await client.messages.create(narrativeParams(prompt, rows, await getDefaultModelId()))
   return (msg.content[0] as { text: string }).text || ''
 }
@@ -119,6 +119,10 @@ async function precomputeNarrativesViaBatch(
   )
   const model = await getDefaultModelId()
   const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows, model) }))
+  // The Message Batches API is Anthropic-direct only (Bedrock/Foundry don't expose
+  // it). This path is env-gated (REPORTS_USE_BATCHES) and any failure falls back to
+  // the per-section generateNarrative() above, which is provider-aware — so on a
+  // Bedrock/Foundry box with no direct key this simply throws and the fallback runs.
   const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined }) as unknown as BatchCapableClient
   const results = await runMessageBatch(client, requests, { pollMs: 4000, timeoutMs: 5 * 60_000 })
   return new Map(executed.map(({ s, rows }) => [s.id, { rows, text: results.get(s.id)?.text ?? '' }]))

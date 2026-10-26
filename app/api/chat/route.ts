@@ -14,7 +14,7 @@ import { runResearch } from '@/lib/research'
 import { runDiagnose } from '@/lib/diagnose'
 import { mapLimit, TOOL_FANOUT_CONCURRENCY } from '@/lib/concurrency'
 import { parseToolBudget, chatTurnMode, BUILD_TOOL_NAMES } from '@/lib/chat-budget'
-import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel } from '@/lib/models'
+import { resolveModelId, getModelPricing, getFastModelId, pickAutoModel, getAiClient, isAiConfigured } from '@/lib/models'
 import { isRcaQuery, RCA_SYSTEM_PROMPT, RCA_CATALOG } from '@/lib/rca'
 import { emitEvent } from '@/lib/metering'
 import { writeTransparencyLog } from '@/lib/transparency'
@@ -81,9 +81,7 @@ async function matchWorkflowSemantic(
     return best
   }
 
-  let apiKey: string | null = null
-  try { apiKey = await getKey('ANTHROPIC_API_KEY') } catch { apiKey = null }
-  if (!apiKey) return keywordMatch()
+  if (!(await isAiConfigured())) return keywordMatch()
 
   try {
     const catalog = workflows.map((wf, i) => {
@@ -91,7 +89,7 @@ async function matchWorkflowSemantic(
       return `${i}. "${wf.name}" (type: ${wf.problem_type})${wf.description ? ` — ${wf.description}` : ''}${kw ? ` [keywords: ${kw}]` : ''}`
     }).join('\n')
 
-    const anthropic = new Anthropic({ apiKey })
+    const anthropic = await getAiClient()
     const resp = await anthropic.messages.create({
       model: await getFastModelId(),
       max_tokens: 16,
@@ -630,15 +628,14 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
 
   const enc = new TextEncoder()
 
-  // Resolve Anthropic API key at request time (env → kv_settings)
-  const apiKey = await getKey('ANTHROPIC_API_KEY')
-  if (!apiKey) {
+  // Resolve the active LLM provider at request time (env → kv_settings)
+  if (!(await isAiConfigured())) {
     return Response.json(
-      { error: 'Anthropic API key not configured. Go to Settings → API Keys to add it.' },
+      { error: 'No LLM provider configured. Go to Settings → AI Provider to set up Anthropic, Amazon Bedrock, or Azure AI Foundry.' },
       { status: 503 }
     )
   }
-  const anthropic = new Anthropic({ apiKey })
+  const anthropic = await getAiClient()
 
   // Tracks whether the SSE controller is still writable. The client can go away
   // mid-turn (navigation, network blip, a proxy/browser timeout on a longer

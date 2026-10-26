@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
+import { isAiConfigured } from '@/lib/models'
 export const runtime = 'nodejs'
 
 export interface SetupStatus {
@@ -21,8 +22,8 @@ export async function GET() {
 
   const sql = getDb()
 
-  const [apiKey, aiEnabledRaw, dbConns, apiConns, userRows, notifRows] = await Promise.all([
-    getKey('ANTHROPIC_API_KEY'),
+  const [aiReady, aiEnabledRaw, dbConns, apiConns, userRows, notifRows] = await Promise.all([
+    isAiConfigured(),
     getKey('AI_ENABLED'),
     sql`SELECT COUNT(*) as cnt FROM db_connections`.catch(() => [{ cnt: 0 }]),
     sql`SELECT COUNT(*) as cnt FROM api_connections`.catch(() => [{ cnt: 0 }]),
@@ -36,7 +37,7 @@ export async function GET() {
   // turns that absence into a declared configuration, so the checklist can
   // legitimately complete. Absent flag = AI enabled (the default).
   const aiDisabled  = (aiEnabledRaw ?? '').toLowerCase() === 'false'
-  const aiSatisfied = !!apiKey || aiDisabled
+  const aiSatisfied = aiReady || aiDisabled
 
   const dbCount    = Number((dbConns[0]  as { cnt: number })?.cnt || 0)
   const apiCount   = Number((apiConns[0] as { cnt: number })?.cnt || 0)
@@ -44,7 +45,7 @@ export async function GET() {
   const notifCount = Number((notifRows[0] as { cnt: number })?.cnt || 0)
 
   const status: SetupStatus = {
-    anthropicKey:    { done: !!apiKey },
+    anthropicKey:    { done: aiReady },
     aiDisabled,
     dataSource:      { done: dbCount + apiCount > 0, count: dbCount + apiCount },
     users:           { done: userCount > 0, count: userCount },

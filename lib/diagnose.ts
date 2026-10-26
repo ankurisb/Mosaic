@@ -8,6 +8,7 @@
 // and run with strict source scoping.
 import Anthropic from '@anthropic-ai/sdk'
 import { getKey } from '@/lib/keys'
+import { getAiClient } from '@/lib/models'
 import { TOOLS, runTool } from '@/lib/tools'
 import { audit, AUDIT } from '@/lib/audit'
 import { mapLimit, harvestSources, SUBAGENT_TOOL_NAMES, SUBAGENT_TOOL_BUDGET, CONCURRENCY, type Emit, type ResearchCtx, type ResearchDeps, type Workspace } from '@/lib/research'
@@ -113,7 +114,7 @@ async function synthesizeDiagnosis(anthropic: Anthropic, model: string, target: 
 }
 
 export async function runDiagnose(params: { target: string; symptom: string; window?: string }, ctx: DiagnoseCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; causes: Cause[]; checks: string[]; sources: Source[]; workspace: Workspace }> {
-  const anthropic = deps?.client ?? new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+  const anthropic = deps?.client ?? await getAiClient()
   const exec = deps?.exec ?? runTool
   const target = params.target || 'the asset', symptom = params.symptom || 'a fault', window = params.window || ''
 

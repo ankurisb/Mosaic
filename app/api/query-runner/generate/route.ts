@@ -11,7 +11,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getKey } from '@/lib/keys'
-import { getFastModelId } from '@/lib/models'
+import { getFastModelId, getAiClient, isAiConfigured } from '@/lib/models'
 import { getOrFetchSchema } from '@/lib/tools'
 import { log } from '@/lib/logger'
 import Anthropic from '@anthropic-ai/sdk'
@@ -112,18 +112,18 @@ export async function POST(req: Request) {
   // Availability first, so the UI gets a clean, explainable refusal rather than
   // an SDK error. `code` lets the client show the right message without
   // string-matching.
-  const [apiKey, aiEnabledRaw] = await Promise.all([
-    getKey('ANTHROPIC_API_KEY'),
+  const [configured, aiEnabledRaw] = await Promise.all([
+    isAiConfigured(),
     getKey('AI_ENABLED'),
   ])
   const aiDisabled = (aiEnabledRaw ?? '').toLowerCase() === 'false'
-  if (aiDisabled || !apiKey) {
+  if (aiDisabled || !configured) {
     return Response.json({
       code: 'no_llm',
       disabled: aiDisabled,
       error: aiDisabled
         ? 'This deployment runs without an AI model, so questions can\'t be translated into queries. You can still write and run queries yourself.'
-        : 'Mosaic isn\'t connected to an AI model yet, so it can\'t turn your question into a query. An admin can connect one in Settings → API Keys. You can still write and run queries yourself.',
+        : 'Mosaic isn\'t connected to an AI model yet, so it can\'t turn your question into a query. An admin can connect one in Settings → AI Provider. You can still write and run queries yourself.',
     }, { status: 503 })
   }
 
@@ -142,7 +142,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const anthropic = new Anthropic({ apiKey })
+    const anthropic = await getAiClient()
     const resp = await anthropic.messages.create({
       // Haiku: this is a short, well-constrained translation task, and the
       // Query Builder is interactive so latency matters more than depth.

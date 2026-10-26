@@ -6,6 +6,7 @@
 // panel can show agents spinning out live.
 import Anthropic from '@anthropic-ai/sdk'
 import { getKey } from '@/lib/keys'
+import { getAiClient } from '@/lib/models'
 import { TOOLS, runTool } from '@/lib/tools'
 import { audit, AUDIT } from '@/lib/audit'
 
@@ -168,7 +169,7 @@ async function synthesize(anthropic: Anthropic, model: string, question: string,
 }
 
 export async function runResearch(question: string, ctx: ResearchCtx, emit: Emit, deps?: ResearchDeps): Promise<{ report: string; sources: Source[]; subagents: Array<{ title: string; summary: string; sources: number }>; workspace: Workspace }> {
-  const anthropic = deps?.client ?? new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+  const anthropic = deps?.client ?? await getAiClient()
   const exec = deps?.exec ?? runTool
 
   emit({ type: 'research_started', question })

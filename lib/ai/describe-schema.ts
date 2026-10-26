@@ -5,7 +5,7 @@
 // DRAFT the user confirms/edits before anything is saved — the same propose→confirm
 // loop as the data-source "Test with AI" flow.
 import Anthropic from '@anthropic-ai/sdk'
-import { getDefaultModelId } from '@/lib/models'
+import { getDefaultModelId, getAiClient } from '@/lib/models'
 import { getKey } from '@/lib/keys'
 
 export interface DescribeDraftItem {
@@ -51,7 +51,7 @@ function extractJson(text: string): { items?: DescribeDraftItem[] } {
  */
 export async function describeSchema(schemaText: string, samples: Record<string, unknown[]>): Promise<DescribeResult> {
   try {
-    const client = new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
+    const client = await getAiClient()
     const sampleText = Object.entries(samples)
       .map(([t, rows]) => `# ${t}\n${JSON.stringify(rows, null, 0).slice(0, 2000)}`)
       .join('\n')
