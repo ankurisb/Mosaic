@@ -137,15 +137,15 @@ body {
 }
 
 /* ============================================================================
-   THEME: Microsoft 365 / Fluent  (data-palette="m365")
+   THEME: Fluent  (data-palette="fluent")
    A selectable theme family layered over the two modes. Colours live in the
    mode-specific compound selectors below; the palette block carries the
    mode-independent identity (squared radii + Segoe typography). The compound
    selectors are 0,2,0 specificity so they reliably beat the base :root and
    [data-theme="dark"] blocks (0,1,0) regardless of source order.
    ========================================================================== */
-[data-palette="m365"] {
-  /* Fluent uses tight, near-square corners and Segoe UI throughout (no serif). */
+[data-palette="fluent"] {
+  /* Tight, near-square corners and Segoe UI throughout (no serif). */
   --radius-sm: 2px;
   --radius:    4px;
   --radius-lg: 6px;
@@ -156,9 +156,9 @@ body {
   --font-mono:  'Cascadia Code', 'IBM Plex Mono', 'Courier New', monospace;
 }
 
-/* M365 — light */
-[data-palette="m365"]:not([data-theme="dark"]) {
-  --bg:        #faf9f8;
+/* Fluent — light */
+[data-palette="fluent"]:not([data-theme="dark"]) {
+  --bg:        #ffffff;
   --bg2:       #ffffff;
   --bg3:       #f3f2f1;
   --bg4:       #edebe9;
@@ -200,8 +200,8 @@ body {
   --highlight-border: rgba(15,108,189,0.40);
 }
 
-/* M365 — dark */
-[data-palette="m365"][data-theme="dark"] {
+/* Fluent — dark */
+[data-palette="fluent"][data-theme="dark"] {
   --bg:        #1b1a19;
   --bg2:       #252423;
   --bg3:       #292827;
@@ -242,6 +242,110 @@ body {
 
   --highlight: rgba(40,153,245,0.18);
   --highlight-border: rgba(40,153,245,0.45);
+}
+
+/* ============================================================================
+   THEME: Aubergine  (data-palette="aubergine")
+   A workspace-chat–inspired theme: deep purple accent, clean white surfaces, and
+   colourful status/accent highlights. Medium rounding, Lato-leaning sans (no serif).
+   ========================================================================== */
+[data-palette="aubergine"] {
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+  --font-sans:  'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  --font-serif: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  --font-mono:  'Cascadia Code', 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+/* Aubergine — light */
+[data-palette="aubergine"]:not([data-theme="dark"]) {
+  --bg:        #ffffff;
+  --bg2:       #ffffff;
+  --bg3:       #f6f3f7;
+  --bg4:       #efe9f1;
+  --surface:   #ffffff;
+  --surface2:  #faf8fb;
+
+  --border:    #e8e2ea;
+  --border2:   #d5cdd9;
+  --shadow:    0 1.6px 3.6px rgba(26,12,28,0.12), 0 0.3px 0.9px rgba(26,12,28,0.10);
+  --shadow-md: 0 3.2px 7.2px rgba(26,12,28,0.12), 0 0.6px 1.8px rgba(26,12,28,0.10);
+  --shadow-lg: 0 6.4px 14.4px rgba(26,12,28,0.14), 0 1.2px 3.6px rgba(26,12,28,0.10);
+
+  --text:      #1d1c1d;
+  --text2:     #616061;
+  --text3:     #868686;
+  --text4:     #aeaeae;
+
+  --accent:    #611f69;
+  --accent-bg: #611f69;
+  --accent-fg: #ffffff;
+
+  --green:     #007a5a;
+  --green-bg:  #e6f4ef;
+  --green-t:   #047857;
+  --red:       #e01e5a;
+  --red-bg:    #fdeef3;
+  --red-t:     #c3104a;
+  --amber:     #ecb22e;
+  --amber-bg:  #fbf3df;
+  --amber-t:   #8a6410;
+  --blue:      #1264a3;
+  --blue-bg:   #e8f1f8;
+  --blue-t:    #1264a3;
+  --purple:    #611f69;
+  --purple-bg: #f3eaf4;
+  --purple-t:  #611f69;
+
+  --highlight: rgba(97,31,105,0.12);
+  --highlight-border: rgba(97,31,105,0.40);
+}
+
+/* Aubergine — dark */
+[data-palette="aubergine"][data-theme="dark"] {
+  --bg:        #1a1d21;
+  --bg2:       #222529;
+  --bg3:       #27292d;
+  --bg4:       #35373b;
+  --surface:   #222529;
+  --surface2:  #27292d;
+
+  --border:    rgba(255,255,255,0.10);
+  --border2:   rgba(255,255,255,0.18);
+  --shadow:    0 1.6px 3.6px rgba(0,0,0,0.44), 0 0.3px 0.9px rgba(0,0,0,0.34);
+  --shadow-md: 0 3.2px 7.2px rgba(0,0,0,0.44), 0 0.6px 1.8px rgba(0,0,0,0.34);
+  --shadow-lg: 0 6.4px 14.4px rgba(0,0,0,0.50), 0 1.2px 3.6px rgba(0,0,0,0.34);
+
+  --text:      #d1d2d3;
+  --text2:     #ababad;
+  --text3:     #8d8d8f;
+  --text4:     #6a6a6c;
+
+  --accent:    #cd9ee6;
+  --accent-bg: #611f69;
+  --accent-fg: #ffffff;
+
+  --green:     #2eb67d;
+  --green-bg:  rgba(46,182,125,0.18);
+  --green-t:   #48c795;
+  --red:       #e01e5a;
+  --red-bg:    rgba(224,30,90,0.20);
+  --red-t:     #ff7097;
+  --amber:     #ecb22e;
+  --amber-bg:  rgba(236,178,46,0.18);
+  --amber-t:   #ecb22e;
+  --blue:      #36c5f0;
+  --blue-bg:   rgba(54,197,240,0.16);
+  --blue-t:    #5cc8ef;
+  --purple:    #cd9ee6;
+  --purple-bg: rgba(97,31,105,0.30);
+  --purple-t:  #cd9ee6;
+
+  --highlight: rgba(205,158,230,0.18);
+  --highlight-border: rgba(205,158,230,0.45);
 }
 
 html, body { height: 100%; }

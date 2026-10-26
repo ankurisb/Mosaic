@@ -5,9 +5,13 @@ import { useTheme, PALETTES, type Mode, type Palette } from '@/lib/theme'
 // the choice is visible before applying. These mirror the token values in
 // globals.css (page bg, surface, accent, a couple of chart-ish accents).
 const PREVIEW: Record<Palette, { light: string[]; dark: string[] }> = {
-  mosaic: { light: ['#f5f5f5', '#ffffff', '#0f0f0f', '#2563eb', '#16a34a'], dark: ['#0a0a0a', '#141414', '#f0f0f0', '#60a5fa', '#22c55e'] },
-  m365:   { light: ['#faf9f8', '#ffffff', '#0f6cbd', '#038387', '#b4009e'], dark: ['#1b1a19', '#252423', '#2899f5', '#39a0a3', '#c87fc4'] },
+  mosaic:    { light: ['#f5f5f5', '#ffffff', '#0f0f0f', '#2563eb', '#16a34a'], dark: ['#0a0a0a', '#141414', '#f0f0f0', '#60a5fa', '#22c55e'] },
+  fluent:    { light: ['#ffffff', '#ffffff', '#0f6cbd', '#038387', '#b4009e'], dark: ['#1b1a19', '#252423', '#2899f5', '#39a0a3', '#c87fc4'] },
+  aubergine: { light: ['#ffffff', '#ffffff', '#611f69', '#2eb67d', '#e01e5a'], dark: ['#1a1d21', '#222529', '#cd9ee6', '#2eb67d', '#36c5f0'] },
 }
+
+// Preview swatch corner rounding per palette (mirrors each theme's --radius feel).
+const swatchR = (id: Palette, big: boolean) => id === 'fluent' ? (big ? 4 : 3) : id === 'aubergine' ? (big ? 7 : 4) : (big ? 10 : 8)
 
 export default function TabCustomization() {
   const { theme, palette, setMode, setPalette } = useTheme()
@@ -61,11 +65,11 @@ export default function TabCustomization() {
                 }}>
                 {/* preview band */}
                 <div style={{ height: 68, background: swatches[0], borderBottom: '1px solid var(--border)', padding: 12, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: p.id === 'm365' ? 4 : 10, background: swatches[1], boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
+                  <div style={{ width: 40, height: 40, borderRadius: swatchR(p.id, true), background: swatches[1], boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}>
                     <div style={{ height: 7, width: '70%', borderRadius: 99, background: swatches[2] }} />
                     <div style={{ display: 'flex', gap: 5 }}>
-                      {swatches.slice(2).map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: p.id === 'm365' ? 3 : 8, background: c }} />)}
+                      {swatches.slice(2).map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: swatchR(p.id, false), background: c }} />)}
                     </div>
                   </div>
                 </div>

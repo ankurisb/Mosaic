@@ -3,16 +3,18 @@ import React from 'react'
 import { createContext, useContext, useEffect, useState } from 'react'
 
 // Two independent axes:
-//   - mode    ('light' | 'dark')   — the existing dark/light switch
-//   - palette ('mosaic' | 'm365')  — the theme FAMILY (token set). 'mosaic' is the
-//     default and sets no data-palette attribute (so the base :root tokens apply);
-//     other palettes set data-palette="<name>" on <html>, which globals.css themes.
+//   - mode    ('light' | 'dark')          — the existing dark/light switch
+//   - palette ('mosaic' | 'fluent' | …)   — the theme FAMILY (token set). 'mosaic'
+//     is the default and sets no data-palette attribute (so the base :root tokens
+//     apply); other palettes set data-palette="<name>" on <html>, themed in
+//     globals.css.
 export type Mode = 'light' | 'dark'
-export type Palette = 'mosaic' | 'm365'
+export type Palette = 'mosaic' | 'fluent' | 'aubergine'
 
 export const PALETTES: { id: Palette; label: string; description: string }[] = [
   { id: 'mosaic', label: 'Mosaic', description: 'The default editorial theme — warm neutrals, serif headings.' },
-  { id: 'm365', label: 'Microsoft 365', description: 'A Fluent-style theme — blue accent, Segoe typography, squared corners.' },
+  { id: 'fluent', label: 'Fluent', description: 'A clean productivity theme — blue accent, Segoe typography, squared corners.' },
+  { id: 'aubergine', label: 'Aubergine', description: 'A workspace-style theme — deep purple accent, white surfaces, colourful highlights.' },
 ]
 
 interface ThemeState {

@@ -37,8 +37,10 @@ interface Props {
 // theme and light/dark mode. Recharts and our hand-drawn SVG need concrete colour
 // strings (CSS var() does not resolve in SVG presentation attributes), so we
 // resolve tokens to values here and re-read whenever the theme/mode changes.
-const SERIES_MOSAIC = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3','#e11d48','#4f46e5','#65a30d','#0369a1']
-const SERIES_M365   = ['#0f6cbd','#038387','#b4009e','#8764b8','#e3008c','#00b7c3','#ca5010','#498205','#005b70','#c239b3','#986f0b','#4f6bed']
+const SERIES_MOSAIC    = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#059669','#c026d3','#e11d48','#4f46e5','#65a30d','#0369a1']
+const SERIES_FLUENT    = ['#0f6cbd','#038387','#b4009e','#8764b8','#e3008c','#00b7c3','#ca5010','#498205','#005b70','#c239b3','#986f0b','#4f6bed']
+const SERIES_AUBERGINE = ['#611f69','#2eb67d','#e01e5a','#ecb22e','#1264a3','#36c5f0','#7c3085','#007a5a','#1d9bd1','#4a154b','#e8912d','#cc8899']
+const SERIES_SETS: Record<string, string[]> = { mosaic: SERIES_MOSAIC, fluent: SERIES_FLUENT, aubergine: SERIES_AUBERGINE }
 
 function hexToRgba(hex: string, a: number): string {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim())
@@ -59,7 +61,7 @@ function useChartColors() {
     }
     const primary = read('--blue-t', '#2563eb')
     return {
-      series: palette === 'm365' ? SERIES_M365 : SERIES_MOSAIC,
+      series: SERIES_SETS[palette] || SERIES_MOSAIC,
       primary,
       iqrFill: hexToRgba(primary, 0.14),
       mean: read('--amber-t', '#d97706'),

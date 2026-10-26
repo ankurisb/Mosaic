@@ -5,7 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.158] - 2026-10-25
+## [1.3.159] - 2026-10-26
+### Changed
+- **Renamed the "Microsoft 365" theme to "Fluent"** (no third-party brand name in
+  the UI; internal id `m365` → `fluent` across tokens, chart palette and the
+  selector).
+- **Fluent's light background is now pure white** (`#faf9f8` → `#ffffff`); secondary
+  surfaces keep a faint tint for depth.
+### Added
+- **New "Aubergine" theme** — a workspace-chat–inspired palette: deep purple accent
+  (`#611f69`), clean white surfaces, colourful status/accent highlights, medium
+  rounding and a Lato-leaning sans. Light and dark variants, charts included, via
+  the same token mechanism. (A dark accent sidebar — the other signature of that
+  style — would be a separate structural step.)
 ### Changed
 - **Extended the softer borders app-wide** (follow-up to v1.3.157). The same
   `--border2`→`--border` softening is now applied to the icon buttons and chrome
