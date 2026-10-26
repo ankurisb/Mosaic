@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.168] - 2026-10-26
+### Changed
+- **Tighter, Claude-style chat typography on mobile.** On phones the message body
+  goes to 15px with a much tighter line-height (1.8→1.55) and smaller heading
+  sizes/margins, so answers read clean and dense instead of sprawling. Desktop
+  sizing is unchanged.
+
 ## [1.3.167] - 2026-10-26
 ### Fixed
 - **Font & text-size settings now visibly take effect.** Text size scaled only the

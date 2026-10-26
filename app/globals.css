@@ -113,6 +113,21 @@ body {
 :root[data-font-size="small"]  body { zoom: 0.9; }
 :root[data-font-size="large"]  body { zoom: 1.15; }
 
+/* ── Mobile chat typography ───────────────────────────────────────────────────
+   On phones, match Claude's reading rhythm: a touch larger text but much tighter
+   line-height and heading spacing, so answers read clean instead of sprawling.
+   The message body is styled inline (fontSize/lineHeight props), so these need
+   !important to win. Targets the shared .prose-mosaic markdown surface. */
+@media (max-width: 760px) {
+  .prose-mosaic { font-size: 15px !important; }
+  .prose-mosaic p { line-height: 1.55 !important; margin-bottom: 8px !important; }
+  .prose-mosaic li { line-height: 1.5 !important; }
+  .prose-mosaic ul, .prose-mosaic ol { margin: 5px 0 8px !important; }
+  .prose-mosaic h1 { font-size: 17px !important; margin: 12px 0 6px !important; }
+  .prose-mosaic h2 { font-size: 15.5px !important; margin: 11px 0 5px !important; }
+  .prose-mosaic h3 { font-size: 14.5px !important; margin: 9px 0 4px !important; }
+}
+
 /* ── Dark mode ── */
 [data-theme="dark"] {
   --bg:        #0a0a0a;
