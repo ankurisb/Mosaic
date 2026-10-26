@@ -96,18 +96,22 @@ body {
 
 /* ── Deployment font family (Settings → Customization) ────────────────────────
    System-safe stacks only: Mosaic can run air-gapped, so we never depend on a
-   downloaded web font. A palette (Fluent/Aubergine) still sets its own --font-sans;
-   an explicit [data-font] here is higher-specificity (0,2,0 via :root[...]) so the
-   admin's choice wins. 'default' sets no attribute and keeps the base stack. */
-:root[data-font="system"]  { --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-:root[data-font="neutral"] { --font-sans: Arial, Helvetica, 'Liberation Sans', sans-serif; }
-:root[data-font="serif"]   { --font-sans: Georgia, 'Times New Roman', 'Liberation Serif', serif; }
+   downloaded web font. A palette (Fluent/Aubergine) sets its own --font-sans at
+   (0,2,0); the doubled :root:root here is (0,3,0) so the admin's font choice wins
+   even on those palettes. 'default' sets no attribute and keeps the base stack.
+   NB: -apple-system and system-ui are both San Francisco on macOS, so "Default"
+   and "System" look identical there — Neutral/Serif are where the change shows. */
+:root:root[data-font="system"]  { --font-sans: system-ui, Roboto, 'Segoe UI', sans-serif; }
+:root:root[data-font="neutral"] { --font-sans: Arial, Helvetica, 'Liberation Sans', sans-serif; }
+:root:root[data-font="serif"]   { --font-sans: Georgia, 'Times New Roman', 'Liberation Serif', serif; }
 
-/* ── Deployment font size (Settings → Customization) ──────────────────────────
-   Scales the inheriting text surface (chat, prose, markdown, body copy). */
-:root[data-font-size="small"]  { --app-font-size: 13px; }
-:root[data-font-size="medium"] { --app-font-size: 14px; }
-:root[data-font-size="large"]  { --app-font-size: 16px; }
+/* ── Deployment text size (Settings → Customization) ──────────────────────────
+   The app sets explicit pixel sizes on most elements, so scaling only the body
+   font-size barely shows. We scale the whole surface with zoom instead, which
+   enlarges/shrinks every element proportionally (what a "display size" control
+   is expected to do). Medium = 1 (no rule). */
+:root[data-font-size="small"]  body { zoom: 0.9; }
+:root[data-font-size="large"]  body { zoom: 1.15; }
 
 /* ── Dark mode ── */
 [data-theme="dark"] {

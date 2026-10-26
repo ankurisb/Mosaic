@@ -5,7 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.166] - 2026-10-26
+## [1.3.167] - 2026-10-26
+### Fixed
+- **Font & text-size settings now visibly take effect.** Text size scaled only the
+  body font-size, but the app sets explicit pixel sizes on most elements, so the
+  change barely showed — switched to a proportional `zoom` on the surface (Small 0.9
+  / Medium 1 / Large 1.15), which scales the whole UI as a "display size" control
+  should. Font family now uses a doubled `:root:root[data-font]` selector (0,3,0) so
+  the admin's typeface wins even on the Fluent/Aubergine palettes, which set their
+  own font. (Note: "Default" and "System" are both San Francisco on macOS and look
+  identical there — Neutral/Serif show the difference.)
 ### Added
 - **Localization & appearance settings (Settings → Customization).** Deployment-wide,
   admin-set, stored encrypted in `kv_settings` — no `.env` edits. Four new capabilities:
