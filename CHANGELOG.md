@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.166] - 2026-10-26
+### Added
+- **Localization & appearance settings (Settings → Customization).** Deployment-wide,
+  admin-set, stored encrypted in `kv_settings` — no `.env` edits. Four new capabilities:
+  - **Response language** — the language Mosaic answers in (28 options, or "match the
+    user"). Injected as a directive into every AI system prompt (chat, RCA/diagnose,
+    reports, v1 chat/rca APIs); data values, codes and identifiers are kept unchanged.
+  - **Number & date format** — a BCP-47 locale (e.g. en-GB vs en-US vs de-DE) driving
+    `Intl`-based formatting; the selector previews the effect live.
+  - **Timezone** — IANA zone (full list via `Intl.supportedValuesOf`, curated fallback)
+    for rendering timestamps; wired into report generation, replacing hardcoded en-GB.
+  - **Units** — metric / imperial, hinted to the model so prose uses the right units.
+  - **Font** — system-safe typeface (Default / System / Neutral / Serif) + text size
+    (Small / Medium / Large). System-safe only, so it works air-gapped (no web-font
+    download). Applied server-side on `<html>` in the root layout (no flash), and
+    live-previewed on change without a reload.
+  - New helpers `lib/locale.ts` (server: `getLocaleSettings`, `localeSystemDirectives`)
+    and `lib/format.ts` (isomorphic `Intl` formatters). Scope is deployment-wide
+    (one instance per customer); theme/light-dark stay per-device as before.
+
 ## [1.3.165] - 2026-10-26
 ### Fixed
 - **Chat file uploads no longer truncate API specs at 12k characters.** The

@@ -4,6 +4,7 @@ import { getDefaultModelId, getAiClient, isAiConfigured } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
+import { localeSystemDirectives } from '@/lib/locale'
 import { RCA_SYSTEM_PROMPT } from '@/lib/rca'
 import { log, newRequestId } from '@/lib/logger'
 export const runtime = 'nodejs'
@@ -76,7 +77,8 @@ export async function POST(req: Request) {
     const systemPrompt = RCA_SYSTEM_PROMPT +
       `\n\nDatabases:\n${dbList}` +
       (apiConns.length ? `\n\nAPIs:\n${apiConns.map((c: Record<string, unknown>) => `- id:"${c.id}" | "${c.label}"`).join('\n')}` : '') +
-      workflowPrompt
+      workflowPrompt +
+      await localeSystemDirectives()
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const resp = await anthropic.messages.create({

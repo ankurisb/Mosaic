@@ -9,6 +9,8 @@ import Anthropic            from '@anthropic-ai/sdk'
 import { runMessageBatch }  from './anthropic-batch'
 import type { BatchCapableClient } from './anthropic-batch'
 import { getDefaultModelId, getAiClient } from './models'
+import { localeSystemDirectives, getLocaleSettings } from './locale'
+import { fmtDate, fmtDateTime } from './format'
 import { getKey } from './keys'
 import { writeFile, mkdir } from 'fs/promises'
 import { join }             from 'path'
@@ -82,14 +84,16 @@ async function executeSection(section: ReportSection): Promise<{ rows: Row[]; er
 
 // Single source of truth for the narrative request shape, so the synchronous
 // path and the Phase 8 batch path produce identical prompts/output.
-function narrativeParams(prompt: string, rows: Row[], model: string) {
+function narrativeParams(prompt: string, rows: Row[], model: string, localeDir = '') {
   const dataStr = rows.length > 0
     ? `\n\nData (${rows.length} rows):\n${JSON.stringify(rows.slice(0, 50), null, 2)}`
     : '\n\n(No data returned from query)'
+  const sys = localeDir.trim()
   return {
     // Model resolved dynamically (lib/models) — not hardcoded.
     model,
     max_tokens: 600,
+    ...(sys ? { system: sys } : {}),
     messages: [{
       role: 'user' as const,
       content: `${prompt}${dataStr}\n\nRespond with a concise, professional narrative in plain text (no markdown headers, no bullet points). 2–4 paragraphs maximum.`,
@@ -99,7 +103,8 @@ function narrativeParams(prompt: string, rows: Row[], model: string) {
 
 async function generateNarrative(prompt: string, rows: Row[]): Promise<string> {
   const client = await getAiClient()
-  const msg = await client.messages.create(narrativeParams(prompt, rows, await getDefaultModelId()))
+  const localeDir = await localeSystemDirectives()
+  const msg = await client.messages.create(narrativeParams(prompt, rows, await getDefaultModelId(), localeDir))
   return (msg.content[0] as { text: string }).text || ''
 }
 
@@ -118,7 +123,8 @@ async function precomputeNarrativesViaBatch(
     aiSections.map(async (s) => ({ s, rows: (await executeSection(s)).rows })),
   )
   const model = await getDefaultModelId()
-  const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows, model) }))
+  const localeDir = await localeSystemDirectives()
+  const requests = executed.map(({ s, rows }) => ({ custom_id: s.id, params: narrativeParams(s.ai_prompt, rows, model, localeDir) }))
   // The Message Batches API is Anthropic-direct only (Bedrock/Foundry don't expose
   // it). This path is env-gated (REPORTS_USE_BATCHES) and any failure falls back to
   // the per-section generateNarrative() above, which is provider-aware — so on a
@@ -253,6 +259,8 @@ export async function runReport(
   const name = String(t.name)
   const type = String(t.type || 'operational')
   const now  = new Date()
+  // Deployment locale/timezone for rendering timestamps in the report.
+  const loc  = await getLocaleSettings()
 
   // sections may arrive already-parsed (the DB wrapper content-sniffs and JSON.parses
   // TEXT that looks like JSON) OR as a raw string, depending on the driver. Handle
@@ -293,14 +301,14 @@ export async function runReport(
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">${name}</div>
         <div style="font-size:13px;color:#555;display:flex;gap:16px;flex-wrap:wrap">
           <span>Type: <b>${type}</b></span>
-          <span>Generated: <b>${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b></span>
+          <span>Generated: <b>${fmtDateTime(now, loc)}</b></span>
           <span>Trigger: <b>${trigger}</b></span>
           ${t.description ? `<span>${String(t.description)}</span>` : ''}
         </div>
       </div>`
 
     const body      = coverHtml + `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">${sectionHtmls.join('')}</div>`
-    const html      = htmlShell(name, body, `${type.charAt(0).toUpperCase() + type.slice(1)} Report · ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`)
+    const html      = htmlShell(name, body, `${type.charAt(0).toUpperCase() + type.slice(1)} Report · ${fmtDate(now, loc)}`)
     const pdfBuffer = await renderHtmlToPdf(html)
 
     await mkdir(REPORTS_DIR, { recursive: true })

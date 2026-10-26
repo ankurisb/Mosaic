@@ -9,6 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getKey } from '@/lib/keys'
 import { getAiClient } from '@/lib/models'
+import { localeSystemDirectives } from '@/lib/locale'
 import { TOOLS, runTool } from '@/lib/tools'
 import { audit, AUDIT } from '@/lib/audit'
 import { mapLimit, harvestSources, SUBAGENT_TOOL_NAMES, SUBAGENT_TOOL_BUDGET, CONCURRENCY, type Emit, type ResearchCtx, type ResearchDeps, type Workspace } from '@/lib/research'
@@ -102,7 +103,7 @@ async function synthesizeDiagnosis(anthropic: Anthropic, model: string, target: 
   const findings = results.map(r => `### ${r.title} — verdict: ${r.verdict} (confidence ${r.confidence.toFixed(2)})\n${r.summary}\nEvidence: ${r.evidence.join('; ') || '(none)'}`).join('\n\n')
   const resp = await anthropic.messages.create({
     model, max_tokens: 4000,
-    system: `You are the lead diagnostic engineer writing the RCA conclusion from your sub-agents' hypothesis tests. Write: (1) the most probable root cause(s), ranked most-likely first, each with the evidence behind it; (2) which hypotheses were ruled out; (3) recommended next checks the engineer should perform. Use ONLY the evidence provided — if it's inconclusive, say so plainly. At the very end add a JSON block on its own: "===CAUSES===" then {"causes":[{"cause":"...","confidence":0.0-1.0,"evidence":["..."]}],"checks":["..."]}.`,
+    system: `You are the lead diagnostic engineer writing the RCA conclusion from your sub-agents' hypothesis tests. Write: (1) the most probable root cause(s), ranked most-likely first, each with the evidence behind it; (2) which hypotheses were ruled out; (3) recommended next checks the engineer should perform. Use ONLY the evidence provided — if it's inconclusive, say so plainly. At the very end add a JSON block on its own: "===CAUSES===" then {"causes":[{"cause":"...","confidence":0.0-1.0,"evidence":["..."]}],"checks":["..."]}.${await localeSystemDirectives()}`,
     messages: [{ role: 'user', content: `Fault — target: ${target}; symptom: ${symptom}.\n\nHypothesis tests:\n${findings}\n\nNumbered sources:\n${srcList || '(none)'}` }],
   })
   const text = extractText(resp)

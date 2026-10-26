@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { ThemeProvider } from '@/lib/theme'
+import { getLocaleSettings } from '@/lib/locale'
+
+// The layout reads deployment appearance/locale settings so font, text size,
+// formatting locale and timezone are baked into the initial HTML (no flash, and
+// available to every user without client storage). getKey caches in process.env
+// after the first read, so this is near-free on subsequent renders. A statically
+// rendered page (docs/login) simply gets the defaults, which is fine for those.
 
 export const metadata: Metadata = {
   title: 'Mosaic',
@@ -36,9 +43,18 @@ const swRegister = `(function(){if('serviceWorker'in navigator){window.addEventL
 // mismatch (#418) and a flash of light content on every load.
 const themeInitScript = `(function(){try{var s=localStorage.getItem('theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';var t=s||p;document.documentElement.setAttribute('data-theme',t);var pal=localStorage.getItem('palette');if(pal&&pal!=='mosaic'){document.documentElement.setAttribute('data-palette',pal);}}catch(e){}})();`
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const loc = await getLocaleSettings()
+  const htmlAttrs: Record<string, string> = {
+    lang: (loc.locale || 'en-GB').split('-')[0] || 'en',
+    'data-font-size': loc.fontSize || 'medium',
+    'data-locale': loc.locale || 'en-GB',
+  }
+  if (loc.fontFamily && loc.fontFamily !== 'default') htmlAttrs['data-font'] = loc.fontFamily
+  if (loc.timezone) htmlAttrs['data-timezone'] = loc.timezone
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html {...htmlAttrs} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <script dangerouslySetInnerHTML={{ __html: swRegister }} />

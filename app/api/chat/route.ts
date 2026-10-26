@@ -10,6 +10,7 @@ import { sanitizeHistory } from '@/lib/chat-history'
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { getKey } from '@/lib/keys'
+import { localeSystemDirectives } from '@/lib/locale'
 import { runResearch } from '@/lib/research'
 import { runDiagnose } from '@/lib/diagnose'
 import { mapLimit, TOOL_FANOUT_CONCURRENCY } from '@/lib/concurrency'
@@ -531,7 +532,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
     } catch { /* ignore — fall back to a normal chat turn */ }
   }
 
-  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock + dashboardBlock + dashEditBlock
+  // Deployment-wide response-language / units directive (Settings → Customization).
+  const localeDir = await localeSystemDirectives()
+  const fullSystem = baseSystem + dbList + apiList + fileServerList + prismList + mcpList + rcaAddition + analyticsBlock + rigourNote + crossSourceNote + parallelNote + metricsBlock + aiRulesBlock + memoryBlock + dashboardBlock + dashEditBlock + localeDir
   // Type 5 — content filtering (check before calling Claude at all)
   try {
     const contentCheck = await checkContentAllowed(lastUserContent)

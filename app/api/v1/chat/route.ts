@@ -4,6 +4,7 @@ import { resolveModelId, getAiClient, isAiConfigured } from '@/lib/models'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, runTool } from '@/lib/tools'
+import { localeSystemDirectives } from '@/lib/locale'
 import { log, newRequestId } from '@/lib/logger'
 export const runtime = 'nodejs'
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
         `- id:"${c.id}" | "${c.label}" (${c.service_label})`).join('\n')
     : ''
 
-  const defaultSystem = `You are Mosaic, an industrial AI assistant. Answer directly and accurately.${dbList}${apiList}`
+  const defaultSystem = `You are Mosaic, an industrial AI assistant. Answer directly and accurately.${dbList}${apiList}${await localeSystemDirectives()}`
 
   const anthropic = await getAiClient()
   // Validate against the live model list (lib/models) — no hardcoded allow-list.

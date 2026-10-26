@@ -245,7 +245,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           {tab === 'data-sources'  && <TabDataSources user={user} />}
           {tab === 'interfaces'    && <TabInterfaces />}
           {tab === 'account'       && <TabAccount user={user} />}
-          {tab === 'customization' && <TabCustomization />}
+          {tab === 'customization' && <TabCustomization user={user} />}
           {tab === 'about'         && <TabAbout />}
           {tab === 'rca-workflows' && <TabRcaWorkflows user={user} />}
         {tab === 'analytics' && <TabAnalytics />}

@@ -30,6 +30,13 @@ const KNOWN_KEYS = [
   // Azure AI Foundry. Base URL is https://<resource>.services.ai.azure.com/anthropic;
   // DEPLOYMENT names are the Azure deployment ids used as the model.
   'FOUNDRY_BASE_URL', 'FOUNDRY_API_KEY', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP',
+  // Appearance + localisation (deployment-wide, admin-set). None are secrets.
+  //   UI_FONT_FAMILY / UI_FONT_SIZE  — applied to <html> server-side (lib/locale)
+  //   MOSAIC_LOCALE                  — BCP-47 for number/date formatting (en-GB default)
+  //   MOSAIC_TIMEZONE                — IANA tz for rendering timestamps (blank = server/UTC)
+  //   MOSAIC_RESPONSE_LANGUAGE       — language the model answers in ('match' = mirror user)
+  //   MOSAIC_UNITS                   — 'metric' | 'imperial', hinted to the model + formatters
+  'UI_FONT_FAMILY', 'UI_FONT_SIZE', 'MOSAIC_LOCALE', 'MOSAIC_TIMEZONE', 'MOSAIC_RESPONSE_LANGUAGE', 'MOSAIC_UNITS',
   // AI & Search — SEARCH_PROVIDER selects the backend (tavily|perplexity),
   // each provider's key read via getKey so it's runtime-settable here.
   'SEARCH_PROVIDER', 'TAVILY_API_KEY', 'PERPLEXITY_API_KEY',
@@ -97,7 +104,9 @@ export async function GET() {
     // AI provider config that isn't a secret — the UI needs the actual value to
     // render the right provider panel and pre-fill region/model/deployment fields.
     'AI_PROVIDER', 'BEDROCK_REGION', 'BEDROCK_MODEL', 'BEDROCK_MODEL_FAST', 'BEDROCK_MODEL_TOP',
-    'FOUNDRY_BASE_URL', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP'])
+    'FOUNDRY_BASE_URL', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP',
+    // Appearance + localisation — the UI needs the actual values to render.
+    'UI_FONT_FAMILY', 'UI_FONT_SIZE', 'MOSAIC_LOCALE', 'MOSAIC_TIMEZONE', 'MOSAIC_RESPONSE_LANGUAGE', 'MOSAIC_UNITS'])
 
   // Bundled-service scaffolding keys. docker-compose.yml bakes default URLs/creds
   // for the bundled optional services into the mosaic container's env (e.g.
