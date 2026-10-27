@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.169] - 2026-10-27
+### Added
+- **Rename and sort chats in the left panel.** Each conversation row now has a
+  rename action (pencil button, or double-click the title) with inline editing,
+  persisted via the existing PATCH endpoint. Added a Sort control (Recent / Oldest
+  / A–Z) above the list; a brand-new unsaved chat stays pinned to the top under
+  Recent. Search by title was already present.
+
 ## [1.3.168] - 2026-10-26
 ### Changed
 - **Tighter, Claude-style chat typography on mobile.** On phones the message body

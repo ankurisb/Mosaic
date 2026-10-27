@@ -116,7 +116,7 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
 interface ToolCall { name: string; input: unknown; result?: unknown }
 interface MsgAttachment { name: string; type: string; preview?: string }
 interface Message { role: 'user' | 'assistant'; content: string; tools?: ToolCall[]; rca?: RcaBlock; actions?: RcaAction[]; suggestedViews?: import('@/lib/rca').SuggestedView[]; narration?: string; startedAt?: number; dashboardProposal?: DashboardProposal; dashboardSaved?: { id: string; title: string }; attachments?: MsgAttachment[] }
-interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null }
+interface Conv { id: string; title: string; messages: Message[]; folderId?: string | null; createdAt?: string; updatedAt?: string }
 interface Folder { id: string; name: string; position?: number }
 
 // True on phone-width viewports. Drives the mobile chat shell (drawer sidebar,
@@ -1133,6 +1133,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   })
   const [moveMenuFor, setMoveMenuFor] = useState<string | null>(null)   // conversation id whose move-menu is open
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
+  const [renamingConv, setRenamingConv] = useState<string | null>(null)
+  const [convSort, setConvSort] = useState<'recent' | 'oldest' | 'az'>('recent')
   const [plusOpen, setPlusOpen] = useState(false)
   const [plusSubmenu, setPlusSubmenu] = useState<'sources'|'workflows'|'model'|'system'|null>(null)
   const [srcSearch, setSrcSearch] = useState('')
@@ -1294,8 +1296,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         if (data.conversations?.length) {
           // Keep any unsaved local conversations + prepend with DB ones
           setConvs(prev => {
-            const dbConvs: Conv[] = data.conversations.map((c: { id: string; title: string; folder_id?: string | null }) => ({
-              id: c.id, title: c.title, messages: [], folderId: c.folder_id ?? null,
+            const dbConvs: Conv[] = data.conversations.map((c: { id: string; title: string; folder_id?: string | null; created_at?: string; updated_at?: string }) => ({
+              id: c.id, title: c.title, messages: [], folderId: c.folder_id ?? null, createdAt: c.created_at, updatedAt: c.updated_at,
             }))
             const localUnsaved = prev.filter(c => c.id.startsWith('local-') && c.messages.length > 0)
             return [...localUnsaved, ...dbConvs]
@@ -1328,6 +1330,14 @@ export default function ChatPage({ user }: { user: SessionUser }) {
     setFolders(f => f.map(x => x.id === id ? { ...x, name: trimmed } : x))
     fetch('/api/folders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: trimmed }) }).catch(() => {})
   }
+  // Rename a conversation. Updates immediately; persists for saved (non-local) chats.
+  async function renameConv(id: string, title: string) {
+    const trimmed = title.trim(); if (!trimmed) return
+    setConvs(p => p.map(c => c.id === id ? { ...c, title: trimmed } : c))
+    if (!id.startsWith('local-')) {
+      fetch(`/api/conversations/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: trimmed.slice(0, 100) }) }).catch(() => {})
+    }
+  }
   async function deleteFolder(id: string) {
     setFolders(f => f.filter(x => x.id !== id))
     setConvs(p => p.map(c => c.folderId === id ? { ...c, folderId: null } : c))
@@ -1352,17 +1362,33 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const renderConvRow = (conv: Conv) => (
     <div key={conv.id} className="conv-row" onClick={() => { setActiveId(conv.id); if (isMobile) setMobileNav(false) }}
       style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--nav-active-bg)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--nav-border)' : 'transparent'}`, transition: 'background .12s' }}>
-      <span style={{ fontSize: 12, color: conv.id === activeId ? 'var(--nav-text-strong)' : 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
-      {!conv.id.startsWith('local-') && (
-        <button onClick={e => { e.stopPropagation(); setMoveMenuFor(moveMenuFor === conv.id ? null : conv.id) }} title="Move to folder" className="conv-row-btn"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', paddingLeft: 2, flexShrink: 0, opacity: moveMenuFor === conv.id ? 1 : 0, display: 'flex' }}>
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
-        </button>
+      {renamingConv === conv.id ? (
+        <input autoFocus defaultValue={conv.title} onClick={e => e.stopPropagation()}
+          onBlur={e => { renameConv(conv.id, e.target.value); setRenamingConv(null) }}
+          onKeyDown={e => { if (e.key === 'Enter') { renameConv(conv.id, (e.target as HTMLInputElement).value); setRenamingConv(null) } if (e.key === 'Escape') setRenamingConv(null) }}
+          style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--nav-text-strong)', background: 'var(--bg)', border: '1px solid var(--nav-border)', borderRadius: 4, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }} />
+      ) : (
+        <span onDoubleClick={e => { e.stopPropagation(); setRenamingConv(conv.id) }} title="Double-click to rename"
+          style={{ fontSize: 12, color: conv.id === activeId ? 'var(--nav-text-strong)' : 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
       )}
-      <button onClick={e => delConv(conv.id, e)} title="Delete" className="conv-row-btn"
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', fontSize: 14, paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
-      </button>
+      {renamingConv !== conv.id && (
+        <>
+          <button onClick={e => { e.stopPropagation(); setRenamingConv(conv.id) }} title="Rename" className="conv-row-btn"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2.5l2 2L5 11l-2.5.5.5-2.5 6.5-6.5z"/></svg>
+          </button>
+          {!conv.id.startsWith('local-') && (
+            <button onClick={e => { e.stopPropagation(); setMoveMenuFor(moveMenuFor === conv.id ? null : conv.id) }} title="Move to folder" className="conv-row-btn"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', paddingLeft: 2, flexShrink: 0, opacity: moveMenuFor === conv.id ? 1 : 0, display: 'flex' }}>
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
+            </button>
+          )}
+          <button onClick={e => delConv(conv.id, e)} title="Delete" className="conv-row-btn"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--nav-muted)', fontSize: 14, paddingLeft: 2, flexShrink: 0, opacity: 0, display: 'flex' }}>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+          </button>
+        </>
+      )}
       {moveMenuFor === conv.id && (
         <>
           <div onClick={e => { e.stopPropagation(); setMoveMenuFor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
@@ -1778,6 +1804,15 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                   </button>
                 )}
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginBottom: 6 }}>
+                <span style={{ fontSize: 10.5, color: 'var(--nav-muted)' }}>Sort</span>
+                <select value={convSort} onChange={e => setConvSort(e.target.value as 'recent' | 'oldest' | 'az')}
+                  style={{ fontSize: 11, color: 'var(--nav-text)', background: 'var(--bg)', border: '1px solid var(--nav-border)', borderRadius: 4, padding: '2px 4px', cursor: 'pointer', fontFamily: 'inherit', outline: 'none' }}>
+                  <option value="recent">Recent</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="az">A–Z</option>
+                </select>
+              </div>
               <style>{`.conv-row:hover .conv-row-btn{opacity:1 !important}`}</style>
               <button onClick={createFolder} title="New folder"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 6, background: 'none', border: '1px dashed var(--nav-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--nav-muted)', fontSize: 11, fontFamily: 'inherit' }}
@@ -1787,7 +1822,11 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               {(() => {
                 const q = convSearch.toLowerCase()
                 const match = (c: Conv) => !q || c.title.toLowerCase().includes(q)
-                const visible = convs.filter(match)
+                // Sort by chosen order. A brand-new unsaved (local-) chat has no
+                // timestamp — treat it as newest so it stays at the top under "Recent".
+                const ts = (c: Conv) => c.updatedAt ? Date.parse(c.updatedAt) : (c.id.startsWith('local-') ? Number.MAX_SAFE_INTEGER : 0)
+                const sortFn = (a: Conv, b: Conv) => convSort === 'az' ? a.title.localeCompare(b.title) : convSort === 'oldest' ? ts(a) - ts(b) : ts(b) - ts(a)
+                const visible = convs.filter(match).slice().sort(sortFn)
                 const ungrouped = visible.filter(c => !c.folderId)
                 return (
                   <>
