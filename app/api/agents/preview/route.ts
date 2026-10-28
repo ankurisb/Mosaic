@@ -18,13 +18,13 @@
 // which data sources were consulted and the actual queries issued — not just the prose.
 import { getSession } from '@/lib/auth'
 import { setupDatabase } from '@/lib/setup'
-import { runAgent, DEFAULT_GUARDRAILS, type AgentDef } from '@/lib/agent-runner'
+import { runAgent, DEFAULT_GUARDRAILS, DEFAULT_AGENT_TOOLS, type AgentDef } from '@/lib/agent-runner'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
 // Goal-only default: a tight, read-only data toolset so a plain-English goal just works.
-const SAFE_DEFAULT_TOOLS = ['check_data_sources', 'query_database', 'run_statistical_analysis', 'render_chart']
+const SAFE_DEFAULT_TOOLS = DEFAULT_AGENT_TOOLS
 // External / irreversible side effects beyond the WRITE_TOOLS set — off by default in a test.
 const SIDE_EFFECT_TOOLS = new Set(['call_api', 'run_code', 'fetch_url'])
 // A test run is real LLM + tool spend: keep it tight regardless of the draft's own caps.

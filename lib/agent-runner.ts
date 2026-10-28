@@ -42,6 +42,12 @@ export const DEFAULT_GUARDRAILS: Guardrails = {
   no_progress: true, read_only: true, approve_writes: true,
 }
 
+// Goal-only default toolset: a tight, read-only data set so a plain-English goal "just
+// works" — the agent discovers its own source via check_data_sources and queries it. Used
+// when an agent/preview is created with no explicit tools. Deliberately excludes write and
+// side-effect tools (call_api/run_code/fetch_url); those are opt-in.
+export const DEFAULT_AGENT_TOOLS = ['check_data_sources', 'query_database', 'run_statistical_analysis', 'render_chart']
+
 export interface AgentDef {
   id: string
   name: string

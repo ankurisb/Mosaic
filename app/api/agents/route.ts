@@ -2,7 +2,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { setupDatabase } from '@/lib/setup'
-import { DEFAULT_GUARDRAILS } from '@/lib/agent-runner'
+import { DEFAULT_GUARDRAILS, DEFAULT_AGENT_TOOLS } from '@/lib/agent-runner'
 import { snapshotVersion, snapshotFromRow } from '@/lib/agent-versions'
 export const runtime = 'nodejs'
 
@@ -25,7 +25,9 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({})) as Record<string, unknown>
   if (!b.name || typeof b.name !== 'string') return Response.json({ error: 'name is required' }, { status: 400 })
   const sql = getDb()
-  const tools = JSON.stringify(Array.isArray(b.tools) ? b.tools : [])
+  // Goal-only: default to the safe read-only toolset when none is given, so the agent can
+  // discover its own data source and query it without the builder picking tools.
+  const tools = JSON.stringify(Array.isArray(b.tools) && b.tools.length ? b.tools : DEFAULT_AGENT_TOOLS)
   const outputs = JSON.stringify(Array.isArray(b.outputs) ? b.outputs : [])
   const guardrails = JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails && typeof b.guardrails === 'object' ? b.guardrails : {}) })
   const trigger = ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : 'manual'

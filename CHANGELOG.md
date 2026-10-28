@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.173] - 2026-10-28
+### Added
+- **Goal-only agents.** Creating an agent with no explicit tools now defaults to a safe
+  read-only toolset (`check_data_sources`, `query_database`, `run_statistical_analysis`,
+  `render_chart`) — so a plain-English goal "just works": the agent discovers its own data
+  source and queries it, no tool-picking required. `DEFAULT_AGENT_TOOLS` in
+  `lib/agent-runner.ts`, shared by create + the Test-run endpoint.
+### Changed
+- **Scheduled agents run as their creator, not a synthetic admin.** The scheduler now
+  resolves `created_by` and runs the agent with that user's identity + role (for tool
+  gating, audit attribution and per-user memory); seeded agents (no creator) fall back to
+  the system context. Closes the privilege/attribution gap on the scheduled path.
+
 ## [1.3.172] - 2026-10-28
 ### Added
 - **Agent versioning + rollback.** Every create / edit / rollback writes an immutable

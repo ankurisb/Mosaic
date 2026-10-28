@@ -805,7 +805,16 @@ export async function POST(req: Request) {
           const prev = interval.prev().toDate()
           const lastRun = row.last_scheduled_run as string | null
           if (lastRun && new Date(lastRun) >= prev) continue   // not due yet
-          await runAgent(rowToAgent(row), { triggerSource: 'schedule' })
+          // Run as the agent's CREATOR (identity + role for tool gating, audit and memory),
+          // not a synthetic admin. Seeds (created_by NULL) fall back to the system context.
+          const runOpts: { triggerSource: string; userId?: string; userEmail?: string; userRole?: string } = { triggerSource: 'schedule' }
+          const createdBy = row.created_by as string | null
+          if (createdBy) {
+            const urows = await sql`SELECT id, email, role FROM users WHERE id = ${createdBy} AND COALESCE(banned,0) = 0`.catch(() => [])
+            const u = (urows as Record<string, unknown>[])[0]
+            if (u) { runOpts.userId = String(u.id); runOpts.userEmail = String(u.email); runOpts.userRole = String(u.role) }
+          }
+          await runAgent(rowToAgent(row), runOpts)
           await sql`UPDATE agents SET last_scheduled_run = ${now.toISOString()} WHERE id = ${String(row.id)}`.catch(() => {})
           agentsRun++
         } catch (e) {
