@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.181] - 2026-10-28
+### Changed
+- **Agents page now matches the rest of Mosaic.** Wrapped the `/agents` surface in the
+  shared `AppShell`, so it has the left navigation, header and the app's base font like every
+  other page (it was rendering bare before).
+- **Agent results render as markdown, not a text dump.** The run and Test-run output now use
+  the same `ReactMarkdown` + `prose-mosaic` styling as chat (headings, bold, tables, lists in
+  the normal font) instead of a raw monospace terminal block. The tool-call trace is demoted
+  to a collapsible, theme-aware "Activity" section.
+
 ## [1.3.180] - 2026-10-28
 ### Changed
 - **Agents UI: replaced the ✨ sparkle emojis** on "Suggest config" and "Propose improvement"

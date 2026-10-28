@@ -1,5 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import AppShell from '@/components/AppShell'
 import type { SessionUser } from '@/lib/auth'
 
 // Agents surface. Views: Agents grid, Builder (goal -> AI suggest -> Test run -> Publish),
@@ -45,6 +48,36 @@ const IconIdea = () => (
 )
 const withIcon = (icon: React.ReactNode, text: string) => (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{text}</span>)
 
+// Render an agent's final answer as proper markdown (same style as chat), not a text dump.
+const ResultBlock = ({ text }: { text: string }) => (
+  <div className="prose-mosaic" style={{ padding: 18, fontSize: 14, lineHeight: 1.7, color: 'var(--text)', overflowWrap: 'anywhere' }}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ''}</ReactMarkdown>
+  </div>
+)
+
+// Collapsible technical trace of the run's tool calls (theme-aware, not a black terminal).
+function StepLog({ steps, label = 'Activity' }: { steps: Step[]; label?: string }) {
+  const [open, setOpen] = useState(false)
+  const toolN = (steps || []).filter(s => s.type === 'tool').length
+  if (!steps || steps.length === 0) return null
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none', color: 'var(--text3)', fontSize: 12, fontWeight: 600, padding: '10px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{open ? '▾' : '▸'} {label} · {toolN} tool call{toolN === 1 ? '' : 's'}</button>
+      {open && (
+        <div style={{ background: 'var(--bg3)', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.5, padding: '2px 18px 14px', maxHeight: 340, overflow: 'auto' }}>
+          {steps.map((s, i) => (
+            <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ color: s.type === 'tool' ? 'var(--accent-bg,#2f6df6)' : s.type === 'result' ? 'var(--green-t,#0a8f5b)' : s.type === 'approval' ? 'var(--amber-t,#b45309)' : 'var(--text3)' }}>{s.type === 'tool' ? `→ ${s.tool}` : s.type === 'approval' ? `⚠ ${s.tool} (held for approval)` : s.type === 'result' ? `✓ ${s.tool || ''}` : '▸'}</span>
+              {s.type === 'tool' && s.input != null && <span style={{ color: 'var(--text3)' }}> {JSON.stringify(s.input).slice(0, 140)}</span>}
+              {s.result && s.type === 'result' && <div style={{ color: 'var(--text3)', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(s.result).slice(0, 400)}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function statusPill(s: string | undefined, running?: boolean): React.CSSProperties {
   const ok = s === 'succeeded', pa = s === 'paused_for_approval', rn = running || s === 'running'
   return { fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 99, whiteSpace: 'nowrap',
@@ -53,7 +86,6 @@ function statusPill(s: string | undefined, running?: boolean): React.CSSProperti
 }
 
 export default function AgentsPage({ user }: { user: SessionUser }) {
-  void user
   const [view, setView] = useState<'agents' | 'build' | 'run' | 'report' | 'detail'>('agents')
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
@@ -174,6 +206,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   const tabStyle = (v: string): React.CSSProperties => ({ border: '1px solid ' + (view === v ? 'var(--border)' : 'transparent'), background: view === v ? 'var(--surface)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' })
 
   return (
+    <AppShell user={user}>
     <div style={{ padding: '22px max(18px, env(safe-area-inset-left)) 54px', maxWidth: 1160, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 11, width: 'fit-content' }}>
@@ -308,17 +341,14 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   <div style={{ color: 'var(--text3)' }}>{preview.evidence.note}</div>
                 </div>
               )}
-              <div style={{ background: '#0b0d12', color: '#dfe4ee', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.55, padding: 16, maxHeight: 360, overflow: 'auto' }}>
-                {previewing && <div style={{ color: '#8fb6ff' }}>Running read-only against the live data layer…</div>}
-                {(preview?.steps || []).map((s, i) => (
-                  <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
-                    <span style={{ color: s.type === 'tool' ? '#8fb6ff' : s.type === 'result' ? '#5fd6a0' : '#c7cdd9' }}>{s.type === 'tool' ? `→ ${s.tool}` : s.type === 'result' ? `✓ ${s.tool || ''}` : '▸'}</span>
-                    {s.type === 'tool' && s.input != null && <span style={{ color: '#7f8aa0' }}> {JSON.stringify(s.input).slice(0, 120)}</span>}
-                    {s.result && s.type === 'result' && <div style={{ color: '#7f8aa0', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(s.result).slice(0, 400)}</div>}
-                  </div>
-                ))}
-                {!previewing && preview?.result && <div style={{ marginTop: 10, whiteSpace: 'pre-wrap' }}>{preview.result}</div>}
-              </div>
+              {previewing ? (
+                <div style={{ padding: 18, color: 'var(--text3)', fontSize: 13 }}>Running read-only against the live data layer…</div>
+              ) : (
+                <>
+                  {preview?.result && <ResultBlock text={preview.result} />}
+                  <StepLog steps={preview?.steps || []} />
+                </>
+              )}
             </div>
           )}
         </div>
@@ -364,8 +394,16 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   <button style={btnPri} disabled={saving} onClick={acceptProposal}>{saving ? 'Applying…' : 'Accept as new version'}</button>
                 </div>
                 {(previewing || preview) && (
-                  <div style={{ background: '#0b0d12', color: '#dfe4ee', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.5, padding: 14, borderRadius: 10, maxHeight: 240, overflow: 'auto' }}>
-                    {previewing ? <span style={{ color: '#8fb6ff' }}>Testing proposed config…</span> : <><div style={{ color: preview?.status === 'succeeded' ? '#5fd6a0' : '#f0b760' }}>{preview?.status}</div><div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{(preview?.result || '').slice(0, 500)}</div></>}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                    {previewing ? (
+                      <div style={{ padding: 14, color: 'var(--text3)', fontSize: 12.5 }}>Testing proposed config…</div>
+                    ) : (
+                      <>
+                        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}><span style={statusPill(preview?.status)}>{preview?.status}</span></div>
+                        {preview?.result && <ResultBlock text={preview.result} />}
+                        <StepLog steps={preview?.steps || []} />
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -395,16 +433,14 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <div style={{ fontSize: 16, fontWeight: 700 }}>{run?.agent || 'Run'}</div>
             <span style={{ marginLeft: 'auto', ...statusPill(run?.status, running) }}>{running ? 'Running…' : run?.status === 'paused_for_approval' ? 'Paused · approval' : run?.status || '—'}{run?.stop && run.status !== 'succeeded' && !running ? ` · ${run.stop}` : ''}</span>
           </div>
-          <div style={{ background: '#0b0d12', color: '#dfe4ee', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.55, padding: 18, maxHeight: 420, overflow: 'auto' }}>
-            {running && <div style={{ color: '#8fb6ff' }}>Running the agent against the live data layer…</div>}
-            {(run?.steps || []).map((s, i) => (
-              <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
-                <span style={{ color: s.type === 'tool' ? '#8fb6ff' : s.type === 'result' ? '#5fd6a0' : s.type === 'approval' ? '#f0b760' : '#c7cdd9' }}>{s.type === 'tool' ? `→ ${s.tool}` : s.type === 'approval' ? `⚠ ${s.tool} (held for approval)` : s.type === 'result' ? `✓ ${s.tool || ''}` : '▸'}</span>
-                {s.result && <div style={{ color: '#7f8aa0', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(s.result).slice(0, 600)}</div>}
-              </div>
-            ))}
-            {!running && run?.result && <div style={{ marginTop: 10, color: '#dfe4ee', whiteSpace: 'pre-wrap' }}>{run.result}</div>}
-          </div>
+          {running ? (
+            <div style={{ padding: 22, color: 'var(--text3)', fontSize: 13.5 }}>Running the agent against the live data layer…</div>
+          ) : (
+            <>
+              {run?.result && <ResultBlock text={run.result} />}
+              <StepLog steps={run?.steps || []} />
+            </>
+          )}
           <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
             <button style={btn} onClick={() => setView('agents')}>Back to agents</button>
             {run && !running && run.runId && (
@@ -445,5 +481,6 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
         </>
       )}
     </div>
+    </AppShell>
   )
 }
