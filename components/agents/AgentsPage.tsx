@@ -32,7 +32,7 @@ const asObj = <T,>(v: string | object | undefined, d: T): T => (v && typeof v ==
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow)' }
 const btn: React.CSSProperties = { border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }
-const btnPri: React.CSSProperties = { ...btn, background: 'var(--accent, #2f6df6)', borderColor: 'transparent', color: '#fff' }
+const btnPri: React.CSSProperties = { ...btn, background: 'var(--accent-bg, #2f6df6)', borderColor: 'transparent', color: 'var(--accent-fg, #fff)' }
 const inp: React.CSSProperties = { width: '100%', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13.5, padding: '9px 11px', borderRadius: 9, fontFamily: 'inherit', boxSizing: 'border-box' }
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3)', marginBottom: 7, display: 'block' }
 
@@ -184,7 +184,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                 {pageAgents.map(a => (
                   <div key={a.id} style={{ ...card, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--accent, #2f6df6)', display: 'grid', placeItems: 'center', color: '#fff', flexShrink: 0 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--accent-bg, #2f6df6)', display: 'grid', placeItems: 'center', color: 'var(--accent-fg, #fff)', flexShrink: 0 }}>
                         <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M5.5 1.5v1.5M10.5 1.5v1.5M6 13h4"/><circle cx="6" cy="7" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7" r=".8" fill="currentColor" stroke="none"/></svg>
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0 }}>{a.name}</div>
@@ -239,7 +239,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   return (
                     <button key={t.id} onClick={() => setDraft({ ...draft, tools: on ? draft.tools.filter(x => x !== t.id) : [...draft.tools, t.id] })}
                       title={t.w ? 'Write action — needs approval at run time' : t.se ? 'Side-effect tool' : ''}
-                      style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? (t.w ? 'var(--amber-t,#b45309)' : 'var(--accent,#2f6df6)') : 'var(--surface)', color: on ? '#fff' : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                      style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? (t.w ? 'var(--amber-t,#b45309)' : 'var(--accent-bg,#2f6df6)') : 'var(--surface)', color: on ? (t.w ? '#fff' : 'var(--accent-fg,#fff)') : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
                       {t.w ? '✎ ' : ''}{t.id}
                     </button>
                   )
@@ -269,7 +269,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {conns.length === 0 ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No data sources configured.</span> : conns.map(c => {
                   const on = draft.sources.includes(c.id)
-                  return <button key={c.id} onClick={() => setDraft({ ...draft, sources: on ? draft.sources.filter(x => x !== c.id) : [...draft.sources, c.id] })} style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? 'var(--accent,#2f6df6)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer' }}>{on ? '📌 ' : ''}{c.label}</button>
+                  return <button key={c.id} onClick={() => setDraft({ ...draft, sources: on ? draft.sources.filter(x => x !== c.id) : [...draft.sources, c.id] })} style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? 'var(--accent-bg,#2f6df6)' : 'var(--surface)', color: on ? 'var(--accent-fg,#fff)' : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer' }}>{on ? '📌 ' : ''}{c.label}</button>
                 })}
               </div>
             </div>

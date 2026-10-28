@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.179] - 2026-10-28
+### Fixed
+- **Agents UI: invisible button text on light-accent themes.** Primary buttons (Run now,
+  + New agent, Publish, Accept), the agent-card icon, and selected tool/source chips
+  hardcoded `color:#fff` over `var(--accent)`, so on a theme where `--accent` is light
+  (e.g. `#f0f0f0`) the white text disappeared. Now use the theme's paired
+  `var(--accent-bg)` / `var(--accent-fg)` like the rest of the app, so text contrasts in
+  every theme.
+
 ## [1.3.178] - 2026-10-28
 ### Added
 - **Agent builder UI** — the `/agents` surface now wires the full frictionless flow to the
