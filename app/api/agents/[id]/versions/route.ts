@@ -34,21 +34,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const v = (vrows as Row[])[0]
   if (!v) return Response.json({ error: 'Version not found' }, { status: 404 })
 
+  // The SQLite driver auto-parses JSON-looking TEXT columns, so v.tools/outputs/guardrails/
+  // sources may come back as objects/arrays — coerce back to a JSON string (never String()
+  // an array/object, which would mangle it to "a,b" / "[object Object]").
+  const jstr = (x: unknown, d: string) => (x == null ? d : typeof x === 'string' ? x : JSON.stringify(x))
+  const cfg = {
+    goal: String(v.goal || ''),
+    tools: jstr(v.tools, '[]'),
+    trigger_type: String(v.trigger_type || 'manual'),
+    schedule: (typeof v.schedule === 'string' ? v.schedule : null),
+    event_condition: (typeof v.event_condition === 'string' ? v.event_condition : null),
+    outputs: jstr(v.outputs, '[]'),
+    guardrails: jstr(v.guardrails, '{}'),
+    status: String(v.status || 'active'),
+    sources: jstr(v.sources, '[]'),
+  }
+
   const rows = await sql`UPDATE agents SET
-      goal=${String(v.goal || '')}, tools=${String(v.tools || '[]')}, trigger_type=${String(v.trigger_type || 'manual')},
-      schedule=${(v.schedule as string | null) ?? null}, event_condition=${(v.event_condition as string | null) ?? null},
-      outputs=${String(v.outputs || '[]')}, guardrails=${String(v.guardrails || '{}')}, status=${String(v.status || 'active')},
-      sources=${String(v.sources || '[]')}, updated_at=${nowExpr()}
+      goal=${cfg.goal}, tools=${cfg.tools}, trigger_type=${cfg.trigger_type},
+      schedule=${cfg.schedule}, event_condition=${cfg.event_condition},
+      outputs=${cfg.outputs}, guardrails=${cfg.guardrails}, status=${cfg.status},
+      sources=${cfg.sources}, updated_at=${nowExpr()}
     WHERE id=${id} RETURNING *`
   const agent = (rows as Row[])[0]
   if (!agent) return Response.json({ error: 'Agent not found' }, { status: 404 })
 
-  const newVersion = await snapshotVersion(String(id), {
-    goal: String(v.goal || ''), tools: String(v.tools || '[]'), trigger_type: String(v.trigger_type || 'manual'),
-    schedule: (v.schedule as string | null) ?? null, event_condition: (v.event_condition as string | null) ?? null,
-    outputs: String(v.outputs || '[]'), guardrails: String(v.guardrails || '{}'), status: String(v.status || 'active'),
-    sources: String(v.sources || '[]'),
-  }, { source: 'rollback', note: `Rolled back to v${target}`, createdBy: session.id })
+  const newVersion = await snapshotVersion(String(id), cfg, { source: 'rollback', note: `Rolled back to v${target}`, createdBy: session.id })
 
   return Response.json({ agent, rolled_back_to: target, new_version: newVersion })
 }

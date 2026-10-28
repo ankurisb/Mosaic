@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.175] - 2026-10-28
+### Fixed
+- **Agent edit & rollback silently corrupted JSON fields.** The SQLite driver auto-parses
+  JSON-looking TEXT columns, so an agent row's `tools`/`guardrails`/`sources` come back as
+  arrays/objects. The edit (PATCH) fallback and the rollback both did `String(...)` on those
+  values when not re-sent, turning `["a","b"]` into `"a,b"` and guardrails into
+  `"[object Object]"`. Both paths now coerce with `JSON.stringify` instead. (Edit bug was
+  pre-existing — any PATCH that didn't re-send tools/guardrails, e.g. a rename or pause,
+  would mangle them.) Found by the live source-scoping test (rollback produced a bare id
+  instead of a one-element array).
+
 ## [1.3.174] - 2026-10-28
 ### Added
 - **Per-agent source scoping / pinning.** An agent can carry an optional `sources` list

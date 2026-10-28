@@ -41,14 +41,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const b = await req.json().catch(() => ({})) as Row
   const sql = getDb()
   const cur = await load(id); if (!cur) return Response.json({ error: 'Not found' }, { status: 404 })
+  // The SQLite driver auto-parses JSON-looking TEXT columns, so cur.tools/guardrails/
+  // sources may already be objects/arrays. When a field isn't re-sent, coerce the existing
+  // value back to a JSON string — never String() an array/object (→ "a,b" / "[object Object]").
+  const jstr = (x: unknown, d: string) => (x == null ? d : typeof x === 'string' ? x : JSON.stringify(x))
   const name = b.name != null ? String(b.name).slice(0, 120) : String(cur.name)
   const goal = b.goal != null ? String(b.goal) : String(cur.goal)
-  const tools = b.tools != null ? JSON.stringify(b.tools) : String(cur.tools)
-  const guardrails = b.guardrails != null ? JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails as object) }) : String(cur.guardrails)
+  const tools = b.tools != null ? JSON.stringify(b.tools) : jstr(cur.tools, '[]')
+  const guardrails = b.guardrails != null ? JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails as object) }) : jstr(cur.guardrails, '{}')
   const status = b.status != null ? (b.status === 'paused' ? 'paused' : 'active') : String(cur.status)
   const trigger = b.trigger_type != null && ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : String(cur.trigger_type)
-  const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (cur.schedule as string | null)
-  const sources = b.sources != null ? JSON.stringify(b.sources) : String(cur.sources ?? '[]')
+  const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (typeof cur.schedule === 'string' ? cur.schedule : null)
+  const sources = b.sources != null ? JSON.stringify(b.sources) : jstr(cur.sources, '[]')
   const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
