@@ -786,6 +786,36 @@ export async function POST(req: Request) {
   }
 
   // ============================================================
+  // SCHEDULED AGENTS
+  // Active agents with trigger_type='schedule' run headless on their cron, with
+  // all guardrails enforced by the runner. Non-blocking: a failing agent is
+  // recorded on its run row and never fails the scheduler.
+  // ============================================================
+  let agentsRun = 0
+  const agentErrors: string[] = []
+  try {
+    const scheduledAgents = await sql`SELECT * FROM agents WHERE status='active' AND trigger_type='schedule' AND schedule IS NOT NULL AND schedule != ''`.catch(() => [])
+    if ((scheduledAgents as unknown[]).length) {
+      const { CronExpressionParser } = await import('cron-parser')
+      const { runAgent } = await import('@/lib/agent-runner')
+      const { rowToAgent } = await import('@/app/api/agents/[id]/route')
+      for (const row of scheduledAgents as Record<string, unknown>[]) {
+        try {
+          const interval = CronExpressionParser.parse(String(row.schedule), { currentDate: now })
+          const prev = interval.prev().toDate()
+          const lastRun = row.last_scheduled_run as string | null
+          if (lastRun && new Date(lastRun) >= prev) continue   // not due yet
+          await runAgent(rowToAgent(row), { triggerSource: 'schedule' })
+          await sql`UPDATE agents SET last_scheduled_run = ${now.toISOString()} WHERE id = ${String(row.id)}`.catch(() => {})
+          agentsRun++
+        } catch (e) {
+          agentErrors.push(`${String(row.id)}: ${(e as Error).message}`)
+        }
+      }
+    }
+  } catch (e) { agentErrors.push(`scheduled-agents: ${(e as Error).message}`) }
+
+  // ============================================================
   // NIGHTLY DATA RETENTION PURGE
   // Run once per day — only if last purge was > 20 hours ago
   // ============================================================
@@ -808,6 +838,8 @@ export async function POST(req: Request) {
     rules_checked:   rules.length,
     groups_checked:  groups.length,
     reports_run:     reportsRun,
+    agents_run:      agentsRun,
+    agent_errors:    agentErrors,
     retention_purged: retentionPurged,
     fired:           fired.length,
     errors:          errors.length,

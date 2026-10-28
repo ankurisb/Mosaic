@@ -636,6 +636,55 @@ export async function setupDatabase() {
     created_at      TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
 
+  // -- Agents: a saved goal + scoped tools + trigger + guardrails, run headless by
+  //    lib/agent-runner against the live data layer. See also agent_runs below.
+  await sql`CREATE TABLE IF NOT EXISTS agents (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name            TEXT NOT NULL,
+    goal            TEXT NOT NULL DEFAULT '',
+    tools           TEXT NOT NULL DEFAULT '[]',
+    trigger_type    TEXT NOT NULL DEFAULT 'manual',
+    schedule        TEXT,
+    event_condition TEXT,
+    outputs         TEXT NOT NULL DEFAULT '[]',
+    guardrails      TEXT NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'active',
+    last_scheduled_run TEXT,
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+
+  await sql`CREATE TABLE IF NOT EXISTS agent_runs (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    agent_id        TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'queued',
+    trigger_source  TEXT NOT NULL DEFAULT 'manual',
+    steps           TEXT NOT NULL DEFAULT '[]',
+    input_tokens    INTEGER DEFAULT 0,
+    output_tokens   INTEGER DEFAULT 0,
+    cost_usd        REAL DEFAULT 0,
+    stop_reason     TEXT DEFAULT '',
+    result          TEXT DEFAULT '',
+    started_at      TEXT DEFAULT (datetime('now')),
+    ended_at        TEXT
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, started_at)`.catch(() => {})
+
+  // Seed two example agents (idempotent) mirroring the prototype.
+  const agentCount = await sql`SELECT COUNT(*) as cnt FROM agents`.catch(() => [{ cnt: 1 }])
+  if (Number((agentCount[0] as { cnt: number })?.cnt || 0) === 0) {
+    const G = JSON.stringify({ max_steps: 20, max_tool_calls: 40, max_minutes: 10, max_cost_usd: 1.0, no_progress: true, read_only: true, approve_writes: true })
+    const seedAgents = [
+      { name: 'Downtime RCA', goal: 'When a machine records a downtime event longer than 30 minutes, find the most likely root cause. Pull the machine\'s recent downtime and maintenance history from the database, look for patterns, and write a short root-cause summary with the single most useful next check.', tools: '["query_database","run_statistical_analysis","deep_diagnose"]', trigger_type: 'manual' },
+      { name: 'OEE Watchdog', goal: 'Summarise OEE by line for the most recent shift. Call out any machine whose OEE is below target and give the most likely reason from the production and downtime data. Keep it to a few sentences.', tools: '["query_database","render_chart"]', trigger_type: 'manual' },
+    ]
+    for (const a of seedAgents) {
+      await sql`INSERT INTO agents (name, goal, tools, trigger_type, guardrails, status)
+        VALUES (${a.name}, ${a.goal}, ${a.tools}, ${a.trigger_type}, ${G}, 'active')`.catch(() => {})
+    }
+  }
+
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,
