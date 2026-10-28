@@ -64,3 +64,6 @@ docs/SERVICE_CREDENTIALS.md
 tests/map/map-harness.html
 scratch-*.mjs
 .env.vercel
+
+# Claude Code local worktrees / tooling state
+.claude/
