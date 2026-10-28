@@ -1,6 +1,7 @@
 // app/api/agents/[id] — get / update / delete one agent, and POST to run it now.
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
+import { setupDatabase } from '@/lib/setup'
 import { runAgent, DEFAULT_GUARDRAILS, type AgentDef } from '@/lib/agent-runner'
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -59,6 +60,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 // Run the agent now (synchronous; bounded by its own guardrails). Returns the run.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  await setupDatabase().catch(() => {})
   const { id } = await params
   const row = await load(id); if (!row) return Response.json({ error: 'Not found' }, { status: 404 })
   if (String(row.status) === 'paused') return Response.json({ error: 'Agent is paused' }, { status: 409 })

@@ -1,11 +1,13 @@
 // app/api/agents/runs — centralised fleet run log + headline stats.
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
+import { setupDatabase } from '@/lib/setup'
 export const runtime = 'nodejs'
 
 export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  await setupDatabase().catch(() => {})
   const sql = getDb()
   const url = new URL(req.url)
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))

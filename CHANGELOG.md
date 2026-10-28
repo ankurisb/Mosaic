@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.171] - 2026-10-28
+### Fixed
+- **Agents API now self-initialises its schema.** On a fresh deploy the
+  `agents` / `agent_runs` tables are created by `setupDatabase()`, which was only
+  triggered by page loads — so `POST /api/agents` (create) and `POST /api/agents/[id]`
+  (run) returned HTTP 500 (`no such table: agents`) until a UI page was opened.
+  The list, create, run and fleet-runs routes now call the idempotent, guarded
+  `setupDatabase()` themselves, so the agents API works immediately after deploy
+  (and seeds the Downtime RCA / OEE Watchdog examples). Found during live agent
+  testing on the trial box.
+
 ## [1.3.170] - 2026-10-28
 ### Added
 - **Agents (first cut) — user-defined agents that run on Mosaic's own tool-loop
