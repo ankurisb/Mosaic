@@ -19,10 +19,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   const { id } = await params
-  const { action } = await req.json().catch(() => ({})) as { action?: string }
+  const body = await req.json().catch(() => ({})) as { action?: string; rating?: unknown; note?: unknown }
+  const action = body.action
   const sql = getDb()
   const rows = await sql`SELECT * FROM agent_runs WHERE id = ${id}`.catch(() => [])
   const run = (rows as Row[])[0]; if (!run) return Response.json({ error: 'Not found' }, { status: 404 })
+
+  if (action === 'feedback') {
+    // Thumbs + optional note on a run — the signal the evolution loop reads.
+    const rating = Number(body.rating) > 0 ? 1 : Number(body.rating) < 0 ? -1 : 0
+    const note = typeof body.note === 'string' ? body.note.slice(0, 1000) : ''
+    await sql`UPDATE agent_runs SET rating=${rating}, feedback=${note} WHERE id=${id}`.catch(() => {})
+    return Response.json({ ok: true, rating, feedback: note })
+  }
 
   if (action === 'stop') {
     await sql`UPDATE agent_runs SET status='stopped', stop_reason='stopped_by_user', ended_at=${nowExpr()} WHERE id=${id}`.catch(() => {})

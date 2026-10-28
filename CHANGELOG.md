@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.177] - 2026-10-28
+### Added
+- **Continuous evolution — human-approved (config + knowledge).**
+  - **Run feedback:** `POST /api/agents/runs/[id] {action:'feedback', rating, note}` records a
+    thumbs rating + note on a run (new `rating`/`feedback` columns on `agent_runs`) — the
+    signal the evolution loop reads, alongside auto-signals (status, stop_reason).
+  - **Propose-improvements:** `POST /api/agents/[id]/evolve` reads the agent's recent runs +
+    feedback + current config and proposes an improved version (goal wording, tools, guardrail
+    caps, distilled learnings). Constrained like suggest-from-goal (safe tool catalog, clamped
+    guardrails) and **never auto-applies** — returns `{current, proposed, rationale, changes}`
+    for review + Test-run, then accept via `PATCH {..., evolution_source:'ai-proposed-accepted'}`
+    which snapshots a version attributed to the AI proposal.
+  - **Knowledge evolution:** a per-agent `learnings` field (new column on `agents` +
+    `agent_versions`) is injected into the agent's system prompt each run — accumulated,
+    human-approved know-how carried forward without changing the definition. Wired through
+    create / edit / rollback / version history.
+
 ## [1.3.176] - 2026-10-28
 ### Added
 - **AI suggest-from-goal** — `POST /api/agents/suggest {goal}` proposes a minimal tool set

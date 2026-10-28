@@ -57,6 +57,7 @@ export interface AgentDef {
   guardrails?: Partial<Guardrails>
   outputs?: string[]
   sources?: string[]   // optional pin/scope: if set, the agent may only touch these data-source ids
+  learnings?: string   // accumulated, human-approved learnings injected into the system prompt
 }
 
 export type RunStatus = 'succeeded' | 'failed' | 'stopped' | 'paused_for_approval'
@@ -89,8 +90,12 @@ export function toolsFor(agent: AgentDef): Anthropic.Tool[] {
 }
 
 function systemFor(agent: AgentDef): string {
+  const learnings = (agent.learnings || '').trim()
+  const learningsBlock = learnings
+    ? `\n\nLearnings from past runs (human-approved — use them to work faster and more accurately, but re-verify against current data):\n${learnings}\n`
+    : ''
   return `You are "${agent.name}", an autonomous Mosaic agent running headless (no human is watching live). ` +
-    `Your task:\n${agent.goal}\n\n` +
+    `Your task:\n${agent.goal}\n${learningsBlock}\n` +
     `Work in steps: use the available tools to gather what you need against the live data layer, reason over the results, then produce a concise final answer. ` +
     `Use ONLY the tools provided. When a data tool needs a source, target an explicit configured source. ` +
     `Do not speculate beyond the evidence. When you have the answer, state it plainly and stop — do not keep calling tools once you can conclude.`

@@ -19,6 +19,7 @@ export function rowToAgent(r: Row): AgentDef {
     guardrails: { ...DEFAULT_GUARDRAILS, ...parse<object>(r.guardrails, {}) },
     outputs: parse<string[]>(r.outputs, []),
     sources: parse<string[]>(r.sources, []),
+    learnings: String(r.learnings || ''),
   }
 }
 
@@ -53,11 +54,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const trigger = b.trigger_type != null && ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : String(cur.trigger_type)
   const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (typeof cur.schedule === 'string' ? cur.schedule : null)
   const sources = b.sources != null ? JSON.stringify(b.sources) : jstr(cur.sources, '[]')
-  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
+  const learnings = b.learnings != null ? String(b.learnings) : String(cur.learnings ?? '')
+  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, learnings=${learnings}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
-    const note = typeof b.note === 'string' && b.note.trim() ? String(b.note).slice(0, 300) : 'Edited'
-    await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: 'human', note, createdBy: session.id })
+    // Attribution: accepting an AI evolution proposal records 'ai-proposed-accepted'.
+    const src = b.evolution_source === 'ai-proposed-accepted' ? 'ai-proposed-accepted' as const : 'human' as const
+    const note = typeof b.note === 'string' && b.note.trim() ? String(b.note).slice(0, 300) : (src === 'ai-proposed-accepted' ? 'Accepted AI proposal' : 'Edited')
+    await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: src, note, createdBy: session.id })
   }
   return Response.json({ agent })
 }

@@ -658,6 +658,9 @@ export async function setupDatabase() {
   // Pin/scope: optional list of data-source ids this agent is limited to. Empty = auto
   // (discover + use any source). ALTER for DBs created before this column existed.
   await sql`ALTER TABLE agents ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
+  // Knowledge evolution: accumulated, human-approved learnings injected into the agent's
+  // system prompt each run (known-good queries, resolved mappings, recurring findings).
+  await sql`ALTER TABLE agents ADD COLUMN learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -670,9 +673,13 @@ export async function setupDatabase() {
     cost_usd        REAL DEFAULT 0,
     stop_reason     TEXT DEFAULT '',
     result          TEXT DEFAULT '',
+    rating          INTEGER DEFAULT 0,
+    feedback        TEXT DEFAULT '',
     started_at      TEXT DEFAULT (datetime('now')),
     ended_at        TEXT
   )`.catch(() => {})
+  await sql`ALTER TABLE agent_runs ADD COLUMN rating INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE agent_runs ADD COLUMN feedback TEXT DEFAULT ''`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, started_at)`.catch(() => {})
 
   // -- Agent versions: append-only snapshots of an agent's definition, for audit +
@@ -690,12 +697,14 @@ export async function setupDatabase() {
     guardrails      TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'active',
     sources         TEXT NOT NULL DEFAULT '[]',
+    learnings       TEXT NOT NULL DEFAULT '',
     source          TEXT NOT NULL DEFAULT 'human',
     note            TEXT DEFAULT '',
     created_by      TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
   await sql`ALTER TABLE agent_versions ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`.catch(() => {})
 
   // Seed two example agents (idempotent) mirroring the prototype.

@@ -13,7 +13,7 @@ export async function GET() {
   // on a fresh deploy where no page has triggered setup yet. Idempotent + guarded.
   await setupDatabase().catch(() => {})
   const sql = getDb()
-  const rows = await sql`SELECT id, name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, last_scheduled_run, created_at, updated_at
+  const rows = await sql`SELECT id, name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, last_scheduled_run, created_at, updated_at
     FROM agents ORDER BY created_at DESC`.catch(() => [])
   return Response.json({ agents: rows })
 }
@@ -30,10 +30,11 @@ export async function POST(req: Request) {
   const tools = JSON.stringify(Array.isArray(b.tools) && b.tools.length ? b.tools : DEFAULT_AGENT_TOOLS)
   const outputs = JSON.stringify(Array.isArray(b.outputs) ? b.outputs : [])
   const sources = JSON.stringify(Array.isArray(b.sources) ? b.sources : [])
+  const learnings = typeof b.learnings === 'string' ? b.learnings : ''
   const guardrails = JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails && typeof b.guardrails === 'object' ? b.guardrails : {}) })
   const trigger = ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : 'manual'
-  const rows = await sql`INSERT INTO agents (name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, created_by, updated_at)
-    VALUES (${String(b.name).slice(0, 120)}, ${String(b.goal || '')}, ${tools}, ${trigger}, ${b.schedule ? String(b.schedule) : null}, ${b.event_condition ? String(b.event_condition) : null}, ${outputs}, ${guardrails}, ${b.status === 'paused' ? 'paused' : 'active'}, ${sources}, ${session.id}, ${nowExpr()})
+  const rows = await sql`INSERT INTO agents (name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, created_by, updated_at)
+    VALUES (${String(b.name).slice(0, 120)}, ${String(b.goal || '')}, ${tools}, ${trigger}, ${b.schedule ? String(b.schedule) : null}, ${b.event_condition ? String(b.event_condition) : null}, ${outputs}, ${guardrails}, ${b.status === 'paused' ? 'paused' : 'active'}, ${sources}, ${learnings}, ${session.id}, ${nowExpr()})
     RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: 'human', note: 'Created', createdBy: session.id })
