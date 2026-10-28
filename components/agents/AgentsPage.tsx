@@ -36,6 +36,15 @@ const btnPri: React.CSSProperties = { ...btn, background: 'var(--accent-bg, #2f6
 const inp: React.CSSProperties = { width: '100%', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13.5, padding: '9px 11px', borderRadius: 9, fontFamily: 'inherit', boxSizing: 'border-box' }
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3)', marginBottom: 7, display: 'block' }
 
+// Line-art icons (match the app's stroke style; no emoji/sparkles).
+const IconImprove = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M2 11l4-4 3 3 5-5" /><path d="M10 5h4v4" /></svg>
+)
+const IconIdea = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M8 1.75a4 4 0 0 0-2.4 7.2c.46.35.65.7.65 1.1v.2h3.5v-.2c0-.4.2-.75.65-1.1A4 4 0 0 0 8 1.75z" /><path d="M6.6 13h2.8M7.1 14.4h1.8" /></svg>
+)
+const withIcon = (icon: React.ReactNode, text: string) => (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{text}</span>)
+
 function statusPill(s: string | undefined, running?: boolean): React.CSSProperties {
   const ok = s === 'succeeded', pa = s === 'paused_for_approval', rn = running || s === 'running'
   return { fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 99, whiteSpace: 'nowrap',
@@ -226,7 +235,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
               <label style={lbl}>Goal — describe the task in plain English</label>
               <textarea style={{ ...inp, minHeight: 92, resize: 'vertical', lineHeight: 1.5 }} value={draft.goal} placeholder="e.g. Each morning, find the machine with the worst OEE on the previous shift and the most likely reason from the downtime data." onChange={e => setDraft({ ...draft, goal: e.target.value })} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>
-                <button style={{ ...btn, padding: '7px 13px', fontSize: 12.5 }} disabled={suggesting || !draft.goal.trim()} onClick={doSuggest}>{suggesting ? 'Thinking…' : '✨ Suggest config'}</button>
+                <button style={{ ...btn, padding: '7px 13px', fontSize: 12.5 }} disabled={suggesting || !draft.goal.trim()} onClick={doSuggest}>{suggesting ? 'Thinking…' : withIcon(<IconIdea />, 'Suggest config')}</button>
                 {rationale && <span style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.4 }}>{rationale}</span>}
               </div>
             </div>
@@ -331,7 +340,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
           <div style={{ ...card, padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>Continuous evolution</div>
-              <button style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5 }} disabled={evolving} onClick={doEvolve}>{evolving ? 'Analysing runs…' : '✨ Propose improvement'}</button>
+              <button style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5 }} disabled={evolving} onClick={doEvolve}>{evolving ? 'Analysing runs…' : withIcon(<IconImprove />, 'Propose improvement')}</button>
             </div>
             {!proposal && <div style={{ fontSize: 12.5, color: 'var(--text3)' }}>Reads recent runs + feedback and proposes a better version. Nothing is applied until you test and accept it.</div>}
             {proposal && (

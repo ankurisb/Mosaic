@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.180] - 2026-10-28
+### Changed
+- **Agents UI: replaced the ✨ sparkle emojis** on "Suggest config" and "Propose improvement"
+  with clean stroke line-art icons (a lightbulb for suggest, a trending-up arrow for improve)
+  that match the app's icon style and read less generic.
+
 ## [1.3.179] - 2026-10-28
 ### Fixed
 - **Agents UI: invisible button text on light-accent themes.** Primary buttons (Run now,
