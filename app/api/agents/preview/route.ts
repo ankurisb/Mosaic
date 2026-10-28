@@ -73,6 +73,7 @@ export async function POST(req: Request) {
     tools: effectiveTools,
     trigger_type: 'manual',
     guardrails,
+    sources: Array.isArray(b.sources) ? (b.sources as unknown[]).map(String) : undefined,
   }
 
   const run = await runAgent(agent, {

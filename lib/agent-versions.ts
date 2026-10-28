@@ -16,6 +16,7 @@ export interface AgentConfigSnapshot {
   outputs: string          // JSON string
   guardrails: string       // JSON string
   status: string
+  sources: string          // JSON string
 }
 
 /** Build a config snapshot from an `agents` DB row (tolerates string or parsed columns). */
@@ -30,6 +31,7 @@ export function snapshotFromRow(r: Record<string, unknown>): AgentConfigSnapshot
     outputs: s(r.outputs, '[]'),
     guardrails: s(r.guardrails, '{}'),
     status: String(r.status || 'active'),
+    sources: s(r.sources, '[]'),
   }
 }
 
@@ -44,8 +46,8 @@ export async function snapshotVersion(
     const rows = await sql`SELECT COALESCE(MAX(version),0) AS v FROM agent_versions WHERE agent_id=${agentId}`.catch(() => [{ v: 0 }])
     const next = Number((rows as { v: number }[])[0]?.v || 0) + 1
     await sql`INSERT INTO agent_versions
-      (agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, source, note, created_by, created_at)
-      VALUES (${agentId}, ${next}, ${cfg.goal}, ${cfg.tools}, ${cfg.trigger_type}, ${cfg.schedule}, ${cfg.event_condition}, ${cfg.outputs}, ${cfg.guardrails}, ${cfg.status}, ${meta.source}, ${meta.note || ''}, ${meta.createdBy ?? null}, ${nowExpr()})`
+      (agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, source, note, created_by, created_at)
+      VALUES (${agentId}, ${next}, ${cfg.goal}, ${cfg.tools}, ${cfg.trigger_type}, ${cfg.schedule}, ${cfg.event_condition}, ${cfg.outputs}, ${cfg.guardrails}, ${cfg.status}, ${cfg.sources}, ${meta.source}, ${meta.note || ''}, ${meta.createdBy ?? null}, ${nowExpr()})`
     return next
   } catch {
     return undefined

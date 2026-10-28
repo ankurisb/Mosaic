@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   await setupDatabase().catch(() => {})
   const { id } = await params
-  const versions = await getDb()`SELECT id, agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, source, note, created_by, created_at
+  const versions = await getDb()`SELECT id, agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, source, note, created_by, created_at
     FROM agent_versions WHERE agent_id=${id} ORDER BY version DESC`.catch(() => [])
   return Response.json({ versions })
 }
@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       goal=${String(v.goal || '')}, tools=${String(v.tools || '[]')}, trigger_type=${String(v.trigger_type || 'manual')},
       schedule=${(v.schedule as string | null) ?? null}, event_condition=${(v.event_condition as string | null) ?? null},
       outputs=${String(v.outputs || '[]')}, guardrails=${String(v.guardrails || '{}')}, status=${String(v.status || 'active')},
-      updated_at=${nowExpr()}
+      sources=${String(v.sources || '[]')}, updated_at=${nowExpr()}
     WHERE id=${id} RETURNING *`
   const agent = (rows as Row[])[0]
   if (!agent) return Response.json({ error: 'Agent not found' }, { status: 404 })
@@ -47,6 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     goal: String(v.goal || ''), tools: String(v.tools || '[]'), trigger_type: String(v.trigger_type || 'manual'),
     schedule: (v.schedule as string | null) ?? null, event_condition: (v.event_condition as string | null) ?? null,
     outputs: String(v.outputs || '[]'), guardrails: String(v.guardrails || '{}'), status: String(v.status || 'active'),
+    sources: String(v.sources || '[]'),
   }, { source: 'rollback', note: `Rolled back to v${target}`, createdBy: session.id })
 
   return Response.json({ agent, rolled_back_to: target, new_version: newVersion })

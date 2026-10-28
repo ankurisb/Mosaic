@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.174] - 2026-10-28
+### Added
+- **Per-agent source scoping / pinning.** An agent can carry an optional `sources` list
+  (data-source ids). Empty = auto (discover + use any source). When set, the runner scopes
+  the agent to those sources via `allowedSources` + `strictSources`, so source-touching
+  tools may only target the pinned ids — giving deterministic, auditable behaviour for
+  scheduled agents and a guardrail against an agent wandering to the wrong source. New
+  `sources` column on `agents` + `agent_versions` (SQLite + Postgres, with ALTERs for
+  existing DBs); carried through create / edit / rollback / version history / Test-run.
+
 ## [1.3.173] - 2026-10-28
 ### Added
 - **Goal-only agents.** Creating an agent with no explicit tools now defaults to a safe

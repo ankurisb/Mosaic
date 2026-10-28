@@ -56,6 +56,7 @@ export interface AgentDef {
   trigger_type?: string
   guardrails?: Partial<Guardrails>
   outputs?: string[]
+  sources?: string[]   // optional pin/scope: if set, the agent may only touch these data-source ids
 }
 
 export type RunStatus = 'succeeded' | 'failed' | 'stopped' | 'paused_for_approval'
@@ -136,7 +137,15 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
   try { pricing = await getModelPricing(model) } catch { pricing = { input: 3 / 1e6, output: 15 / 1e6 } }
 
   const tools = toolsFor(agent)
-  const guardCtx = { userId: opts.userId || 'agent', userEmail: opts.userEmail || 'agent@mosaic', userRole: opts.userRole || 'admin' }
+  // If the agent is pinned/scoped to specific sources, enforce it: source-touching tools
+  // may only target those ids (strictSources also rejects a sourceless call). Empty = auto.
+  const scoped = Array.isArray(agent.sources) && agent.sources.length > 0
+  const guardCtx = {
+    userId: opts.userId || 'agent',
+    userEmail: opts.userEmail || 'agent@mosaic',
+    userRole: opts.userRole || 'admin',
+    ...(scoped ? { allowedSources: agent.sources, strictSources: true } : {}),
+  }
   const start = nowMs()
   const deadline = start + g.max_minutes * 60_000
 

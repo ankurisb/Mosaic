@@ -18,6 +18,7 @@ export function rowToAgent(r: Row): AgentDef {
     trigger_type: String(r.trigger_type || 'manual'),
     guardrails: { ...DEFAULT_GUARDRAILS, ...parse<object>(r.guardrails, {}) },
     outputs: parse<string[]>(r.outputs, []),
+    sources: parse<string[]>(r.sources, []),
   }
 }
 
@@ -47,7 +48,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const status = b.status != null ? (b.status === 'paused' ? 'paused' : 'active') : String(cur.status)
   const trigger = b.trigger_type != null && ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : String(cur.trigger_type)
   const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (cur.schedule as string | null)
-  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
+  const sources = b.sources != null ? JSON.stringify(b.sources) : String(cur.sources ?? '[]')
+  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
     const note = typeof b.note === 'string' && b.note.trim() ? String(b.note).slice(0, 300) : 'Edited'

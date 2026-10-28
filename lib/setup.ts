@@ -649,11 +649,15 @@ export async function setupDatabase() {
     outputs         TEXT NOT NULL DEFAULT '[]',
     guardrails      TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'active',
+    sources         TEXT NOT NULL DEFAULT '[]',
     last_scheduled_run TEXT,
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
+  // Pin/scope: optional list of data-source ids this agent is limited to. Empty = auto
+  // (discover + use any source). ALTER for DBs created before this column existed.
+  await sql`ALTER TABLE agents ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -685,11 +689,13 @@ export async function setupDatabase() {
     outputs         TEXT NOT NULL DEFAULT '[]',
     guardrails      TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'active',
+    sources         TEXT NOT NULL DEFAULT '[]',
     source          TEXT NOT NULL DEFAULT 'human',
     note            TEXT DEFAULT '',
     created_by      TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
   )`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`.catch(() => {})
 
   // Seed two example agents (idempotent) mirroring the prototype.
