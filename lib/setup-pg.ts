@@ -485,6 +485,25 @@ export async function setupDatabasePostgres(): Promise<void> {
   )`
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, started_at)`
 
+  await sql`CREATE TABLE IF NOT EXISTS agent_versions (
+    id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    agent_id        TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    version         INTEGER NOT NULL,
+    goal            TEXT NOT NULL DEFAULT '',
+    tools           TEXT NOT NULL DEFAULT '[]',
+    trigger_type    TEXT NOT NULL DEFAULT 'manual',
+    schedule        TEXT,
+    event_condition TEXT,
+    outputs         TEXT NOT NULL DEFAULT '[]',
+    guardrails      TEXT NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'active',
+    source          TEXT NOT NULL DEFAULT 'human',
+    note            TEXT DEFAULT '',
+    created_by      TEXT,
+    created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+  await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`
+
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,

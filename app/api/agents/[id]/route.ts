@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { setupDatabase } from '@/lib/setup'
 import { runAgent, DEFAULT_GUARDRAILS, type AgentDef } from '@/lib/agent-runner'
+import { snapshotVersion, snapshotFromRow } from '@/lib/agent-versions'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
@@ -47,7 +48,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const trigger = b.trigger_type != null && ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : String(cur.trigger_type)
   const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (cur.schedule as string | null)
   const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
-  return Response.json({ agent: (rows as unknown[])[0] })
+  const agent = (rows as Record<string, unknown>[])[0]
+  if (agent?.id) {
+    const note = typeof b.note === 'string' && b.note.trim() ? String(b.note).slice(0, 300) : 'Edited'
+    await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: 'human', note, createdBy: session.id })
+  }
+  return Response.json({ agent })
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

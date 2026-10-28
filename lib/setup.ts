@@ -671,19 +671,54 @@ export async function setupDatabase() {
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, started_at)`.catch(() => {})
 
+  // -- Agent versions: append-only snapshots of an agent's definition, for audit +
+  //    rollback + the human-approved evolution loop. See lib/agent-versions.ts.
+  await sql`CREATE TABLE IF NOT EXISTS agent_versions (
+    id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    agent_id        TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    version         INTEGER NOT NULL,
+    goal            TEXT NOT NULL DEFAULT '',
+    tools           TEXT NOT NULL DEFAULT '[]',
+    trigger_type    TEXT NOT NULL DEFAULT 'manual',
+    schedule        TEXT,
+    event_condition TEXT,
+    outputs         TEXT NOT NULL DEFAULT '[]',
+    guardrails      TEXT NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'active',
+    source          TEXT NOT NULL DEFAULT 'human',
+    note            TEXT DEFAULT '',
+    created_by      TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`.catch(() => {})
+
   // Seed two example agents (idempotent) mirroring the prototype.
   const agentCount = await sql`SELECT COUNT(*) as cnt FROM agents`.catch(() => [{ cnt: 1 }])
   if (Number((agentCount[0] as { cnt: number })?.cnt || 0) === 0) {
     const G = JSON.stringify({ max_steps: 20, max_tool_calls: 40, max_minutes: 10, max_cost_usd: 1.0, no_progress: true, read_only: true, approve_writes: true })
     const seedAgents = [
-      { name: 'Downtime RCA', goal: 'When a machine records a downtime event longer than 30 minutes, find the most likely root cause. Pull the machine\'s recent downtime and maintenance history from the database, look for patterns, and write a short root-cause summary with the single most useful next check.', tools: '["query_database","run_statistical_analysis","deep_diagnose"]', trigger_type: 'manual' },
-      { name: 'OEE Watchdog', goal: 'Summarise OEE by line for the most recent shift. Call out any machine whose OEE is below target and give the most likely reason from the production and downtime data. Keep it to a few sentences.', tools: '["query_database","render_chart"]', trigger_type: 'manual' },
+      { name: 'Downtime RCA', goal: 'When a machine records a downtime event longer than 30 minutes, find the most likely root cause. Pull the machine\'s recent downtime and maintenance history from the database, look for patterns, and write a short root-cause summary with the single most useful next check.', tools: '["check_data_sources","query_database","run_statistical_analysis","deep_diagnose"]', trigger_type: 'manual' },
+      { name: 'OEE Watchdog', goal: 'Summarise OEE by line for the most recent shift. Call out any machine whose OEE is below target and give the most likely reason from the production and downtime data. Keep it to a few sentences.', tools: '["check_data_sources","query_database","render_chart"]', trigger_type: 'manual' },
     ]
     for (const a of seedAgents) {
       await sql`INSERT INTO agents (name, goal, tools, trigger_type, guardrails, status)
         VALUES (${a.name}, ${a.goal}, ${a.tools}, ${a.trigger_type}, ${G}, 'active')`.catch(() => {})
     }
   }
+
+  // Migration: earlier seeds shipped without `check_data_sources`, so they could not
+  // discover a data source and failed. Add it to untouched seed agents (created_by IS
+  // NULL) that query data. Only touches seeds — never user-created/edited agents.
+  try {
+    const seedRows = await sql`SELECT id, tools FROM agents WHERE created_by IS NULL`.catch(() => [])
+    for (const s of seedRows as { id: string; tools: string }[]) {
+      let arr: string[]
+      try { arr = JSON.parse(s.tools || '[]') } catch { arr = [] }
+      if (arr.includes('query_database') && !arr.includes('check_data_sources')) {
+        await sql`UPDATE agents SET tools=${JSON.stringify(['check_data_sources', ...arr])} WHERE id=${s.id}`.catch(() => {})
+      }
+    }
+  } catch { /* best-effort */ }
 
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,

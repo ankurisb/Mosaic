@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { setupDatabase } from '@/lib/setup'
 import { DEFAULT_GUARDRAILS } from '@/lib/agent-runner'
+import { snapshotVersion, snapshotFromRow } from '@/lib/agent-versions'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -31,5 +32,7 @@ export async function POST(req: Request) {
   const rows = await sql`INSERT INTO agents (name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, created_by, updated_at)
     VALUES (${String(b.name).slice(0, 120)}, ${String(b.goal || '')}, ${tools}, ${trigger}, ${b.schedule ? String(b.schedule) : null}, ${b.event_condition ? String(b.event_condition) : null}, ${outputs}, ${guardrails}, ${b.status === 'paused' ? 'paused' : 'active'}, ${session.id}, ${nowExpr()})
     RETURNING *`
-  return Response.json({ agent: (rows as unknown[])[0] })
+  const agent = (rows as Record<string, unknown>[])[0]
+  if (agent?.id) await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: 'human', note: 'Created', createdBy: session.id })
+  return Response.json({ agent })
 }

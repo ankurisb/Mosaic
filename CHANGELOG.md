@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.172] - 2026-10-28
+### Added
+- **Agent versioning + rollback.** Every create / edit / rollback writes an immutable
+  snapshot to a new `agent_versions` table (SQLite + Postgres) with source + note +
+  attribution; the `agents` row holds the current config. `GET /api/agents/[id]/versions`
+  lists history; `POST /api/agents/[id]/versions {version}` rolls back (and records the
+  rollback as a new version, so history stays append-only). Foundation for drafts,
+  test-before-publish and the human-approved evolution loop. `lib/agent-versions.ts`.
+- **Safe "Test run" (preview) endpoint** — `POST /api/agents/preview` runs a draft
+  `{goal,tools,guardrails}` with `persist:false` (nothing saved). `read_only` +
+  `approve_writes` forced on, side-effect tools (`call_api`/`run_code`/`fetch_url`)
+  excluded unless opted in, guardrails clamped to a tight preview ceiling, admin-gated
+  with a per-user cooldown, runs as the caller. Returns the evidence (data sources
+  consulted + actual queries), not just the prose.
+### Fixed
+- **Seeded example agents could not find a data source.** Downtime RCA / OEE Watchdog
+  shipped without `check_data_sources`, so a live run guessed connection IDs and failed
+  (it did fail *safely* — stopped and refused to fabricate an RCA). The seeds now include
+  `check_data_sources`, and a one-time migration adds it to existing untouched seed agents.
+  Verified live: with the tool, the agent auto-discovers the sandbox and returns a correct
+  root-cause analysis. Found during live agent testing.
+
 ## [1.3.171] - 2026-10-28
 ### Fixed
 - **Agents API now self-initialises its schema.** On a fresh deploy the
