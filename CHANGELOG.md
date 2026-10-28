@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.178] - 2026-10-28
+### Added
+- **Agent builder UI** — the `/agents` surface now wires the full frictionless flow to the
+  v1.3.172–177 endpoints:
+  - **New agent / Builder:** name + plain-English goal → **✨ Suggest config** (AI fills tools +
+    guardrails, editable) → tool chips (write tools marked), guardrail inputs, optional data-source
+    scope chips, collapsible learnings → **▶ Test run** (read-only preview panel showing steps,
+    result, queries-run and the safety note) → **Publish**.
+  - **Manage / Detail:** per-agent view with Run, Edit, Pause/Resume; **Continuous evolution**
+    panel (**✨ Propose improvement** → current-vs-proposed diff + rationale/changes → Test proposed
+    → Accept as new version); and **Version history** with per-version source badges
+    (human / ai-proposed-accepted / rollback) and one-click **Roll back**.
+  - **Run view:** 👍/👎 feedback after a run (feeds the evolution loop).
+
 ## [1.3.177] - 2026-10-28
 ### Added
 - **Continuous evolution — human-approved (config + knowledge).**
