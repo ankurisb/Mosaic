@@ -5,7 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.3.169] - 2026-10-27
+## [1.3.170] - 2026-10-28
+### Added
+- **Agents (first cut) — user-defined agents that run on Mosaic's own tool-loop
+  against the live data layer.** An agent is a saved goal + a scoped tool
+  allow-list + guardrails, executed headless (no browser/chat session) like a
+  scheduled report.
+  - `lib/agent-runner.ts` — reuses `getAiClient` + `TOOLS`/`runTool`, with every
+    safe-stop guardrail enforced (step / tool-call / time / cost caps, no-progress
+    loop detection, read-only tool filtering, and the write-action approval pause).
+    9 guardrail unit tests.
+  - `agents` + `agent_runs` tables (SQLite + Postgres), seeded with Downtime RCA
+    and OEE Watchdog example agents.
+  - API: `/api/agents` (CRUD + run), `/api/agents/runs` (fleet + stats); scheduled
+    agents wired into the existing scheduler (guarded, never fails the scheduler).
+  - `/agents` surface: tile grid with pagination, run view with step log, fleet
+    report.
+  - Still first-cut: event triggers, live run streaming (SSE), and the visual
+    builder are follow-ups — see `claude/mosaic-test-report-agents.md`.
 ### Added
 - **Rename and sort chats in the left panel.** Each conversation row now has a
   rename action (pencil button, or double-click the title) with inline editing,
