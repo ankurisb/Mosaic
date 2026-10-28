@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.176] - 2026-10-28
+### Added
+- **AI suggest-from-goal** — `POST /api/agents/suggest {goal}` proposes a minimal tool set
+  + guardrail caps from a plain-English goal, so the builder can auto-fill the config. The
+  proposal is constrained: the model may only choose from a curated safe, read-only catalog
+  (`check_data_sources`, `query_database`, `run_statistical_analysis`, `render_chart`,
+  `combine_sources`, `deep_diagnose`, `web_search`) — hallucinated/unknown names are dropped
+  and reported; write/side-effect tools are never suggested; `query_database` always gets
+  `check_data_sources` alongside it; guardrails are clamped to a hard ceiling. Config is
+  editable and the Test run remains the confirmation gate.
+
 ## [1.3.175] - 2026-10-28
 ### Fixed
 - **Agent edit & rollback silently corrupted JSON fields.** The SQLite driver auto-parses
