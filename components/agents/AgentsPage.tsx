@@ -9,13 +9,34 @@ import type { SessionUser } from '@/lib/auth'
 // Detail (edit + version history/rollback + AI evolve), Run (step log + feedback), and the
 // centralised fleet Report. Backed by the real /api/agents* endpoints + headless runner.
 
-interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string }
+interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null }
 interface RunRow { id: string; agent_name: string; status: string; trigger_source: string; cost_usd: number; stop_reason: string; result: string; started_at: string }
 interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string }
 interface Version { id: string; version: number; source: string; note: string; created_at: string; goal: string; tools: string | string[] }
 interface Guardrails { max_steps: number; max_tool_calls: number; max_minutes: number; max_cost_usd: number; read_only: boolean; approve_writes: boolean; no_progress: boolean }
 interface Conn { id: string; label: string; dialect: string }
-interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string }
+interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string; trigger_type: string; schedule: string }
+
+// Friendly schedule <-> cron helpers (5-field cron; times are server-local).
+function cronFrom(freq: string, time: string, dow: string): string {
+  const [hh, mm] = (time || '08:00').split(':')
+  const h = Number(hh) || 0, m = Number(mm) || 0
+  if (freq === 'hourly') return '0 * * * *'
+  if (freq === 'weekdays') return `${m} ${h} * * 1-5`
+  if (freq === 'weekly') return `${m} ${h} * * ${dow || '1'}`
+  return `${m} ${h} * * *`  // daily
+}
+function describeCron(c: string): string {
+  const p = (c || '').trim().split(/\s+/); if (p.length !== 5) return c || ''
+  const [m, h, , , dow] = p
+  if (h === '*' && (m === '0' || m === '*')) return 'every hour'
+  const t = (h !== '*' && m !== '*') ? `${String(+h).padStart(2, '0')}:${String(+m).padStart(2, '0')}` : ''
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  if (dow === '1-5') return `every weekday at ${t}`
+  if (dow === '*') return `every day at ${t}`
+  if (/^[0-6]$/.test(dow)) return `every ${days[+dow]} at ${t}`
+  return c
+}
 
 // Catalog shown in the builder. w = write/side-effect tool (extra confirmation).
 const CATALOG: { id: string; g: string; w?: boolean; se?: boolean }[] = [
@@ -106,6 +127,9 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   const [previewing, setPreviewing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showAdv, setShowAdv] = useState(false)
+  const [schedFreq, setSchedFreq] = useState('daily')
+  const [schedTime, setSchedTime] = useState('08:00')
+  const [schedDow, setSchedDow] = useState('1')
 
   const [detail, setDetail] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<Version[]>([])
@@ -124,8 +148,8 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   }, [])
   useEffect(() => { if (view === 'report') loadRuns() }, [view, loadRuns])
 
-  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
-  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
 
   async function runNow(a: Agent) {
     setRunning(true); setFed(null); setView('run'); setRun({ agent: a.name, steps: [], status: 'running', stop: '', result: '', cost: 0 })
@@ -166,7 +190,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
     if (!d.name.trim() || !d.goal.trim()) { setMsg('Name and goal are required.'); return }
     setSaving(true); setMsg('')
     try {
-      const body: Record<string, unknown> = { name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, learnings: d.learnings }
+      const body: Record<string, unknown> = { name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, learnings: d.learnings, trigger_type: d.trigger_type, schedule: d.trigger_type === 'schedule' ? d.schedule : '' }
       if (evolutionAccepted) body.evolution_source = 'ai-proposed-accepted'
       const url = d.id ? `/api/agents/${d.id}` : '/api/agents'
       const r = await fetch(url, { method: d.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -196,7 +220,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   function acceptProposal() {
     if (!detail || !proposal) return
     const p = proposal.proposed
-    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || '') }, true)
+    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '' }, true)
   }
 
   const pageCount = Math.max(1, Math.ceil(agents.length / PAGE))
@@ -321,6 +345,37 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
               {showAdv && <textarea style={{ ...inp, minHeight: 64, resize: 'vertical', marginTop: 6 }} value={draft.learnings} placeholder="Human-approved notes injected into the prompt, e.g. known-good queries or resolved source names." onChange={e => setDraft({ ...draft, learnings: e.target.value })} />}
             </div>
 
+            <div>
+              <label style={lbl}>Trigger</label>
+              <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
+                {(['manual', 'schedule'] as const).map(t => (
+                  <button key={t} onClick={() => setDraft({ ...draft, trigger_type: t, schedule: t === 'schedule' ? (draft.schedule || cronFrom(schedFreq, schedTime, schedDow)) : draft.schedule })}
+                    style={{ border: '1px solid ' + (draft.trigger_type === t ? 'var(--border)' : 'transparent'), background: draft.trigger_type === t ? 'var(--surface)' : 'transparent', color: draft.trigger_type === t ? 'var(--text)' : 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>{t === 'manual' ? 'Manual (run on demand)' : 'Scheduled'}</button>
+                ))}
+              </div>
+              {draft.trigger_type === 'schedule' && (
+                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
+                  <div>
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Frequency</label>
+                    <select value={schedFreq} onChange={e => { setSchedFreq(e.target.value); setDraft({ ...draft, schedule: cronFrom(e.target.value, schedTime, schedDow) }) }} style={inp}>
+                      <option value="hourly">Every hour</option><option value="daily">Every day</option><option value="weekdays">Every weekday</option><option value="weekly">Every week</option>
+                    </select>
+                  </div>
+                  {schedFreq !== 'hourly' && (
+                    <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Time</label><input type="time" value={schedTime} onChange={e => { setSchedTime(e.target.value); setDraft({ ...draft, schedule: cronFrom(schedFreq, e.target.value, schedDow) }) }} style={inp} /></div>
+                  )}
+                  {schedFreq === 'weekly' && (
+                    <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Day</label><select value={schedDow} onChange={e => { setSchedDow(e.target.value); setDraft({ ...draft, schedule: cronFrom(schedFreq, schedTime, e.target.value) }) }} style={inp}>{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => <option key={i} value={String(i)}>{d}</option>)}</select></div>
+                  )}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Cron expression (advanced)</label>
+                    <input value={draft.schedule} onChange={e => setDraft({ ...draft, schedule: e.target.value })} placeholder="0 8 * * *" style={{ ...inp, fontFamily: 'var(--font-mono)' }} />
+                    <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 5 }}>{draft.schedule ? `Runs ${describeCron(draft.schedule)} · server time zone.` : 'Set a schedule above.'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
               <button style={btn} disabled={previewing || !draft.goal.trim()} onClick={() => doPreview(draft)}>{previewing ? 'Testing…' : '▶ Test run'}</button>
               <button style={btnPri} disabled={saving} onClick={() => publish(draft)}>{saving ? 'Saving…' : draft.id ? 'Save changes' : 'Publish agent'}</button>
@@ -358,7 +413,10 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button style={btn} onClick={() => setView('agents')}>‹ Back</button>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.name}</div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.name}</div>
+              {detail.trigger_type === 'schedule' && detail.schedule ? <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>Scheduled · runs {describeCron(String(detail.schedule))}</div> : null}
+            </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <button style={btnPri} disabled={running || detail.status === 'paused'} onClick={() => runNow(detail)}>Run now</button>
               <button style={btn} onClick={() => editDraft(detail)}>Edit</button>
@@ -390,7 +448,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || '') })}>▶ Test proposed</button>
+                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '' })}>▶ Test proposed</button>
                   <button style={btnPri} disabled={saving} onClick={acceptProposal}>{saving ? 'Applying…' : 'Accept as new version'}</button>
                 </div>
                 {(previewing || preview) && (

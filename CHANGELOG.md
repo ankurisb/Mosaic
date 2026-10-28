@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.3.182] - 2026-10-28
+### Added
+- **Schedule an agent from the builder.** The agent builder now has a **Trigger** section:
+  Manual (run on demand) or **Scheduled**. Scheduled shows a friendly picker — Frequency
+  (hourly / daily / weekday / weekly), Time, and Day — that writes a cron expression, plus an
+  advanced cron field with a plain-English description. The schedule is sent on create/edit
+  and runs on the existing scheduler (as the agent's creator). The Manage view shows an agent's
+  schedule under its name. (Backend already supported trigger_type/schedule; this exposes it.)
+
 ## [1.3.181] - 2026-10-28
 ### Changed
 - **Agents page now matches the rest of Mosaic.** Wrapped the `/agents` surface in the
