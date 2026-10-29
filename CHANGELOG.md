@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-10-29
+### Changed
+- **Global nav order** is now Chats · Agents · Dashboards · Digests · Query Builder ·
+  Rules · Assets, consistently in both the main app rail and the Chats-view sidebar.
+- **Softer primary buttons.** Button labels are medium weight (500) instead of bold,
+  so filled blue buttons like "Run now" are easier on the eyes.
+
+### Fixed
+- **Sidebar footer (user / settings / theme toggle) no longer scrolls out of reach at
+  large font size.** The conversation list had the flexbox `min-height: auto` trap,
+  which let it grow and push the pinned footer below the viewport; both sidebars now
+  set `min-height: 0` so the middle scrolls and the footer stays put.
+
 ## [1.5.2] - 2026-10-29
 ### Fixed
 - **Chats sidebar nav was missing Assets and Agents.** The chat view renders its own

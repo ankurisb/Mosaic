@@ -106,9 +106,12 @@ runtime Google-Fonts/CDN link.
 
 ## Component patterns
 
+- **Button label weight is medium (500), not bold.** A filled primary button is
+  already heavy from its fill — bold text on top reads harsh. Keep all button labels
+  at `fontWeight: 500`.
 - **Primary button:** `background: var(--accent-bg); color: var(--accent-fg);
-  borderRadius: var(--radius-sm)`, no border. Hover darkens via opacity, not a new
-  colour.
+  borderRadius: var(--radius-sm)`, no border, label weight 500. Hover darkens via
+  opacity, not a new colour.
 - **Secondary / default button:** `background: var(--surface); color: var(--text);
   border: 1px solid var(--border2); borderRadius: var(--radius-sm)`.
 - **Subtle / ghost button:** transparent background, `color: var(--text2)`, hover

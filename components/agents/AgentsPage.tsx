@@ -69,7 +69,7 @@ const asArr = (v: string | string[] | undefined): string[] => Array.isArray(v) ?
 const asObj = <T,>(v: string | object | undefined, d: T): T => (v && typeof v === 'object') ? v as T : (() => { try { return JSON.parse(String(v || '{}')) as T } catch { return d } })()
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow)' }
-const btn: React.CSSProperties = { border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }
+const btn: React.CSSProperties = { border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, fontWeight: 500, padding: '8px 14px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }
 const btnPri: React.CSSProperties = { ...btn, background: 'var(--accent-bg, #2f6df6)', borderColor: 'transparent', color: 'var(--accent-fg, #fff)' }
 const inp: React.CSSProperties = { width: '100%', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13.5, padding: '9px 11px', borderRadius: 9, fontFamily: 'inherit', boxSizing: 'border-box' }
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3)', marginBottom: 7, display: 'block' }

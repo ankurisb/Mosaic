@@ -84,13 +84,13 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg>,
             'Chats'
           )}
+          {navBtn('/agents',
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="9" height="7" rx="1.5"/><path d="M5 1.5v1.5M9 1.5v1.5M1 5.5v2M13 5.5v2M5 12.5h4"/><circle cx="5.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/><circle cx="8.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/></svg>,
+            'Agents'
+          )}
           {navBtn('/dashboards',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg>,
             'Dashboards'
-          )}
-          {navBtn('/assets',
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="2.5" r="1.5"/><circle cx="2.5" cy="11" r="1.5"/><circle cx="11.5" cy="11" r="1.5"/><path d="M7 4v2.5M7 6.5L3.2 9.8M7 6.5l3.8 3.3"/></svg>,
-            'Assets'
           )}
           {navBtn('/reports',
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/></svg>,
@@ -104,13 +104,13 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M2 7h7M2 10h8"/><circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/></svg>,
             'Rules'
           )}
-          {navBtn('/agents',
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="9" height="7" rx="1.5"/><path d="M5 1.5v1.5M9 1.5v1.5M1 5.5v2M13 5.5v2M5 12.5h4"/><circle cx="5.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/><circle cx="8.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/></svg>,
-            'Agents'
+          {navBtn('/assets',
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="2.5" r="1.5"/><circle cx="2.5" cy="11" r="1.5"/><circle cx="11.5" cy="11" r="1.5"/><path d="M7 4v2.5M7 6.5L3.2 9.8M7 6.5l3.8 3.3"/></svg>,
+            'Assets'
           )}
         </div>
         {/* Conversations */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
           {!collapsed && convs.map(c => (
             <div key={c.id} onClick={() => { router.push(`/?conv=${c.id}`); setMobileNav(false) }}
               style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
