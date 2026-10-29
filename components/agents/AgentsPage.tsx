@@ -9,13 +9,13 @@ import type { SessionUser } from '@/lib/auth'
 // Detail (edit + version history/rollback + AI evolve), Run (step log + feedback), and the
 // centralised fleet Report. Backed by the real /api/agents* endpoints + headless runner.
 
-interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null }
+interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null; execution?: string; max_subagents?: number }
 interface RunRow { id: string; agent_name: string; status: string; trigger_source: string; cost_usd: number; stop_reason: string; result: string; started_at: string }
 interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string }
 interface Version { id: string; version: number; source: string; note: string; created_at: string; goal: string; tools: string | string[] }
 interface Guardrails { max_steps: number; max_tool_calls: number; max_minutes: number; max_cost_usd: number; read_only: boolean; approve_writes: boolean; no_progress: boolean }
 interface Conn { id: string; label: string; dialect: string }
-interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string; trigger_type: string; schedule: string }
+interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string; trigger_type: string; schedule: string; execution: 'single' | 'orchestrated'; max_subagents: number }
 
 // Friendly schedule <-> cron helpers (5-field cron; times are server-local).
 function cronFrom(freq: string, time: string, dow: string): string {
@@ -148,8 +148,8 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   }, [])
   useEffect(() => { if (view === 'report') loadRuns() }, [view, loadRuns])
 
-  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
-  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '' }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '', execution: 'single', max_subagents: 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '', execution: a.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(a.max_subagents) || 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
 
   async function runNow(a: Agent) {
     setRunning(true); setFed(null); setView('run'); setRun({ agent: a.name, steps: [], status: 'running', stop: '', result: '', cost: 0 })
@@ -180,7 +180,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   async function doPreview(d: Draft) {
     setPreviewing(true); setPreview(null)
     try {
-      const r = await fetch('/api/agents/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources }) })
+      const r = await fetch('/api/agents/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, execution: d.execution, max_subagents: d.max_subagents }) })
       const j = await r.json(); const rn = j.run || {}
       setPreview({ status: rn.status || 'failed', result: rn.result || j.error || '', steps: rn.steps || [], cost: rn.cost_usd || 0, evidence: j.evidence })
     } catch (e) { setPreview({ status: 'failed', result: String(e), steps: [], cost: 0 }) }
@@ -190,7 +190,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
     if (!d.name.trim() || !d.goal.trim()) { setMsg('Name and goal are required.'); return }
     setSaving(true); setMsg('')
     try {
-      const body: Record<string, unknown> = { name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, learnings: d.learnings, trigger_type: d.trigger_type, schedule: d.trigger_type === 'schedule' ? d.schedule : '' }
+      const body: Record<string, unknown> = { name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, learnings: d.learnings, trigger_type: d.trigger_type, schedule: d.trigger_type === 'schedule' ? d.schedule : '', execution: d.execution, max_subagents: d.max_subagents }
       if (evolutionAccepted) body.evolution_source = 'ai-proposed-accepted'
       const url = d.id ? `/api/agents/${d.id}` : '/api/agents'
       const r = await fetch(url, { method: d.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -220,7 +220,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   function acceptProposal() {
     if (!detail || !proposal) return
     const p = proposal.proposed
-    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '' }, true)
+    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4 }, true)
   }
 
   const pageCount = Math.max(1, Math.ceil(agents.length / PAGE))
@@ -346,6 +346,29 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             </div>
 
             <div>
+              <label style={lbl}>Execution</label>
+              <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
+                {(['single', 'orchestrated'] as const).map(m => (
+                  <button key={m} onClick={() => setDraft({ ...draft, execution: m })}
+                    style={{ border: '1px solid ' + (draft.execution === m ? 'var(--border)' : 'transparent'), background: draft.execution === m ? 'var(--surface)' : 'transparent', color: draft.execution === m ? 'var(--text)' : 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>{m === 'single' ? 'Single agent' : 'Orchestrated (parallel sub-agents)'}</button>
+                ))}
+              </div>
+              {draft.execution === 'orchestrated' ? (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <label style={{ ...lbl, fontSize: 11, margin: 0 }}>Max sub-agents</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button style={{ ...btn, padding: '2px 10px' }} onClick={() => setDraft({ ...draft, max_subagents: Math.max(1, draft.max_subagents - 1) })}>−</button>
+                    <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{draft.max_subagents}</span>
+                    <button style={{ ...btn, padding: '2px 10px' }} onClick={() => setDraft({ ...draft, max_subagents: Math.min(8, draft.max_subagents + 1) })}>+</button>
+                  </div>
+                  <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>The agent plans, runs up to {draft.max_subagents} read-only sub-agents in parallel, and synthesises one answer. All sub-agents share this agent&rsquo;s guardrails as a single fleet budget (steps, tool calls, cost, time) — not per sub-agent.</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 8 }}>One reasoning loop. Best for focused goals; can take write actions (with approval).</div>
+              )}
+            </div>
+
+            <div>
               <label style={lbl}>Trigger</label>
               <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
                 {(['manual', 'schedule'] as const).map(t => (
@@ -415,7 +438,10 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <button style={btn} onClick={() => setView('agents')}>‹ Back</button>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.name}</div>
-              {detail.trigger_type === 'schedule' && detail.schedule ? <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>Scheduled · runs {describeCron(String(detail.schedule))}</div> : null}
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                {detail.execution === 'orchestrated' ? `Orchestrated · up to ${Number(detail.max_subagents) || 4} parallel sub-agents` : 'Single agent'}
+                {detail.trigger_type === 'schedule' && detail.schedule ? ` · scheduled, runs ${describeCron(String(detail.schedule))}` : ''}
+              </div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <button style={btnPri} disabled={running || detail.status === 'paused'} onClick={() => runNow(detail)}>Run now</button>
@@ -448,7 +474,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '' })}>▶ Test proposed</button>
+                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4 })}>▶ Test proposed</button>
                   <button style={btnPri} disabled={saving} onClick={acceptProposal}>{saving ? 'Applying…' : 'Accept as new version'}</button>
                 </div>
                 {(previewing || preview) && (

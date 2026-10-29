@@ -66,6 +66,10 @@ export async function POST(req: Request) {
     max_cost_usd: Math.min(num(draft.max_cost_usd, DEFAULT_GUARDRAILS.max_cost_usd), PREVIEW_CEILING.max_cost_usd),
   }
 
+  // Orchestrated drafts test the real fan-out, but with a tight sub-agent cap — the
+  // PREVIEW_CEILING step/cost budget already bounds total spend across the fleet.
+  const execution = b.execution === 'orchestrated' ? 'orchestrated' as const : 'single' as const
+  const PREVIEW_SUBAGENT_CAP = 2
   const agent: AgentDef = {
     id: 'preview',
     name: (typeof b.name === 'string' && b.name.trim()) ? b.name.trim() : 'Test run',
@@ -74,6 +78,8 @@ export async function POST(req: Request) {
     trigger_type: 'manual',
     guardrails,
     sources: Array.isArray(b.sources) ? (b.sources as unknown[]).map(String) : undefined,
+    execution,
+    max_subagents: execution === 'orchestrated' ? Math.min(Number(b.max_subagents) || PREVIEW_SUBAGENT_CAP, PREVIEW_SUBAGENT_CAP) : undefined,
   }
 
   const run = await runAgent(agent, {

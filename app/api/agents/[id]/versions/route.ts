@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
   await setupDatabase().catch(() => {})
   const { id } = await params
-  const versions = await getDb()`SELECT id, agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, source, note, created_by, created_at
+  const versions = await getDb()`SELECT id, agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, source, note, created_by, created_at
     FROM agent_versions WHERE agent_id=${id} ORDER BY version DESC`.catch(() => [])
   return Response.json({ versions })
 }
@@ -49,13 +49,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     status: String(v.status || 'active'),
     sources: jstr(v.sources, '[]'),
     learnings: String(v.learnings || ''),
+    execution: v.execution === 'orchestrated' ? 'orchestrated' : 'single',
+    max_subagents: Number.isFinite(Number(v.max_subagents)) ? Number(v.max_subagents) : 4,
   }
 
   const rows = await sql`UPDATE agents SET
       goal=${cfg.goal}, tools=${cfg.tools}, trigger_type=${cfg.trigger_type},
       schedule=${cfg.schedule}, event_condition=${cfg.event_condition},
       outputs=${cfg.outputs}, guardrails=${cfg.guardrails}, status=${cfg.status},
-      sources=${cfg.sources}, learnings=${cfg.learnings}, updated_at=${nowExpr()}
+      sources=${cfg.sources}, learnings=${cfg.learnings},
+      execution=${cfg.execution}, max_subagents=${cfg.max_subagents}, updated_at=${nowExpr()}
     WHERE id=${id} RETURNING *`
   const agent = (rows as Row[])[0]
   if (!agent) return Response.json({ error: 'Agent not found' }, { status: 404 })

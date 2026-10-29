@@ -650,6 +650,8 @@ export async function setupDatabase() {
     guardrails      TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'active',
     sources         TEXT NOT NULL DEFAULT '[]',
+    execution       TEXT NOT NULL DEFAULT 'single',
+    max_subagents   INTEGER NOT NULL DEFAULT 4,
     last_scheduled_run TEXT,
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TEXT DEFAULT (datetime('now')),
@@ -661,6 +663,10 @@ export async function setupDatabase() {
   // Knowledge evolution: accumulated, human-approved learnings injected into the agent's
   // system prompt each run (known-good queries, resolved mappings, recurring findings).
   await sql`ALTER TABLE agents ADD COLUMN learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
+  // Execution mode: 'single' (one tool loop) or 'orchestrated' (lead → parallel read-only
+  // sub-agents → synthesis, sharing the agent's guardrails as the fleet budget).
+  await sql`ALTER TABLE agents ADD COLUMN execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
@@ -698,6 +704,8 @@ export async function setupDatabase() {
     status          TEXT NOT NULL DEFAULT 'active',
     sources         TEXT NOT NULL DEFAULT '[]',
     learnings       TEXT NOT NULL DEFAULT '',
+    execution       TEXT NOT NULL DEFAULT 'single',
+    max_subagents   INTEGER NOT NULL DEFAULT 4,
     source          TEXT NOT NULL DEFAULT 'human',
     note            TEXT DEFAULT '',
     created_by      TEXT,
@@ -705,6 +713,8 @@ export async function setupDatabase() {
   )`.catch(() => {})
   await sql`ALTER TABLE agent_versions ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
   await sql`ALTER TABLE agent_versions ADD COLUMN learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`.catch(() => {})
 
   // Seed two example agents (idempotent) mirroring the prototype.

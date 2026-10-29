@@ -464,6 +464,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     guardrails      TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'active',
     sources         TEXT NOT NULL DEFAULT '[]',
+    execution       TEXT NOT NULL DEFAULT 'single',
+    max_subagents   INTEGER NOT NULL DEFAULT 4,
     last_scheduled_run TEXT,
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
@@ -471,6 +473,8 @@ export async function setupDatabasePostgres(): Promise<void> {
   )`
   await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
   await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -506,6 +510,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     status          TEXT NOT NULL DEFAULT 'active',
     sources         TEXT NOT NULL DEFAULT '[]',
     learnings       TEXT NOT NULL DEFAULT '',
+    execution       TEXT NOT NULL DEFAULT 'single',
+    max_subagents   INTEGER NOT NULL DEFAULT 4,
     source          TEXT NOT NULL DEFAULT 'human',
     note            TEXT DEFAULT '',
     created_by      TEXT,
@@ -513,6 +519,8 @@ export async function setupDatabasePostgres(): Promise<void> {
   )`
   await sql`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS sources TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
   await sql`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
+  await sql`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`
 
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (

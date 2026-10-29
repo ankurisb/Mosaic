@@ -18,6 +18,8 @@ export interface AgentConfigSnapshot {
   status: string
   sources: string          // JSON string
   learnings: string        // plain text
+  execution: string        // 'single' | 'orchestrated'
+  max_subagents: number
 }
 
 /** Build a config snapshot from an `agents` DB row (tolerates string or parsed columns). */
@@ -34,6 +36,8 @@ export function snapshotFromRow(r: Record<string, unknown>): AgentConfigSnapshot
     status: String(r.status || 'active'),
     sources: s(r.sources, '[]'),
     learnings: String(r.learnings || ''),
+    execution: r.execution === 'orchestrated' ? 'orchestrated' : 'single',
+    max_subagents: Number.isFinite(Number(r.max_subagents)) ? Number(r.max_subagents) : 4,
   }
 }
 
@@ -48,8 +52,8 @@ export async function snapshotVersion(
     const rows = await sql`SELECT COALESCE(MAX(version),0) AS v FROM agent_versions WHERE agent_id=${agentId}`.catch(() => [{ v: 0 }])
     const next = Number((rows as { v: number }[])[0]?.v || 0) + 1
     await sql`INSERT INTO agent_versions
-      (agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, source, note, created_by, created_at)
-      VALUES (${agentId}, ${next}, ${cfg.goal}, ${cfg.tools}, ${cfg.trigger_type}, ${cfg.schedule}, ${cfg.event_condition}, ${cfg.outputs}, ${cfg.guardrails}, ${cfg.status}, ${cfg.sources}, ${cfg.learnings}, ${meta.source}, ${meta.note || ''}, ${meta.createdBy ?? null}, ${nowExpr()})`
+      (agent_id, version, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, source, note, created_by, created_at)
+      VALUES (${agentId}, ${next}, ${cfg.goal}, ${cfg.tools}, ${cfg.trigger_type}, ${cfg.schedule}, ${cfg.event_condition}, ${cfg.outputs}, ${cfg.guardrails}, ${cfg.status}, ${cfg.sources}, ${cfg.learnings}, ${cfg.execution}, ${cfg.max_subagents}, ${meta.source}, ${meta.note || ''}, ${meta.createdBy ?? null}, ${nowExpr()})`
     return next
   } catch {
     return undefined

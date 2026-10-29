@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-29
+### Added
+- **Multi-agent orchestration (Phase A).** An agent can now run in **Orchestrated** mode:
+  it acts as a *lead* that decomposes its goal into independent sub-tasks, runs them as
+  **read-only sub-agents in parallel**, and synthesises one answer — the same lead → fan-out →
+  synthesis pattern the chat's deep-research/diagnose already use, now available to any saved
+  agent. Set it in the builder's new **Execution** section (Single / Orchestrated + a
+  max-sub-agents cap, 1–8). The Manage header shows the mode.
+- Sub-agents inherit the creator identity (**run-as-creator**) and the agent's **source
+  scoping** (a pinned agent's sub-agents stay pinned), and are **read-only by construction**
+  (write tools stripped), so an orchestrated run never pauses for write approval.
+### Changed
+- **Guardrails are now a shared FLEET budget in orchestrated mode.** The agent's
+  max_steps / max_tool_calls / max_minutes / max_cost_usd bound the *whole* fan-out (lead +
+  all sub-agents + synthesis), never per sub-agent. The tool-call cap is reserved atomically
+  so parallel sub-agents can't collectively overshoot it; when a cap trips mid-run the agent
+  still synthesises from the partial findings (nothing that ran is lost).
+- Test-run (preview) supports orchestrated drafts with a tight 2-sub-agent cap.
+- `execution` + `max_subagents` persisted on agents and in every version snapshot (so
+  rollback and AI-proposed evolution carry them); both SQLite and Postgres dialects.
+
 ## [1.3.182] - 2026-10-28
 ### Added
 - **Schedule an agent from the builder.** The agent builder now has a **Trigger** section:

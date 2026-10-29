@@ -20,6 +20,8 @@ export function rowToAgent(r: Row): AgentDef {
     outputs: parse<string[]>(r.outputs, []),
     sources: parse<string[]>(r.sources, []),
     learnings: String(r.learnings || ''),
+    execution: r.execution === 'orchestrated' ? 'orchestrated' : 'single',
+    max_subagents: Number.isFinite(Number(r.max_subagents)) ? Number(r.max_subagents) : 4,
   }
 }
 
@@ -55,7 +57,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (typeof cur.schedule === 'string' ? cur.schedule : null)
   const sources = b.sources != null ? JSON.stringify(b.sources) : jstr(cur.sources, '[]')
   const learnings = b.learnings != null ? String(b.learnings) : String(cur.learnings ?? '')
-  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, learnings=${learnings}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
+  const execution = b.execution != null ? (b.execution === 'orchestrated' ? 'orchestrated' : 'single') : (cur.execution === 'orchestrated' ? 'orchestrated' : 'single')
+  const maxSub = b.max_subagents != null ? Math.max(1, Math.min(Number(b.max_subagents) || 4, 8)) : (Number.isFinite(Number(cur.max_subagents)) ? Number(cur.max_subagents) : 4)
+  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, learnings=${learnings}, execution=${execution}, max_subagents=${maxSub}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
     // Attribution: accepting an AI evolution proposal records 'ai-proposed-accepted'.
