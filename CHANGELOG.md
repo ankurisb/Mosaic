@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-29
+### Removed
+- **Theme (palette) selector.** With the Atlassian-style theme now the single Mosaic
+  look, the Fluent/Aubergine palette picker in Settings → Customization is gone, along
+  with the Fluent/Aubergine token blocks in `globals.css` and their chart series. The
+  theme system is now a single family with light/dark only.
+- Any palette a user had previously selected is cleared on load, so everyone lands on
+  the default theme (no one stranded on a removed look). The light/dark toggle is
+  unchanged.
+
 ## [1.5.0] - 2026-10-29
 ### Changed
 - **UI refresh — default theme now follows the Atlassian Design System.** The default

@@ -37,10 +37,8 @@ interface Props {
 // theme and light/dark mode. Recharts and our hand-drawn SVG need concrete colour
 // strings (CSS var() does not resolve in SVG presentation attributes), so we
 // resolve tokens to values here and re-read whenever the theme/mode changes.
+// Single ADS-flavoured categorical series palette (the palette selector was removed).
 const SERIES_MOSAIC    = ['#0052cc','#00857a','#6554c0','#e56910','#c9372c','#1d9bb5','#5e4db2','#22a06b','#a54800','#206bc4','#943d73','#4c9f70']
-const SERIES_FLUENT    = ['#0f6cbd','#038387','#b4009e','#8764b8','#e3008c','#00b7c3','#ca5010','#498205','#005b70','#c239b3','#986f0b','#4f6bed']
-const SERIES_AUBERGINE = ['#611f69','#2eb67d','#e01e5a','#ecb22e','#1264a3','#36c5f0','#7c3085','#007a5a','#1d9bd1','#4a154b','#e8912d','#cc8899']
-const SERIES_SETS: Record<string, string[]> = { mosaic: SERIES_MOSAIC, fluent: SERIES_FLUENT, aubergine: SERIES_AUBERGINE }
 
 function hexToRgba(hex: string, a: number): string {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim())
@@ -52,7 +50,7 @@ function hexToRgba(hex: string, a: number): string {
 }
 
 function useChartColors() {
-  const { theme, palette } = useTheme()
+  const { theme } = useTheme()
   return useMemo(() => {
     const read = (name: string, fb: string) => {
       if (typeof window === 'undefined') return fb
@@ -61,7 +59,7 @@ function useChartColors() {
     }
     const primary = read('--blue-t', '#2563eb')
     return {
-      series: SERIES_SETS[palette] || SERIES_MOSAIC,
+      series: SERIES_MOSAIC,
       primary,
       iqrFill: hexToRgba(primary, 0.14),
       mean: read('--amber-t', '#d97706'),
@@ -70,7 +68,7 @@ function useChartColors() {
       grid: read('--border', 'rgba(0,0,0,0.08)'),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, palette])
+  }, [theme])
 }
 
 // -- Shared chart helpers --------------------------------------

@@ -1,20 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
-import { useTheme, PALETTES, type Mode, type Palette } from '@/lib/theme'
+import { useTheme, type Mode } from '@/lib/theme'
 import { fmtNumber, fmtDate } from '@/lib/format'
 import { SEL, Btn } from './ui'
 import { safeJson } from '@/lib/fetch'
-
-// Small representative swatch sets for each palette, shown in the selector card so
-// the choice is visible before applying. These mirror the token values in
-// globals.css (page bg, surface, accent, a couple of chart-ish accents).
-const PREVIEW: Record<Palette, { light: string[]; dark: string[] }> = {
-  mosaic:    { light: ['#f4f5f7', '#ffffff', '#0052cc', '#22a06b', '#c9372c'], dark: ['#161a1d', '#1d2125', '#579dff', '#7ee2b8', '#fd9891'] },
-  fluent:    { light: ['#ffffff', '#ffffff', '#0f6cbd', '#038387', '#b4009e'], dark: ['#1b1a19', '#252423', '#2899f5', '#39a0a3', '#c87fc4'] },
-  aubergine: { light: ['#ffffff', '#ffffff', '#611f69', '#2eb67d', '#e01e5a'], dark: ['#1a1d21', '#222529', '#cd9ee6', '#2eb67d', '#36c5f0'] },
-}
-const swatchR = (id: Palette, big: boolean) => id === 'aubergine' ? (big ? 7 : 4) : (big ? 4 : 3)
 
 // ── Deployment (admin) option lists ─────────────────────────────────────────
 const FONT_FAMILIES = [
@@ -54,7 +44,7 @@ const Hint = ({ children }: { children: React.ReactNode }) => (
 )
 
 export default function TabCustomization({ user }: { user?: SessionUser }) {
-  const { theme, palette, setMode, setPalette } = useTheme()
+  const { theme, setMode } = useTheme()
   const isAdmin = user?.role === 'admin'
 
   // Deployment settings (kv_settings via /api/keys). Values are returned plainly.
@@ -109,7 +99,7 @@ export default function TabCustomization({ user }: { user?: SessionUser }) {
     <div>
       <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 500, color: 'var(--text)', margin: '0 0 6px' }}>Customization</h2>
       <p style={{ fontSize: 13.5, color: 'var(--text3)', margin: '0 0 28px', lineHeight: 1.6 }}>
-        Personalize how Mosaic looks. Light/dark and theme are saved on this device; font, language and region are set for the whole deployment by an admin.
+        Personalize how Mosaic looks. Light/dark is saved on this device; font, language and region are set for the whole deployment by an admin.
       </p>
 
       {toast && (
@@ -140,58 +130,7 @@ export default function TabCustomization({ user }: { user?: SessionUser }) {
         </div>
       </section>
 
-      {/* 2. Theme (palette) — per-device */}
-      <section style={{ marginBottom: 34 }}>
-        <Label>Theme</Label>
-        <Hint>Choose the overall visual style. Applies across Mosaic.</Hint>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-          {PALETTES.map(p => {
-            const selected = palette === p.id
-            const swatches = PREVIEW[p.id][theme]
-            return (
-              <button key={p.id} onClick={() => setPalette(p.id)}
-                style={{
-                  textAlign: 'left', padding: 0, overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit',
-                  background: 'var(--surface)',
-                  border: '1.5px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),
-                  borderRadius: 'var(--radius)', boxShadow: selected ? 'var(--shadow-md)' : 'var(--shadow)', transition: 'all .12s',
-                }}>
-                <div style={{ height: 68, background: swatches[0], borderBottom: '1px solid var(--border)', padding: 12, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: swatchR(p.id, true), background: swatches[1], boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}>
-                    <div style={{ height: 7, width: '70%', borderRadius: 99, background: swatches[2] }} />
-                    <div style={{ display: 'flex', gap: 5 }}>
-                      {swatches.slice(2).map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: swatchR(p.id, false), background: c }} />)}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ padding: '11px 13px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {p.label}
-                      {p.id === 'mosaic' && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '1px 6px', borderRadius: 999 }}>Default</span>}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 3, lineHeight: 1.45 }}>{p.description}</div>
-                  </div>
-                  <span style={{
-                    flexShrink: 0, width: 18, height: 18, borderRadius: 999, marginTop: 1,
-                    border: '1.5px solid ' + (selected ? 'var(--accent)' : 'var(--border2)'),
-                    background: selected ? 'var(--accent)' : 'transparent',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {selected && <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--accent-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>}
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-        <p style={{ fontSize: 11.5, color: 'var(--text4)', marginTop: 14, lineHeight: 1.5 }}>
-          Note: embedded Superset dashboards and map tiles render in their own frames and keep their own styling.
-        </p>
-      </section>
-
-      {/* 3. Font — deployment-wide (admin) */}
+      {/* 2. Font — deployment-wide (admin) */}
       {isAdmin && (
         <section style={{ marginBottom: 34, paddingTop: 28, borderTop: '1px solid var(--border)' }}>
           <Label>Font</Label>
