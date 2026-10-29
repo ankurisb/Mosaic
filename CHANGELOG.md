@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-29
+### Added
+- **Eval harness (Phase D).** Agents can now carry saved **eval checks** — each a name, optional
+  prompt override, the substrings the result should contain, and whether the run must succeed.
+  A new Evals section in the builder lets you add/remove checks and **Run evals**, scoring each
+  case PASS/FAIL deterministically with an overall suite score. `POST /api/agents/[id]/evals/run`
+  runs every case safely (persist:false, read-only forced) and accepts a proposed-config
+  `override`, so an AI-proposed evolution can be **regression-tested before it's published** —
+  evolution becomes measured, not vibes. Cases, scoring in `lib/agent-eval.ts` (9 unit tests),
+  storage in `agent_evals` (migration 027, both dialects).
+
 ## [1.4.2] - 2026-10-29
 ### Added
 - **Event-trigger engine (Phase C).** Agents can now run **on an event**, not just manually or

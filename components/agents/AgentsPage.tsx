@@ -22,6 +22,7 @@ function parseEventCondition(raw: unknown): EventDraft {
   }
 }
 interface RunRow { id: string; agent_name: string; status: string; trigger_source: string; cost_usd: number; stop_reason: string; result: string; started_at: string }
+interface EvalRow { id: string; name: string; input?: string | null; expected_contains: string | string[]; expect_status: string; last_passed?: number | null; last_run_at?: string | null }
 interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string; sub?: string }
 interface LiveSub { id: string; title: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; error?: string }
 interface Version { id: string; version: number; source: string; note: string; created_at: string; goal: string; tools: string | string[] }
@@ -146,6 +147,10 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
 
   const [detail, setDetail] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<Version[]>([])
+  const [evals, setEvals] = useState<EvalRow[]>([])
+  const [evalForm, setEvalForm] = useState<{ name: string; input: string; expected: string; expectSucceed: boolean }>({ name: '', input: '', expected: '', expectSucceed: true })
+  const [evalRun, setEvalRun] = useState<{ suite: { passed: number; total: number; score: number }; cases: { id: string; name: string; score: { passed: boolean; missing: string[] } }[] } | null>(null)
+  const [evalBusy, setEvalBusy] = useState(false)
   const [proposal, setProposal] = useState<{ current: Record<string, unknown>; proposed: Record<string, unknown>; rationale: string; changes: string[] } | null>(null)
   const [evolving, setEvolving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -247,8 +252,31 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   }
 
   async function openDetail(a: Agent) {
-    setDetail(a); setProposal(null); setMsg(''); setView('detail')
+    setDetail(a); setProposal(null); setMsg(''); setView('detail'); setEvalRun(null)
     const r = await fetch(`/api/agents/${a.id}/versions`); const d = await r.json(); setVersions(d.versions || [])
+    loadEvals(a.id)
+  }
+  async function loadEvals(agentId: string) {
+    try { const d = await (await fetch(`/api/agents/${agentId}/evals`)).json(); setEvals(d.evals || []) } catch { setEvals([]) }
+  }
+  async function addEval() {
+    if (!detail || !evalForm.name.trim()) return
+    const expected = evalForm.expected.split(',').map(s => s.trim()).filter(Boolean)
+    await fetch(`/api/agents/${detail.id}/evals`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: evalForm.name, input: evalForm.input || undefined, expected_contains: expected, expect_status: evalForm.expectSucceed ? 'succeeded' : 'any' }) })
+    setEvalForm({ name: '', input: '', expected: '', expectSucceed: true }); loadEvals(detail.id)
+  }
+  async function delEval(evalId: string) {
+    if (!detail) return
+    await fetch(`/api/agents/${detail.id}/evals/${evalId}`, { method: 'DELETE' }); loadEvals(detail.id)
+  }
+  async function runEvals() {
+    if (!detail) return
+    setEvalBusy(true); setEvalRun(null)
+    try {
+      const r = await fetch(`/api/agents/${detail.id}/evals/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const d = await r.json()
+      if (d.suite) { setEvalRun(d); loadEvals(detail.id) } else setMsg(d.error || 'Eval run failed')
+    } finally { setEvalBusy(false) }
   }
   async function rollback(v: number) {
     if (!detail) return; setMsg('')
@@ -563,6 +591,44 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                 )}
               </div>
             )}
+          </div>
+
+          <div style={card}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Evals</span>
+              <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>Checks that measure the agent — run before trusting a change.</span>
+              <button style={{ ...btnPri, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5 }} disabled={evalBusy || evals.length === 0} onClick={runEvals}>{evalBusy ? 'Running…' : '▶ Run evals'}</button>
+            </div>
+            {evalRun && (
+              <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', fontSize: 12.5 }}>
+                Suite score: <b>{Math.round(evalRun.suite.score * 100)}%</b> · {evalRun.suite.passed}/{evalRun.suite.total} passed
+              </div>
+            )}
+            {evals.length === 0 ? <div style={{ padding: 18, color: 'var(--text3)', fontSize: 13 }}>No checks yet. Add one below — e.g. expect the result to contain &ldquo;LATHE-01&rdquo;.</div> : evals.map(ev => {
+              const exp = asArr(ev.expected_contains as string | string[])
+              const ranCase = evalRun?.cases.find(c => c.id === ev.id)
+              const pf = ranCase ? ranCase.score.passed : (ev.last_passed == null ? null : ev.last_passed === 1)
+              return (
+                <div key={ev.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, width: 42, color: pf == null ? 'var(--text3)' : pf ? 'var(--green-t,#16a34a)' : 'var(--red-t,#dc2626)' }}>{pf == null ? '—' : pf ? 'PASS' : 'FAIL'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{ev.name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>
+                      expects {exp.length ? exp.map(e => `“${e}”`).join(', ') : '(run success only)'}{ev.expect_status === 'any' ? '' : ' · must succeed'}
+                      {ranCase && !ranCase.score.passed && ranCase.score.missing.length ? ` · missing: ${ranCase.score.missing.join(', ')}` : ''}
+                    </div>
+                  </div>
+                  <button style={{ ...btn, padding: '4px 9px', fontSize: 11.5 }} onClick={() => delEval(ev.id)}>Remove</button>
+                </div>
+              )
+            })}
+            <div style={{ padding: '12px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, alignItems: 'end' }}>
+              <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Check name</label><input value={evalForm.name} onChange={e => setEvalForm({ ...evalForm, name: e.target.value })} placeholder="Names the worst machine" style={inp} /></div>
+              <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Result must contain (comma-sep)</label><input value={evalForm.expected} onChange={e => setEvalForm({ ...evalForm, expected: e.target.value })} placeholder="LATHE-01, OEE" style={inp} /></div>
+              <div style={{ gridColumn: '1 / -1' }}><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Prompt override (optional — blank uses the agent goal)</label><input value={evalForm.input} onChange={e => setEvalForm({ ...evalForm, input: e.target.value })} placeholder="(use goal)" style={inp} /></div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)' }}><input type="checkbox" checked={evalForm.expectSucceed} onChange={e => setEvalForm({ ...evalForm, expectSucceed: e.target.checked })} /> must succeed</label>
+              <button style={btn} disabled={!evalForm.name.trim()} onClick={addEval}>+ Add check</button>
+            </div>
           </div>
 
           <div style={card}>

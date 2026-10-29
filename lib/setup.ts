@@ -722,6 +722,22 @@ export async function setupDatabase() {
   await sql`ALTER TABLE agent_versions ADD COLUMN max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`.catch(() => {})
 
+  // -- Agent evals: saved, checkable expectations on a run (Phase D). Scored deterministically
+  //    so an agent change / AI-proposed evolution is measured, not accepted on vibes.
+  await sql`CREATE TABLE IF NOT EXISTS agent_evals (
+    id                TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    agent_id          TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    name              TEXT NOT NULL DEFAULT '',
+    input             TEXT,
+    expected_contains TEXT NOT NULL DEFAULT '[]',
+    expect_status     TEXT NOT NULL DEFAULT 'succeeded',
+    last_passed       INTEGER,
+    last_run_at       TEXT,
+    created_by        TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+  await sql`CREATE INDEX IF NOT EXISTS idx_agent_evals_agent ON agent_evals(agent_id)`.catch(() => {})
+
   // Seed two example agents (idempotent) mirroring the prototype.
   const agentCount = await sql`SELECT COUNT(*) as cnt FROM agents`.catch(() => [{ cnt: 1 }])
   if (Number((agentCount[0] as { cnt: number })?.cnt || 0) === 0) {

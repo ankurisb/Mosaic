@@ -527,6 +527,20 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version)`
 
+  await sql`CREATE TABLE IF NOT EXISTS agent_evals (
+    id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    agent_id          TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    name              TEXT NOT NULL DEFAULT '',
+    input             TEXT,
+    expected_contains TEXT NOT NULL DEFAULT '[]',
+    expect_status     TEXT NOT NULL DEFAULT 'succeeded',
+    last_passed       INTEGER,
+    last_run_at       TEXT,
+    created_by        TEXT,
+    created_at        TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+  await sql`CREATE INDEX IF NOT EXISTS idx_agent_evals_agent ON agent_evals(agent_id)`
+
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,
