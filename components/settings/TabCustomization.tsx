@@ -10,11 +10,11 @@ import { safeJson } from '@/lib/fetch'
 // the choice is visible before applying. These mirror the token values in
 // globals.css (page bg, surface, accent, a couple of chart-ish accents).
 const PREVIEW: Record<Palette, { light: string[]; dark: string[] }> = {
-  mosaic:    { light: ['#f5f5f5', '#ffffff', '#0f0f0f', '#2563eb', '#16a34a'], dark: ['#0a0a0a', '#141414', '#f0f0f0', '#60a5fa', '#22c55e'] },
+  mosaic:    { light: ['#f4f5f7', '#ffffff', '#0052cc', '#22a06b', '#c9372c'], dark: ['#161a1d', '#1d2125', '#579dff', '#7ee2b8', '#fd9891'] },
   fluent:    { light: ['#ffffff', '#ffffff', '#0f6cbd', '#038387', '#b4009e'], dark: ['#1b1a19', '#252423', '#2899f5', '#39a0a3', '#c87fc4'] },
   aubergine: { light: ['#ffffff', '#ffffff', '#611f69', '#2eb67d', '#e01e5a'], dark: ['#1a1d21', '#222529', '#cd9ee6', '#2eb67d', '#36c5f0'] },
 }
-const swatchR = (id: Palette, big: boolean) => id === 'fluent' ? (big ? 4 : 3) : id === 'aubergine' ? (big ? 7 : 4) : (big ? 10 : 8)
+const swatchR = (id: Palette, big: boolean) => id === 'aubergine' ? (big ? 7 : 4) : (big ? 4 : 3)
 
 // ── Deployment (admin) option lists ─────────────────────────────────────────
 const FONT_FAMILIES = [

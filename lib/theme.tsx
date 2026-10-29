@@ -12,7 +12,7 @@ export type Mode = 'light' | 'dark'
 export type Palette = 'mosaic' | 'fluent' | 'aubergine'
 
 export const PALETTES: { id: Palette; label: string; description: string }[] = [
-  { id: 'mosaic', label: 'Mosaic', description: 'The default editorial theme — warm neutrals, serif headings.' },
+  { id: 'mosaic', label: 'Mosaic', description: 'The default enterprise theme — Atlassian-style blue accent, crisp corners, system sans typography.' },
   { id: 'fluent', label: 'Fluent', description: 'A clean productivity theme — blue accent, Segoe typography, squared corners.' },
   { id: 'aubergine', label: 'Aubergine', description: 'A workspace-style theme — deep purple accent, white surfaces, colourful highlights.' },
 ]

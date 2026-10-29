@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-29
+### Changed
+- **UI refresh — default theme now follows the Atlassian Design System.** The default
+  `mosaic` palette is re-skinned app-wide: neutral `#f4f5f7` canvas, white surfaces, ADS
+  brand blue (`#0052cc` light / `#579dff` dark), crisp 3–4px corners, ADS two-part
+  elevation shadows, and ADS success/danger/warning/discovery status families. Full light
+  **and** dark token sets — the existing theme toggle and Fluent/Aubergine palettes are
+  unchanged.
+- Headings and the "Mosaic" wordmark are now sans (ADS system stack) instead of serif;
+  `--font-serif` points at the same air-gap-safe system stack. No web font is downloaded.
+- Dashboard chart series (`SERIES_MOSAIC`), theme-selector swatches, and the palette
+  description updated to match the new default.
+
+### Added
+- **`DESIGN_SYSTEM.md`** — canonical design-system spec (token tables for light/dark,
+  component patterns, do/don't, air-gap font policy) so future development stays on this UI.
+  `CLAUDE.md` now points at it and mandates token-only styling.
+
 ## [1.4.5] - 2026-10-29
 ### Security
 - **Custom tools no longer follow HTTP redirects.** The SSRF guard vets the initial URL; a
