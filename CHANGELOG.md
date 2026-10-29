@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-29
+### Added
+- **Event-trigger engine (Phase C).** Agents can now run **on an event**, not just manually or
+  on a schedule. A new **On event** trigger in the builder watches a data source: pick a
+  database, a query that returns the value to watch, a field, an operator and a threshold, a
+  row-match mode (first/any) and a cooldown. The scheduler evaluates it every minute and fires
+  the agent **once on a false→true transition** (edge-triggered — not every minute it stays
+  true), re-arms when the value returns to normal, and a cooldown suppresses rapid re-fires
+  (anti-flap). Event agents run as their creator, same as scheduled ones.
+- Edge state persists on `agents.last_event_state` / `last_event_at` (migration 026, both
+  dialects); editing the condition or trigger re-arms the edge. `event_condition` is now
+  accepted on PATCH (was create-only).
+- Decision + evaluation logic extracted to `lib/agent-events.ts` with 9 unit tests
+  (rising-edge fire, no re-fire while true, re-arm on false, cooldown anti-flap, threshold
+  evaluation, graceful tool-error handling).
+
 ## [1.4.1] - 2026-10-29
 ### Added
 - **Live run streaming (Phase B).** Running an agent now streams its activity over SSE

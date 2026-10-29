@@ -59,7 +59,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const learnings = b.learnings != null ? String(b.learnings) : String(cur.learnings ?? '')
   const execution = b.execution != null ? (b.execution === 'orchestrated' ? 'orchestrated' : 'single') : (cur.execution === 'orchestrated' ? 'orchestrated' : 'single')
   const maxSub = b.max_subagents != null ? Math.max(1, Math.min(Number(b.max_subagents) || 4, 8)) : (Number.isFinite(Number(cur.max_subagents)) ? Number(cur.max_subagents) : 4)
-  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, sources=${sources}, learnings=${learnings}, execution=${execution}, max_subagents=${maxSub}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
+  // event_condition: JSON string of the trigger condition. When it (or the trigger) changes,
+  // re-arm the edge state so a stale last_event_state can't suppress the next real transition.
+  const evChanged = b.event_condition !== undefined || (b.trigger_type != null && trigger !== String(cur.trigger_type))
+  const eventCondition = b.event_condition !== undefined
+    ? (b.event_condition ? jstr(b.event_condition, '') : null)
+    : (typeof cur.event_condition === 'string' ? cur.event_condition : (cur.event_condition != null ? JSON.stringify(cur.event_condition) : null))
+  // Re-arm the edge state when the condition/trigger changes; otherwise preserve it.
+  const evState = evChanged ? 0 : Number(cur.last_event_state || 0)
+  const evAt = evChanged ? null : (typeof cur.last_event_at === 'string' ? cur.last_event_at : null)
+  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, event_condition=${eventCondition}, sources=${sources}, learnings=${learnings}, execution=${execution}, max_subagents=${maxSub}, last_event_state=${evState}, last_event_at=${evAt}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
     // Attribution: accepting an AI evolution proposal records 'ai-proposed-accepted'.

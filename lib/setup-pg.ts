@@ -466,6 +466,8 @@ export async function setupDatabasePostgres(): Promise<void> {
     sources         TEXT NOT NULL DEFAULT '[]',
     execution       TEXT NOT NULL DEFAULT 'single',
     max_subagents   INTEGER NOT NULL DEFAULT 4,
+    last_event_state INTEGER NOT NULL DEFAULT 0,
+    last_event_at   TEXT,
     last_scheduled_run TEXT,
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
@@ -475,6 +477,8 @@ export async function setupDatabasePostgres(): Promise<void> {
   await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS learnings TEXT NOT NULL DEFAULT ''`.catch(() => {})
   await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
   await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_event_state INTEGER NOT NULL DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_event_at TEXT`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

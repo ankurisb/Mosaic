@@ -9,14 +9,25 @@ import type { SessionUser } from '@/lib/auth'
 // Detail (edit + version history/rollback + AI evolve), Run (step log + feedback), and the
 // centralised fleet Report. Backed by the real /api/agents* endpoints + headless runner.
 
-interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null; execution?: string; max_subagents?: number }
+interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null; execution?: string; max_subagents?: number; event_condition?: string | object | null }
+interface EventDraft { source_id: string; query: string; field: string; op: string; value: string; cooldown_min: number; match_mode: 'first' | 'any' }
+const EMPTY_EVENT: EventDraft = { source_id: '', query: '', field: '', op: '<', value: '', cooldown_min: 60, match_mode: 'first' }
+function parseEventCondition(raw: unknown): EventDraft {
+  const o = (typeof raw === 'string' ? (() => { try { return JSON.parse(raw) } catch { return {} } })() : raw || {}) as Record<string, unknown>
+  return {
+    source_id: String(o.source_id || ''), query: String(o.query || ''), field: String(o.field || ''),
+    op: String(o.op || '<'), value: o.value == null ? '' : String(o.value),
+    cooldown_min: Number.isFinite(Number(o.cooldown_sec)) ? Math.round(Number(o.cooldown_sec) / 60) : 60,
+    match_mode: o.match_mode === 'any' ? 'any' : 'first',
+  }
+}
 interface RunRow { id: string; agent_name: string; status: string; trigger_source: string; cost_usd: number; stop_reason: string; result: string; started_at: string }
 interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string; sub?: string }
 interface LiveSub { id: string; title: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; error?: string }
 interface Version { id: string; version: number; source: string; note: string; created_at: string; goal: string; tools: string | string[] }
 interface Guardrails { max_steps: number; max_tool_calls: number; max_minutes: number; max_cost_usd: number; read_only: boolean; approve_writes: boolean; no_progress: boolean }
 interface Conn { id: string; label: string; dialect: string }
-interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string; trigger_type: string; schedule: string; execution: 'single' | 'orchestrated'; max_subagents: number }
+interface Draft { id?: string; name: string; goal: string; tools: string[]; guardrails: Guardrails; sources: string[]; learnings: string; trigger_type: string; schedule: string; execution: 'single' | 'orchestrated'; max_subagents: number; event: EventDraft }
 
 // Friendly schedule <-> cron helpers (5-field cron; times are server-local).
 function cronFrom(freq: string, time: string, dow: string): string {
@@ -150,8 +161,8 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   }, [])
   useEffect(() => { if (view === 'report') loadRuns() }, [view, loadRuns])
 
-  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '', execution: 'single', max_subagents: 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
-  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '', execution: a.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(a.max_subagents) || 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '', execution: 'single', max_subagents: 4, event: { ...EMPTY_EVENT } }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
+  function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '', execution: a.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(a.max_subagents) || 4, event: parseEventCondition(a.event_condition) }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
 
   function applyLiveEvent(ev: Record<string, unknown>) {
     const t = String(ev.type)
@@ -222,6 +233,11 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
     setSaving(true); setMsg('')
     try {
       const body: Record<string, unknown> = { name: d.name, goal: d.goal, tools: d.tools, guardrails: d.guardrails, sources: d.sources, learnings: d.learnings, trigger_type: d.trigger_type, schedule: d.trigger_type === 'schedule' ? d.schedule : '', execution: d.execution, max_subagents: d.max_subagents }
+      if (d.trigger_type === 'event') {
+        body.event_condition = JSON.stringify({ source_type: 'database', source_id: d.event.source_id, query: d.event.query, field: d.event.field, op: d.event.op, value: Number(d.event.value), match_mode: d.event.match_mode, cooldown_sec: Math.max(0, Math.round(d.event.cooldown_min * 60)) })
+      } else if (d.id) {
+        body.event_condition = '' // clear when switching away from event
+      }
       if (evolutionAccepted) body.evolution_source = 'ai-proposed-accepted'
       const url = d.id ? `/api/agents/${d.id}` : '/api/agents'
       const r = await fetch(url, { method: d.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -251,7 +267,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   function acceptProposal() {
     if (!detail || !proposal) return
     const p = proposal.proposed
-    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4 }, true)
+    publish({ id: detail.id, name: detail.name, goal: String(p.goal || ''), tools: (p.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(p.guardrails as object) }, sources: (p.sources as string[]) || [], learnings: String(p.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4, event: parseEventCondition(detail.event_condition) }, true)
   }
 
   const pageCount = Math.max(1, Math.ceil(agents.length / PAGE))
@@ -402,11 +418,34 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <div>
               <label style={lbl}>Trigger</label>
               <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
-                {(['manual', 'schedule'] as const).map(t => (
+                {(['manual', 'schedule', 'event'] as const).map(t => (
                   <button key={t} onClick={() => setDraft({ ...draft, trigger_type: t, schedule: t === 'schedule' ? (draft.schedule || cronFrom(schedFreq, schedTime, schedDow)) : draft.schedule })}
-                    style={{ border: '1px solid ' + (draft.trigger_type === t ? 'var(--border)' : 'transparent'), background: draft.trigger_type === t ? 'var(--surface)' : 'transparent', color: draft.trigger_type === t ? 'var(--text)' : 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>{t === 'manual' ? 'Manual (run on demand)' : 'Scheduled'}</button>
+                    style={{ border: '1px solid ' + (draft.trigger_type === t ? 'var(--border)' : 'transparent'), background: draft.trigger_type === t ? 'var(--surface)' : 'transparent', color: draft.trigger_type === t ? 'var(--text)' : 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>{t === 'manual' ? 'Manual' : t === 'schedule' ? 'Scheduled' : 'On event'}</button>
                 ))}
               </div>
+              {draft.trigger_type === 'event' && (
+                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Watch this data source</label>
+                    <select value={draft.event.source_id} onChange={e => setDraft({ ...draft, event: { ...draft.event, source_id: e.target.value } })} style={inp}>
+                      <option value="">Select a database…</option>
+                      {conns.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Query (returns the value to watch)</label>
+                    <input value={draft.event.query} onChange={e => setDraft({ ...draft, event: { ...draft.event, query: e.target.value } })} placeholder="SELECT oee_pct FROM production_logs ORDER BY shift_date DESC LIMIT 1" style={{ ...inp, fontFamily: 'var(--font-mono)', fontSize: 11.5 }} />
+                  </div>
+                  <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Field</label><input value={draft.event.field} onChange={e => setDraft({ ...draft, event: { ...draft.event, field: e.target.value } })} placeholder="oee_pct" style={inp} /></div>
+                  <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>When</label><select value={draft.event.op} onChange={e => setDraft({ ...draft, event: { ...draft.event, op: e.target.value } })} style={inp}>{['<', '<=', '>', '>=', '==', '!='].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
+                  <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Value</label><input value={draft.event.value} onChange={e => setDraft({ ...draft, event: { ...draft.event, value: e.target.value } })} placeholder="75" style={inp} /></div>
+                  <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Rows</label><select value={draft.event.match_mode} onChange={e => setDraft({ ...draft, event: { ...draft.event, match_mode: e.target.value === 'any' ? 'any' : 'first' } })} style={inp}><option value="first">First row</option><option value="any">Any row</option></select></div>
+                  <div><label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>Cooldown (min)</label><input type="number" min={0} value={draft.event.cooldown_min} onChange={e => setDraft({ ...draft, event: { ...draft.event, cooldown_min: Math.max(0, Number(e.target.value) || 0) } })} style={inp} /></div>
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--text3)' }}>
+                    Checked every minute. Fires once when <b>{draft.event.field || 'the value'} {draft.event.op} {draft.event.value || '…'}</b> becomes true (not every minute it stays true); re-arms when it goes back to normal. Cooldown prevents rapid re-fires.
+                  </div>
+                </div>
+              )}
               {draft.trigger_type === 'schedule' && (
                 <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
                   <div>
@@ -472,6 +511,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
               <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
                 {detail.execution === 'orchestrated' ? `Orchestrated · up to ${Number(detail.max_subagents) || 4} parallel sub-agents` : 'Single agent'}
                 {detail.trigger_type === 'schedule' && detail.schedule ? ` · scheduled, runs ${describeCron(String(detail.schedule))}` : ''}
+                {detail.trigger_type === 'event' ? (() => { const e = parseEventCondition(detail.event_condition); return ` · on event: ${e.field || 'value'} ${e.op} ${e.value}` })() : ''}
               </div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -505,7 +545,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4 })}>▶ Test proposed</button>
+                  <button style={btn} onClick={() => doPreview({ id: detail.id, name: detail.name, goal: String(proposal.proposed.goal || ''), tools: (proposal.proposed.tools as string[]) || [], guardrails: { ...DEFAULT_GUARDRAILS, ...(proposal.proposed.guardrails as object) }, sources: (proposal.proposed.sources as string[]) || [], learnings: String(proposal.proposed.learnings || ''), trigger_type: detail.trigger_type || 'manual', schedule: typeof detail.schedule === 'string' ? detail.schedule : '', execution: detail.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(detail.max_subagents) || 4, event: parseEventCondition(detail.event_condition) })}>▶ Test proposed</button>
                   <button style={btnPri} disabled={saving} onClick={acceptProposal}>{saving ? 'Applying…' : 'Accept as new version'}</button>
                 </div>
                 {(previewing || preview) && (

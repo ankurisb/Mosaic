@@ -825,6 +825,62 @@ export async function POST(req: Request) {
   } catch (e) { agentErrors.push(`scheduled-agents: ${(e as Error).message}`) }
 
   // ============================================================
+  // EVENT AGENTS (Phase C)
+  // Active agents with trigger_type='event' are evaluated every tick against their
+  // event_condition. Firing is EDGE-TRIGGERED (once on false→true), with an optional
+  // cooldown; the edge state persists on agents.last_event_state / last_event_at. Runs
+  // as the agent's creator. Non-blocking: a failing evaluation never fails the scheduler.
+  // ============================================================
+  let eventsFired = 0
+  const eventErrors: string[] = []
+  try {
+    const eventAgents = await sql`SELECT * FROM agents WHERE status='active' AND trigger_type='event' AND event_condition IS NOT NULL AND event_condition != ''`.catch(() => [])
+    if ((eventAgents as unknown[]).length) {
+      const { decideEventFire, evaluateEventCondition } = await import('@/lib/agent-events')
+      const { runAgent } = await import('@/lib/agent-runner')
+      const { rowToAgent } = await import('@/app/api/agents/[id]/route')
+      const nowMs = now.getTime()
+      for (const row of eventAgents as Record<string, unknown>[]) {
+        const aid = String(row.id)
+        try {
+          const cond = typeof row.event_condition === 'string'
+            ? (() => { try { return JSON.parse(row.event_condition as string) } catch { return {} } })()
+            : (row.event_condition as Record<string, unknown>) || {}
+          const resolveQuery = async (c: { saved_query_id?: string; query?: string }) => {
+            if (c.saved_query_id) {
+              const sq = await sql`SELECT query FROM saved_queries WHERE id = ${c.saved_query_id} LIMIT 1`.catch(() => []) as { query: string }[]
+              if (sq.length) return sq[0].query
+            }
+            return c.query
+          }
+          const ev = await evaluateEventCondition(cond, (name, input) => runTool(name, input), resolveQuery)
+          const state = { lastState: Number(row.last_event_state || 0), lastAt: (row.last_event_at as string | null) || null }
+          const decision = decideEventFire(ev.met, state, nowMs, Number(cond.cooldown_sec || 0))
+
+          if (decision.fire) {
+            const runOpts: { triggerSource: string; userId?: string; userEmail?: string; userRole?: string } = { triggerSource: 'event' }
+            const createdBy = row.created_by as string | null
+            if (createdBy) {
+              const urows = await sql`SELECT id, email, role FROM users WHERE id = ${createdBy} AND COALESCE(banned,0) = 0`.catch(() => [])
+              const u = (urows as Record<string, unknown>[])[0]
+              if (u) { runOpts.userId = String(u.id); runOpts.userEmail = String(u.email); runOpts.userRole = String(u.role) }
+            }
+            await runAgent(rowToAgent(row), runOpts)
+            await sql`UPDATE agents SET last_event_state = ${decision.nextState}, last_event_at = ${now.toISOString()} WHERE id = ${aid}`.catch(() => {})
+            eventsFired++
+          } else {
+            // Persist the edge state even when not firing (re-arm on false, consume on cooldown).
+            await sql`UPDATE agents SET last_event_state = ${decision.nextState} WHERE id = ${aid}`.catch(() => {})
+          }
+          if (ev.error) eventErrors.push(`${aid}: ${ev.error}`)
+        } catch (e) {
+          eventErrors.push(`${aid}: ${(e as Error).message}`)
+        }
+      }
+    }
+  } catch (e) { eventErrors.push(`event-agents: ${(e as Error).message}`) }
+
+  // ============================================================
   // NIGHTLY DATA RETENTION PURGE
   // Run once per day — only if last purge was > 20 hours ago
   // ============================================================
@@ -849,6 +905,8 @@ export async function POST(req: Request) {
     reports_run:     reportsRun,
     agents_run:      agentsRun,
     agent_errors:    agentErrors,
+    events_fired:    eventsFired,
+    event_errors:    eventErrors,
     retention_purged: retentionPurged,
     fired:           fired.length,
     errors:          errors.length,

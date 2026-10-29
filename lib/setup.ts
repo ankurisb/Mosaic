@@ -652,6 +652,8 @@ export async function setupDatabase() {
     sources         TEXT NOT NULL DEFAULT '[]',
     execution       TEXT NOT NULL DEFAULT 'single',
     max_subagents   INTEGER NOT NULL DEFAULT 4,
+    last_event_state INTEGER NOT NULL DEFAULT 0,
+    last_event_at   TEXT,
     last_scheduled_run TEXT,
     created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TEXT DEFAULT (datetime('now')),
@@ -667,6 +669,9 @@ export async function setupDatabase() {
   // sub-agents → synthesis, sharing the agent's guardrails as the fleet budget).
   await sql`ALTER TABLE agents ADD COLUMN execution TEXT NOT NULL DEFAULT 'single'`.catch(() => {})
   await sql`ALTER TABLE agents ADD COLUMN max_subagents INTEGER NOT NULL DEFAULT 4`.catch(() => {})
+  // Event-trigger edge state (Phase C): fire once on false→true, re-arm on false.
+  await sql`ALTER TABLE agents ADD COLUMN last_event_state INTEGER NOT NULL DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN last_event_at TEXT`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS agent_runs (
     id              TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
