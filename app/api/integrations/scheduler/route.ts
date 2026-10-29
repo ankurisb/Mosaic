@@ -799,6 +799,7 @@ export async function POST(req: Request) {
       const { CronExpressionParser } = await import('cron-parser')
       const { runAgent } = await import('@/lib/agent-runner')
       const { rowToAgent } = await import('@/app/api/agents/[id]/route')
+      const { attachCustomTools } = await import('@/lib/custom-tools-db')
       for (const row of scheduledAgents as Record<string, unknown>[]) {
         try {
           const interval = CronExpressionParser.parse(String(row.schedule), { currentDate: now })
@@ -814,7 +815,7 @@ export async function POST(req: Request) {
             const u = (urows as Record<string, unknown>[])[0]
             if (u) { runOpts.userId = String(u.id); runOpts.userEmail = String(u.email); runOpts.userRole = String(u.role) }
           }
-          await runAgent(rowToAgent(row), runOpts)
+          await runAgent(await attachCustomTools(rowToAgent(row), row.custom_tool_ids), runOpts)
           await sql`UPDATE agents SET last_scheduled_run = ${now.toISOString()} WHERE id = ${String(row.id)}`.catch(() => {})
           agentsRun++
         } catch (e) {
@@ -839,6 +840,7 @@ export async function POST(req: Request) {
       const { decideEventFire, evaluateEventCondition } = await import('@/lib/agent-events')
       const { runAgent } = await import('@/lib/agent-runner')
       const { rowToAgent } = await import('@/app/api/agents/[id]/route')
+      const { attachCustomTools } = await import('@/lib/custom-tools-db')
       const nowMs = now.getTime()
       for (const row of eventAgents as Record<string, unknown>[]) {
         const aid = String(row.id)
@@ -865,7 +867,7 @@ export async function POST(req: Request) {
               const u = (urows as Record<string, unknown>[])[0]
               if (u) { runOpts.userId = String(u.id); runOpts.userEmail = String(u.email); runOpts.userRole = String(u.role) }
             }
-            await runAgent(rowToAgent(row), runOpts)
+            await runAgent(await attachCustomTools(rowToAgent(row), row.custom_tool_ids), runOpts)
             await sql`UPDATE agents SET last_event_state = ${decision.nextState}, last_event_at = ${now.toISOString()} WHERE id = ${aid}`.catch(() => {})
             eventsFired++
           } else {

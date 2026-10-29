@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-10-29
+### Added
+- **Custom tool authoring (Phase E).** Admins can register a **custom HTTP tool** — a named
+  capability with a URL template, method, optional headers/body, and a small input schema — and
+  attach it to agents from the builder (a "Custom tools" section with a register-and-attach form).
+  The runner exposes attached tools to the model and executes them. This widens the trust
+  boundary, so it is the most locked-down surface:
+  - **read-only by default** — a read-only tool may only issue GET/HEAD; a write tool must be
+    explicitly marked and is then gated behind the same write-approval guardrail as built-in writes
+    (and is excluded entirely from read-only runs and from orchestrated sub-agents).
+  - **every call is SSRF-checked** (no loopback / link-local / cloud-metadata / private hosts).
+  - the tool name must be a safe slug and cannot collide with a built-in tool.
+  - Executor + validation in `lib/custom-tools.ts` (12 unit tests) + 3 runner-dispatch tests;
+    storage in `custom_tools`, agent attachment via `agents.custom_tool_ids` (migration 028).
+
 ## [1.4.3] - 2026-10-29
 ### Added
 - **Eval harness (Phase D).** Agents can now carry saved **eval checks** — each a name, optional

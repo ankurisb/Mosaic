@@ -738,6 +738,25 @@ export async function setupDatabase() {
   )`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_evals_agent ON agent_evals(agent_id)`.catch(() => {})
 
+  // -- Custom tools: admin-authored HTTP tools agents can be given (Phase E). Read-only by
+  //    default; every call SSRF-checked at run time (lib/custom-tools).
+  await sql`CREATE TABLE IF NOT EXISTS custom_tools (
+    id             TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    method         TEXT NOT NULL DEFAULT 'GET',
+    url_template   TEXT NOT NULL DEFAULT '',
+    headers        TEXT NOT NULL DEFAULT '{}',
+    body_template  TEXT,
+    read_only      INTEGER NOT NULL DEFAULT 1,
+    input_schema   TEXT NOT NULL DEFAULT '{"type":"object","properties":{}}',
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    created_by     TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  )`.catch(() => {})
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_tools_name ON custom_tools(name)`.catch(() => {})
+  await sql`ALTER TABLE agents ADD COLUMN custom_tool_ids TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
+
   // Seed two example agents (idempotent) mirroring the prototype.
   const agentCount = await sql`SELECT COUNT(*) as cnt FROM agents`.catch(() => [{ cnt: 1 }])
   if (Number((agentCount[0] as { cnt: number })?.cnt || 0) === 0) {

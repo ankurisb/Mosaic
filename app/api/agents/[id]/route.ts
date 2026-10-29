@@ -68,7 +68,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Re-arm the edge state when the condition/trigger changes; otherwise preserve it.
   const evState = evChanged ? 0 : Number(cur.last_event_state || 0)
   const evAt = evChanged ? null : (typeof cur.last_event_at === 'string' ? cur.last_event_at : null)
-  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, event_condition=${eventCondition}, sources=${sources}, learnings=${learnings}, execution=${execution}, max_subagents=${maxSub}, last_event_state=${evState}, last_event_at=${evAt}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
+  const customToolIds = b.custom_tool_ids != null ? JSON.stringify((b.custom_tool_ids as unknown[]).map(String).slice(0, 50)) : jstr(cur.custom_tool_ids, '[]')
+  const rows = await sql`UPDATE agents SET name=${name}, goal=${goal}, tools=${tools}, guardrails=${guardrails}, status=${status}, trigger_type=${trigger}, schedule=${schedule}, event_condition=${eventCondition}, sources=${sources}, learnings=${learnings}, execution=${execution}, max_subagents=${maxSub}, custom_tool_ids=${customToolIds}, last_event_state=${evState}, last_event_at=${evAt}, updated_at=${nowExpr()} WHERE id=${id} RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) {
     // Attribution: accepting an AI evolution proposal records 'ai-proposed-accepted'.
@@ -93,6 +94,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const row = await load(id); if (!row) return Response.json({ error: 'Not found' }, { status: 404 })
   if (String(row.status) === 'paused') return Response.json({ error: 'Agent is paused' }, { status: 409 })
-  const run = await runAgent(rowToAgent(row), { triggerSource: 'manual', userId: session.id, userEmail: session.email, userRole: session.role })
+  const { attachCustomTools } = await import('@/lib/custom-tools-db')
+  const def = await attachCustomTools(rowToAgent(row), row.custom_tool_ids)
+  const run = await runAgent(def, { triggerSource: 'manual', userId: session.id, userEmail: session.email, userRole: session.role })
   return Response.json({ run })
 }

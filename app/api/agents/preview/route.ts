@@ -82,6 +82,11 @@ export async function POST(req: Request) {
     max_subagents: execution === 'orchestrated' ? Math.min(Number(b.max_subagents) || PREVIEW_SUBAGENT_CAP, PREVIEW_SUBAGENT_CAP) : undefined,
   }
 
+  if (Array.isArray(b.custom_tool_ids) && b.custom_tool_ids.length) {
+    const { attachCustomTools } = await import('@/lib/custom-tools-db')
+    await attachCustomTools(agent, b.custom_tool_ids)
+  }
+
   const run = await runAgent(agent, {
     triggerSource: 'preview',
     persist: false,

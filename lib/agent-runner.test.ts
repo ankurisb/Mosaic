@@ -283,3 +283,34 @@ describe('agent runner — orchestrated execution', () => {
     expect(types[types.length - 1]).toBe('run_done')
   })
 })
+
+// ── custom tools (Phase E) ──────────────────────────────────────────────────
+const roTool = { name: 'weather', description: 'w', method: 'GET' as const, url_template: 'https://api/w/{c}', read_only: true, input_schema: { type: 'object' as const, properties: { c: { type: 'string' } } } }
+const writeTool = { name: 'ticket_create', description: 't', method: 'POST' as const, url_template: 'https://api/t', read_only: false, input_schema: { type: 'object' as const, properties: {} } }
+
+describe('agent runner — custom tools', () => {
+  it('exposes an attached custom tool and dispatches to customExec (not runTool)', async () => {
+    const exec = vi.fn().mockResolvedValue({ ok: true })
+    const customExec = vi.fn().mockResolvedValue({ status: 200, data: { temp: 20 } })
+    const a = agent({ tools: ['query_database'], customTools: [roTool] })
+    const r = await runAgent(a, noPersist, { client: fakeClient([toolUse('weather', { c: 'SF' }), finalMsg('20C')]), exec, customExec })
+    expect(r.status).toBe('succeeded')
+    expect(customExec).toHaveBeenCalledWith(roTool, { c: 'SF' })
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('toolsFor includes a read-only custom tool and excludes a write custom tool when read_only', () => {
+    const names = toolsFor(agent({ tools: ['query_database'], customTools: [roTool, writeTool], guardrails: { read_only: true } as never })).map(t => t.name)
+    expect(names).toContain('weather')
+    expect(names).not.toContain('ticket_create')
+  })
+
+  it('a non-read-only custom tool pauses for approval like a built-in write', async () => {
+    const customExec = vi.fn()
+    const a = agent({ tools: ['query_database'], customTools: [writeTool], guardrails: { max_steps: 20, max_tool_calls: 40, max_minutes: 10, max_cost_usd: 1, no_progress: true, read_only: false, approve_writes: true } })
+    const r = await runAgent(a, noPersist, { client: fakeClient([toolUse('ticket_create', { x: 1 })]), exec: vi.fn(), customExec })
+    expect(r.status).toBe('paused_for_approval')
+    expect(r.pending_tool?.name).toBe('ticket_create')
+    expect(customExec).not.toHaveBeenCalled()
+  })
+})

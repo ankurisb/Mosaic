@@ -13,7 +13,7 @@ export async function GET() {
   // on a fresh deploy where no page has triggered setup yet. Idempotent + guarded.
   await setupDatabase().catch(() => {})
   const sql = getDb()
-  const rows = await sql`SELECT id, name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, last_scheduled_run, created_at, updated_at
+  const rows = await sql`SELECT id, name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, custom_tool_ids, last_scheduled_run, created_at, updated_at
     FROM agents ORDER BY created_at DESC`.catch(() => [])
   return Response.json({ agents: rows })
 }
@@ -36,8 +36,9 @@ export async function POST(req: Request) {
   // Execution mode + sub-agent cap (orchestrated only). Cap clamped to [1, MAX_SUBAGENTS_CEILING].
   const execution = b.execution === 'orchestrated' ? 'orchestrated' : 'single'
   const maxSub = Math.max(1, Math.min(Number(b.max_subagents) || DEFAULT_ORCHESTRATION.max_subagents, MAX_SUBAGENTS_CEILING))
-  const rows = await sql`INSERT INTO agents (name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, created_by, updated_at)
-    VALUES (${String(b.name).slice(0, 120)}, ${String(b.goal || '')}, ${tools}, ${trigger}, ${b.schedule ? String(b.schedule) : null}, ${b.event_condition ? String(b.event_condition) : null}, ${outputs}, ${guardrails}, ${b.status === 'paused' ? 'paused' : 'active'}, ${sources}, ${learnings}, ${execution}, ${maxSub}, ${session.id}, ${nowExpr()})
+  const customToolIds = JSON.stringify(Array.isArray(b.custom_tool_ids) ? (b.custom_tool_ids as unknown[]).map(String).slice(0, 50) : [])
+  const rows = await sql`INSERT INTO agents (name, goal, tools, trigger_type, schedule, event_condition, outputs, guardrails, status, sources, learnings, execution, max_subagents, custom_tool_ids, created_by, updated_at)
+    VALUES (${String(b.name).slice(0, 120)}, ${String(b.goal || '')}, ${tools}, ${trigger}, ${b.schedule ? String(b.schedule) : null}, ${b.event_condition ? String(b.event_condition) : null}, ${outputs}, ${guardrails}, ${b.status === 'paused' ? 'paused' : 'active'}, ${sources}, ${learnings}, ${execution}, ${maxSub}, ${customToolIds}, ${session.id}, ${nowExpr()})
     RETURNING *`
   const agent = (rows as Record<string, unknown>[])[0]
   if (agent?.id) await snapshotVersion(String(agent.id), snapshotFromRow(agent), { source: 'human', note: 'Created', createdBy: session.id })

@@ -22,6 +22,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { getDb, nowExpr } from './db'
 import { getAiClient, getDefaultModelId, getModelPricing } from './models'
 import { TOOLS, runTool } from './tools'
+import { toAnthropicTool, runCustomTool, type CustomToolDef } from './custom-tools'
 import { log } from './logger'
 
 // Side-effecting tools. Excluded entirely when read_only; gated behind approval
@@ -71,6 +72,7 @@ export interface AgentDef {
   learnings?: string   // accumulated, human-approved learnings injected into the system prompt
   execution?: 'single' | 'orchestrated'  // default 'single'
   max_subagents?: number                 // orchestrated: cap on parallel sub-tasks (<= MAX_SUBAGENTS_CEILING)
+  customTools?: CustomToolDef[]           // admin-authored HTTP tools attached to this agent (Phase E)
 }
 
 export type RunStatus = 'succeeded' | 'failed' | 'stopped' | 'paused_for_approval'
@@ -91,7 +93,7 @@ export interface RunResult {
   subagents?: Array<{ id: string; title: string; summary: string; tool_calls: number; error?: string }>
 }
 
-interface RunDeps { client?: Anthropic; exec?: typeof runTool; now?: () => number }
+interface RunDeps { client?: Anthropic; exec?: typeof runTool; now?: () => number; customExec?: (def: CustomToolDef, input: Record<string, unknown>) => Promise<unknown> }
 interface RunOpts { triggerSource?: string; prompt?: string; userId?: string; userEmail?: string; userRole?: string; persist?: boolean; emit?: Emit }
 
 const iso = () => new Date().toISOString()
@@ -101,7 +103,18 @@ const iso = () => new Date().toISOString()
 export function toolsFor(agent: AgentDef): Anthropic.Tool[] {
   const g = { ...DEFAULT_GUARDRAILS, ...(agent.guardrails || {}) }
   const allow = new Set(agent.tools || [])
-  return TOOLS.filter(t => allow.has(t.name) && (!g.read_only || !WRITE_TOOLS.has(t.name)))
+  const base = TOOLS.filter(t => allow.has(t.name) && (!g.read_only || !WRITE_TOOLS.has(t.name)))
+  // Attached custom tools (Phase E): a non-read-only custom tool is a write and is excluded
+  // when read_only, exactly like a built-in write tool.
+  const custom = (agent.customTools || []).filter(c => !g.read_only || c.read_only).map(toAnthropicTool)
+  return [...base, ...custom] as Anthropic.Tool[]
+}
+
+/** Is this tool name a write (built-in write tool, or a non-read-only custom tool)? */
+function isWriteTool(name: string, agent: AgentDef): boolean {
+  if (WRITE_TOOLS.has(name)) return true
+  const c = (agent.customTools || []).find(t => t.name === name)
+  return !!(c && !c.read_only)
 }
 
 function systemFor(agent: AgentDef): string {
@@ -170,7 +183,7 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
   // Orchestrated execution: delegate to the lead/fan-out/synthesis path, which shares all
   // the setup above (same guardrails ceiling, same guardCtx = run-as-creator + source scope).
   if ((agent.execution || 'single') === 'orchestrated') {
-    return runOrchestrated(agent, opts, { client, exec, nowMs, model, pricing, g, guardCtx, persist })
+    return runOrchestrated(agent, opts, { client, exec, nowMs, model, pricing, g, guardCtx, persist, customExec: deps.customExec })
   }
 
   const emit: Emit = opts.emit || (() => {})
@@ -216,8 +229,9 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
       let paused = false, hitCallLimit = false, looped = false
       for (const tu of toolUses) {
         if (toolCalls >= g.max_tool_calls) { hitCallLimit = true; break }
-        // Approval gate: a write tool, with approvals on, pauses the run.
-        if (!g.read_only && g.approve_writes && WRITE_TOOLS.has(tu.name)) {
+        // Approval gate: a write tool (built-in or a non-read-only custom tool), with approvals
+        // on, pauses the run.
+        if (!g.read_only && g.approve_writes && isWriteTool(tu.name, agent)) {
           pending = { name: tu.name, input: tu.input }
           steps.push({ type: 'approval', tool: tu.name, input: tu.input, at: iso() })
           paused = true
@@ -231,7 +245,8 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
         steps.push({ type: 'tool', tool: tu.name, input: tu.input, at: iso() })
         emit({ type: 'tool', tool: tu.name })
         let out: unknown
-        try { out = await exec(tu.name, tu.input as Record<string, unknown>, guardCtx) }
+        const ctDef = (agent.customTools || []).find(t => t.name === tu.name)
+        try { out = ctDef ? await (deps.customExec || runCustomTool)(ctDef, tu.input as Record<string, unknown>) : await exec(tu.name, tu.input as Record<string, unknown>, guardCtx) }
         catch (e) { out = { error: e instanceof Error ? e.message : String(e) } }
         const rStr = typeof out === 'string' ? out : JSON.stringify(out)
         steps.push({ type: 'result', tool: tu.name, result: rStr.slice(0, 4000), at: iso() })
@@ -279,6 +294,7 @@ interface OrchCtx {
   g: Guardrails
   guardCtx: { userId: string; userEmail: string; userRole: string; conversationId?: string; allowedSources?: string[]; strictSources?: boolean }
   persist: boolean
+  customExec?: (def: CustomToolDef, input: Record<string, unknown>) => Promise<unknown>
 }
 interface SubTask { id: string; title: string; brief: string }
 interface SubResult { id: string; title: string; summary: string; toolCalls: number; steps: AgentStep[]; error?: string }
@@ -309,8 +325,11 @@ async function runOrchestrated(agent: AgentDef, opts: RunOpts, ctx: OrchCtx): Pr
   // and synthesis do no tool calls. If the agent somehow has no usable read tool, fall back
   // to the safe default read set so a goal still runs.
   const allow = new Set(agent.tools || [])
-  let subTools = TOOLS.filter(t => allow.has(t.name) && !WRITE_TOOLS.has(t.name))
-  if (subTools.length === 0) subTools = TOOLS.filter(t => DEFAULT_AGENT_TOOLS.includes(t.name) && !WRITE_TOOLS.has(t.name))
+  let subTools = TOOLS.filter(t => allow.has(t.name) && !WRITE_TOOLS.has(t.name)) as Anthropic.Tool[]
+  if (subTools.length === 0) subTools = TOOLS.filter(t => DEFAULT_AGENT_TOOLS.includes(t.name) && !WRITE_TOOLS.has(t.name)) as Anthropic.Tool[]
+  // Sub-agents are read-only, so only read-only custom tools are available to them.
+  const subCustom = (agent.customTools || []).filter(c => c.read_only)
+  if (subCustom.length) subTools = [...subTools, ...subCustom.map(toAnthropicTool)] as Anthropic.Tool[]
 
   // Shared fleet budget. stepN counts every model call (lead plan + each sub-agent round +
   // synthesis); toolCalls is reserved atomically (check-then-increment with no await between).
@@ -387,7 +406,8 @@ async function runOrchestrated(agent: AgentDef, opts: RunOpts, ctx: OrchCtx): Pr
           emit({ type: 'subagent_status', id: task.id, status: 'running', tool: tu.name })
           sub.push({ type: 'tool', tool: tu.name, input: tu.input, at: iso(), sub: task.id })
           let out: unknown
-          try { out = await exec(tu.name, tu.input as Record<string, unknown>, guardCtx) }
+          const ctDef = subCustom.find(t => t.name === tu.name)
+          try { out = ctDef ? await (ctx.customExec || runCustomTool)(ctDef, tu.input as Record<string, unknown>) : await exec(tu.name, tu.input as Record<string, unknown>, guardCtx) }
           catch (e) { out = { error: e instanceof Error ? e.message : String(e) } }
           const rStr = typeof out === 'string' ? out : JSON.stringify(out)
           sub.push({ type: 'result', tool: tu.name, result: rStr.slice(0, 4000), at: iso(), sub: task.id })

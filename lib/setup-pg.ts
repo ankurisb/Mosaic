@@ -541,6 +541,23 @@ export async function setupDatabasePostgres(): Promise<void> {
   )`
   await sql`CREATE INDEX IF NOT EXISTS idx_agent_evals_agent ON agent_evals(agent_id)`
 
+  await sql`CREATE TABLE IF NOT EXISTS custom_tools (
+    id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    method         TEXT NOT NULL DEFAULT 'GET',
+    url_template   TEXT NOT NULL DEFAULT '',
+    headers        TEXT NOT NULL DEFAULT '{}',
+    body_template  TEXT,
+    read_only      INTEGER NOT NULL DEFAULT 1,
+    input_schema   TEXT NOT NULL DEFAULT '{"type":"object","properties":{}}',
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    created_by     TEXT,
+    created_at     TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  )`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_tools_name ON custom_tools(name)`
+  await sql`ALTER TABLE agents ADD COLUMN IF NOT EXISTS custom_tool_ids TEXT NOT NULL DEFAULT '[]'`.catch(() => {})
+
   await sql`CREATE TABLE IF NOT EXISTS kv_settings (
     key        TEXT PRIMARY KEY,
     value_enc  TEXT NOT NULL,

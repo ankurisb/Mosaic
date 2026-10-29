@@ -26,7 +26,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const row = (rows as Row[])[0]
   if (!row) return Response.json({ error: 'Not found' }, { status: 404 })
   if (String(row.status) === 'paused') return Response.json({ error: 'Agent is paused' }, { status: 409 })
-  const agent = rowToAgent(row)
+  const { attachCustomTools } = await import('@/lib/custom-tools-db')
+  const agent = await attachCustomTools(rowToAgent(row), row.custom_tool_ids)
 
   const enc = new TextEncoder()
   let closed = false
