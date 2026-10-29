@@ -20,6 +20,8 @@ type Row = Record<string, unknown>
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  // Streaming a run executes the agent and incurs cost — admin-gated like the manual run.
+  if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   await setupDatabase().catch(() => {})
   const { id } = await params
   const rows = await getDb()`SELECT * FROM agents WHERE id = ${id}`.catch(() => [])

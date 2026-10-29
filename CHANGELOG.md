@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-10-29
+### Security
+- **Custom tools no longer follow HTTP redirects.** The SSRF guard vets the initial URL; a
+  public endpoint that 302-redirected to `169.254.169.254` / a private host would otherwise have
+  been followed. Redirects are now refused (`redirect: 'manual'`, 3xx → error). Found in an
+  adversarial review of Phase E.
+- **Running an agent is now admin-only.** `POST /api/agents/[id]` (manual run) and
+  `/api/agents/[id]/stream` previously accepted any signed-in user; a non-admin could trigger
+  runs of an admin-authored agent (executing its tools/data access and incurring cost). Both now
+  require admin, consistent with the rest of the builder.
+- **Eval cases are admin-only to read** (`GET /api/agents/[id]/evals`) — was readable by any
+  signed-in user.
+- **Guardrail caps are clamped on create/edit** (`clampGuardrails`, ceiling
+  200 steps / 300 tool-calls / 30 min / $10; NaN/negative → default), so a mistyped or malicious
+  cap can't drive a runaway run. The AI-assisted paths already clamped tighter.
+### Verified (adversarial)
+- Source scoping holds under direct prompt injection: an agent told to "ignore scoping" and query
+  an out-of-scope connection attempted it and was blocked server-side (out_of_scope) with no data
+  leak — the boundary is on the tool executor, not the prompt.
+- `query_database` is allowlist-restricted (SELECT/WITH/EXPLAIN + dialect reads) with an anti-exfil
+  guard; the sandbox DB is opened read-only. Non-admin is correctly rejected (403) on every
+  mutating agent/custom-tool/eval/version/evolve/preview endpoint.
+
 ## [1.4.4] - 2026-10-29
 ### Added
 - **Custom tool authoring (Phase E).** Admins can register a **custom HTTP tool** — a named

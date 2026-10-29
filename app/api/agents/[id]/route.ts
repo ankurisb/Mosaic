@@ -2,7 +2,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { setupDatabase } from '@/lib/setup'
-import { runAgent, DEFAULT_GUARDRAILS, type AgentDef } from '@/lib/agent-runner'
+import { runAgent, DEFAULT_GUARDRAILS, clampGuardrails, type AgentDef } from '@/lib/agent-runner'
 import { snapshotVersion, snapshotFromRow } from '@/lib/agent-versions'
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -51,7 +51,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const name = b.name != null ? String(b.name).slice(0, 120) : String(cur.name)
   const goal = b.goal != null ? String(b.goal) : String(cur.goal)
   const tools = b.tools != null ? JSON.stringify(b.tools) : jstr(cur.tools, '[]')
-  const guardrails = b.guardrails != null ? JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails as object) }) : jstr(cur.guardrails, '{}')
+  const guardrails = b.guardrails != null ? JSON.stringify(clampGuardrails(b.guardrails)) : jstr(cur.guardrails, '{}')
   const status = b.status != null ? (b.status === 'paused' ? 'paused' : 'active') : String(cur.status)
   const trigger = b.trigger_type != null && ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : String(cur.trigger_type)
   const schedule = b.schedule !== undefined ? (b.schedule ? String(b.schedule) : null) : (typeof cur.schedule === 'string' ? cur.schedule : null)
@@ -90,6 +90,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 // Run the agent now (synchronous; bounded by its own guardrails). Returns the run.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  // Running an agent executes its (admin-authored) tools and data access and incurs cost, so
+  // it is admin-gated like the rest of the builder — not open to every signed-in user.
+  if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   await setupDatabase().catch(() => {})
   const { id } = await params
   const row = await load(id); if (!row) return Response.json({ error: 'Not found' }, { status: 404 })

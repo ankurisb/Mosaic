@@ -43,6 +43,28 @@ export const DEFAULT_GUARDRAILS: Guardrails = {
   no_progress: true, read_only: true, approve_writes: true,
 }
 
+// Hard ceiling applied to ANY stored agent config (create/edit), so a mistyped or malicious
+// cap can't drive a runaway run. Generous — admins have latitude — but bounded. The AI-assisted
+// paths (suggest/evolve) clamp tighter still.
+export const HARD_GUARDRAIL_CEILING = { max_steps: 200, max_tool_calls: 300, max_minutes: 30, max_cost_usd: 10 }
+const HARD_GUARDRAIL_FLOOR = { max_steps: 1, max_tool_calls: 1, max_minutes: 1, max_cost_usd: 0.01 }
+/** Merge over defaults and clamp the numeric caps into [floor, ceiling]; NaN/negative → default. */
+export function clampGuardrails(input: unknown): Guardrails {
+  const g = (input && typeof input === 'object') ? input as Record<string, unknown> : {}
+  const clamp = (v: unknown, lo: number, hi: number, d: number) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d }
+  return {
+    ...DEFAULT_GUARDRAILS,
+    ...g,
+    max_steps: clamp(g.max_steps, HARD_GUARDRAIL_FLOOR.max_steps, HARD_GUARDRAIL_CEILING.max_steps, DEFAULT_GUARDRAILS.max_steps),
+    max_tool_calls: clamp(g.max_tool_calls, HARD_GUARDRAIL_FLOOR.max_tool_calls, HARD_GUARDRAIL_CEILING.max_tool_calls, DEFAULT_GUARDRAILS.max_tool_calls),
+    max_minutes: clamp(g.max_minutes, HARD_GUARDRAIL_FLOOR.max_minutes, HARD_GUARDRAIL_CEILING.max_minutes, DEFAULT_GUARDRAILS.max_minutes),
+    max_cost_usd: clamp(g.max_cost_usd, HARD_GUARDRAIL_FLOOR.max_cost_usd, HARD_GUARDRAIL_CEILING.max_cost_usd, DEFAULT_GUARDRAILS.max_cost_usd),
+    no_progress: g.no_progress === undefined ? DEFAULT_GUARDRAILS.no_progress : !!g.no_progress,
+    read_only: g.read_only === undefined ? DEFAULT_GUARDRAILS.read_only : !!g.read_only,
+    approve_writes: g.approve_writes === undefined ? DEFAULT_GUARDRAILS.approve_writes : !!g.approve_writes,
+  }
+}
+
 // Goal-only default toolset: a tight, read-only data set so a plain-English goal "just
 // works" — the agent discovers its own source via check_data_sources and queries it. Used
 // when an agent/preview is created with no explicit tools. Deliberately excludes write and

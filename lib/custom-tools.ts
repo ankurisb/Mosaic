@@ -75,8 +75,14 @@ export async function runCustomTool(def: CustomToolDef, input: Record<string, un
       method,
       headers: { ...(def.headers || {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body,
+      // SSRF: the guard above only vetted the initial URL. Do NOT auto-follow redirects — a
+      // public URL that 302s to 169.254.169.254 / a private host would otherwise bypass it.
+      redirect: 'manual',
       signal: AbortSignal.timeout(deps.timeoutMs ?? 10_000),
     })
+    if (res.status >= 300 && res.status < 400) {
+      return { error: `Blocked: the endpoint returned a redirect (${res.status} → ${res.headers.get('location') || '?'}). Custom tools do not follow redirects (SSRF protection); point the tool at the final URL.` }
+    }
     const text = await res.text()
     let data: unknown
     try { data = JSON.parse(text) } catch { data = text.slice(0, 20_000) }

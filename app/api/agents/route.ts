@@ -2,7 +2,7 @@
 import { getSession } from '@/lib/auth'
 import { getDb, nowExpr } from '@/lib/db'
 import { setupDatabase } from '@/lib/setup'
-import { DEFAULT_GUARDRAILS, DEFAULT_AGENT_TOOLS, DEFAULT_ORCHESTRATION, MAX_SUBAGENTS_CEILING } from '@/lib/agent-runner'
+import { DEFAULT_AGENT_TOOLS, DEFAULT_ORCHESTRATION, MAX_SUBAGENTS_CEILING, clampGuardrails } from '@/lib/agent-runner'
 import { snapshotVersion, snapshotFromRow } from '@/lib/agent-versions'
 export const runtime = 'nodejs'
 
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const outputs = JSON.stringify(Array.isArray(b.outputs) ? b.outputs : [])
   const sources = JSON.stringify(Array.isArray(b.sources) ? b.sources : [])
   const learnings = typeof b.learnings === 'string' ? b.learnings : ''
-  const guardrails = JSON.stringify({ ...DEFAULT_GUARDRAILS, ...(b.guardrails && typeof b.guardrails === 'object' ? b.guardrails : {}) })
+  const guardrails = JSON.stringify(clampGuardrails(b.guardrails))
   const trigger = ['manual', 'schedule', 'event'].includes(String(b.trigger_type)) ? String(b.trigger_type) : 'manual'
   // Execution mode + sub-agent cap (orchestrated only). Cap clamped to [1, MAX_SUBAGENTS_CEILING].
   const execution = b.execution === 'orchestrated' ? 'orchestrated' : 'single'

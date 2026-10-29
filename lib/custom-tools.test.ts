@@ -60,6 +60,14 @@ describe('custom tools — execution safety', () => {
     expect((out as { error: string }).error).toMatch(/network down/)
   })
 
+  it('does NOT follow a redirect (SSRF: the guard only vetted the initial URL)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } }))
+    const out = await runCustomTool(def(), { city: 'SF' }, { fetchImpl: fetchImpl as unknown as typeof fetch, ssrf: okSsrf })
+    expect((out as { error: string }).error).toMatch(/redirect/i)
+    // and it requested manual redirect handling (did not auto-follow)
+    expect(fetchImpl).toHaveBeenCalledWith('https://api.example.com/w/SF', expect.objectContaining({ redirect: 'manual' }))
+  })
+
   it('allows a POST with a body template on a write tool', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }))
     const out = await runCustomTool(def({ method: 'POST', read_only: false, url_template: 'https://api.example.com/items', body_template: '{"name":"{name}"}' }), { name: 'widget' }, { fetchImpl: fetchImpl as unknown as typeof fetch, ssrf: okSsrf })

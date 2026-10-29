@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 type Row = Record<string, unknown>
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession(); if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+  const session = await getSession(); if (!session || session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
   await setupDatabase().catch(() => {})
   const { id } = await params
   const rows = await getDb()`SELECT id, agent_id, name, input, expected_contains, expect_status, last_passed, last_run_at, created_at

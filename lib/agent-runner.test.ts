@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type Anthropic from '@anthropic-ai/sdk'
-import { runAgent, toolsFor, WRITE_TOOLS, DEFAULT_ORCHESTRATION, type AgentDef } from './agent-runner'
+import { runAgent, toolsFor, WRITE_TOOLS, DEFAULT_ORCHESTRATION, clampGuardrails, HARD_GUARDRAIL_CEILING, type AgentDef } from './agent-runner'
 
 // ── fakes ────────────────────────────────────────────────────────────────────
 // A scripted Anthropic client: returns script[i], repeating the last entry so a
@@ -287,6 +287,27 @@ describe('agent runner — orchestrated execution', () => {
 // ── custom tools (Phase E) ──────────────────────────────────────────────────
 const roTool = { name: 'weather', description: 'w', method: 'GET' as const, url_template: 'https://api/w/{c}', read_only: true, input_schema: { type: 'object' as const, properties: { c: { type: 'string' } } } }
 const writeTool = { name: 'ticket_create', description: 't', method: 'POST' as const, url_template: 'https://api/t', read_only: false, input_schema: { type: 'object' as const, properties: {} } }
+
+describe('agent runner — guardrail clamping (anti-runaway)', () => {
+  it('clamps an absurd cost/step cap down to the hard ceiling', () => {
+    const g = clampGuardrails({ max_cost_usd: 1e9, max_steps: 1e9, max_tool_calls: 1e9, max_minutes: 1e9 })
+    expect(g.max_cost_usd).toBe(HARD_GUARDRAIL_CEILING.max_cost_usd)
+    expect(g.max_steps).toBe(HARD_GUARDRAIL_CEILING.max_steps)
+    expect(g.max_tool_calls).toBe(HARD_GUARDRAIL_CEILING.max_tool_calls)
+    expect(g.max_minutes).toBe(HARD_GUARDRAIL_CEILING.max_minutes)
+  })
+  it('rejects NaN / negative caps (falls back to defaults / floor)', () => {
+    const g = clampGuardrails({ max_cost_usd: 'abc', max_steps: -5 })
+    expect(g.max_cost_usd).toBe(1) // default
+    expect(g.max_steps).toBe(1)    // floor
+  })
+  it('keeps the safety booleans and a reasonable value untouched', () => {
+    const g = clampGuardrails({ max_cost_usd: 2, read_only: false, approve_writes: true })
+    expect(g.max_cost_usd).toBe(2)
+    expect(g.read_only).toBe(false)
+    expect(g.approve_writes).toBe(true)
+  })
+})
 
 describe('agent runner — custom tools', () => {
   it('exposes an attached custom tool and dispatches to customExec (not runTool)', async () => {
