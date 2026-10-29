@@ -124,6 +124,10 @@ runtime Google-Fonts/CDN link.
 - **Table:** header text `var(--text2)` 11px, hairline `var(--border)` row rules,
   row hover `var(--bg3)` (or `var(--highlight)` for selection), numeric columns
   right-aligned + tabular-nums.
+- **Mobile readability:** nav/menu labels and conversation rows use desktop-density
+  sizes (~12–13px) that are too small on phones. On mobile (`useIsMobile`) bump nav
+  and list labels to ~15px with taller touch padding — don't rely on the global
+  display-size zoom alone.
 - **Nav rail:** `var(--nav-bg)` (= `--surface`), item text `var(--nav-text)`,
   active item `var(--nav-active-bg)` + `var(--accent)` text. Use the `--nav-*`
   tokens, not raw surface tokens, so "dark menu / light page" palettes keep working.

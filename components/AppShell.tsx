@@ -41,7 +41,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
     const showCollapsed = collapsed && !isMobile
     return (
       <button onClick={() => { router.push(path); setMobileNav(false) }} title={showCollapsed ? label : undefined}
-        style={{ width: '100%', padding: showCollapsed ? '8px 0' : '8px 10px', background: active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: active ? 'var(--nav-text-strong)' : 'var(--nav-text)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: showCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
+        style={{ width: '100%', padding: showCollapsed ? '8px 0' : (isMobile ? '11px 12px' : '8px 10px'), background: active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: isMobile ? 15 : 12, color: active ? 'var(--nav-text-strong)' : 'var(--nav-text)', textAlign: 'left' as const, display: 'flex', alignItems: 'center', justifyContent: showCollapsed ? 'center' : 'flex-start', gap: isMobile ? 11 : 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 2 }}
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--nav-hover)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
         {icon}{!showCollapsed && label}
@@ -113,10 +113,10 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px', opacity: isChat ? 1 : 0.5 }}>
           {!collapsed && convs.map(c => (
             <div key={c.id} onClick={() => { router.push(`/?conv=${c.id}`); setMobileNav(false) }}
-              style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
+              style={{ display: 'flex', alignItems: 'center', padding: isMobile ? '11px 10px' : '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, transition: 'background .12s' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--nav-hover)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 12, color: 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
+              <span style={{ fontSize: isMobile ? 14.5 : 12, color: 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.title}</span>
             </div>
           ))}
         </div>

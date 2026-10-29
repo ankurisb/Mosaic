@@ -187,7 +187,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '6px 10px 4px' }}>Settings</div>
           {TABS.map(t => (
             <button key={t.id} onClick={() => navigateTab(t.id)}
-              style={{ width: '100%', padding: '9px 12px', background: tab === t.id ? 'var(--bg3)' : 'transparent', border: `1px solid ${tab === t.id ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, color: tab === t.id ? 'var(--text)' : 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 9, fontFamily: 'inherit', marginBottom: 1, transition: 'background .12s' }}
+              style={{ width: '100%', padding: isMobile ? '12px 12px' : '9px 12px', background: tab === t.id ? 'var(--bg3)' : 'transparent', border: `1px solid ${tab === t.id ? 'var(--border2)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: isMobile ? 15 : 13, color: tab === t.id ? 'var(--text)' : 'var(--text2)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: isMobile ? 11 : 9, fontFamily: 'inherit', marginBottom: 1, transition: 'background .12s' }}
               onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.background = 'var(--bg3)' }}
               onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.background = 'transparent' }}>
               <span style={{ width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: tab === t.id ? 'var(--text)' : 'var(--text3)' }}><TabIcon id={t.id} /></span>

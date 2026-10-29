@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.5] - 2026-10-29
+### Changed
+- **Larger, more readable navigation on mobile.** The main rail, the Chats-view
+  sidebar nav, the Settings menu, and conversation rows used desktop-density labels
+  (~12–13px) that were hard to read on phones even at the Large display size. On
+  mobile they now render at ~15px with taller touch targets.
+
 ## [1.5.4] - 2026-10-29
 ### Fixed
 - **Large/Small "display size" no longer makes the whole app scroll and push the

@@ -1361,7 +1361,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   // grouped (folder) and ungrouped lists.
   const renderConvRow = (conv: Conv) => (
     <div key={conv.id} className="conv-row" onClick={() => { setActiveId(conv.id); if (isMobile) setMobileNav(false) }}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--nav-active-bg)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--nav-border)' : 'transparent'}`, transition: 'background .12s' }}>
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: isMobile ? '11px 10px' : '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2, background: conv.id === activeId ? 'var(--nav-active-bg)' : 'transparent', border: `1px solid ${conv.id === activeId ? 'var(--nav-border)' : 'transparent'}`, transition: 'background .12s' }}>
       {renamingConv === conv.id ? (
         <input autoFocus defaultValue={conv.title} onClick={e => e.stopPropagation()}
           onBlur={e => { renameConv(conv.id, e.target.value); setRenamingConv(null) }}
@@ -1369,7 +1369,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--nav-text-strong)', background: 'var(--bg)', border: '1px solid var(--nav-border)', borderRadius: 4, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }} />
       ) : (
         <span onDoubleClick={e => { e.stopPropagation(); setRenamingConv(conv.id) }} title="Double-click to rename"
-          style={{ fontSize: 12, color: conv.id === activeId ? 'var(--nav-text-strong)' : 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
+          style={{ fontSize: isMobile ? 14.5 : 12, color: conv.id === activeId ? 'var(--nav-text-strong)' : 'var(--nav-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{conv.title}</span>
       )}
       {renamingConv !== conv.id && (
         <>
@@ -1778,7 +1778,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
             <button key={item.label}
               onClick={() => item.href ? router.push(item.href) : undefined}
               title={sidebarCollapsed ? item.label : undefined}
-              style={{ width: '100%', padding: '7px 10px', background: item.active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${item.active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: item.href ? 'pointer' : 'default', fontSize: 12, color: item.active ? 'var(--nav-text-strong)' : 'var(--nav-text)', fontWeight: item.active ? 500 : 400, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 1 }}
+              style={{ width: '100%', padding: isMobile ? '11px 10px' : '7px 10px', background: item.active ? 'var(--nav-active-bg)' : 'none', border: `1px solid ${item.active ? 'var(--nav-border)' : 'transparent'}`, borderRadius: 'var(--radius-sm)', cursor: item.href ? 'pointer' : 'default', fontSize: isMobile ? 15 : 12, color: item.active ? 'var(--nav-text-strong)' : 'var(--nav-text)', fontWeight: item.active ? 500 : 400, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: isMobile ? 11 : 7, fontFamily: 'inherit', transition: 'background .12s', marginBottom: 1 }}
               onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = 'var(--nav-hover)' }}
               onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = 'none' }}>
               <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{item.icon}</span>
