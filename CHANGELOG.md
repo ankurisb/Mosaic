@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10-29
+### Fixed
+- **Chats sidebar nav was missing Assets and Agents.** The chat view renders its own
+  sidebar, whose primary-nav list had drifted from the main app rail (`AppShell`).
+  Added Assets and Agents so the nav is identical in both — Agents is now reachable
+  from the Chats view.
+
 ## [1.5.1] - 2026-10-29
 ### Removed
 - **Theme (palette) selector.** With the Atlassian-style theme now the single Mosaic
