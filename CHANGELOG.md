@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-10-29
+### Fixed
+- **Large/Small "display size" no longer makes the whole app scroll and push the
+  sidebar footer off-screen.** Those settings zoom `<body>`, which scaled the
+  `height:100dvh` app shells past the real viewport (e.g. 768px → 883px at Large).
+  Full-height shells now use `--app-vh` = `100dvh ÷ zoom`, so they fit the viewport
+  after zoom and the sidebar footer (user / settings / theme) stays pinned. Completes
+  the footer fix started in 1.5.3.
+
 ## [1.5.3] - 2026-10-29
 ### Changed
 - **Global nav order** is now Chats · Agents · Dashboards · Digests · Query Builder ·

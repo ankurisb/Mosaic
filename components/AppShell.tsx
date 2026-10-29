@@ -52,7 +52,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const isChat = pathname === '/'
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
+    <div style={{ display: 'flex', height: 'var(--app-vh, 100dvh)', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {/* Mobile drawer backdrop */}
       {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}

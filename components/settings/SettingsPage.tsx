@@ -162,7 +162,7 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
+    <div style={{ display: 'flex', height: 'var(--app-vh, 100dvh)', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
       {showUpdate && <UpdateModal deploy={deploy} onClose={() => setShowUpdate(false)} />}
       {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
 

@@ -584,7 +584,7 @@ function FilePreviewPanel({ file, onClose, panelW, setPanelW, mobile }: { file: 
 
   return (
     <div style={mobile
-      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: 'var(--app-vh, 100dvh)', paddingTop: 'var(--safe-top)' }
       : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
       {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -638,7 +638,7 @@ function MapPanel({ map, onClose, panelW, setPanelW, mobile }: { map: MapData; o
   }, [onClose])
   return (
     <div style={mobile
-      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: 'var(--app-vh, 100dvh)', paddingTop: 'var(--safe-top)' }
       : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
       {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -696,7 +696,7 @@ function ResearchPanel({ research, onClose, panelW, setPanelW, mobile }: { resea
   const pct = (c?: number) => Math.round((c ?? 0) * 100)
   return (
     <div style={mobile
-      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: 'var(--app-vh, 100dvh)', paddingTop: 'var(--safe-top)' }
       : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
       {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1032,7 +1032,7 @@ function DashboardProposalPanel({ proposal, onClose, panelW, setPanelW, mobile, 
   }, [onClose])
   return (
     <div style={mobile
-      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: '100dvh', paddingTop: 'var(--safe-top)' }
+      ? { position: 'fixed', inset: 0, zIndex: 120, width: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', height: 'var(--app-vh, 100dvh)', paddingTop: 'var(--safe-top)' }
       : { width: panelW, minWidth: 320, flexShrink: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', height: '100%' }}>
       {!mobile && <ResizeHandle width={panelW} setWidth={setPanelW} min={320} max={1100} dir={-1} side="left" />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1727,7 +1727,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
   const toolLabel: Record<string, string> = { web_search: ' Web search', query_database: ' Database query', call_api: ' API call' }
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
+    <div style={{ display: 'flex', height: 'var(--app-vh, 100dvh)', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
       {/* Mobile drawer backdrop */}
       {isMobile && mobileNav && <div onClick={() => setMobileNav(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }} />}
 

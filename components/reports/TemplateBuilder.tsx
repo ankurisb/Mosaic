@@ -665,7 +665,7 @@ export default function TemplateBuilder({ user, templateId }: { user: { role: st
   )
 
   return (
-    <div data-rsplit style={{ display: 'flex', height: '100dvh', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div data-rsplit style={{ display: 'flex', height: 'var(--app-vh, 100dvh)', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* Left panel — sections */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
