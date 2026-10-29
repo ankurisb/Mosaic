@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-29
+### Added
+- **Live run streaming (Phase B).** Running an agent now streams its activity over SSE
+  (`POST /api/agents/[id]/stream`) instead of a blank synchronous wait. For an orchestrated
+  agent the builder shows the lead's plan and each **sub-agent live** — queued → running (with the
+  tool it's calling) → done (with its finding) — plus a running tool-call count and a
+  "synthesising…" phase; single-mode runs stream their tool activity. A 10s heartbeat keeps the
+  connection warm through long model-call windows (mirrors the chat SSE); falls back to the
+  synchronous run if the stream is unavailable.
+- The runner's `emit()` now fires in both modes (`run_started`, `plan`, `subagent_status`,
+  `subagent_result`, `reason`, `tool`, `result`, `synthesizing`, `run_done`).
+
 ## [1.4.0] - 2026-10-29
 ### Added
 - **Multi-agent orchestration (Phase A).** An agent can now run in **Orchestrated** mode:

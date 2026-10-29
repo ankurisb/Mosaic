@@ -173,10 +173,12 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
     return runOrchestrated(agent, opts, { client, exec, nowMs, model, pricing, g, guardCtx, persist })
   }
 
+  const emit: Emit = opts.emit || (() => {})
   const start = nowMs()
   const deadline = start + g.max_minutes * 60_000
 
   const steps: AgentStep[] = []
+  emit({ type: 'run_started', execution: 'single', goal: agent.goal })
   const messages: Anthropic.MessageParam[] = [{
     role: 'user',
     content: opts.prompt || `Run now (${opts.triggerSource || 'manual'} trigger). Carry out your task against the available data and report the result.`,
@@ -204,7 +206,7 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
       outTok += resp.usage?.output_tokens || 0
       const blocks = resp.content || []
       const text = blocks.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('').trim()
-      if (text) { finalText = text; steps.push({ type: 'reason', result: text, at: iso() }) }
+      if (text) { finalText = text; steps.push({ type: 'reason', result: text, at: iso() }); emit({ type: 'reason', text }) }
       const toolUses = blocks.filter(b => b.type === 'tool_use') as Anthropic.ToolUseBlock[]
 
       if (resp.stop_reason !== 'tool_use' || toolUses.length === 0) { stopReason = stopReason || 'completed'; status = 'succeeded'; break }
@@ -227,11 +229,13 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
 
         toolCalls++
         steps.push({ type: 'tool', tool: tu.name, input: tu.input, at: iso() })
+        emit({ type: 'tool', tool: tu.name })
         let out: unknown
         try { out = await exec(tu.name, tu.input as Record<string, unknown>, guardCtx) }
         catch (e) { out = { error: e instanceof Error ? e.message : String(e) } }
         const rStr = typeof out === 'string' ? out : JSON.stringify(out)
         steps.push({ type: 'result', tool: tu.name, result: rStr.slice(0, 4000), at: iso() })
+        emit({ type: 'result', tool: tu.name })
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: rStr.slice(0, 12000) })
       }
 
@@ -255,6 +259,7 @@ export async function runAgent(agent: AgentDef, opts: RunOpts = {}, deps: RunDep
       : 'No output produced.'
   }
   await flush(status, status !== 'paused_for_approval' ? true : false)
+  emit({ type: 'run_done', status, stop_reason: stopReason, tool_calls: toolCalls, cost_usd: cost() })
 
   return { status, stop_reason: stopReason, result: finalText, steps, steps_used: stepN, tool_calls: toolCalls, cost_usd: cost(), input_tokens: inTok, output_tokens: outTok, pending_tool: pending, run_id: runId, execution: 'single' }
 }

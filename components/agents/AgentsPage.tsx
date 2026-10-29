@@ -11,7 +11,8 @@ import type { SessionUser } from '@/lib/auth'
 
 interface Agent { id: string; name: string; goal: string; tools: string | string[]; trigger_type: string; status: string; guardrails: string | object; sources?: string | string[]; learnings?: string; schedule?: string | null; execution?: string; max_subagents?: number }
 interface RunRow { id: string; agent_name: string; status: string; trigger_source: string; cost_usd: number; stop_reason: string; result: string; started_at: string }
-interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string }
+interface Step { type: string; tool?: string; input?: unknown; result?: string; at: string; sub?: string }
+interface LiveSub { id: string; title: string; status: 'queued' | 'running' | 'done'; tool?: string; summary?: string; error?: string }
 interface Version { id: string; version: number; source: string; note: string; created_at: string; goal: string; tools: string | string[] }
 interface Guardrails { max_steps: number; max_tool_calls: number; max_minutes: number; max_cost_usd: number; read_only: boolean; approve_writes: boolean; no_progress: boolean }
 interface Conn { id: string; label: string; dialect: string }
@@ -115,6 +116,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
 
   const [run, setRun] = useState<{ agent: string; steps: Step[]; status: string; stop: string; result: string; cost: number; runId?: string } | null>(null)
   const [running, setRunning] = useState(false)
+  const [live, setLive] = useState<{ execution?: string; phase: string; plan: LiveSub[]; toolCount: number; lead?: string } | null>(null)
   const [fed, setFed] = useState<number | null>(null)
   const [runs, setRuns] = useState<RunRow[]>([])
   const [stats, setStats] = useState<{ total: number; success_rate: number | null; pending_approval: number; spend_usd: number } | null>(null)
@@ -151,14 +153,43 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   function newDraft() { setDraft({ name: '', goal: '', tools: [...DEFAULT_TOOLS], guardrails: { ...DEFAULT_GUARDRAILS }, sources: [], learnings: '', trigger_type: 'manual', schedule: '', execution: 'single', max_subagents: 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
   function editDraft(a: Agent) { setDraft({ id: a.id, name: a.name, goal: a.goal, tools: asArr(a.tools), guardrails: { ...DEFAULT_GUARDRAILS, ...asObj<Partial<Guardrails>>(a.guardrails, {}) }, sources: asArr(a.sources), learnings: a.learnings || '', trigger_type: a.trigger_type || 'manual', schedule: typeof a.schedule === 'string' ? a.schedule : '', execution: a.execution === 'orchestrated' ? 'orchestrated' : 'single', max_subagents: Number(a.max_subagents) || 4 }); setRationale(''); setPreview(null); setMsg(''); setView('build') }
 
+  function applyLiveEvent(ev: Record<string, unknown>) {
+    const t = String(ev.type)
+    if (t === 'run_started') { setLive(l => ({ ...(l || { plan: [], toolCount: 0 }), execution: String(ev.execution || 'single'), phase: ev.execution === 'orchestrated' ? 'planning' : 'working' })) }
+    else if (t === 'plan') { const subs = (ev.subtasks as { id: string; title: string }[] || []).map(s => ({ id: s.id, title: s.title, status: 'queued' as const })); setLive(l => ({ ...(l || { toolCount: 0 }), execution: 'orchestrated', phase: 'running', plan: subs })) }
+    else if (t === 'subagent_status') { setLive(l => l ? { ...l, plan: l.plan.map(s => s.id === ev.id ? { ...s, status: 'running', tool: ev.tool ? String(ev.tool) : s.tool } : s), toolCount: ev.tool ? l.toolCount + 1 : l.toolCount } : l) }
+    else if (t === 'subagent_result') { setLive(l => l ? { ...l, plan: l.plan.map(s => s.id === ev.id ? { ...s, status: 'done', summary: String(ev.summary || ''), error: ev.error ? String(ev.error) : undefined } : s) } : l) }
+    else if (t === 'tool') { setLive(l => l ? { ...l, toolCount: l.toolCount + 1, lead: `using ${String(ev.tool)}` } : l) }
+    else if (t === 'reason') { setLive(l => l ? { ...l, lead: String(ev.text || '').slice(0, 120) } : l) }
+    else if (t === 'synthesizing') { setLive(l => l ? { ...l, phase: 'synthesizing' } : l) }
+  }
+
   async function runNow(a: Agent) {
-    setRunning(true); setFed(null); setView('run'); setRun({ agent: a.name, steps: [], status: 'running', stop: '', result: '', cost: 0 })
+    setRunning(true); setFed(null); setView('run'); setRun({ agent: a.name, steps: [], status: 'running', stop: '', result: '', cost: 0 }); setLive({ phase: 'starting', plan: [], toolCount: 0 })
     try {
-      const r = await fetch(`/api/agents/${a.id}`, { method: 'POST' }); const d = await r.json()
-      if (d.run) setRun({ agent: a.name, steps: d.run.steps || [], status: d.run.status, stop: d.run.stop_reason, result: d.run.result, cost: d.run.cost_usd, runId: d.run.run_id })
-      else setRun({ agent: a.name, steps: [], status: 'failed', stop: d.error || 'error', result: d.error || 'Run failed', cost: 0 })
+      const r = await fetch(`/api/agents/${a.id}/stream`, { method: 'POST' })
+      if (!r.ok || !r.body) {
+        // Fallback: synchronous run (older server / no stream body).
+        const d = await (await fetch(`/api/agents/${a.id}`, { method: 'POST' })).json()
+        if (d.run) setRun({ agent: a.name, steps: d.run.steps || [], status: d.run.status, stop: d.run.stop_reason, result: d.run.result, cost: d.run.cost_usd, runId: d.run.run_id })
+        else setRun({ agent: a.name, steps: [], status: 'failed', stop: d.error || 'error', result: d.error || 'Run failed', cost: 0 })
+        return
+      }
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read(); if (done) break
+        buf += dec.decode(value, { stream: true })
+        const parts = buf.split('\n\n'); buf = parts.pop() || ''
+        for (const p of parts) {
+          const dl = p.split('\n').find(l => l.startsWith('data: ')); if (!dl) continue
+          let ev: Record<string, unknown>; try { ev = JSON.parse(dl.slice(6)) } catch { continue }
+          if (ev.type === 'run') { const d = ev.run as Record<string, unknown>; setRun({ agent: a.name, steps: (d.steps as Step[]) || [], status: String(d.status), stop: String(d.stop_reason || ''), result: String(d.result || ''), cost: Number(d.cost_usd || 0), runId: d.run_id as string | undefined }) }
+          else if (ev.type === 'error') { setRun({ agent: a.name, steps: [], status: 'failed', stop: 'error', result: String(ev.error || 'Run failed'), cost: 0 }) }
+          else if (ev.type !== 'ping') applyLiveEvent(ev)
+        }
+      }
     } catch (e) { setRun({ agent: a.name, steps: [], status: 'failed', stop: 'error', result: String(e), cost: 0 }) }
-    finally { setRunning(false) }
+    finally { setRunning(false); setLive(null) }
   }
   async function toggle(a: Agent) {
     await fetch(`/api/agents/${a.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: a.status === 'active' ? 'paused' : 'active' }) }); load()
@@ -518,7 +549,35 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <span style={{ marginLeft: 'auto', ...statusPill(run?.status, running) }}>{running ? 'Running…' : run?.status === 'paused_for_approval' ? 'Paused · approval' : run?.status || '—'}{run?.stop && run.status !== 'succeeded' && !running ? ` · ${run.stop}` : ''}</span>
           </div>
           {running ? (
-            <div style={{ padding: 22, color: 'var(--text3)', fontSize: 13.5 }}>Running the agent against the live data layer…</div>
+            <div style={{ padding: 22 }}>
+              {live && live.execution === 'orchestrated' && live.plan.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12 }}>
+                    {live.phase === 'synthesizing' ? 'Synthesising the final answer from sub-agent findings…' : `Lead agent running ${live.plan.length} sub-agents in parallel…`}
+                    <span style={{ color: 'var(--text3)' }}> · {live.toolCount} tool calls</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {live.plan.map(s => (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, marginTop: 5, flexShrink: 0, background: s.status === 'done' ? (s.error ? 'var(--red-t,#dc2626)' : 'var(--green-t,#16a34a)') : s.status === 'running' ? 'var(--accent-bg,#2563eb)' : 'var(--text3)', animation: s.status === 'running' ? 'pulse 1.2s ease-in-out infinite' : 'none' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>
+                            {s.status === 'done' ? (s.error ? `stopped · ${s.error}` : (s.summary || 'done').slice(0, 160)) : s.status === 'running' ? (s.tool ? `running · ${s.tool}` : 'running…') : 'queued'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text3)', fontSize: 13.5 }}>
+                  {live?.phase === 'synthesizing' ? 'Synthesising…' : 'Running the agent against the live data layer…'}
+                  {live && live.toolCount > 0 ? <span> · {live.toolCount} tool calls{live.lead ? ` · ${live.lead}` : ''}</span> : null}
+                </div>
+              )}
+              <style>{'@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}'}</style>
+            </div>
           ) : (
             <>
               {run?.result && <ResultBlock text={run.result} />}

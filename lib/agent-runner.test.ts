@@ -255,4 +255,31 @@ describe('agent runner — orchestrated execution', () => {
     expect(DEFAULT_ORCHESTRATION.concurrency).toBeGreaterThanOrEqual(1)
     expect(DEFAULT_ORCHESTRATION.concurrency).toBeLessThanOrEqual(DEFAULT_ORCHESTRATION.max_subagents)
   })
+
+  it('emits a live event stream: run_started → plan → subagent_status/result → synthesizing → run_done', async () => {
+    const exec = vi.fn().mockResolvedValue({ ok: true })
+    const { client } = orchClient({ plan: 2 })
+    const events: Record<string, unknown>[] = []
+    await runAgent(orch({ max_subagents: 2 }), { ...noPersist, emit: (e) => events.push(e) }, { client, exec })
+    const types = events.map(e => e.type)
+    expect(types[0]).toBe('run_started')
+    expect(types).toContain('plan')
+    expect(types.filter(t => t === 'subagent_status').length).toBeGreaterThanOrEqual(2) // queued + running per sub
+    expect(types.filter(t => t === 'subagent_result').length).toBe(2)
+    expect(types).toContain('synthesizing')
+    expect(types[types.length - 1]).toBe('run_done')
+    const plan = events.find(e => e.type === 'plan') as { subtasks?: unknown[] }
+    expect(Array.isArray(plan.subtasks) && plan.subtasks!.length).toBe(2)
+  })
+
+  it('single mode also emits a live stream (run_started → tool/result → run_done)', async () => {
+    const exec = vi.fn().mockResolvedValue({ rows: [{ x: 1 }] })
+    const events: Record<string, unknown>[] = []
+    await runAgent(agent(), { ...noPersist, emit: (e) => events.push(e) }, { client: fakeClient([toolUse('query_database', { sql: 'SELECT 1' }), finalMsg('done.')]), exec })
+    const types = events.map(e => e.type)
+    expect(types[0]).toBe('run_started')
+    expect(types).toContain('tool')
+    expect(types).toContain('result')
+    expect(types[types.length - 1]).toBe('run_done')
+  })
 })
