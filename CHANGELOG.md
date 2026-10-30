@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-10-30
+### Changed
+- Dashboard view: moved the dashboard title out of the cramped top toolbar into its
+  own row at the top of the dashboard body, so long titles have room (the toolbar
+  keeps the back link + time/device/refresh controls).
+
 ## [1.6.2] - 2026-10-30
 ### Fixed
 - **Page content / tables now scroll on mobile.** The per-page scroll regions hit

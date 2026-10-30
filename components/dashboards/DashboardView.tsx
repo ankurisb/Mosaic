@@ -355,8 +355,9 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L3 6.5l5 4.5"/></svg>
           Dashboards
         </button>
-        <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>{dashboard.name}</span>
+        {/* Dashboard title moved out of this toolbar into its own row below (it gets
+            cramped here and the length varies). A spacer keeps the controls right-aligned. */}
+        <div style={{ flex: 1 }} />
 
         {/* Time window selector — hidden for Superset embeds */}
         {!dashboard?.superset_embed_uuid && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -468,6 +469,11 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
       {/* Dashboard grid or Superset embed (+ AI chat dock) */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+          {/* Dashboard title — its own row in the dashboard space, so a long title has
+              room to breathe instead of being cramped in the toolbar above. */}
+          <div style={{ padding: '14px 24px 12px', flexShrink: 0 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--text)', margin: 0, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{dashboard.name}</h1>
+          </div>
       {dashboard?.superset_embed_uuid ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {guestTokenLoading ? (
@@ -517,7 +523,7 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
           )}
         </div>
       ) : (
-      <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+      <div style={{ flex: 1, padding: '8px 24px 20px', overflowY: 'auto' }}>
         {panels.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12 }}>
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: 'var(--text4)' }}>
