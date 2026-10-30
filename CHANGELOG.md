@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.7] - 2026-10-30
+### Added
+- **Test data harness (admin).** Settings → Data sources now has an "Add test harness"
+  card that registers the full demo estate as real connections in one click: Postgres
+  (plant ops), MySQL (ERP), SQL Server (CMMS), InfluxDB v1 (telemetry), MongoDB (event
+  logs) and Elasticsearch, plus SFTP and S3/MinIO file drops. Registration is admin-only
+  and idempotent (existing sources, matched by label, are left untouched).
+- **`docker-compose.demo.yml` overlay.** Optional `demo` compose profile that runs those
+  eight harness services (seeded from `test-data/`) on Mosaic's own `mosaic-net`, reachable
+  by service name. Bring it up with
+  `docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile demo up -d`.
+  Services publish no host ports and stay dormant unless the `demo` profile is selected.
+  The registered connections only go green once this profile is running.
+
 ## [1.6.6] - 2026-10-30
 ### Changed
 - Login "Mosaic" wordmark sized to 20px to match the in-app left-nav wordmark (was 22px).

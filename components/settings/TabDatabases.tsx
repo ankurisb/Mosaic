@@ -130,6 +130,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [dbSearch, setDbSearch] = useState('')
   const [dbPage, setDbPage] = useState(1)
   const [sandboxMsg, setSandboxMsg] = useState('')
+  const [harnessing, setHarnessing] = useState(false)
+  const [harnessMsg, setHarnessMsg] = useState('')
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
   const [airbyteCount, setAirbyteCount] = useState(0)
   // Detect whether the connected Airbyte is Cloud (api.airbyte.com). Cloud's
@@ -229,6 +231,22 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       await load()
     } finally { setSandboxing(false) }
   }
+  async function createHarness() {
+    setHarnessing(true); setHarnessMsg('')
+    try {
+      const r = await fetch('/api/test-db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_harness' }) })
+      const { data: d, error: err } = await safeJson<{ added?: string[]; skipped?: string[]; already_existed?: boolean; error?: string }>(r)
+      if (err) { setHarnessMsg('Error: ' + err); return }
+      const added = d?.added?.length ?? 0
+      const skipped = d?.skipped?.length ?? 0
+      setHarnessMsg(
+        added === 0
+          ? `All ${skipped} harness sources already registered — see the list below.`
+          : `✓ Registered ${added} harness source${added === 1 ? '' : 's'}${skipped ? ` (${skipped} already present)` : ''}. Start the demo profile to bring them online.`
+      )
+      await load()
+    } finally { setHarnessing(false) }
+  }
   useEffect(() => { load() }, [])
 
   const set = (k: string, v: string | boolean) => setForm(p => ({ ...p, [k]: v }))
@@ -291,6 +309,18 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
         </div>
         <Btn onClick={createSandbox} disabled={sandboxing}>{sandboxing ? 'Creating...' : 'Add sandbox DB'}</Btn>
       </div>
+
+      {/* Full test-data harness (admin only) */}
+      {user.role === 'admin' && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>Test data harness</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>Registers the full demo estate — Postgres plant ops, MySQL ERP, SQL Server CMMS, InfluxDB telemetry, MongoDB event logs, Elasticsearch, plus SFTP and S3 file drops. Requires the <code style={{ fontFamily: 'var(--font-mono)' }}>demo</code> compose profile to be running (<code style={{ fontFamily: 'var(--font-mono)' }}>docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d</code>).</div>
+            {harnessMsg && <div style={{ fontSize: 12, marginTop: 6, color: harnessMsg.startsWith('Error') ? 'var(--red-t)' : 'var(--green-t)' }}>{harnessMsg}</div>}
+          </div>
+          <Btn onClick={createHarness} disabled={harnessing}>{harnessing ? 'Adding...' : 'Add test harness'}</Btn>
+        </div>
+      )}
 
       {error && <Alert variant="error">{error}</Alert>}
 
