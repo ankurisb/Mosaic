@@ -4,6 +4,24 @@ All notable changes to Mosaic are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- **Harness images mirrored to GHCR + shipped with the installer.** The demo
+  harness now pulls its data-store images from `ghcr.io/ankurisb/mosaic-demo:*`
+  (digest-pinned) instead of Docker Hub/mcr/quay — the one registry every box
+  already authenticates to, so pulls are reliable and work air-gapped. Produced
+  by `.github/workflows/mirror-demo-images.yml` (run via a `mirror-demo-*` tag).
+  The installer (`build-mac.sh`/`build-win.bat` → `deploy/`) now stages
+  `docker-compose.demo.yml`, `test-data/`, and `mosaic-harness.sh` onto every
+  host, so "Add test harness" works with no manual copy.
+- **`mosaic-harness.sh on|off|status`** — one-command control of the demo
+  profile (includes the host override file; never reconciles the main stack).
+### Known limitations
+- **S3 source (MinIO) pending an image.** MinIO restricted its image
+  distribution in 2025 (Docker Hub repos removed; quay.io now requires auth), so
+  `minio`/`mc` are not mirrored and the S3 file-drop source is temporarily out of
+  the default bring-up. The other 7 harness sources (Postgres, MySQL, SQL Server,
+  InfluxDB, MongoDB, Elasticsearch, SFTP) are unaffected. A freely-distributable
+  S3 image (Bitnami MinIO, SeaweedFS, or adobe/s3mock) will restore it.
 
 ## [1.6.8] - 2026-10-30
 ### Added

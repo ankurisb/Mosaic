@@ -30,7 +30,7 @@
 services:
   # ─── PostgreSQL: "Plant Operations" ────────────────────────────────
   postgres:
-    image: ghcr.io/ankurisb/mosaic-demo:postgres-16-alpine
+    image: ghcr.io/ankurisb/mosaic-demo:postgres-16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     container_name: mosaic-demo-postgres
     profiles: ["demo"]
     restart: unless-stopped
@@ -50,7 +50,7 @@ services:
 
   # ─── MySQL: "ERP Lite" ─────────────────────────────────────────────
   mysql:
-    image: ghcr.io/ankurisb/mosaic-demo:mysql-8.3
+    image: ghcr.io/ankurisb/mosaic-demo:mysql-8.3@sha256:9de9d54fecee6253130e65154b930978b1fcc336bcc86dfd06e89b72a2588ebe
     container_name: mosaic-demo-mysql
     profiles: ["demo"]
     restart: unless-stopped
@@ -72,7 +72,7 @@ services:
 
   # ─── SQL Server: "Maintenance CMMS" ────────────────────────────────
   mssql:
-    image: ghcr.io/ankurisb/mosaic-demo:mssql-2022
+    image: ghcr.io/ankurisb/mosaic-demo:mssql-2022@sha256:a98246d587cb46082fd638ece88f99a3744113b16787e2c724b8f4e38885dcc8
     container_name: mosaic-demo-mssql
     profiles: ["demo"]
     restart: unless-stopped
@@ -92,7 +92,7 @@ services:
 
   # Runs once after mssql is healthy, loads the seed SQL, then exits.
   mssql-seed:
-    image: ghcr.io/ankurisb/mosaic-demo:mssql-tools
+    image: ghcr.io/ankurisb/mosaic-demo:mssql-tools@sha256:8e5bad6abd253376af95e94489326d8b67f16d565b89461405a3238784e86200
     container_name: mosaic-demo-mssql-seed
     profiles: ["demo"]
     networks: [mosaic-net]
@@ -111,7 +111,7 @@ services:
 
   # ─── InfluxDB v1: "Sensor Telemetry" ───────────────────────────────
   influxdb:
-    image: ghcr.io/ankurisb/mosaic-demo:influxdb-1.8
+    image: ghcr.io/ankurisb/mosaic-demo:influxdb-1.8@sha256:299ebda2c7e308dbef42e26ac9b8fd1d9b3bcb8a0aee80c6509aa0219c1d0290
     container_name: mosaic-demo-influxdb
     profiles: ["demo"]
     restart: unless-stopped
@@ -131,7 +131,7 @@ services:
       retries: 20
 
   influxdb-seed:
-    image: ghcr.io/ankurisb/mosaic-demo:alpine-3.19
+    image: ghcr.io/ankurisb/mosaic-demo:alpine-3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
     container_name: mosaic-demo-influxdb-seed
     profiles: ["demo"]
     networks: [mosaic-net]
@@ -156,7 +156,7 @@ services:
 
   # ─── MongoDB: "Event Logs" ─────────────────────────────────────────
   mongodb:
-    image: ghcr.io/ankurisb/mosaic-demo:mongo-7
+    image: ghcr.io/ankurisb/mosaic-demo:mongo-7@sha256:8bb4442761a63a8dda452744082cdac9644b429807eb977b42324a63cef59ca4
     container_name: mosaic-demo-mongodb
     profiles: ["demo"]
     restart: unless-stopped
@@ -175,6 +175,14 @@ services:
       retries: 10
 
   # ─── MinIO: S3-compatible file server ──────────────────────────────
+  # PENDING an S3 image: MinIO restricted its image distribution in 2025 (its
+  # Docker Hub repos were removed and quay.io now requires authentication), so
+  # minio/minio and minio/mc are NOT mirrored to GHCR and the two tags below do
+  # not yet resolve. The default bring-up (scripts/mosaic-harness.sh) excludes
+  # these two services, so the other 7 sources start cleanly. To enable the S3
+  # source, mirror a freely-distributable S3 image (e.g. Bitnami MinIO, or an
+  # alternative such as SeaweedFS / adobe/s3mock) to ghcr.io/ankurisb/mosaic-demo
+  # :minio (+ :mc for the seeder) and re-add them to the up list.
   minio:
     image: ghcr.io/ankurisb/mosaic-demo:minio
     container_name: mosaic-demo-minio
@@ -217,7 +225,7 @@ services:
 
   # ─── SFTP: file server over SSH ────────────────────────────────────
   sftp:
-    image: ghcr.io/ankurisb/mosaic-demo:sftp-alpine
+    image: ghcr.io/ankurisb/mosaic-demo:sftp-alpine@sha256:52b1dcace64c3d550a5324d4e7ae579d5fa38fed5a54cfd19e373cc9744eca57
     container_name: mosaic-demo-sftp
     profiles: ["demo"]
     restart: unless-stopped
@@ -229,7 +237,7 @@ services:
 
   # ─── Mock SAP OData API ────────────────────────────────────────────
   mock-sap-api:
-    image: ghcr.io/ankurisb/mosaic-demo:node-20-alpine
+    image: ghcr.io/ankurisb/mosaic-demo:node-20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
     container_name: mosaic-demo-mock-sap
     profiles: ["demo"]
     restart: unless-stopped
@@ -246,7 +254,7 @@ services:
 
   # ─── Elasticsearch: "Maintenance Logs, Alarms, Quality, Operator Logbook" ───
   elasticsearch:
-    image: ghcr.io/ankurisb/mosaic-demo:elasticsearch-8.13.0
+    image: ghcr.io/ankurisb/mosaic-demo:elasticsearch-8.13.0@sha256:9d1cd1491778aceca4490de7ec9f205c3633a277df15473e1ea507d13a5270c6
     container_name: mosaic-demo-elasticsearch
     profiles: ["demo"]
     restart: unless-stopped
@@ -266,7 +274,7 @@ services:
 
   # Seeds four indices: maintenance_logs, alarm_events, quality_events, operator_logbook
   elasticsearch-seed:
-    image: ghcr.io/ankurisb/mosaic-demo:curl
+    image: ghcr.io/ankurisb/mosaic-demo:curl@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     container_name: mosaic-demo-elasticsearch-seed
     profiles: ["demo"]
     networks: [mosaic-net]

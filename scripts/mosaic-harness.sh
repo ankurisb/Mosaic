@@ -33,8 +33,11 @@ FILES+=(-f docker-compose.demo.yml)
 PROFILE=(--profile demo)
 
 # Explicit service list so `up` never reconciles the main stack.
+# NOTE: minio / minio-seed are intentionally omitted — MinIO gated its upstream
+# image distribution in 2025, so the S3 source image isn't mirrored yet (see the
+# MinIO note in docker-compose.demo.yml). The other 7 sources start cleanly.
 SERVICES=(postgres mysql mssql mssql-seed influxdb influxdb-seed mongodb \
-          minio minio-seed sftp elasticsearch elasticsearch-seed mock-sap-api)
+          sftp elasticsearch elasticsearch-seed mock-sap-api)
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
