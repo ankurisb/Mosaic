@@ -321,13 +321,9 @@ export default function TabQueryRunner() {
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div>
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Query Builder</h1>
-          <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Explore any connected data source — pick a source, choose a table, and run.</p>
-        </div>
-        {/* New query — top-right, matching the '+ New alert' button style (pill,
-            accent). Clears the editor for a fresh start. */}
+      {/* Title/subtitle live in the page's shared PageHeader; keep only the
+          'New query' reset here, right-aligned above the toolbar. */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <button onClick={() => { setQuery(''); setResult(null); setError(null); setSaveLabel(''); setShowSave(false) }}
           title="Start a new, blank query"
           style={{ flexShrink: 0, padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ New query</button>

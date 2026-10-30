@@ -1,5 +1,6 @@
 'use client'
 import AppShell from '@/components/AppShell'
+import PageHeader from '@/components/PageHeader'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -273,22 +274,18 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   const isAdmin = user.role === 'admin'
 
   // -- Header --------------------------------------------------
-  const topbar = (
-    <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-      <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M9 2L4 6.5l5 4.5"/></svg>
-        Chat
+  // Contextual sub-bar, shown only inside a workflow group (detail / builder) to
+  // provide back-navigation, the group name, and per-group actions. The top-level
+  // identity + tabs live in the shared PageHeader.
+  const ctxBar = (
+    <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+      <button onClick={() => { setView('list'); setActiveId(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L3 6l5 4"/></svg>
+        Workflow rules
       </button>
       <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />
-      {view !== 'list' && (
-        <button onClick={() => { setView('list'); setActiveId(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L3 6l5 4"/></svg>
-          Rules
-        </button>
-      )}
-      {view !== 'list' && <div style={{ width: 1, height: 14, background: 'var(--border2)' }} />}
       <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1 }}>
-        {activeTab === 'alerts' ? 'Alerts' : view === 'list' ? 'Workflow rules' : view === 'builder' ? (editingId ? 'Edit rule group' : 'New rule group') : active?.name}
+        {view === 'builder' ? (editingId ? 'Edit rule group' : 'New rule group') : active?.name}
       </span>
 
       {view === 'detail' && active && isAdmin && (
@@ -309,20 +306,6 @@ export default function RulesPage({ user }: { user: SessionUser }) {
     workflow:   'Multi-condition rules with AND/OR logic, several actions and recipients, and rate limiting. Use when one alert isn\u2019t enough — combined conditions or richer routing.',
     automation: 'Full workflow automation via n8n for complex or multi-step logic (branching, external systems, transforms). Mosaic and n8n call each other, so automations can query your data and trigger syncs.',
   }
-  const tabStrip = (
-    <div>
-    <div style={{ display: 'flex', gap: 2, padding: '0 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', marginTop: -1 }}>
-      {(['alerts', 'workflow', 'automation'] as const).map(tab => (
-        <button key={tab} onClick={() => { setActiveTab(tab); setView('list') }} style={{ padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400, color: activeTab === tab ? 'var(--text)' : 'var(--text3)', background: 'none', border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent-fg)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1 }}>
-          {tab === 'alerts' ? 'Alerts' : tab === 'workflow' ? 'Workflow rules' : 'Automation'}
-        </button>
-      ))}
-    </div>
-    <div style={{ padding: '8px 24px 0', fontSize: 12, color: 'var(--text3)', lineHeight: 1.5, maxWidth: 720 }}>
-      {TAB_HINTS[activeTab]}
-    </div>
-    </div>
-  )
 
   // -- Alerts view -----------------------------------------------
   const alertsView = (
@@ -957,8 +940,14 @@ export default function RulesPage({ user }: { user: SessionUser }) {
   return (
     <AppShell user={user}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-      {topbar}
-      {tabStrip}
+      <PageHeader
+        title="Rules"
+        subtitle={TAB_HINTS[activeTab]}
+        tabs={[{ id: 'alerts', label: 'Alerts' }, { id: 'workflow', label: 'Workflow rules' }, { id: 'automation', label: 'Automation' }]}
+        activeTab={activeTab}
+        onTab={(t) => { setActiveTab(t as 'alerts' | 'workflow' | 'automation'); setView('list') }}
+      />
+      {activeTab === 'workflow' && view !== 'list' && ctxBar}
       {activeTab === 'alerts'     && alertsView}
       {activeTab === 'workflow'    && view === 'list'    && listView}
       {activeTab === 'workflow'    && view === 'detail'  && detailView}

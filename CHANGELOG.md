@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-30
+### Changed
+- **Consistent page headers across every section.** Agents, Dashboards, Digests,
+  Query Builder, Rules and Assets had drifted into three different breadcrumb styles,
+  serif vs sans titles, pill vs underline tabs and varied button placement. They now
+  all use a shared `PageHeader`: a surface band with the page title + one-line
+  subtitle on the left, primary actions on the right, and underline tabs below for
+  tabbed pages. Breadcrumbs removed (the sidebar already shows location); Agents'
+  pill tab-toggle is now an underline tab like the rest.
+
+### Added
+- `PageHeader` component (`components/PageHeader.tsx`) with `hbtnPrimary` /
+  `hbtnSecondary` action-button styles, documented in DESIGN_SYSTEM.md.
+
 ## [1.5.5] - 2026-10-29
 ### Changed
 - **Larger, more readable navigation on mobile.** The main rail, the Chats-view

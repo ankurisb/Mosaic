@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AppShell from '@/components/AppShell'
+import PageHeader, { hbtnPrimary } from '@/components/PageHeader'
 import type { SessionUser } from '@/lib/auth'
 
 // Agents surface. Views: Agents grid, Builder (goal -> AI suggest -> Test run -> Publish),
@@ -324,14 +325,15 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
 
   return (
     <AppShell user={user}>
-    <div style={{ padding: '22px max(18px, env(safe-area-inset-left)) 54px', maxWidth: 1160, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
-        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 11, width: 'fit-content' }}>
-          {(['agents', 'report'] as const).map(v => (<button key={v} onClick={() => setView(v)} style={tabStyle(v)}>{v === 'report' ? 'Report' : 'Agents'}</button>))}
-        </div>
-        <button style={{ ...btnPri, marginLeft: 'auto' }} onClick={newDraft}>+ New agent</button>
-      </div>
-
+    <PageHeader
+      title="Agents"
+      subtitle="Autonomous agents that investigate and act on your live data — on a schedule or on demand."
+      actions={<button style={hbtnPrimary} onClick={newDraft}>+ New agent</button>}
+      tabs={[{ id: 'agents', label: 'Agents' }, { id: 'report', label: 'Report' }]}
+      activeTab={view}
+      onTab={(v) => setView(v as 'agents' | 'report')}
+    />
+    <div style={{ padding: '22px max(18px, env(safe-area-inset-left)) 54px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>
       {view === 'agents' && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--text3)', marginBottom: 12 }}>{agents.length} agents · {activeN} active</div>

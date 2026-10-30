@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import AppShell from '@/components/AppShell'
+import PageHeader, { hbtnPrimary } from '@/components/PageHeader'
 
 function fmtDate(s: unknown) {
   if (!s) return '—'
@@ -145,23 +146,14 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
 
   return (
     <AppShell user={user}>
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-        <span style={{ fontSize: 13, color: 'var(--text3)' }}>Chat</span>
-        <span style={{ fontSize: 13, color: 'var(--text3)' }}>/</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Digests</span>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
-        <input placeholder="Search digests…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...INP, maxWidth: 320 }} />
-        {isAdmin && (
-          <button onClick={() => setShowNewTemplate(true)}
-            style={{ marginLeft: 'auto', padding: '7px 14px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            + New digest
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Digests"
+        subtitle="Scheduled AI summaries for your team, plus RCAs you export from a chat."
+        actions={isAdmin ? <button onClick={() => setShowNewTemplate(true)} style={hbtnPrimary}>+ New digest</button> : undefined}
+      />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 940, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+        <input placeholder="Search digests…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...INP, maxWidth: 320, display: 'block', marginBottom: 16 }} />
         {loading && <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading…</div>}
 
         {nothing && (

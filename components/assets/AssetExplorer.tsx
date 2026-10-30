@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import AppShell from '@/components/AppShell'
+import PageHeader from '@/components/PageHeader'
 
 // -- types (mirror /api/graph) ------------------------------------------------
 type NodeKind = 'plant' | 'line' | 'asset' | 'sensor' | 'gateway' | 'source' | 'dimension' | 'other'
@@ -186,20 +187,17 @@ export default function AssetExplorer({ user }: { user: SessionUser }) {
   return (
     <AppShell user={user}>
       <style>{AE_CSS}</style>
+      <PageHeader
+        title="Asset Explorer"
+        subtitle={run
+          ? `Graph derived from your connected sources · ${String(run.nodes ?? 0)} nodes · ${String(run.edges ?? 0)} edges · ${String(run.sources ?? 0)} sources${run.finished_at ? ` · built ${String(run.finished_at).replace('T', ' ').slice(0, 16)}` : ''}`
+          : 'Built automatically from your connected sources — no hand-authoring.'}
+        actions={<>
+          {pendingCount > 0 && <span className="ae-badge">{pendingCount} to review</span>}
+          {isAdmin && <button className="ae-btn primary" onClick={rebuild} disabled={busy}>{busy ? 'Building…' : (nodes.length ? 'Rebuild / Sync' : 'Build graph')}</button>}
+        </>}
+      />
       <div className="ae-wrap">
-        <div className="ae-head">
-          <div>
-            <h1 className="ae-h1">Asset Explorer</h1>
-            <p className="ae-sub">
-              {run ? <>Graph derived from your connected sources · {String(run.nodes ?? 0)} nodes · {String(run.edges ?? 0)} edges · {String(run.sources ?? 0)} sources{run.finished_at ? ` · built ${String(run.finished_at).replace('T', ' ').slice(0, 16)}` : ''}</>
-                   : 'Built automatically from your connected sources — no hand-authoring.'}
-            </p>
-          </div>
-          <div className="ae-actions">
-            {pendingCount > 0 && <span className="ae-badge">{pendingCount} to review</span>}
-            {isAdmin && <button className="ae-btn primary" onClick={rebuild} disabled={busy}>{busy ? 'Building…' : (nodes.length ? 'Rebuild / Sync' : 'Build graph')}</button>}
-          </div>
-        </div>
 
         {err && <div className="ae-err">{err}</div>}
 
@@ -305,7 +303,7 @@ function Lg({ c, dash, label }: { c: string; dash?: boolean; label: string }) {
 function trunc(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
 const AE_CSS = `
-.ae-wrap{display:flex;flex-direction:column;height:100%;padding:16px 20px 18px;overflow:hidden}
+.ae-wrap{display:flex;flex-direction:column;flex:1;min-height:0;padding:16px 20px 18px;overflow:hidden}
 .ae-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;flex:none}
 .ae-h1{margin:0;font-size:20px;font-weight:600;color:var(--text)}
 .ae-sub{margin:4px 0 0;font-size:12.5px;color:var(--text3)}

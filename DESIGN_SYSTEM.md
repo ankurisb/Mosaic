@@ -128,6 +128,13 @@ runtime Google-Fonts/CDN link.
   sizes (~12–13px) that are too small on phones. On mobile (`useIsMobile`) bump nav
   and list labels to ~15px with taller touch padding — don't rely on the global
   display-size zoom alone.
+- **Page header:** every top-level section (Agents, Dashboards, Digests, Query
+  Builder, Rules, Assets) uses the shared `PageHeader` component — a `--surface`
+  band with a bottom border: page title (20px/700) + one-line subtitle on the left,
+  primary actions on the right (use `hbtnPrimary` / `hbtnSecondary`), and underline
+  tabs along the bottom edge for tabbed pages. No breadcrumbs — the sidebar shows
+  location. Don't hand-roll a per-page header; add to `PageHeader` if something's
+  missing.
 - **Nav rail:** `var(--nav-bg)` (= `--surface`), item text `var(--nav-text)`,
   active item `var(--nav-active-bg)` + `var(--accent)` text. Use the `--nav-*`
   tokens, not raw surface tokens, so "dark menu / light page" palettes keep working.

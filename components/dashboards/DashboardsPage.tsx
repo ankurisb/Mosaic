@@ -1,5 +1,6 @@
 'use client'
 import AppShell from '@/components/AppShell'
+import PageHeader, { hbtnPrimary, hbtnSecondary } from '@/components/PageHeader'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
@@ -130,45 +131,25 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
   return (
     <AppShell user={user}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 32px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text2)', fontSize: 13, fontFamily: 'inherit', padding: 0 }}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M9 2L4 7l5 5"/></svg>
-            Chat
-          </button>
-          <div style={{ width: 1, height: 16, background: 'var(--border2)' }} />
-          <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, color: 'var(--text)' }}>Dashboards</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-
-        </div>
-      </div>
-
-      <div style={{ flex: 1, padding: '32px', maxWidth: 960, margin: '0 auto', width: '100%' }}>
-        {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
-          <div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 400, color: 'var(--text)', marginBottom: 4 }}>Analytics dashboards</h1>
-            <p style={{ fontSize: 13, color: 'var(--text3)' }}>Self-service dashboards that query your connected data sources and auto-refresh.</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <SupersetLink />
-            {dashboards.some(d => d.source_kind === 'superset_query') && (
-              <button onClick={() => setShowQueries(true)}
-                title="View all queries & dashboards"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                Queries
-              </button>
-            )}
-            <button onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--shadow)', flexShrink: 0 }}>
+      <PageHeader
+        title="Dashboards"
+        subtitle="Self-service dashboards that query your connected data sources and auto-refresh."
+        actions={<>
+          <SupersetLink />
+          {dashboards.some(d => d.source_kind === 'superset_query') && (
+            <button onClick={() => setShowQueries(true)} title="View all queries & dashboards" style={hbtnSecondary}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              Queries
+            </button>
+          )}
+          <button onClick={() => setShowForm(true)} style={hbtnPrimary}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg>
             New dashboard
           </button>
-          </div>
-        </div>
+        </>}
+      />
 
+      <div style={{ flex: 1, padding: '24px 32px', maxWidth: 960, margin: '0 auto', width: '100%' }}>
         {/* Create form */}
         {showForm && (
           <div className="fade-in" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 20, boxShadow: 'var(--shadow-md)' }}>
