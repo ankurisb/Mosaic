@@ -13,6 +13,9 @@ name: Mirror demo harness images to GHCR
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'mirror-demo-*'   # e.g. `git tag mirror-demo-1 && git push origin mirror-demo-1`
 
 jobs:
   mirror:
