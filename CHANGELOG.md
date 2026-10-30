@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-30
+### Fixed
+- PageHeader: keep the primary action pinned top-right at medium widths (let the
+  title column flex and the subtitle wrap) instead of wrapping the button below.
+
 ## [1.6.0] - 2026-10-30
 ### Changed
 - **Consistent page headers across every section.** Agents, Dashboards, Digests,

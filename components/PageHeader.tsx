@@ -46,9 +46,9 @@ export default function PageHeader({
     }}>
       <div style={{
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-        gap: 16, flexWrap: 'wrap', paddingBottom: hasTabs ? 10 : (isMobile ? 12 : 16),
+        gap: 16, paddingBottom: hasTabs ? 10 : (isMobile ? 12 : 16),
       }}>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           {!isMobile && (
             <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--text)', margin: 0 }}>{title}</h1>
           )}
