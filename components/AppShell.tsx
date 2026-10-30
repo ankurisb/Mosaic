@@ -9,7 +9,7 @@ import { useIsMobile } from '@/lib/useIsMobile'
 
 interface Conv { id: string; title: string }
 
-const SECTION_TITLES: Record<string, string> = { '/': 'Chats', '/dashboards': 'Dashboards', '/assets': 'Asset Explorer', '/reports': 'Reports', '/query-builder': 'Query Builder', '/rules': 'Rules', '/agents': 'Agents', '/connectors': 'Connectors', '/settings': 'Settings' }
+const SECTION_TITLES: Record<string, string> = { '/': 'Chats', '/dashboards': 'Dashboards', '/assets': 'Asset Explorer', '/reports': 'Digests', '/query-builder': 'Query Builder', '/rules': 'Rules', '/agents': 'Agents', '/connectors': 'Connectors', '/settings': 'Settings' }
 
 export default function AppShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
   const router   = useRouter()

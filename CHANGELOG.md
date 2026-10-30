@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-10-30
+### Changed
+- Mobile app-bar title for Digests now reads "Digests" (was "Reports") and the Chats
+  app-bar reads "Chats" (was "Mosaic").
+- Login page: removed the trailing "\xb7 ugx.ai" from the "Sign in to continue" line, and
+  replaced the footer "ugx.ai" text with the UGX.AI wordmark logo (small; rendered via
+  CSS mask so it takes the theme colour and works in light and dark).
+
 ## [1.6.4] - 2026-10-30
 ### Fixed
 - Dashboard toolbar on mobile: the time/device/refresh controls ran off the right

@@ -56,7 +56,7 @@ export default function LoginPage() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
             <span style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--text)' }}>Mosaic</span>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--text3)' }}>Sign in to continue · ugx.ai</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)' }}>Sign in to continue</p>
         </div>
 
         <div style={{ padding: '0 32px 32px' }}>
@@ -108,8 +108,16 @@ export default function LoginPage() {
           )}
         </div>
 
-        <div style={{ padding: '12px 32px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)', textAlign: 'center' }}>
-          ugx.ai
+        <div style={{ padding: '14px 32px', borderTop: '1px solid var(--border)', textAlign: 'center' }}>
+          {/* UGX.AI wordmark rendered via CSS mask so it takes the theme text colour
+              (works in both light and dark). Logo asset is a transparent-bg glyph PNG. */}
+          <span role="img" aria-label="UGX.AI" title="UGX.AI" style={{
+            display: 'inline-block', width: 50, height: 14, verticalAlign: 'middle', background: 'var(--text3)',
+            WebkitMaskImage: 'url(/ugx-logo.png)', maskImage: 'url(/ugx-logo.png)',
+            WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+            WebkitMaskSize: 'contain', maskSize: 'contain',
+            WebkitMaskPosition: 'center', maskPosition: 'center',
+          }} />
         </div>
       </div>
     </div>
