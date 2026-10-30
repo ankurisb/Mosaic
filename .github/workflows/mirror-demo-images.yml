@@ -33,13 +33,25 @@ jobs:
       - name: Mirror images
         env:
           OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           DEST="ghcr.io/${OWNER_LC}/mosaic-demo"
 
-          # src|tag  — one per line. `tag` is the destination tag on $DEST.
-          MAP=$(cat <<'EOF'
+          # MinIO withdrew its Docker Hub `latest` tag and quay only serves
+          # date-stamped RELEASE tags, so resolve the current ones at run time
+          # from the project's GitHub releases (the image tag == the release tag).
+          minio_tag() {
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/minio/$1/releases/latest" | jq -r '.tag_name'
+          }
+          MINIO_TAG=$(minio_tag minio); MC_TAG=$(minio_tag mc)
+          echo "Resolved MinIO server=$MINIO_TAG  client=$MC_TAG"
+          [ -n "$MINIO_TAG" ] && [ "$MINIO_TAG" != "null" ] || { echo "could not resolve MinIO tags"; exit 1; }
+
+          # src|tag  — `tag` is the destination tag on $DEST. Vars expand here.
+          MAP=$(cat <<EOF
           docker.io/library/postgres:16-alpine|postgres-16-alpine
           docker.io/library/mysql:8.3|mysql-8.3
           mcr.microsoft.com/mssql/server:2022-latest|mssql-2022
@@ -47,8 +59,8 @@ jobs:
           docker.io/library/influxdb:1.8|influxdb-1.8
           docker.io/library/alpine:3.19|alpine-3.19
           docker.io/library/mongo:7|mongo-7
-          quay.io/minio/minio:latest|minio
-          quay.io/minio/mc:latest|mc
+          quay.io/minio/minio:${MINIO_TAG}|minio
+          quay.io/minio/mc:${MC_TAG}|mc
           docker.io/atmoz/sftp:alpine|sftp-alpine
           docker.io/library/node:20-alpine|node-20-alpine
           docker.io/library/elasticsearch:8.13.0|elasticsearch-8.13.0
@@ -58,7 +70,7 @@ jobs:
 
           echo "## Mirrored demo images" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| source | → | GHCR ref (digest-pinnable) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| source | → | GHCR ref (digest-pinned) |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
 
           fail=0
@@ -66,7 +78,14 @@ jobs:
             [ -z "$src" ] && continue
             src=$(echo "$src" | xargs); tag=$(echo "$tag" | xargs)
             echo "::group::$src -> $DEST:$tag"
-            if docker buildx imagetools create --tag "$DEST:$tag" "$src"; then
+            ok=0
+            # Retry: the very first push to a brand-new GHCR package can 403
+            # until the package exists, and registry hiccups are transient.
+            for attempt in 1 2 3; do
+              if docker buildx imagetools create --tag "$DEST:$tag" "$src"; then ok=1; break; fi
+              echo "  attempt $attempt failed for $src; retrying…"; sleep 10
+            done
+            if [ $ok -eq 1 ]; then
               digest=$(docker buildx imagetools inspect "$DEST:$tag" --format '{{.Manifest.Digest}}')
               echo "  OK  $DEST:$tag  $digest"
               echo "| \`$src\` | → | \`$DEST:$tag@$digest\` |" >> "$GITHUB_STEP_SUMMARY"
