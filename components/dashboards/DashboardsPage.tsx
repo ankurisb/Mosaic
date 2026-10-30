@@ -130,7 +130,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
 
   return (
     <AppShell user={user}>
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minHeight: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       <PageHeader
         title="Dashboards"
         subtitle="Self-service dashboards that query your connected data sources and auto-refresh."
@@ -149,7 +149,7 @@ export default function DashboardsPage({ user }: { user: SessionUser }) {
         </>}
       />
 
-      <div style={{ flex: 1, padding: '24px 32px', maxWidth: 960, margin: '0 auto', width: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 960, margin: '0 auto', width: '100%' }}>
         {/* Create form */}
         {showForm && (
           <div className="fade-in" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 20, boxShadow: 'var(--shadow-md)' }}>

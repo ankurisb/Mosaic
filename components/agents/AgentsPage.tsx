@@ -333,7 +333,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
       activeTab={view}
       onTab={(v) => setView(v as 'agents' | 'report')}
     />
-    <div style={{ padding: '22px max(18px, env(safe-area-inset-left)) 54px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '22px max(18px, env(safe-area-inset-left)) 54px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>
       {view === 'agents' && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--text3)', marginBottom: 12 }}>{agents.length} agents · {activeN} active</div>

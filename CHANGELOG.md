@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-10-30
+### Fixed
+- **Page content / tables now scroll on mobile.** The per-page scroll regions hit
+  the flexbox `min-height:auto` trap (and Agents had no scroll region at all), so
+  content taller than the viewport overflowed AppShell's `overflow:hidden` main area
+  and was clipped with no way to scroll — most visible on the Agents → Report list.
+  Added `flex:1 / min-height:0 / overflow-y:auto` to the content regions on Agents,
+  Dashboards, Digests and Rules (all sub-views), and swapped the Dashboards/Rules
+  `min-height:100vh` wrappers to `flex:1 / min-height:0` so the scroll chain holds.
+
 ## [1.6.1] - 2026-10-30
 ### Fixed
 - PageHeader: keep the primary action pinned top-right at medium widths (let the

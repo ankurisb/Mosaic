@@ -152,7 +152,7 @@ export default function ReportsPage({ user }: { user: SessionUser }) {
         actions={isAdmin ? <button onClick={() => setShowNewTemplate(true)} style={hbtnPrimary}>+ New digest</button> : undefined}
       />
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 940, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 940, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         <input placeholder="Search digests…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...INP, maxWidth: 320, display: 'block', marginBottom: 16 }} />
         {loading && <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading…</div>}
 

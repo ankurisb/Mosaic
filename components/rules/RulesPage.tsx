@@ -309,7 +309,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   // -- Alerts view -----------------------------------------------
   const alertsView = (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: 'var(--text3)' }}>{alerts.length} alert{alerts.length !== 1 ? 's' : ''} configured</div>
         {isAdmin && !showAlertForm && <button onClick={() => { setShowAlertForm(true); setAlertEditing(null); setAlertForm({ ...ALERT_EMPTY }) }} style={{ padding: '6px 14px', background: 'var(--accent-bg)', color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ New alert</button>}
@@ -456,7 +456,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   // -- Automation view (n8n) ------------------------------------
   const automationView = (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
@@ -568,7 +568,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   // -- List view ------------------------------------------------
   const listView = (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '28px 32px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
       <div data-rgrid-2 style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 24 }}>
         {[['Groups', String(groups.length), ''], ['Active', String(groups.filter(g => g.active).length), 'monitoring'], ['Fired today', String(groups.reduce((s,g) => s + g.fire_count_today, 0)), 'notifications']].map(([l,v,s]) => (
           <div key={l} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', boxShadow: 'var(--shadow)' }}>
@@ -625,7 +625,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   // -- Detail view ----------------------------------------------
   const detailView = active ? (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
       {/* Conditions */}
       <Section title="Conditions">
         {active.conditions.length === 0
@@ -696,7 +696,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   // -- Builder view ---------------------------------------------
   const builderView = (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%' }}>
       {/* Identity */}
       <Section title="Identity">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
@@ -939,7 +939,7 @@ export default function RulesPage({ user }: { user: SessionUser }) {
 
   return (
     <AppShell user={user}>
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minHeight: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
       <PageHeader
         title="Rules"
         subtitle={TAB_HINTS[activeTab]}
