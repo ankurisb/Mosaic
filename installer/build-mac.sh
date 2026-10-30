@@ -9,11 +9,18 @@ echo "==> Refreshing bundled deploy files from the repo…"
 # (Caddyfile, openmeter/ciso/superset configs, NETWORK.md), so a fresh install has
 # everything the containers expect. Without these, bind mounts fail at container
 # start (Docker creates an empty dir where a file is expected).
-rm -rf deploy/docker deploy/NETWORK.md
+rm -rf deploy/docker deploy/NETWORK.md deploy/test-data deploy/docker-compose.demo.yml deploy/mosaic-harness.sh
 cp ../docker-compose.yml deploy/docker-compose.yml
 cp -R ../docker deploy/docker
 cp ../NETWORK.md deploy/NETWORK.md
-echo "    deploy/ refreshed: docker-compose.yml, docker/, NETWORK.md"
+# Optional test-data harness (admin opt-in, off by default): the demo compose
+# overlay, its seed data, and the on/off helper. Present on every host so
+# Settings → Data sources → "Add test harness" works without a manual copy.
+cp ../docker-compose.demo.yml deploy/docker-compose.demo.yml
+cp -R ../test-data deploy/test-data
+cp ../scripts/mosaic-harness.sh deploy/mosaic-harness.sh
+chmod +x deploy/mosaic-harness.sh
+echo "    deploy/ refreshed: docker-compose.yml, docker/, NETWORK.md, docker-compose.demo.yml, test-data/, mosaic-harness.sh"
 
 # Private-registry pull credential. Baked into the DMG so the installer can
 # `docker login` before pulling the (now-private) GHCR images. Provide via env:

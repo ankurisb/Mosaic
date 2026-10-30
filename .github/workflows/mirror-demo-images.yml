@@ -1,0 +1,78 @@
+name: Mirror demo harness images to GHCR
+
+# The optional test-data harness (docker-compose.demo.yml) runs ~13 upstream
+# images. Pulling those from Docker Hub / mcr / quay at deploy time is fragile
+# (Hub anonymous rate limits, MinIO withdrew its Hub `latest` tag, quay may be
+# egress-blocked) and does not work air-gapped. This workflow mirrors them into
+# GHCR under ghcr.io/<owner>/mosaic-demo:<tag> — the one registry every Mosaic
+# box already authenticates to — using `buildx imagetools create`, which copies
+# the full (multi-arch) manifest server-side without pulling layers locally.
+#
+# Run it manually (Actions → this workflow → Run). It prints the resulting
+# digests in the job summary; pin those into docker-compose.demo.yml.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mirror images
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          DEST="ghcr.io/${OWNER_LC}/mosaic-demo"
+
+          # src|tag  — one per line. `tag` is the destination tag on $DEST.
+          MAP=$(cat <<'EOF'
+          docker.io/library/postgres:16-alpine|postgres-16-alpine
+          docker.io/library/mysql:8.3|mysql-8.3
+          mcr.microsoft.com/mssql/server:2022-latest|mssql-2022
+          mcr.microsoft.com/mssql-tools:latest|mssql-tools
+          docker.io/library/influxdb:1.8|influxdb-1.8
+          docker.io/library/alpine:3.19|alpine-3.19
+          docker.io/library/mongo:7|mongo-7
+          quay.io/minio/minio:latest|minio
+          quay.io/minio/mc:latest|mc
+          docker.io/atmoz/sftp:alpine|sftp-alpine
+          docker.io/library/node:20-alpine|node-20-alpine
+          docker.io/library/elasticsearch:8.13.0|elasticsearch-8.13.0
+          docker.io/curlimages/curl:latest|curl
+          EOF
+          )
+
+          echo "## Mirrored demo images" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| source | → | GHCR ref (digest-pinnable) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          fail=0
+          while IFS='|' read -r src tag; do
+            [ -z "$src" ] && continue
+            src=$(echo "$src" | xargs); tag=$(echo "$tag" | xargs)
+            echo "::group::$src -> $DEST:$tag"
+            if docker buildx imagetools create --tag "$DEST:$tag" "$src"; then
+              digest=$(docker buildx imagetools inspect "$DEST:$tag" --format '{{.Manifest.Digest}}')
+              echo "  OK  $DEST:$tag  $digest"
+              echo "| \`$src\` | → | \`$DEST:$tag@$digest\` |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "  FAILED to mirror $src"
+              echo "| \`$src\` | → | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done <<< "$MAP"
+
+          exit $fail

@@ -5,9 +5,14 @@ cd /d "%~dp0"
 
 echo ==^> Refreshing bundled deploy files from the repo...
 if exist deploy\docker rmdir /S /Q deploy\docker
+if exist deploy\test-data rmdir /S /Q deploy\test-data
 copy /Y ..\docker-compose.yml deploy\docker-compose.yml
 xcopy /E /I /Y ..\docker deploy\docker
 copy /Y ..\NETWORK.md deploy\NETWORK.md
+rem Optional test-data harness (admin opt-in): demo overlay, seeds, helper.
+copy /Y ..\docker-compose.demo.yml deploy\docker-compose.demo.yml
+xcopy /E /I /Y ..\test-data deploy\test-data
+copy /Y ..\scripts\mosaic-harness.sh deploy\mosaic-harness.sh
 
 echo ==^> Installing installer dependencies...
 call npm install
