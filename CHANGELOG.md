@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.8] - 2026-10-30
+### Added
+- **Deregister the test harness.** The Data sources "Test data harness" card is now
+  stateful — it shows a Registered·N/8 vs Not-registered badge and a **Deregister**
+  button that removes the harness connections (6 databases + 2 file servers) so their
+  demo data is no longer used by chat, the semantic layer, or queries once real sources
+  are added. Idempotent; mirrors the normal connection-delete teardown (invalidate
+  schema + resync Cube map). Re-add anytime.
+- **Guided container on/off.** The card shows copyable `up`/`down` commands for the demo
+  compose profile. By design Mosaic does not drive Docker from the web app (the app
+  container has no docker.sock); container lifecycle stays an auditable host command, and
+  per-source green/red health in the sources list reflects whether the containers are up.
+
 ## [1.6.7] - 2026-10-30
 ### Added
 - **Test data harness (admin).** Settings → Data sources now has an "Add test harness"

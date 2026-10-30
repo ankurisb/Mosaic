@@ -13,7 +13,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { encrypt } from '@/lib/encrypt'
 import { TEST_HARNESS } from '@/lib/test-harness'
-import { refreshSchemaInBackground } from '@/lib/tools'
+import { refreshSchemaInBackground, invalidateSchema } from '@/lib/tools'
 import { syncDatasourceMap } from '@/lib/cube-sync'
 import { syncToSuperset } from '@/lib/superset-sync'
 export const runtime = 'nodejs'
@@ -85,12 +85,60 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, added, skipped, already_existed: added.length === 0 })
   }
 
+  // -- Deregister the harness (remove the connections so the demo data is no
+  //    longer used by chat / semantic layer / queries). Idempotent. This does
+  //    NOT stop the containers — it only removes the rows. Mirrors the normal
+  //    connection-delete teardown (invalidate schema + resync Cube map). --
+  if (action === 'remove_harness') {
+    const sql = getDb()
+    const removed: string[] = []
+    let touchedDb = false
+
+    for (const s of TEST_HARNESS) {
+      if (s.kind === 'db') {
+        const rows = await sql`SELECT id FROM db_connections WHERE label=${s.label}`
+        for (const r of rows as Array<{ id: string }>) {
+          await sql`DELETE FROM db_connections WHERE id=${r.id}`
+          await invalidateSchema(r.id)
+          touchedDb = true
+        }
+        if (rows.length) removed.push(s.label)
+      } else {
+        const rows = await sql`SELECT id FROM file_servers WHERE label=${s.label}`
+        for (const r of rows as Array<{ id: string }>) {
+          await sql`DELETE FROM file_servers WHERE id=${r.id}`
+        }
+        if (rows.length) removed.push(s.label)
+      }
+    }
+
+    if (touchedDb) syncDatasourceMap().catch(() => {})
+    return Response.json({ ok: true, removed, none_present: removed.length === 0 })
+  }
+
   return Response.json({ error: 'Unknown action' }, { status: 400 })
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return Response.json({ error: 'Not signed in' }, { status: 401 })
+
+  // Harness registration status (admin UI). Reports, per harness source,
+  // whether its connection row exists. Does NOT probe the containers — their
+  // reachability shows as the per-source green/red health in the sources list.
+  if (new URL(req.url).searchParams.get('status') === 'harness') {
+    if (session.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 })
+    const sql = getDb()
+    const dbLabels = (await sql`SELECT label FROM db_connections` as Array<{ label: string }>).map(r => r.label)
+    const fileLabels = (await sql`SELECT label FROM file_servers` as Array<{ label: string }>).map(r => r.label)
+    const sources = TEST_HARNESS.map(s => ({
+      label: s.label,
+      kind: s.kind,
+      registered: s.kind === 'db' ? dbLabels.includes(s.label) : fileLabels.includes(s.label),
+    }))
+    const registered = sources.filter(s => s.registered).length
+    return Response.json({ total: sources.length, registered, sources })
+  }
 
   // Return schema + sample queries so users know what to ask Claude
   return Response.json({

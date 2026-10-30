@@ -132,6 +132,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [sandboxMsg, setSandboxMsg] = useState('')
   const [harnessing, setHarnessing] = useState(false)
   const [harnessMsg, setHarnessMsg] = useState('')
+  const [harnessStatus, setHarnessStatus] = useState<{ total: number; registered: number } | null>(null)
+  const [harnessCmdCopied, setHarnessCmdCopied] = useState('')
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
   const [airbyteCount, setAirbyteCount] = useState(0)
   // Detect whether the connected Airbyte is Cloud (api.airbyte.com). Cloud's
@@ -231,6 +233,12 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       await load()
     } finally { setSandboxing(false) }
   }
+  async function loadHarnessStatus() {
+    if (user.role !== 'admin') return
+    const r = await fetch('/api/test-db?status=harness')
+    const { data } = await safeJson<{ total: number; registered: number }>(r)
+    if (data && typeof data.total === 'number') setHarnessStatus({ total: data.total, registered: data.registered })
+  }
   async function createHarness() {
     setHarnessing(true); setHarnessMsg('')
     try {
@@ -244,10 +252,25 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
           ? `All ${skipped} harness sources already registered — see the list below.`
           : `✓ Registered ${added} harness source${added === 1 ? '' : 's'}${skipped ? ` (${skipped} already present)` : ''}. Start the demo profile to bring them online.`
       )
-      await load()
+      await Promise.all([load(), loadHarnessStatus()])
     } finally { setHarnessing(false) }
   }
-  useEffect(() => { load() }, [])
+  async function removeHarness() {
+    if (!confirm('Deregister the test harness? This removes the harness connections so their data is no longer used by Mosaic. It does NOT stop the containers, and you can re-add it anytime.')) return
+    setHarnessing(true); setHarnessMsg('')
+    try {
+      const r = await fetch('/api/test-db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'remove_harness' }) })
+      const { data: d, error: err } = await safeJson<{ removed?: string[]; none_present?: boolean; error?: string }>(r)
+      if (err) { setHarnessMsg('Error: ' + err); return }
+      const removed = d?.removed?.length ?? 0
+      setHarnessMsg(removed === 0 ? 'No harness sources were registered.' : `✓ Deregistered ${removed} harness source${removed === 1 ? '' : 's'}. Mosaic will no longer use their data.`)
+      await Promise.all([load(), loadHarnessStatus()])
+    } finally { setHarnessing(false) }
+  }
+  function copyHarnessCmd(cmd: string, key: string) {
+    navigator.clipboard?.writeText(cmd).then(() => { setHarnessCmdCopied(key); setTimeout(() => setHarnessCmdCopied(''), 1500) }).catch(() => {})
+  }
+  useEffect(() => { load(); loadHarnessStatus() }, [])
 
   const set = (k: string, v: string | boolean) => setForm(p => ({ ...p, [k]: v }))
 
@@ -311,16 +334,44 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       </div>
 
       {/* Full test-data harness (admin only) */}
-      {user.role === 'admin' && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>Test data harness</div>
-            <div style={{ fontSize: 12, color: 'var(--text3)' }}>Registers the full demo estate — Postgres plant ops, MySQL ERP, SQL Server CMMS, InfluxDB telemetry, MongoDB event logs, Elasticsearch, plus SFTP and S3 file drops. Requires the <code style={{ fontFamily: 'var(--font-mono)' }}>demo</code> compose profile to be running (<code style={{ fontFamily: 'var(--font-mono)' }}>docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d</code>).</div>
-            {harnessMsg && <div style={{ fontSize: 12, marginTop: 6, color: harnessMsg.startsWith('Error') ? 'var(--red-t)' : 'var(--green-t)' }}>{harnessMsg}</div>}
+      {user.role === 'admin' && (() => {
+        const reg = harnessStatus?.registered ?? 0
+        const total = harnessStatus?.total ?? 8
+        const isReg = reg > 0
+        const upCmd = 'docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile demo up -d'
+        const downCmd = 'docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile demo down'
+        return (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  Test data harness
+                  <Badge color={isReg ? 'green' : 'gray'} label={isReg ? `Registered · ${reg}/${total}` : 'Not registered'} />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>The full demo estate — Postgres plant ops, MySQL ERP, SQL Server CMMS, InfluxDB telemetry, MongoDB event logs, Elasticsearch, plus SFTP and S3 file drops. Registering adds them as connections; deregistering removes them so their data is no longer used once you have real sources. Health (green/red) for each shows in the list below.</div>
+                {harnessMsg && <div style={{ fontSize: 12, marginTop: 6, color: harnessMsg.startsWith('Error') ? 'var(--red-t)' : 'var(--green-t)' }}>{harnessMsg}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Btn onClick={createHarness} disabled={harnessing}>{harnessing ? 'Working…' : (isReg ? 'Re-add missing' : 'Add test harness')}</Btn>
+                {isReg && <Btn variant="danger" onClick={removeHarness} disabled={harnessing}>Deregister</Btn>}
+              </div>
+            </div>
+
+            {/* Guided container on/off — Mosaic intentionally does not control Docker. */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>Harness containers (run on the host)</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Registering connections does not start the data stores — run these on the server (adds ~3&nbsp;GB RAM when all nine are up). On hosted boxes include <code style={{ fontFamily: 'var(--font-mono)' }}>-f docker-compose.override.yml</code> before the demo file.</div>
+              {[{ k: 'up', verb: 'Start', cmd: upCmd }, { k: 'down', verb: 'Stop', cmd: downCmd }].map(c => (
+                <div key={c.k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text2)', width: 40, flexShrink: 0 }}>{c.verb}</span>
+                  <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '6px 9px', color: 'var(--text2)', overflowX: 'auto', whiteSpace: 'nowrap' }}>{c.cmd}</code>
+                  <Btn size="sm" onClick={() => copyHarnessCmd(c.cmd, c.k)}>{harnessCmdCopied === c.k ? 'Copied' : 'Copy'}</Btn>
+                </div>
+              ))}
+            </div>
           </div>
-          <Btn onClick={createHarness} disabled={harnessing}>{harnessing ? 'Adding...' : 'Add test harness'}</Btn>
-        </div>
-      )}
+        )
+      })()}
 
       {error && <Alert variant="error">{error}</Alert>}
 
