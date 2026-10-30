@@ -11,6 +11,7 @@ import { SupersetEmbed } from './SupersetEmbed'
 import { SupersetConnectDiagram } from './SupersetConnectDiagram'
 import { useSuperset } from './useSuperset'
 import { allowedGrains, defaultGrain, windowMsFor, GRAIN_LABEL } from '@/lib/dashboard-grain'
+import { useIsMobile } from '@/lib/useIsMobile'
 import { MAX_OVERLAY_ENTITIES } from '@/lib/dashboard-entity'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
@@ -110,6 +111,7 @@ function useResizePanel(
 
 export default function DashboardView({ id, user }: { id: string; user: SessionUser }) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [panels, setPanels] = useState<Panel[]>([])
   const [results, setResults] = useState<Record<string, PanelResult>>({})
@@ -349,18 +351,21 @@ export default function DashboardView({ id, user }: { id: string; user: SessionU
 
   return (
     <div style={{ height: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+      {/* Header — on mobile the controls wrap onto multiple rows (and the right-aligning
+          spacer is dropped) so every control stays visible and tappable instead of
+          running off the edge; on desktop it stays a single 52px row. */}
+      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: isMobile ? '8px 16px' : '0 24px', minHeight: 52, display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, rowGap: isMobile ? 8 : 0, flexWrap: isMobile ? 'wrap' : 'nowrap', flexShrink: 0 }}>
         <button onClick={() => router.push('/dashboards')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text3)', fontSize: 12, fontFamily: 'inherit', padding: 0 }}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2L3 6.5l5 4.5"/></svg>
           Dashboards
         </button>
         {/* Dashboard title moved out of this toolbar into its own row below (it gets
-            cramped here and the length varies). A spacer keeps the controls right-aligned. */}
-        <div style={{ flex: 1 }} />
+            cramped here and the length varies). A spacer keeps the controls right-aligned
+            on desktop; on mobile it's dropped so the controls pack from the left and wrap. */}
+        {!isMobile && <div style={{ flex: 1 }} />}
 
         {/* Time window selector — hidden for Superset embeds */}
-        {!dashboard?.superset_embed_uuid && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {!dashboard?.superset_embed_uuid && <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap', rowGap: isMobile ? 8 : 0 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: 'var(--text3)' }}><rect x="1" y="2" width="10" height="9" rx="1"/><path d="M1 5h10M4 1v2M8 1v2"/></svg>
           <select value={timeWindow} onChange={e => { const v = e.target.value; setTimeWindow(v); setGrain(defaultGrain(windowMsFor(v, customFrom, customTo))) }}
             style={{ background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text2)', fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}>

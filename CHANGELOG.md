@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-10-30
+### Fixed
+- Dashboard toolbar on mobile: the time/device/refresh controls ran off the right
+  edge and were unreachable. The toolbar now wraps onto multiple rows on phones (and
+  the inner time-window group wraps too), so every control stays visible; desktop is
+  unchanged (single 52px row).
+
 ## [1.6.3] - 2026-10-30
 ### Changed
 - Dashboard view: moved the dashboard title out of the cramped top toolbar into its
