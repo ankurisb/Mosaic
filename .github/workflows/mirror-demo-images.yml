@@ -96,9 +96,17 @@ jobs:
               echo "  OK  $DEST:$tag  $digest"
               echo "| \`$src\` | → | \`$DEST:$tag@$digest\` |" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "  FAILED to mirror $src"
-              echo "| \`$src\` | → | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-              fail=1
+              # MinIO (minio/mc) gated its upstream image distribution in 2025 —
+              # no longer anonymously pullable from Docker Hub or quay. Treat the
+              # S3 source as best-effort so the other 11 images still publish.
+              if [ "$tag" = "minio" ] || [ "$tag" = "mc" ]; then
+                echo "  SKIPPED (upstream gated) $src"
+                echo "| \`$src\` | → | _skipped: MinIO upstream now requires auth_ |" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "  FAILED to mirror $src"
+                echo "| \`$src\` | → | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+                fail=1
+              fi
             fi
             echo "::endgroup::"
           done <<< "$MAP"
