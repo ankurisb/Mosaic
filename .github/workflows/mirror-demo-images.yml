@@ -81,8 +81,14 @@ jobs:
             ok=0
             # Retry: the very first push to a brand-new GHCR package can 403
             # until the package exists, and registry hiccups are transient.
+            # imagetools copies the full multi-arch manifest server-side, but it
+            # doesn't negotiate quay.io's anonymous auth challenge — so fall back
+            # to docker pull+tag+push (single-arch amd64), which does.
             for attempt in 1 2 3; do
-              if docker buildx imagetools create --tag "$DEST:$tag" "$src"; then ok=1; break; fi
+              if docker buildx imagetools create --tag "$DEST:$tag" "$src" \
+                 || { docker pull --platform linux/amd64 "$src" \
+                      && docker tag "$src" "$DEST:$tag" \
+                      && docker push "$DEST:$tag"; }; then ok=1; break; fi
               echo "  attempt $attempt failed for $src; retrying…"; sleep 10
             done
             if [ $ok -eq 1 ]; then
