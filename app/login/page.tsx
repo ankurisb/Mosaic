@@ -54,7 +54,7 @@ export default function LoginPage() {
       <div className="slide-up" style={{ width: '100%', maxWidth: 380, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
         <div style={{ padding: '32px 32px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--text)' }}>Mosaic</span>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--text)' }}>Mosaic</span>
           </div>
           <p style={{ fontSize: 13, color: 'var(--text3)' }}>Sign in to continue</p>
         </div>

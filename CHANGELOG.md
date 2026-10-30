@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.6] - 2026-10-30
+### Changed
+- Login "Mosaic" wordmark sized to 20px to match the in-app left-nav wordmark (was 22px).
+
 ## [1.6.5] - 2026-10-30
 ### Changed
 - Mobile app-bar title for Digests now reads "Digests" (was "Reports") and the Chats
