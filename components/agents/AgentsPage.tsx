@@ -742,7 +742,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                 <button style={{ ...btn, padding: '5px 10px', background: fed === -1 ? 'var(--red-bg,#fef2f2)' : 'var(--surface)' }} onClick={() => sendFeedback(-1)}>👎</button>
               </span>
             )}
-            {run && !running && <span style={{ fontSize: 11.5, color: 'var(--text3)', marginLeft: 'auto' }}>cost ${run.cost.toFixed(2)} · {run.steps.length} steps</span>}
+            {run && !running && <span style={{ fontSize: 11.5, color: 'var(--text3)', marginLeft: 'auto' }}>{run.steps.length} steps</span>}
           </div>
         </div>
       )}
@@ -750,7 +750,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
       {view === 'report' && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 12, marginBottom: 22 }}>
-            {[['Runs', String(stats?.total ?? '—')], ['Success', stats?.success_rate != null ? stats.success_rate + '%' : '—'], ['Pending approval', String(stats?.pending_approval ?? '—')], ['Spend', stats ? '$' + stats.spend_usd.toFixed(2) : '—']].map(([l, v]) => (
+            {[['Runs', String(stats?.total ?? '—')], ['Success', stats?.success_rate != null ? stats.success_rate + '%' : '—'], ['Pending approval', String(stats?.pending_approval ?? '—')]].map(([l, v]) => (
               <div key={l} style={{ ...card, padding: '14px 16px' }}>
                 <div style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-.02em' }}>{v}</div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginTop: 2 }}>{l}</div>
@@ -766,7 +766,6 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                   <div style={{ fontSize: 11.5, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.stop_reason || r.result?.slice(0, 80)}</div>
                 </div>
                 <span style={statusPill(r.status)}>{r.status}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>${Number(r.cost_usd || 0).toFixed(2)}</span>
               </div>
             ))}
           </div>

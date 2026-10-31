@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.11] - 2026-10-31
+### Changed
+- Removed cost/spend figures from the Agents UI — the per-run cost in the run
+  view, the "Spend" stat tile, and the per-run cost column in Recent runs. (The
+  `Max cost` guardrail stays as a runaway-protection budget cap.)
+
 ## [1.6.10] - 2026-10-31
 ### Changed
 - Removed the dark/light theme toggle from the sidebar user block (both the main
