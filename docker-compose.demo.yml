@@ -182,7 +182,7 @@ services:
   # persistent across restarts (fine for a harness). Mosaic connects with
   # path-style addressing to http://s3mock:9090, bucket `mosaic-test`.
   s3mock:
-    image: ghcr.io/ankurisb/mosaic-demo:s3mock
+    image: ghcr.io/ankurisb/mosaic-demo:s3mock@sha256:ab01a6946750f451ca215a47e91030695b260e4003b8a5a6201d25029b8fca92
     container_name: mosaic-demo-s3mock
     profiles: ["demo"]
     restart: unless-stopped

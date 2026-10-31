@@ -4,6 +4,8 @@ All notable changes to Mosaic are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [1.6.9] - 2026-10-31
 ### Added
 - **Harness images mirrored to GHCR + shipped with the installer.** The demo
   harness now pulls its data-store images from `ghcr.io/ankurisb/mosaic-demo:*`
@@ -15,13 +17,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   host, so "Add test harness" works with no manual copy.
 - **`mosaic-harness.sh on|off|status`** — one-command control of the demo
   profile (includes the host override file; never reconciles the main stack).
-### Known limitations
-- **S3 source (MinIO) pending an image.** MinIO restricted its image
-  distribution in 2025 (Docker Hub repos removed; quay.io now requires auth), so
-  `minio`/`mc` are not mirrored and the S3 file-drop source is temporarily out of
-  the default bring-up. The other 7 harness sources (Postgres, MySQL, SQL Server,
-  InfluxDB, MongoDB, Elasticsearch, SFTP) are unaffected. A freely-distributable
-  S3 image (Bitnami MinIO, SeaweedFS, or adobe/s3mock) will restore it.
+### Changed
+- **S3 harness source now uses adobe/s3mock** instead of MinIO, which restricted
+  its image distribution in 2025 (Docker Hub repos removed; quay.io now requires
+  auth). s3mock is an in-memory S3 API mock — it auto-creates the `mosaic-test`
+  bucket, ignores auth, and is seeded with the sample files via unsigned PUTs.
+  The S3 connection endpoint is `http://s3mock:9090` (path-style). All 8 harness
+  sources are back in the default bring-up.
 
 ## [1.6.8] - 2026-10-30
 ### Added
