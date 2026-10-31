@@ -33,9 +33,11 @@ FILES+=(-f docker-compose.demo.yml)
 PROFILE=(--profile demo)
 
 # Explicit service list so `up` never reconciles the main stack.
-# (The S3 source uses adobe/s3mock — MinIO is no longer freely distributable.)
+# (The S3 source uses adobe/s3mock — MinIO is no longer freely distributable.
+# mock-sap-api is omitted: SAP OData isn't a registered harness source yet and
+# its image installs deps at boot, which the isolated demo network can't reach.)
 SERVICES=(postgres mysql mssql mssql-seed influxdb influxdb-seed mongodb \
-          s3mock s3mock-seed sftp elasticsearch elasticsearch-seed mock-sap-api)
+          s3mock s3mock-seed sftp elasticsearch elasticsearch-seed)
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
