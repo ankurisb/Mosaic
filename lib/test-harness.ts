@@ -53,5 +53,8 @@ export const TEST_HARNESS: HarnessSource[] = [
   { kind: 'db', label: 'Event Logs (demo)', dialect: 'mongodb', host: 'mongodb', port: 27017, database_name: 'event_logs', username: 'mosaic', password: 'mosaic_pw', schema_name: 'event_logs', ssl_mode: 'disable' },
   { kind: 'db', label: 'Ops Search (demo)', dialect: 'elasticsearch', host: 'elasticsearch', port: 9200, database_name: null, username: null, password: null, schema_name: '', ssl_mode: 'disable' },
   { kind: 'file', label: 'File Drop — SFTP (demo)', transport: 'sftp', host: 'sftp', port: 22, username: 'mosaic', password: 'mosaic_pw', sub_path: 'upload/initial' },
-  { kind: 'file', label: 'File Drop — S3/MinIO (demo)', transport: 's3', endpoint_url: 'http://minio:9000', bucket: 'mosaic-test', access_key_id: 'mosaic', secret_key: 'mosaic_pw_12' },
+  // S3 source backed by adobe/s3mock (MinIO is no longer freely distributable).
+  // s3mock ignores auth, so the access/secret are placeholders; path-style + the
+  // in-network endpoint are what matter.
+  { kind: 'file', label: 'File Drop — S3 (demo)', transport: 's3', endpoint_url: 'http://s3mock:9090', bucket: 'mosaic-test', access_key_id: 'demo', secret_key: 'demo-secret' },
 ]

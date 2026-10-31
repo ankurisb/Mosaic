@@ -39,19 +39,12 @@ jobs:
           OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           DEST="ghcr.io/${OWNER_LC}/mosaic-demo"
 
-          # MinIO withdrew its Docker Hub `latest` tag and quay only serves
-          # date-stamped RELEASE tags, so resolve the current ones at run time
-          # from the project's GitHub releases (the image tag == the release tag).
-          minio_tag() {
-            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-              "https://api.github.com/repos/minio/$1/releases/latest" | jq -r '.tag_name'
-          }
-          MINIO_TAG=$(minio_tag minio); MC_TAG=$(minio_tag mc)
-          echo "Resolved MinIO server=$MINIO_TAG  client=$MC_TAG"
-          [ -n "$MINIO_TAG" ] && [ "$MINIO_TAG" != "null" ] || { echo "could not resolve MinIO tags"; exit 1; }
+          # NOTE: MinIO is intentionally NOT mirrored. MinIO restricted its image
+          # distribution in 2025 (Docker Hub repos removed, quay.io now requires
+          # auth), so the harness S3 source uses adobe/s3mock instead (below).
 
-          # src|tag  — `tag` is the destination tag on $DEST. Vars expand here.
-          MAP=$(cat <<EOF
+          # src|tag  — `tag` is the destination tag on $DEST.
+          MAP=$(cat <<'EOF'
           docker.io/library/postgres:16-alpine|postgres-16-alpine
           docker.io/library/mysql:8.3|mysql-8.3
           mcr.microsoft.com/mssql/server:2022-latest|mssql-2022
@@ -59,8 +52,7 @@ jobs:
           docker.io/library/influxdb:1.8|influxdb-1.8
           docker.io/library/alpine:3.19|alpine-3.19
           docker.io/library/mongo:7|mongo-7
-          quay.io/minio/minio:${MINIO_TAG}|minio
-          quay.io/minio/mc:${MC_TAG}|mc
+          docker.io/adobe/s3mock:latest|s3mock
           docker.io/atmoz/sftp:alpine|sftp-alpine
           docker.io/library/node:20-alpine|node-20-alpine
           docker.io/library/elasticsearch:8.13.0|elasticsearch-8.13.0
@@ -81,9 +73,7 @@ jobs:
             ok=0
             # Retry: the very first push to a brand-new GHCR package can 403
             # until the package exists, and registry hiccups are transient.
-            # imagetools copies the full multi-arch manifest server-side, but it
-            # doesn't negotiate quay.io's anonymous auth challenge — so fall back
-            # to docker pull+tag+push (single-arch amd64), which does.
+            # imagetools copies the full multi-arch manifest server-side.
             for attempt in 1 2 3; do
               if docker buildx imagetools create --tag "$DEST:$tag" "$src" \
                  || { docker pull --platform linux/amd64 "$src" \
@@ -96,17 +86,9 @@ jobs:
               echo "  OK  $DEST:$tag  $digest"
               echo "| \`$src\` | → | \`$DEST:$tag@$digest\` |" >> "$GITHUB_STEP_SUMMARY"
             else
-              # MinIO (minio/mc) gated its upstream image distribution in 2025 —
-              # no longer anonymously pullable from Docker Hub or quay. Treat the
-              # S3 source as best-effort so the other 11 images still publish.
-              if [ "$tag" = "minio" ] || [ "$tag" = "mc" ]; then
-                echo "  SKIPPED (upstream gated) $src"
-                echo "| \`$src\` | → | _skipped: MinIO upstream now requires auth_ |" >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "  FAILED to mirror $src"
-                echo "| \`$src\` | → | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-                fail=1
-              fi
+              echo "  FAILED to mirror $src"
+              echo "| \`$src\` | → | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
             fi
             echo "::endgroup::"
           done <<< "$MAP"

@@ -16,7 +16,7 @@
 # them even when this file is included. They publish NO host ports — Mosaic
 # reaches them in-network by the service names used in Settings → Data sources
 # → "Add test harness" (postgres, mysql, mssql, influxdb, mongodb,
-# elasticsearch, sftp, minio). Resource footprint is ~3 GB RAM when all up.
+# elasticsearch, sftp, s3mock). Resource footprint is ~3 GB RAM when all up.
 #
 # Images are MIRRORED to GHCR (ghcr.io/ankurisb/mosaic-demo:<tag>) rather than
 # pulled from Docker Hub / mcr / quay. This uses the one registry every Mosaic
@@ -174,53 +174,48 @@ services:
       timeout: 5s
       retries: 10
 
-  # ─── MinIO: S3-compatible file server ──────────────────────────────
-  # PENDING an S3 image: MinIO restricted its image distribution in 2025 (its
-  # Docker Hub repos were removed and quay.io now requires authentication), so
-  # minio/minio and minio/mc are NOT mirrored to GHCR and the two tags below do
-  # not yet resolve. The default bring-up (scripts/mosaic-harness.sh) excludes
-  # these two services, so the other 7 sources start cleanly. To enable the S3
-  # source, mirror a freely-distributable S3 image (e.g. Bitnami MinIO, or an
-  # alternative such as SeaweedFS / adobe/s3mock) to ghcr.io/ankurisb/mosaic-demo
-  # :minio (+ :mc for the seeder) and re-add them to the up list.
-  minio:
-    image: ghcr.io/ankurisb/mosaic-demo:minio
-    container_name: mosaic-demo-minio
+  # ─── adobe/s3mock: S3-compatible file server (demo) ────────────────
+  # Replaces MinIO, whose images are no longer freely distributable (Docker Hub
+  # repos removed, quay.io gated — 2025). s3mock is an in-memory S3 API mock,
+  # ideal for a test file-drop: it auto-creates the bucket via `initialBuckets`
+  # and ignores auth (any access key works). Serves HTTP on 9090; no console; not
+  # persistent across restarts (fine for a harness). Mosaic connects with
+  # path-style addressing to http://s3mock:9090, bucket `mosaic-test`.
+  s3mock:
+    image: ghcr.io/ankurisb/mosaic-demo:s3mock
+    container_name: mosaic-demo-s3mock
     profiles: ["demo"]
     restart: unless-stopped
     networks: [mosaic-net]
     environment:
-      MINIO_ROOT_USER: mosaic
-      MINIO_ROOT_PASSWORD: mosaic_pw_12   # must be >= 8 chars
-    command: server /data --console-address ":9001"
-    volumes:
-      - demo-minio-data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      initialBuckets: mosaic-test
+      debug: "false"
 
-  # Creates the bucket and uploads the sample files on first run.
-  minio-seed:
-    image: ghcr.io/ankurisb/mosaic-demo:mc
-    container_name: mosaic-demo-minio-seed
+  # Uploads the sample files into the bucket once s3mock answers. s3mock accepts
+  # unsigned, path-style PUTs, so a plain curl per file is enough (no mc/aws-cli).
+  s3mock-seed:
+    image: ghcr.io/ankurisb/mosaic-demo:curl
+    container_name: mosaic-demo-s3mock-seed
     profiles: ["demo"]
     networks: [mosaic-net]
     depends_on:
-      minio:
-        condition: service_healthy
+      s3mock:
+        condition: service_started
     volumes:
       - ./test-data/files:/files:ro
-    entrypoint: >
-      sh -c "
-        mc alias set local http://minio:9000 mosaic mosaic_pw_12;
-        mc mb -p local/mosaic-test || true;
-        mc cp --recursive /files/ local/mosaic-test/;
-        echo 'MinIO seed complete. Bucket: mosaic-test';
-        mc ls local/mosaic-test;
-      "
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo 'Waiting for s3mock…';
+        until curl -sf -o /dev/null http://s3mock:9090/; do sleep 2; done;
+        echo 'Uploading sample files to s3://mosaic-test …';
+        for f in /files/*; do
+          [ -f "$$f" ] || continue;
+          name=$$(basename "$$f");
+          curl -sf -T "$$f" "http://s3mock:9090/mosaic-test/$$name" >/dev/null && echo "  put $$name";
+        done;
+        echo 'S3 (s3mock) seed complete.';
     restart: on-failure
 
   # ─── SFTP: file server over SSH ────────────────────────────────────
@@ -306,5 +301,4 @@ volumes:
   demo-mssql-data:
   demo-influxdb-data:
   demo-mongodb-data:
-  demo-minio-data:
   demo-sftp-data:
