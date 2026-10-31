@@ -7,7 +7,6 @@ import type { MapArtifact as MapData } from '@/lib/tools'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
-import ThemeToggle from './ThemeToggle'
 import { APP_VERSION } from '@/lib/version'
 import { UpdateModal } from '@/components/UpdateModal'
 import RcaRenderer from './rca/RcaRenderer'
@@ -1873,8 +1872,8 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           )}
         </div>
 
-        {/* User + theme */}
-        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', gap: 8 }}>
+        {/* User */}
+        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 8 }}>
           <div style={{ position: 'relative', flex: sidebarCollapsed ? 'none' : 1 }}>
             <button onClick={() => setShowUserMenu(v => !v)} title={sidebarCollapsed ? user.name : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
@@ -1924,7 +1923,6 @@ export default function ChatPage({ user }: { user: SessionUser }) {
               </>
             )}
           </div>
-          {!sidebarCollapsed && <ThemeToggle />}
         </div>
       </div>
 

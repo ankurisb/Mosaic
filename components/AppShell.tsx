@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
-import ThemeToggle from './ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
 import SemanticCoverageBanner from '@/components/SemanticCoverageBanner'
 import { useIsMobile } from '@/lib/useIsMobile'
@@ -120,8 +119,8 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
             </div>
           ))}
         </div>
-        {/* User + theme */}
-        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        {/* User */}
+        <div style={{ borderTop: '1px solid var(--nav-border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <button onClick={() => setShowUserMenu(v => !v)}
               style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', width: '100%' }}>
@@ -169,7 +168,6 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
               </>
             )}
           </div>
-          <ThemeToggle />
         </div>
       </div>
       {/* Main content */}

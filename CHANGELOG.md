@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.10] - 2026-10-31
+### Changed
+- Removed the dark/light theme toggle from the sidebar user block (both the main
+  app shell and the chat sidebar). Theme is controlled from Settings →
+  Customization, so the duplicate control is gone.
+
 ## [1.6.9] - 2026-10-31
 ### Added
 - **Harness images mirrored to GHCR + shipped with the installer.** The demo
