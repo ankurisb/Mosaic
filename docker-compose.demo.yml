@@ -209,6 +209,8 @@ services:
       - |
         echo 'Waiting for s3mock…';
         until curl -sf -o /dev/null http://s3mock:9090/; do sleep 2; done;
+        echo 'Creating bucket mosaic-test…';
+        curl -sf -o /dev/null -X PUT http://s3mock:9090/mosaic-test || true;
         echo 'Uploading sample files to s3://mosaic-test …';
         for f in /files/*; do
           [ -f "$$f" ] || continue;
