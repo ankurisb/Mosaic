@@ -46,7 +46,9 @@ export interface HarnessFile {
 export type HarnessSource = HarnessDb | HarnessFile
 
 export const TEST_HARNESS: HarnessSource[] = [
-  { kind: 'db', label: 'Plant Operations (demo)', dialect: 'postgres', host: 'postgres', port: 5432, database_name: 'plant_ops', username: 'mosaic', password: 'mosaic_pw', schema_name: 'public', ssl_mode: 'disable' },
+  // The seed puts plant-ops tables in the `plant` schema (not public), so the
+  // connection must introspect that schema — otherwise Mosaic sees no tables.
+  { kind: 'db', label: 'Plant Operations (demo)', dialect: 'postgres', host: 'postgres', port: 5432, database_name: 'plant_ops', username: 'mosaic', password: 'mosaic_pw', schema_name: 'plant', ssl_mode: 'disable' },
   { kind: 'db', label: 'ERP Lite (demo)', dialect: 'mysql', host: 'mysql', port: 3306, database_name: 'erp_lite', username: 'mosaic', password: 'mosaic_pw', schema_name: 'erp_lite', ssl_mode: 'disable' },
   { kind: 'db', label: 'Maintenance CMMS (demo)', dialect: 'mssql', host: 'mssql', port: 1433, database_name: 'cmms', username: 'sa', password: 'Mosaic_Strong_Pw_1', schema_name: 'dbo', ssl_mode: 'disable' },
   { kind: 'db', label: 'Sensor Telemetry (demo)', dialect: 'influxdb', host: 'influxdb', port: 8086, database_name: 'telemetry', username: 'mosaic', password: 'mosaic_pw', schema_name: 'telemetry', ssl_mode: 'disable' },

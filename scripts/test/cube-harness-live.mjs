@@ -87,7 +87,7 @@ const dashId = cd.body?.id || cd.body?.dashboard?.id
 rec('dashboard created', !!dashId, String(dashId))
 const ap = await api('/api/dashboards', {
   action: 'add_panel', dashboard_id: dashId, title: 'Units by day', source_type: 'database', source_id: PGID,
-  query: `SELECT run_date, units_produced FROM ${TABLE}`,
+  query: `SELECT run_date, units_produced FROM ${TABLE} WHERE run_date >= '${FROM}' AND run_date <= '${TO}'`,
   chart_type: 'line', chart_config: { x: 'run_date', y: 'units_produced', grain: '1d' },
 })
 rec('panel added', ap.status === 200, `status=${ap.status}`)

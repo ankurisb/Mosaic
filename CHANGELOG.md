@@ -4,6 +4,9 @@ All notable changes to Mosaic are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Fixed
+- Test harness: the demo Postgres connection now introspects the `plant` schema
+  (its seed puts tables there), not `public` — otherwise Mosaic saw no tables.
 
 ## [1.6.12] - 2026-11-01
 ### Fixed
