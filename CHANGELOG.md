@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.19] - 2026-11-01
+### Changed
+- Renamed two Data sources sub-tabs: **API connections → API**, and the Airbyte tab
+  → **3rd party connectors** (the Airbyte engine naming stays inside the section). Tab
+  ids are unchanged; labels only.
+
 ## [1.6.18] - 2026-11-01
 ### Changed
 - **Airbyte is now its own sub-tab** under Settings → Data sources, in line with

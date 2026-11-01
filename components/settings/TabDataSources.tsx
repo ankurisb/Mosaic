@@ -15,8 +15,8 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
 
   const tabs: { id: SubTab; label: string }[] = [
     { id: 'databases', label: 'Databases' },
-    { id: 'apis',      label: 'API connections' },
-    { id: 'airbyte',   label: 'Airbyte' },
+    { id: 'apis',      label: 'API' },
+    { id: 'airbyte',   label: '3rd party connectors' },
     { id: 'files',     label: 'File servers' },
     { id: 'mcp',       label: 'MCP servers' },
     { id: 'prism',     label: 'Prism' },
