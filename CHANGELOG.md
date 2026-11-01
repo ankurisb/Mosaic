@@ -4,9 +4,34 @@ All notable changes to Mosaic are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [1.6.13] - 2026-11-01
 ### Fixed
+- **Cube serving for SQL Server sources.** The Cube `driverFactory`
+  (`docker/cube/cube.js`) returned `host` for every dialect, but Cube's SQL
+  Server driver (tedious) reads `server` and ignores `host` — so every MSSQL
+  pre-aggregation build died with `The "config.server" property is required`
+  and panels silently fell back to SQL (`engine_reason=cube-http-400`). The
+  factory now maps `host`→`server` for `mssql`/`sqlserver` and passes
+  `options.encrypt`/`trustServerCertificate`. Postgres and MySQL are unaffected
+  (they read `host`).
+- **Cube serving for MySQL 8 sources.** Cube's bundled MySQL driver uses the
+  legacy `mysql` package, which cannot authenticate against MySQL 8's default
+  `caching_sha2_password` (`ER_NOT_SUPPORTED_AUTH_MODE`) — Mosaic's own
+  introspection uses `mysql2` and is unaffected, which masked the gap. The demo
+  harness MySQL server now uses `mysql_native_password` (the standard setting
+  for broad BI-tool/Cube connectivity against MySQL 8); for real MySQL 8
+  sources, the connection user must likewise use `mysql_native_password` for
+  Cube to serve (Mosaic's SQL pipeline works either way).
 - Test harness: the demo Postgres connection now introspects the `plant` schema
   (its seed puts tables there), not `public` — otherwise Mosaic saw no tables.
+
+### Verified
+- End-to-end proof that Cube serves correct, routed data for **all three**
+  Cube-supported harness dialects. For Postgres, MySQL and SQL Server, a
+  verified model → generated cube → dashboard panel routes `engine=cube` with a
+  daily total matching ground truth computed directly against the source DB
+  (323867 / 139468 / 93). Reproducible via `scripts/test/cube-harness-multi2.mjs`.
 
 ## [1.6.12] - 2026-11-01
 ### Fixed

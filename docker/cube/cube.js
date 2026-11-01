@@ -59,7 +59,12 @@ module.exports = {
     if (!ds) {
       throw new Error(`cube: no datasource config for '${dataSource}'`);
     }
-    return {
+    const type = String(ds.type || '').toLowerCase();
+    // Base config shared by all dialects. Cube's Postgres and MySQL drivers read
+    // `host`; its SQL Server driver (tedious) reads `server` and ignores `host`,
+    // so without the mapping below every MSSQL pre-aggregation build dies with
+    // `config.server is required` and the panel silently falls back to SQL.
+    const cfg = {
       type: ds.type,
       host: ds.host,
       port: ds.port,
@@ -68,6 +73,14 @@ module.exports = {
       password: ds.password,
       ssl: ds.ssl || false,
     };
+    if (type === 'mssql' || type === 'sqlserver') {
+      cfg.server = ds.host;            // tedious requires `server`
+      cfg.options = {
+        encrypt: !!ds.ssl,             // no TLS unless the connection asked for it
+        trustServerCertificate: true,  // on-prem SQL Server commonly uses self-signed certs
+      };
+    }
+    return cfg;
   },
 
   // Advertise the data sources Cube knows about (lets Cube validate at load time).
