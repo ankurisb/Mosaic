@@ -100,9 +100,12 @@ for (const s of SOURCES) {
     chart_type: 'line', chart_config: { x: s.time, y: s.measure, grain: '1d' } })
 
   const url = `/api/dashboards/${dashId}/data?time_window=custom&time_from=${gt.from}&time_to=${gt.to}&grain=1d`
-  const p = panelParity(await get(url))
-  console.log(`  ${JSON.stringify(p)}`)
-  rec(`${s.label}: routes to Cube`, p.engine === 'cube', `engine=${p.engine} reason=${p.reason || ''}`)
+  // A newly-generated cube takes a few seconds for Cube to compile; poll until it
+  // routes (SQL fallback returns correct values meanwhile). Measure the latency.
+  let p, waited = 0
+  for (let i = 0; i < 20; i++) { p = panelParity(await get(url)); if (p.engine === 'cube') break; await sleep(3000); waited += 3 }
+  console.log(`  ${JSON.stringify(p)} (compiled after ~${waited}s)`)
+  rec(`${s.label}: routes to Cube`, p.engine === 'cube', `engine=${p.engine} reason=${p.reason || ''} after ~${waited}s`)
   rec(`${s.label}: Cube total matches ground truth`, Math.abs(p.total - gt.total) < 1, `cube=${p.total} gt=${gt.total}`)
 
   // cleanup
