@@ -685,19 +685,39 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                     const amber = pill('color-mix(in srgb, var(--warning,var(--amber-t)) 12%, transparent)', 'var(--warning,var(--amber-t))', 'var(--warning,var(--amber-t))')
                     const green = pill('var(--green-bg)', 'var(--green)', 'var(--green-t)')
                     const neutral = pill('transparent', 'var(--border2)', 'var(--text3)')
-                    // Not verified yet → the original "fill in the model" prompt.
+                    // Humanize the probe reason for the tooltip — no internal engine jargon.
+                    const hr = (r?: string | null): string => {
+                      if (!r) return 'unknown reason'
+                      if (r.startsWith('dialect-unsupported')) return `unsupported database type: ${r.split(':')[1] || '—'}`
+                      if (r.includes('http-')) return `serving engine error (${r.replace(/.*http-/, 'HTTP ')})`
+                      const map: Record<string, string> = {
+                        'model-unverified': 'model is not verified',
+                        'schema-drift': 'schema changed since the last scan — re-scan this source',
+                        'non-native-measure': 'a selected measure uses an aggregation that can’t be accelerated',
+                        'needs-delta-pipeline': 'a measure needs delta handling',
+                        'no-verified-native-measure': 'no verified numeric measure to serve',
+                        'no-measures': 'no measure is defined',
+                        'cross-table': 'the model spans multiple tables',
+                        'not-deployed': 'the serving engine is not enabled on this deployment',
+                        'building': 'still building — try again shortly',
+                        'no-response': 'the serving engine did not respond',
+                      }
+                      const k = r.replace(/^cube-?/, '').replace(/^error:.*/, 'no-response')
+                      return map[k] || k.replace(/[-_]/g, ' ')
+                    }
+                    // 1) Semantics unverified — fill in + verify the model first.
                     if (cov.needs_config)
-                      return <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ ...amber, cursor: 'pointer' }}>⚠ Semantics</button>
+                      return <button onClick={() => setDescribing(c)} title="Semantics not verified yet — dashboards won't get units, roll-ups or acceleration" style={{ ...amber, cursor: 'pointer' }}>⚠ Semantics unverified</button>
                     if (rechecking[c.id])
-                      return <span style={neutral}><Spinner size={10} /> Checking Cube…</span>
-                    // Verified AND proven servable through Cube.
+                      return <span style={neutral}><Spinner size={10} /> Checking…</span>
+                    // 3) Servable — verified and proven to serve.
                     if (cov.cube_serving === 'serving')
-                      return <span title={`${cov.verified} verified field(s) · proven servable through Cube`} style={green}>✓ Cube-serving</span>
-                    // Verified but the probe found Cube can't serve it — surface the reason.
+                      return <span title={`${cov.verified} verified field(s) · servable to external BI tools`} style={green}>✓ Servable</span>
+                    // 2) Verified but unservable — surface the humanized reason; re-check on click.
                     if (cov.cube_serving === 'unreachable')
-                      return <button onClick={() => recheckCube(c.id)} title={`Verified, but Cube can't serve this source yet (${cov.cube_reason || 'unknown'}). Dashboards fall back to SQL — correct values, no acceleration/BI exposure. Click to re-check.`} style={{ ...amber, cursor: 'pointer' }}>⚠ Cube unreachable</button>
-                    // Verified but not yet probed.
-                    return <button onClick={() => recheckCube(c.id)} title="Verified. Click to check whether Cube can actually serve this source." style={{ ...neutral, cursor: 'pointer' }}>✓ Verified · check Cube</button>
+                      return <button onClick={() => recheckCube(c.id)} title={`Verified, but not servable yet: ${hr(cov.cube_reason)}. Dashboards still return correct values. Click to re-check.`} style={{ ...amber, cursor: 'pointer' }}>⚠ Verified · unservable</button>
+                    // Verified but not yet checked.
+                    return <button onClick={() => recheckCube(c.id)} title="Verified. Click to check whether this source is servable." style={{ ...neutral, cursor: 'pointer' }}>✓ Verified · check</button>
                   })()}
                   {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}

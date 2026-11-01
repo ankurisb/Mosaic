@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.15] - 2026-11-01
+### Changed
+- Databases-tab semantics badge now uses three plain designations and no longer
+  names the engine in the UI: **⚠ Semantics unverified**, **⚠ Verified · unservable**
+  (with a humanized reason in the tooltip — e.g. "unsupported database type",
+  "schema changed since the last scan", "no verified numeric measure to serve" —
+  rather than internal codes like `cube-http-400`), and **✓ Servable**. Internal
+  field/API names are unchanged; this is UI copy only.
+
 ## [1.6.14] - 2026-11-01
 ### Added
 - **Cube serving-readiness probe.** A verified semantic model is necessary but not
