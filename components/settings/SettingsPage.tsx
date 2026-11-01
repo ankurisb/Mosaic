@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessionUser } from '@/lib/auth'
 import { useIsMobile } from '@/lib/useIsMobile'
-import ThemeToggle from '../ThemeToggle'
 import { UpdateModal } from '@/components/UpdateModal'
 import TabKeys from './TabKeys'
 import TabAiProvider from './TabAiProvider'
@@ -215,7 +214,6 @@ export default function SettingsPage({ user }: { user: SessionUser }) {
               )}
             </div>
           </div>
-          <ThemeToggle />
         </div>
       </div>
 

@@ -41,6 +41,7 @@ export default function SemanticDescriptionsModal({
   const [msg, setMsg] = useState('')
   const [warning, setWarning] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -133,56 +134,87 @@ export default function SemanticDescriptionsModal({
   }), [cols])
   const highConfPending = cols.filter(r => r.status === 'proposed' && r.role && (r.confidence ?? 0) >= HIGH_CONF).length
 
-  const visible = (r: Row) => filter === 'all' ? true
+  // Search by field name or description — essential when a source has thousands of fields.
+  const q = search.trim().toLowerCase()
+  const matchesSearch = (r: Row) => !q || r.object_key.toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q)
+  const inFilter = (r: Row) => filter === 'all' ? true
     : filter === 'verified' ? r.status === 'verified'
     : (r.status === 'proposed' || (!r.status && !!r.role))   // review
-  const tables = rows.filter(r => r.object_type === 'table' && (filter === 'all'))
+  const visible = (r: Row) => inFilter(r) && matchesSearch(r)
+  const tables = rows.filter(r => r.object_type === 'table' && filter === 'all' && matchesSearch(r))
   const visCols = cols.filter(visible)
+  // Cap the number of heavy editor rows actually mounted — thousands of rows, each with
+  // selects + inputs, would make the page sluggish. Narrow with search/filters to reach more.
+  const MAX_RENDER = 300
+  const shownCols = visCols.slice(0, MAX_RENDER)
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={modal} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+    <div style={overlay}>
+      <div style={page}>
+        {/* Title bar */}
+        <div style={headerBar}>
+          <button onClick={onClose} style={backBtn} title="Back to data sources">← Back</button>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>Data dictionary — {sourceLabel}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)', lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
-          How Mosaic aggregates, labels (units) and accelerates each field. Analyze with AI to propose roles & units — everything is <b>proposed</b> until you verify it.
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Btn size="sm" onClick={generate} disabled={generating || loading}>{generating ? <Spinner size={11} /> : 'Analyze with AI'}</Btn>
-          {highConfPending > 0 && <Btn size="sm" variant="ghost" onClick={verifyAllHighConfidence} disabled={loading}>Accept {highConfPending} high-confidence</Btn>}
-          <Btn size="sm" variant="ghost" onClick={addColumnRow} disabled={loading}>+ Add</Btn>
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', gap: 2, background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: 2 }}>
-            {(['all', 'review', 'verified'] as Filter[]).map(f => (
-              <button key={f} onClick={() => setFilter(f)} style={segBtn(filter === f)}>
-                {f === 'all' ? `All ${counts.total}` : f === 'review' ? `Needs review ${counts.review}` : `Verified ${counts.verified}`}
-              </button>
-            ))}
-          </div>
-          <Btn size="sm" onClick={save} disabled={saving || loading || rows.length === 0}>{saving ? <Spinner size={11} /> : 'Save'}</Btn>
+          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text3)', lineHeight: 1 }}>×</button>
         </div>
 
-        {error && <Alert variant="error">{error}</Alert>}
-        {msg && !error && <Alert variant="success">{msg}</Alert>}
-        {warning && !error && <Alert variant="warning">{warning}</Alert>}
-
-        {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div> : (
-          <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>
-            {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '16px 0' }}>No fields yet. Click “Analyze with AI” to propose roles, units and aggregations from your schema.</div>}
-            {tables.map(t => (
-              <div key={t.object_key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                <code style={codeCell}>{t.object_key}</code>
-                <input value={t.description} onChange={e => patch(t.object_key, { description: e.target.value })}
-                  placeholder="what one row represents…" style={descInput(t._dirty)} />
+        {/* Sticky toolbar (stays visible over a long list) */}
+        <div style={toolbarBar}>
+          <div style={contentWrap}>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+              How Mosaic aggregates, labels (units) and accelerates each field. Analyze with AI to propose roles & units — everything is <b>proposed</b> until you verify it.
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Btn size="sm" onClick={generate} disabled={generating || loading}>{generating ? <Spinner size={11} /> : 'Analyze with AI'}</Btn>
+              {highConfPending > 0 && <Btn size="sm" variant="ghost" onClick={verifyAllHighConfidence} disabled={loading}>Accept {highConfPending} high-confidence</Btn>}
+              <Btn size="sm" variant="ghost" onClick={addColumnRow} disabled={loading}>+ Add</Btn>
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search fields…"
+                style={{ flex: '1 1 220px', minWidth: 160, padding: '6px 10px', border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 2, background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: 2 }}>
+                {(['all', 'review', 'verified'] as Filter[]).map(f => (
+                  <button key={f} onClick={() => setFilter(f)} style={segBtn(filter === f)}>
+                    {f === 'all' ? `All ${counts.total}` : f === 'review' ? `Needs review ${counts.review}` : `Verified ${counts.verified}`}
+                  </button>
+                ))}
               </div>
-            ))}
-            {visCols.map(r => <ColumnRow key={r.object_key} r={r} onPatch={patch} onVerify={verify} />)}
-            {visCols.length === 0 && rows.length > 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '12px 0' }}>Nothing in this view.</div>}
+              <Btn size="sm" onClick={save} disabled={saving || loading || rows.length === 0}>{saving ? <Spinner size={11} /> : 'Save'}</Btn>
+            </div>
+            <div style={{ marginTop: error || msg || warning ? 8 : 0 }}>
+              {error && <Alert variant="error">{error}</Alert>}
+              {msg && !error && <Alert variant="success">{msg}</Alert>}
+              {warning && !error && <Alert variant="warning">{warning}</Alert>}
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* Scrollable field list */}
+        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
+          <div style={{ ...contentWrap, paddingTop: 12, paddingBottom: 40 }}>
+            {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div> : (
+              <>
+                {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '16px 0' }}>No fields yet. Click “Analyze with AI” to propose roles, units and aggregations from your schema.</div>}
+                {tables.map(t => (
+                  <div key={t.object_key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                    <code style={codeCell}>{t.object_key}</code>
+                    <input value={t.description} onChange={e => patch(t.object_key, { description: e.target.value })}
+                      placeholder="what one row represents…" style={descInput(t._dirty)} />
+                  </div>
+                ))}
+                {shownCols.map(r => <ColumnRow key={r.object_key} r={r} onPatch={patch} onVerify={verify} />)}
+                {visCols.length > MAX_RENDER && (
+                  <div style={{ fontSize: 12, color: 'var(--text3)', padding: '12px 0', textAlign: 'center' }}>
+                    Showing {MAX_RENDER} of {visCols.length} fields — use search or the filters above to narrow down.
+                  </div>
+                )}
+                {visCols.length === 0 && rows.length > 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '12px 0' }}>Nothing in this view.</div>}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -238,5 +270,11 @@ const sel: React.CSSProperties = { padding: '5px 6px', border: '1px solid var(--
 const verifyBtn: React.CSSProperties = { padding: '4px 8px', border: '1px solid var(--success,var(--green-t))', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--success,var(--green-t))', fontSize: 11, cursor: 'pointer' }
 const segBtn = (on: boolean): React.CSSProperties => ({ padding: '4px 9px', border: 'none', borderRadius: 'var(--radius-sm)', background: on ? 'var(--surface)' : 'transparent', color: on ? 'var(--text)' : 'var(--text3)', fontSize: 11, cursor: 'pointer', fontWeight: on ? 600 : 400 })
 
-const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }
-const modal: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', width: 'min(860px, 100%)', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 20 }
+// Full-page (not a centered dialog): a source can have thousands of fields, so the
+// dictionary takes over the whole viewport with a sticky toolbar and a scrolling list.
+const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'var(--bg)', zIndex: 1000, display: 'flex' }
+const page: React.CSSProperties = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)' }
+const headerBar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }
+const toolbarBar: React.CSSProperties = { borderBottom: '1px solid var(--border)', background: 'var(--surface)', padding: '12px 0' }
+const contentWrap: React.CSSProperties = { maxWidth: 1200, margin: '0 auto', width: '100%', padding: '0 20px', boxSizing: 'border-box' }
+const backBtn: React.CSSProperties = { background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }

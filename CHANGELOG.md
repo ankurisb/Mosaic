@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.16] - 2026-11-01
+### Changed
+- Removed the redundant light/dark toggle from the Settings sidebar footer — theme
+  is set in Settings → Customization (same rationale as its earlier removal from the
+  main app sidebar).
+- **Data dictionary is now a full-page view, not a centered dialog.** A source can
+  have thousands of fields, which the pop-up couldn't accommodate. It now takes over
+  the viewport with a sticky toolbar (Analyze / Add / filters / Save stay visible
+  while scrolling), a **field search** box, a "← Back" affordance, and a 300-row
+  render cap (with a "showing 300 of N — narrow with search/filters" note) so
+  large-schema sources stay responsive.
+
 ## [1.6.15] - 2026-11-01
 ### Changed
 - Databases-tab semantics badge now uses three plain designations and no longer
