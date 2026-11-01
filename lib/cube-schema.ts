@@ -18,7 +18,12 @@ export interface CubeDimension { name: string; sql: string; type: string }
 export interface CubeDef { name: string; sql_table: string; measures: CubeMeasure[]; dimensions: CubeDimension[]; data_source?: string }
 
 function tableOf(objectKey: string): { table: string; column: string } {
-  const i = objectKey.indexOf('.')
+  // Split on the LAST dot: an object key is `table.column` for a public-schema
+  // table but `schema.table.column` for a non-public schema (e.g. plant.production_runs.units_produced).
+  // First-dot splitting mis-read the schema as the table → sql_table=`plant`,
+  // column=`production_runs.units_produced`, and Cube failed to compile the cube.
+  // A 2-part key has one dot, so public-schema behaviour is unchanged.
+  const i = objectKey.lastIndexOf('.')
   return i === -1 ? { table: objectKey, column: objectKey } : { table: objectKey.slice(0, i), column: objectKey.slice(i + 1) }
 }
 function safeName(s: string): string {
@@ -44,7 +49,11 @@ export function cubeNameFor(table: string, dataSource?: string): string {
 export function generateCubeSchema(fields: SemanticField[], dataSource?: string): CubeDef[] {
   const byTable = new Map<string, SemanticField[]>()
   for (const f of fields) {
-    if (!f.object_key.includes('.')) continue  // skip table-level rows
+    // Skip table-level rows. These carry no role (just a description); keying off
+    // the role is robust whether the table key is `table` (public) or
+    // `schema.table` (non-public) — a dot-count check can't tell `schema.table`
+    // from `table.column`.
+    if (!f.role || !f.object_key.includes('.')) continue
     const { table } = tableOf(f.object_key)
     if (!byTable.has(table)) byTable.set(table, [])
     byTable.get(table)!.push(f)

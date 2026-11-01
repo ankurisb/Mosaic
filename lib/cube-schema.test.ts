@@ -73,4 +73,25 @@ describe('generateCubeSchema', () => {
     ])[0])
     expect(js).not.toContain('pre_aggregations:')
   })
+
+  // Regression: a non-public schema yields `schema.table.column` object keys.
+  // The cube must bind to the full `schema.table` and reference bare columns —
+  // not treat the schema as the table (which produced sql_table=`plant` and an
+  // uncompilable cube).
+  it('handles schema-qualified tables (schema.table.column)', () => {
+    const cubes = generateCubeSchema([
+      F('plant.production_runs.units_produced', { role: 'measure', default_aggregation: 'sum', data_type: 'number' }),
+      F('plant.production_runs.run_date', { role: 'time', data_type: 'timestamp' }),
+      F('plant.production_runs', { role: null }),
+    ], 'conn-xyz')
+    expect(cubes).toHaveLength(1)
+    const c = cubes[0]
+    expect(c.sql_table).toBe('plant.production_runs')
+    // members are the bare column names (what the query planner references via chart_config)
+    expect(c.measures.map(m => m.name).sort()).toEqual(['count', 'units_produced'])
+    expect(c.dimensions.map(d => d.name)).toEqual(['run_date'])
+    const js = renderCubeJs(c)
+    expect(js).toContain('sql_table: `plant.production_runs`')
+    expect(js).toContain('units_produced')
+  })
 })

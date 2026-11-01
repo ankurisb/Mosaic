@@ -198,7 +198,10 @@ export function measureSpecsFor(cfg: Record<string, unknown>, model: SemanticMod
 }
 
 function tableOfKey(objectKey: string): string | null {
-  const i = objectKey.indexOf('.')
+  // LAST dot, to match generateCubeSchema's tableOf: `schema.table.column` →
+  // table `schema.table`. Must stay in step with the generator so the cube name
+  // (cubeNameFor(table)) the planner computes equals the one the generator wrote.
+  const i = objectKey.lastIndexOf('.')
   return i === -1 ? null : objectKey.slice(0, i)
 }
 

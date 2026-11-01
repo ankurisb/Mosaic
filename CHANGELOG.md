@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.12] - 2026-11-01
+### Fixed
+- **Cube schema generation for non-`public` database schemas.** Object keys for a
+  table in a non-public schema are `schema.table.column` (e.g.
+  `plant.production_runs.units_produced`), but the generator and query planner
+  split on the *first* dot — treating the schema as the table, emitting
+  `sql_table: \`plant\`` and column refs like `production_runs.units_produced`, so
+  Cube failed to compile the cube and dashboard panels fell back to SQL with
+  `engine_reason=cube-http-400`. Now both split on the *last* dot (and table-level
+  rows are skipped by role, not dot-count), so Cube routing works for
+  schema-qualified tables. Public-schema tables are unaffected (one dot = same
+  result). Found via the test harness, whose Postgres uses the `plant` schema.
+
 ## [1.6.11] - 2026-10-31
 ### Changed
 - Removed cost/spend figures from the Agents UI — the per-run cost in the run
