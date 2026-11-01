@@ -4,7 +4,8 @@
 // can propose them from the real schema + samples with AI ("Analyze with AI" → everything
 // comes back status='proposed'; nothing is auto-verified), and lets a human verify. This
 // teaches Mosaic how to aggregate, label and accelerate each field.
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Btn, Spinner, Alert } from './ui'
 
 type Role = 'measure' | 'dimension' | 'time' | 'identifier' | 'attribute'
@@ -143,10 +144,23 @@ export default function SemanticDescriptionsModal({
   const visible = (r: Row) => inFilter(r) && matchesSearch(r)
   const tables = rows.filter(r => r.object_type === 'table' && filter === 'all' && matchesSearch(r))
   const visCols = cols.filter(visible)
-  // Cap the number of heavy editor rows actually mounted — thousands of rows, each with
-  // selects + inputs, would make the page sluggish. Narrow with search/filters to reach more.
-  const MAX_RENDER = 300
-  const shownCols = visCols.slice(0, MAX_RENDER)
+  // Flatten tables + visible columns into one list and WINDOW it: only the rows on screen
+  // (plus a small overscan) are mounted, so a source with thousands of fields stays smooth.
+  // Heights are measured dynamically — a row grows when you give it a role — via
+  // measureElement/ResizeObserver, so variable-height rows reposition correctly.
+  type Item = { kind: 'table' | 'col'; row: Row }
+  const items: Item[] = [
+    ...tables.map(r => ({ kind: 'table' as const, row: r })),
+    ...visCols.map(r => ({ kind: 'col' as const, row: r })),
+  ]
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virt = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+    getItemKey: (i) => items[i].row.object_key,
+  })
 
   return (
     <div style={overlay}>
@@ -191,28 +205,33 @@ export default function SemanticDescriptionsModal({
           </div>
         </div>
 
-        {/* Scrollable field list */}
-        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
+        {/* Scrollable, virtualized field list */}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
           <div style={{ ...contentWrap, paddingTop: 12, paddingBottom: 40 }}>
-            {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div> : (
-              <>
-                {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '16px 0' }}>No fields yet. Click “Analyze with AI” to propose roles, units and aggregations from your schema.</div>}
-                {tables.map(t => (
-                  <div key={t.object_key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                    <code style={codeCell}>{t.object_key}</code>
-                    <input value={t.description} onChange={e => patch(t.object_key, { description: e.target.value })}
-                      placeholder="what one row represents…" style={descInput(t._dirty)} />
-                  </div>
-                ))}
-                {shownCols.map(r => <ColumnRow key={r.object_key} r={r} onPatch={patch} onVerify={verify} />)}
-                {visCols.length > MAX_RENDER && (
-                  <div style={{ fontSize: 12, color: 'var(--text3)', padding: '12px 0', textAlign: 'center' }}>
-                    Showing {MAX_RENDER} of {visCols.length} fields — use search or the filters above to narrow down.
-                  </div>
-                )}
-                {visCols.length === 0 && rows.length > 0 && <div style={{ fontSize: 12, color: 'var(--text4)', padding: '12px 0' }}>Nothing in this view.</div>}
-              </>
-            )}
+            {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>
+              : rows.length === 0 ? <div style={{ fontSize: 12, color: 'var(--text4)', padding: '16px 0' }}>No fields yet. Click “Analyze with AI” to propose roles, units and aggregations from your schema.</div>
+              : items.length === 0 ? <div style={{ fontSize: 12, color: 'var(--text4)', padding: '12px 0' }}>Nothing in this view.</div>
+              : (
+                <div style={{ position: 'relative', width: '100%', height: virt.getTotalSize() }}>
+                  {virt.getVirtualItems().map(vi => {
+                    const it = items[vi.index]
+                    return (
+                      <div key={vi.key} data-index={vi.index} ref={virt.measureElement}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)`, paddingBottom: 6 }}>
+                        {it.kind === 'table' ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <code style={codeCell}>{it.row.object_key}</code>
+                            <input value={it.row.description} onChange={e => patch(it.row.object_key, { description: e.target.value })}
+                              placeholder="what one row represents…" style={descInput(it.row._dirty)} />
+                          </div>
+                        ) : (
+                          <ColumnRow r={it.row} onPatch={patch} onVerify={verify} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -226,7 +245,7 @@ function ColumnRow({ r, onPatch, onVerify }: { r: Row; onPatch: (k: string, p: P
   const proposed = r.status === 'proposed'
   const conf = r.confidence != null ? Math.round(r.confidence * 100) : null
   return (
-    <div style={{ padding: '8px 8px 10px', borderRadius: 'var(--radius-sm)', marginBottom: 6, background: proposed ? 'color-mix(in srgb, var(--warning,var(--amber-t)) 7%, transparent)' : 'transparent', border: `1px solid ${r._dirty ? 'var(--accent-bg)' : 'var(--border2)'}` }}>
+    <div style={{ padding: '8px 8px 10px', borderRadius: 'var(--radius-sm)', background: proposed ? 'color-mix(in srgb, var(--warning,var(--amber-t)) 7%, transparent)' : 'transparent', border: `1px solid ${r._dirty ? 'var(--accent-bg)' : 'var(--border2)'}` }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <StatusChip status={r.status} />
         <code style={{ ...codeCell, width: 170 }}>{r.object_key}</code>

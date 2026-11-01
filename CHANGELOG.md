@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.17] - 2026-11-01
+### Changed
+- **Data dictionary field list is now virtualized (windowed).** Using
+  `@tanstack/react-virtual`, only the rows actually on screen (plus a small overscan)
+  are mounted, with dynamic height measurement so variable-height rows — a row grows
+  when you assign it a role — reposition correctly. This removes the interim 300-row
+  render cap from 1.6.16: a source with thousands of fields now scrolls smoothly with
+  every field present. Search and filters still narrow the set.
+
 ## [1.6.16] - 2026-11-01
 ### Changed
 - Removed the redundant light/dark toggle from the Settings sidebar footer — theme
