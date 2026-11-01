@@ -6,8 +6,9 @@ import TabAPIs from './TabAPIs'
 import TabFileServers from './TabFileServers'
 import TabPrism from './TabPrism'
 import TabMcp from './TabMcp'
+import TabAirbyte from './TabAirbyte'
 
-type SubTab = 'databases' | 'apis' | 'files' | 'mcp' | 'prism'
+type SubTab = 'databases' | 'apis' | 'files' | 'mcp' | 'prism' | 'airbyte'
 
 export default function TabDataSources({ user }: { user: SessionUser }) {
   const [activeTab, setActiveTab] = useState<SubTab>('databases')
@@ -15,6 +16,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
   const tabs: { id: SubTab; label: string }[] = [
     { id: 'databases', label: 'Databases' },
     { id: 'apis',      label: 'API connections' },
+    { id: 'airbyte',   label: 'Airbyte' },
     { id: 'files',     label: 'File servers' },
     { id: 'mcp',       label: 'MCP servers' },
     { id: 'prism',     label: 'Prism' },
@@ -34,6 +36,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
 
       {activeTab === 'databases' && <TabDatabases user={user} />}
       {activeTab === 'apis'      && <TabAPIs user={user} />}
+      {activeTab === 'airbyte'   && <TabAirbyte user={user} />}
       {activeTab === 'files'     && <TabFileServers user={user} />}
       {activeTab === 'mcp'       && <TabMcp user={user} />}
       {activeTab === 'prism'     && <TabPrism user={user} />}

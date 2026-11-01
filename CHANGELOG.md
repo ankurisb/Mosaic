@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.18] - 2026-11-01
+### Changed
+- **Airbyte is now its own sub-tab** under Settings → Data sources, in line with
+  Databases / API connections / File servers / MCP servers / Prism — instead of being
+  appended to the bottom of the Databases tab. (New `TabAirbyte.tsx`; the Airbyte
+  section + its instance/pipeline/connector UI moved out of `TabDatabases.tsx`.)
+- Removed the "For SAP, Salesforce, ERP, SaaS APIs and other systems with no direct
+  SQL interface…" descriptive paragraph from the Airbyte section. The Databases-tab
+  subtitle now points to the Airbyte tab rather than "Airbyte below".
+
 ## [1.6.17] - 2026-11-01
 ### Changed
 - **Data dictionary field list is now virtualized (windowed).** Using
