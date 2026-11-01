@@ -87,7 +87,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
   const [results, setResults] = useState<Record<string, TestResult>>({})
   const [ftsLoading, setFtsLoading] = useState<Record<string,boolean>>({})
   const [describing, setDescribing] = useState<DbConn | null>(null)
-  const [coverage, setCoverage] = useState<Record<string, { needs_config: boolean; verified: number }>>({})
+  const [coverage, setCoverage] = useState<Record<string, { needs_config: boolean; verified: number; cube_serving: string | null; cube_reason: string | null }>>({})
+  const [rechecking, setRechecking] = useState<Record<string, boolean>>({})
 
   async function toggleFts(connId: string, currentlyEnabled: boolean) {
     setFtsLoading(p => ({ ...p, [connId]: true }))
@@ -216,11 +217,19 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
     try {
       const r = await fetch('/api/semantic?view=coverage')
       if (!r.ok) return
-      const d = await r.json() as { sources?: Array<{ source_id: string; needs_config: boolean; verified: number }> }
-      const m: Record<string, { needs_config: boolean; verified: number }> = {}
-      for (const s of d.sources || []) m[s.source_id] = { needs_config: s.needs_config, verified: s.verified }
+      const d = await r.json() as { sources?: Array<{ source_id: string; needs_config: boolean; verified: number; cube_serving: string | null; cube_reason: string | null }> }
+      const m: Record<string, { needs_config: boolean; verified: number; cube_serving: string | null; cube_reason: string | null }> = {}
+      for (const s of d.sources || []) m[s.source_id] = { needs_config: s.needs_config, verified: s.verified, cube_serving: s.cube_serving ?? null, cube_reason: s.cube_reason ?? null }
       setCoverage(m)
     } catch { /* non-fatal */ }
+  }
+
+  // Actively re-probe whether a source serves through Cube, then refresh the badge.
+  async function recheckCube(id: string) {
+    setRechecking(s => ({ ...s, [id]: true }))
+    try { await fetch(`/api/semantic?view=cube-readiness&source_id=${encodeURIComponent(id)}`) }
+    catch { /* non-fatal */ }
+    finally { await loadCoverage(); setRechecking(s => ({ ...s, [id]: false })) }
   }
 
   async function createSandbox() {
@@ -670,11 +679,26 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                     </button>
                   )}
                   <Btn size="sm" onClick={() => test(c.id)} disabled={testing === c.id}>{testing === c.id ? <Spinner size={11} /> : 'Test'}</Btn>
-                  {user.role === 'admin' && c.dialect !== 'elasticsearch' && coverage[c.id] && (
-                    coverage[c.id].needs_config
-                      ? <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--warning,var(--amber-t))', background: 'color-mix(in srgb, var(--warning,var(--amber-t)) 12%, transparent)', color: 'var(--warning,var(--amber-t))', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>⚠ Semantics</button>
-                      : <span title={`${coverage[c.id].verified} verified field(s)`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--green)', background: 'var(--green-bg)', color: 'var(--green-t)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>✓ Semantics</span>
-                  )}
+                  {user.role === 'admin' && c.dialect !== 'elasticsearch' && coverage[c.id] && (() => {
+                    const cov = coverage[c.id]
+                    const pill = (bg: string, bd: string, fg: string): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${bd}`, background: bg, color: fg, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'inherit' })
+                    const amber = pill('color-mix(in srgb, var(--warning,var(--amber-t)) 12%, transparent)', 'var(--warning,var(--amber-t))', 'var(--warning,var(--amber-t))')
+                    const green = pill('var(--green-bg)', 'var(--green)', 'var(--green-t)')
+                    const neutral = pill('transparent', 'var(--border2)', 'var(--text3)')
+                    // Not verified yet → the original "fill in the model" prompt.
+                    if (cov.needs_config)
+                      return <button onClick={() => setDescribing(c)} title="No verified semantics yet — dashboards won't get units/roll-ups/acceleration" style={{ ...amber, cursor: 'pointer' }}>⚠ Semantics</button>
+                    if (rechecking[c.id])
+                      return <span style={neutral}><Spinner size={10} /> Checking Cube…</span>
+                    // Verified AND proven servable through Cube.
+                    if (cov.cube_serving === 'serving')
+                      return <span title={`${cov.verified} verified field(s) · proven servable through Cube`} style={green}>✓ Cube-serving</span>
+                    // Verified but the probe found Cube can't serve it — surface the reason.
+                    if (cov.cube_serving === 'unreachable')
+                      return <button onClick={() => recheckCube(c.id)} title={`Verified, but Cube can't serve this source yet (${cov.cube_reason || 'unknown'}). Dashboards fall back to SQL — correct values, no acceleration/BI exposure. Click to re-check.`} style={{ ...amber, cursor: 'pointer' }}>⚠ Cube unreachable</button>
+                    // Verified but not yet probed.
+                    return <button onClick={() => recheckCube(c.id)} title="Verified. Click to check whether Cube can actually serve this source." style={{ ...neutral, cursor: 'pointer' }}>✓ Verified · check Cube</button>
+                  })()}
                   {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}

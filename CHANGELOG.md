@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.14] - 2026-11-01
+### Added
+- **Cube serving-readiness probe.** A verified semantic model is necessary but not
+  sufficient for a source to be servable through Cube — the cube must also compile and
+  Cube must connect to the source with its own driver and build the pre-aggregation
+  (the SQL-Server `server` and MySQL-8 auth failures were exactly this, and dashboards
+  fall back to SQL silently when it happens). After a verify/save — and on demand via a
+  re-check affordance — Mosaic now issues one trivial Cube query against the generated
+  cube and records whether it actually served. The Databases tab now shows three states
+  instead of a blanket "✓ Semantics": **⚠ Semantics** (not verified), **✓ Cube-serving**
+  (verified *and* proven servable through Cube), or **⚠ Cube unreachable** with the
+  reason (verified but Cube can't serve it — dashboards still return correct values via
+  SQL fallback, just without acceleration/BI exposure). Turns the badge from a model
+  claim into an auditable, proven guarantee, and surfaces connect/compile/driver
+  failures at setup time rather than silently at query time.
+  - New: migration `029_cube_readiness.sql` (`semantic_sources.cube_serving` /
+    `cube_reason` / `cube_checked_at`), `lib/cube-readiness.ts` (reuses the dashboard's
+    exact `planCubeRouting` + `loadViaCube` path), `GET /api/semantic?view=cube-readiness`,
+    and the three-state pill in Settings → Data sources → Databases.
+
 ## [1.6.13] - 2026-11-01
 ### Fixed
 - **Cube serving for SQL Server sources.** The Cube `driverFactory`

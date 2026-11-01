@@ -20,6 +20,7 @@ import { getSemanticHealth, getCoverageSummary, computeFingerprint, recordFinger
 import { getSemanticModel } from '@/lib/semantic-model'
 import { generateCubeSchema, renderAllCubes } from '@/lib/cube-schema'
 import { resyncCubeModel } from '@/lib/cube-sync'
+import { probeCubeServing } from '@/lib/cube-readiness'
 import {
   planPrismSample, assessPrismCoverage, summarizePrismDraft,
   PRISM_SAMPLE_DEVICES, type DeviceKeyResult, type PrismDiagnostics,
@@ -207,6 +208,15 @@ export async function GET(req: Request) {
 
   if (!sourceId) return Response.json({ error: 'source_id required' }, { status: 400 })
 
+  // Cube-readiness view: actively probe whether this source serves through Cube right
+  // now (one trivial Cube query against its generated cube) and record the result.
+  // Used by the Databases tab's "re-check" affordance. Polls through the compile /
+  // pre-aggregation-build window, so it can take a few seconds.
+  if (searchParams.get('view') === 'cube-readiness') {
+    const readiness = await probeCubeServing(sourceId, { attempts: 6, delayMs: 2500 })
+    return Response.json({ readiness })
+  }
+
   // Health view: coverage/verification summary for the semantic model of this source.
   if (searchParams.get('view') === 'health') {
     const n = Number(searchParams.get('schema_fields'))
@@ -345,8 +355,12 @@ export async function POST(req: Request) {
       }
       // Phase 6: keep the Cube engine's generated schema in step with the model.
       // Fire-and-forget; no-ops when CUBE_MODEL_DIR is unset (Cube not deployed).
+      // Phase 8: once resynced, probe whether the source actually serves through
+      // Cube (compiles + Cube can connect + builds the pre-agg) and record it, so the
+      // Databases tab shows "Cube-serving ✓" vs "Cube unreachable ⚠" rather than
+      // implying a verified model is automatically servable. Still fire-and-forget.
       if (source_type === 'database') {
-        resyncCubeModel().catch(() => {})
+        resyncCubeModel().then(() => probeCubeServing(source_id)).catch(() => {})
       }
       return Response.json({ ok: true, saved })
     }

@@ -63,6 +63,9 @@ export interface SemanticHealth {
 export interface SourceCoverage {
   source_type: string; source_id: string; label: string
   structured: number; verified: number; proposed: number; needs_config: boolean
+  // Cube serving-readiness probe state (migration 029 / lib/cube-readiness).
+  // 'serving' | 'unreachable' | null (not yet probed / N/A for this dialect).
+  cube_serving: string | null; cube_reason: string | null; cube_checked_at: string | null
 }
 export interface CoverageSummary { sources: SourceCoverage[]; unconfigured: number }
 
@@ -82,13 +85,20 @@ export async function getCoverageSummary(): Promise<CoverageSummary> {
              SUM(CASE WHEN status='proposed' THEN 1 ELSE 0 END) AS proposed
       FROM semantic_descriptions WHERE source_type='database' GROUP BY source_id` as Array<{ source_id: string; structured: number; verified: number; proposed: number }>
     const byId = new Map(counts.map(c => [c.source_id, c]))
+    // Cube readiness, recorded by the probe (lib/cube-readiness).
+    const ready = await sql`
+      SELECT source_id, cube_serving, cube_reason, cube_checked_at
+      FROM semantic_sources WHERE source_type='database'` as Array<{ source_id: string; cube_serving: string | null; cube_reason: string | null; cube_checked_at: string | null }>
+    const readyById = new Map(ready.map(r => [r.source_id, r]))
     const sources: SourceCoverage[] = conns.map(c => {
       const n = byId.get(c.id)
       const verified = Number(n?.verified ?? 0)
+      const rd = readyById.get(c.id)
       return {
         source_type: 'database', source_id: c.id, label: c.label,
         structured: Number(n?.structured ?? 0), verified, proposed: Number(n?.proposed ?? 0),
         needs_config: verified === 0,
+        cube_serving: rd?.cube_serving ?? null, cube_reason: rd?.cube_reason ?? null, cube_checked_at: rd?.cube_checked_at ?? null,
       }
     })
     return { sources, unconfigured: sources.filter(s => s.needs_config).length }
