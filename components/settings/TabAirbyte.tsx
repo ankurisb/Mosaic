@@ -21,46 +21,36 @@ export default function TabAirbyte({ user }: { user: SessionUser }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ color: '#615cf5' }}><polygon points="11,2 14,8 20,9 16,14 17,20 11,17 5,20 6,14 2,9 8,8"/></svg>
-              Airbyte — non-SQL sources
-            </div>
-            {user.role === 'admin' && (
-              airbyteIsCloud ? (
-                <div style={{ marginTop: 14, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 560 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: 'rgba(97,92,245,0.12)' }}>
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '2px 7px', borderRadius: 999 }}>Enterprise</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
-                    Build a connector to <em>any</em> source — including your proprietary and internal systems — by describing it in plain language. Available on the self-hosted Enterprise edition, where connectors are built and run entirely within your network. The standard catalog of 300+ connectors is available here.
-                  </div>
-                </div>
-              ) : (
-                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>No connector for your source?</span>
-                  <a href="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text)', textDecoration: 'none', fontWeight: 500 }}>
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>
-                    Build one with AI
-                  </a>
-                </div>
-              )
-            )}
-          </div>
-          {user.role === 'admin' && airbyteCount === 0 && (
+      {user.role === 'admin' && (
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          {!airbyteIsCloud && (
+            <a href="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text)', textDecoration: 'none', fontWeight: 500 }}>
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.5" cy="7" r="2"/><circle cx="10.5" cy="3.5" r="2"/><circle cx="10.5" cy="10.5" r="2"/><path d="M5.3 6.1l3.4-1.6M5.3 7.9l3.4 1.6"/></svg>
+              Build one with AI
+            </a>
+          )}
+          {airbyteCount === 0 && (
             <button onClick={() => setShowAirbyteForm(true)}
               style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontFamily: 'inherit' }}>
               + Connect Airbyte
             </button>
           )}
         </div>
-      </div>
+      )}
+      {user.role === 'admin' && airbyteIsCloud && (
+        <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 560 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: 'rgba(97,92,245,0.12)' }}>
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '2px 7px', borderRadius: 999 }}>Enterprise</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
+            Build a connector to <em>any</em> source — including your proprietary and internal systems — by describing it in plain language. Available on the self-hosted Enterprise edition, where connectors are built and run entirely within your network. The standard catalog of 300+ connectors is available here.
+          </div>
+        </div>
+      )}
       <AirbyteSection user={user} showForm={showAirbyteForm} setShowForm={setShowAirbyteForm} onCountChange={setAirbyteCount} />
     </div>
   )

@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.20] - 2026-11-02
+### Changed
+- 3rd party connectors tab: removed the "Airbyte — non-SQL sources" heading and the
+  "No connector for your source?" label; the **Build one with AI** action is now
+  right-aligned (alongside "+ Connect Airbyte" when no instance is connected). The
+  Enterprise "AI custom connectors" card is unchanged for Airbyte Cloud instances.
+
 ## [1.6.19] - 2026-11-01
 ### Changed
 - Renamed two Data sources sub-tabs: **API connections → API**, and the Airbyte tab
