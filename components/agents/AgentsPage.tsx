@@ -74,6 +74,8 @@ const btn: React.CSSProperties = { border: '1px solid var(--border2)', backgroun
 const btnPri: React.CSSProperties = { ...btn, background: 'var(--accent-bg, #2f6df6)', borderColor: 'transparent', color: 'var(--accent-fg, #fff)' }
 const inp: React.CSSProperties = { width: '100%', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13.5, padding: '9px 11px', borderRadius: 9, fontFamily: 'inherit', boxSizing: 'border-box' }
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3)', marginBottom: 7, display: 'block' }
+const th: React.CSSProperties = { padding: '10px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', whiteSpace: 'nowrap', textAlign: 'left', background: 'var(--surface2, var(--bg3))' }
+const td: React.CSSProperties = { padding: '12px 16px', verticalAlign: 'middle', borderTop: '1px solid var(--border)' }
 
 // Line-art icons (match the app's stroke style; no emoji/sparkles).
 const IconImprove = () => (
@@ -341,27 +343,46 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <div style={{ ...card, padding: 30, color: 'var(--text3)' }}>No agents yet. Click <b>New agent</b> to build one from a plain-English goal.</div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(228px, 1fr))', gap: 14 }}>
-                {pageAgents.map(a => (
-                  <div key={a.id} style={{ ...card, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--accent-bg, #2f6df6)', display: 'grid', placeItems: 'center', color: 'var(--accent-fg, #fff)', flexShrink: 0 }}>
-                        <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M5.5 1.5v1.5M10.5 1.5v1.5M6 13h4"/><circle cx="6" cy="7" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7" r=".8" fill="currentColor" stroke="none"/></svg>
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0 }}>{a.name}</div>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.goal}</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: a.status === 'active' ? 'var(--green-bg, #ecfdf5)' : 'var(--bg3)', color: a.status === 'active' ? 'var(--green-t, #0a8f5b)' : 'var(--text2)' }}>{a.status === 'active' ? 'Active' : 'Paused'}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: 'var(--bg3)', color: 'var(--text2)', textTransform: 'capitalize' }}>{a.trigger_type}</span>
-                      {asArr(a.sources).length > 0 && <span title="scoped to specific sources" style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: 'var(--bg3)', color: 'var(--text2)' }}>📌 {asArr(a.sources).length} src</span>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 7 }}>
-                      <button style={{ ...btnPri, flex: 1, padding: '6px 10px', fontSize: 12 }} disabled={running || a.status === 'paused'} onClick={() => runNow(a)}>Run now</button>
-                      <button style={{ ...btn, padding: '6px 10px', fontSize: 12 }} onClick={() => openDetail(a)}>Manage</button>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Agent</th>
+                        <th style={th}>Status</th>
+                        <th style={th}>Trigger</th>
+                        <th style={th}>Sources</th>
+                        <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageAgents.map(a => (
+                        <tr key={a.id}>
+                          <td style={{ ...td, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg, #2f6df6)', display: 'grid', placeItems: 'center', color: 'var(--accent-fg, #fff)', flexShrink: 0 }}>
+                                <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M5.5 1.5v1.5M10.5 1.5v1.5M6 13h4"/><circle cx="6" cy="7" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7" r=".8" fill="currentColor" stroke="none"/></svg>
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
+                                <div title={a.goal} style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 440 }}>{a.goal}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={td}>
+                            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 99, whiteSpace: 'nowrap', background: a.status === 'active' ? 'var(--green-bg, #ecfdf5)' : 'var(--bg3)', color: a.status === 'active' ? 'var(--green-t, #0a8f5b)' : 'var(--text2)' }}>{a.status === 'active' ? 'Active' : 'Paused'}</span>
+                          </td>
+                          <td style={{ ...td, color: 'var(--text2)', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{a.trigger_type}</td>
+                          <td style={{ ...td, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{asArr(a.sources).length > 0 ? <span title="scoped to specific sources">📌 {asArr(a.sources).length} scoped</span> : <span style={{ color: 'var(--text3)' }}>All</span>}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <button style={{ ...btnPri, padding: '6px 11px', fontSize: 12, marginRight: 6 }} disabled={running || a.status === 'paused'} onClick={() => runNow(a)}>Run now</button>
+                            <button style={{ ...btn, padding: '6px 11px', fontSize: 12 }} onClick={() => openDetail(a)}>Manage</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               {pageCount > 1 && (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 20 }}>

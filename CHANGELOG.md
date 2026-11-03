@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.22] - 2026-11-03
+### Changed
+- Agents list is now a **table** (Agent · Status · Trigger · Sources · Actions) instead
+  of the card grid — denser and cleaner, with the goal truncated to one line per row,
+  Run now / Manage inline, and horizontal scroll on narrow screens.
+
 ## [1.6.21] - 2026-11-03
 ### Added
 - **Theme (colour palette) selection** is back in Settings → Customization, re-enabling
