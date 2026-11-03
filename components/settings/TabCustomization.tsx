@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
-import { useTheme, type Mode } from '@/lib/theme'
+import { useTheme, type Mode, type Palette } from '@/lib/theme'
 import { fmtNumber, fmtDate } from '@/lib/format'
 import { SEL, Btn } from './ui'
 import { safeJson } from '@/lib/fetch'
@@ -14,6 +14,13 @@ const FONT_FAMILIES = [
   { v: 'serif',   label: 'Serif — Georgia' },
 ]
 const FONT_SIZES = [{ v: 'small', label: 'Small' }, { v: 'medium', label: 'Medium' }, { v: 'large', label: 'Large' }]
+// Theme (colour palette) options. Swatches are the light-mode representative colours
+// (canvas / accent / ink) for the preview chip — the real tokens live in globals.css.
+const PALETTE_OPTIONS: { v: Palette; label: string; hint: string; sw: { bg: string; accent: string; text: string } }[] = [
+  { v: 'default',   label: 'Atlassian', hint: 'Mosaic default',          sw: { bg: '#ffffff', accent: '#0052cc', text: '#172b4d' } },
+  { v: 'editorial', label: 'Editorial', hint: 'Warm paper, serif titles', sw: { bg: '#fffdf8', accent: '#9c2b16', text: '#1c1a16' } },
+  { v: 'ramp',      label: 'Ramp',      hint: 'Clean mono, lime accent',  sw: { bg: '#ffffff', accent: '#c4ee4f', text: '#0a0a0a' } },
+]
 const UNITS = [{ v: 'metric', label: 'Metric (SI)' }, { v: 'imperial', label: 'US / Imperial' }]
 const LANGUAGES = [
   ['match', "Match the user's language"], ['en', 'English'], ['de', 'German'], ['fr', 'French'],
@@ -44,7 +51,7 @@ const Hint = ({ children }: { children: React.ReactNode }) => (
 )
 
 export default function TabCustomization({ user }: { user?: SessionUser }) {
-  const { theme, setMode } = useTheme()
+  const { theme, setMode, palette, setPalette } = useTheme()
   const isAdmin = user?.role === 'admin'
 
   // Deployment settings (kv_settings via /api/keys). Values are returned plainly.
@@ -127,6 +134,36 @@ export default function TabCustomization({ user }: { user?: SessionUser }) {
               {label}
             </button>
           ))}
+        </div>
+      </section>
+
+      {/* 1b. Theme (colour palette) — per-device */}
+      <section style={{ marginBottom: 34 }}>
+        <Label>Theme</Label>
+        <Hint>Pick a colour palette. Saved on this device; applies in both light and dark.</Hint>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {PALETTE_OPTIONS.map(p => {
+            const on = palette === p.v
+            return (
+              <button key={p.v} onClick={() => setPalette(p.v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 'var(--radius)',
+                  border: '1.5px solid ' + (on ? 'var(--accent-bg)' : 'var(--border)'),
+                  background: on ? 'var(--highlight)' : 'var(--surface)',
+                  cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all .12s',
+                  boxShadow: on ? 'var(--shadow)' : 'none', minWidth: 190,
+                }}>
+                <span style={{ display: 'inline-block', width: 34, height: 34, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border2)', flexShrink: 0, background: p.sw.bg, position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 6, top: 6, width: 10, height: 10, borderRadius: 3, background: p.sw.accent }} />
+                  <span style={{ position: 'absolute', right: 6, bottom: 7, width: 14, height: 4, borderRadius: 2, background: p.sw.text }} />
+                </span>
+                <span>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{p.label}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>{p.hint}</div>
+                </span>
+              </button>
+            )
+          })}
         </div>
       </section>
 

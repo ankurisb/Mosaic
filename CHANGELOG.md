@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.21] - 2026-11-03
+### Added
+- **Theme (colour palette) selection** is back in Settings → Customization, re-enabling
+  the per-device palette axis (saved in `localStorage`, restored pre-hydration so there's
+  no flash). Two new palettes alongside the Atlassian default:
+  - **Editorial** — warm paper canvas, near-black ink, serif headings, squared corners.
+  - **Ramp** — crisp near-white, mono-black ink, signature lime accent, soft rounded corners.
+  Each palette redefines the **full 35-token colour set** for both light and dark (verified
+  by a coverage check), so it applies as consistently as the Atlassian theme — nothing
+  falls back. Radii and fonts are tuned per palette; the admin font override still wins.
+
 ## [1.6.20] - 2026-11-02
 ### Changed
 - 3rd party connectors tab: removed the "Airbyte — non-SQL sources" heading and the

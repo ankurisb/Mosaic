@@ -192,6 +192,138 @@ body {
   --highlight-border: rgba(87,157,255,0.45);
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   ALTERNATE PALETTES  (Settings → Customization → Theme)
+   Each palette redefines the SAME colour-token set as the base theme above, so it
+   applies consistently everywhere the Atlassian default does — nothing falls back.
+   Specificity: a palette light block is :root[data-palette="x"] (0,2,0), which
+   beats the base :root (0,1,0); the matching dark block adds [data-theme="dark"]
+   and so must redefine every colour token to beat the light block in dark mode.
+   Radii + fonts are set once in the light block (they hold in both modes). The
+   admin font override :root:root[data-font] (0,3,0) still wins, by design.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Editorial — warm paper, ink text, serif headings, squared corners ── */
+:root[data-palette="editorial"] {
+  --bg:        #f5f1e8;
+  --bg2:       #fffdf8;
+  --bg3:       #ece5d7;
+  --bg4:       #e0d7c5;
+  --surface:   #fffdf8;
+  --surface2:  #f5f1e8;
+  --border:    #e2dac9;
+  --border2:   #cabfa9;
+  --shadow:    0 1px 2px rgba(40,33,20,0.10), 0 0 1px rgba(40,33,20,0.20);
+  --shadow-md: 0 4px 10px rgba(40,33,20,0.12), 0 0 1px rgba(40,33,20,0.22);
+  --shadow-lg: 0 10px 24px rgba(40,33,20,0.16), 0 0 1px rgba(40,33,20,0.22);
+  --text:      #1c1a16;
+  --text2:     #403b32;
+  --text3:     #6a6355;
+  --text4:     #938b7a;
+  --accent:    #9c2b16;
+  --accent-bg: #9c2b16;
+  --accent-fg: #fffdf8;
+  --green:     #2f7d52; --green-bg: #e7f2e9; --green-t: #245c3d;
+  --red:       #ab2f1e; --red-bg:   #f9e8e3; --red-t:   #86271a;
+  --amber:     #a9781a; --amber-bg: #f8efd7; --amber-t: #74520f;
+  --blue:      #2c5d87; --blue-bg:  #e8eef5; --blue-t:  #234b6c;
+  --purple:    #654a8a; --purple-bg:#efeaf5; --purple-t:#4e3a6d;
+  --highlight: rgba(156,43,22,0.12);
+  --highlight-border: rgba(156,43,22,0.38);
+  /* Squared, print-like corners */
+  --radius-sm: 2px; --radius: 2px; --radius-lg: 4px; --radius-xl: 8px;
+  /* Serif headings/wordmark (var(--font-serif)); body stays legible sans. */
+  --font-serif: Georgia, 'Times New Roman', 'Liberation Serif', serif;
+}
+[data-theme="dark"][data-palette="editorial"] {
+  --bg:        #1b1915;
+  --bg2:       #23201b;
+  --bg3:       #2a2621;
+  --bg4:       #37322a;
+  --surface:   #23201b;
+  --surface2:  #2a2621;
+  --border:    #37322a;
+  --border2:   #4d473d;
+  --shadow:    0 1px 2px rgba(0,0,0,0.50), 0 0 1px rgba(0,0,0,0.50);
+  --shadow-md: 0 4px 10px rgba(0,0,0,0.55), 0 0 1px rgba(0,0,0,0.60);
+  --shadow-lg: 0 10px 24px rgba(0,0,0,0.60), 0 0 1px rgba(0,0,0,0.60);
+  --text:      #ece5d6;
+  --text2:     #c6bdac;
+  --text3:     #a59c89;
+  --text4:     #847b6a;
+  --accent:    #e06a4f;
+  --accent-bg: #e06a4f;
+  --accent-fg: #1b1915;
+  --green:     #83d6a3; --green-bg: rgba(131,214,163,0.12); --green-t: #83d6a3;
+  --red:       #f0968a; --red-bg:   rgba(240,150,138,0.12); --red-t:   #f0968a;
+  --amber:     #e6bd5c; --amber-bg: rgba(230,189,92,0.12);  --amber-t: #e6bd5c;
+  --blue:      #86b2dc; --blue-bg:  rgba(134,178,220,0.14); --blue-t:  #9cc0e4;
+  --purple:    #b9a9e0; --purple-bg:rgba(185,169,224,0.14); --purple-t:#b9a9e0;
+  --highlight: rgba(224,106,79,0.16);
+  --highlight-border: rgba(224,106,79,0.45);
+}
+
+/* ── Ramp — crisp near-white, mono-black ink, lime accent, soft rounded corners ── */
+:root[data-palette="ramp"] {
+  --bg:        #fafaf9;
+  --bg2:       #ffffff;
+  --bg3:       #f1f1ef;
+  --bg4:       #e7e7e4;
+  --surface:   #ffffff;
+  --surface2:  #fafaf9;
+  --border:    #ebebe8;
+  --border2:   #d5d5d0;
+  --shadow:    0 1px 2px rgba(10,10,10,0.06), 0 0 1px rgba(10,10,10,0.10);
+  --shadow-md: 0 6px 16px rgba(10,10,10,0.08), 0 0 1px rgba(10,10,10,0.12);
+  --shadow-lg: 0 12px 32px rgba(10,10,10,0.12), 0 0 1px rgba(10,10,10,0.12);
+  --text:      #0a0a0a;
+  --text2:     #3a3a38;
+  --text3:     #6b6b66;
+  --text4:     #9a9a93;
+  --accent:    #c4ee4f;   /* Ramp lime */
+  --accent-bg: #c4ee4f;
+  --accent-fg: #0a0a0a;   /* black label on lime */
+  --green:     #1f8a4c; --green-bg: #e8f6ed; --green-t: #156335;
+  --red:       #d3392b; --red-bg:   #fdeae8; --red-t:   #a42a1f;
+  --amber:     #bd8800; --amber-bg: #fbf2d8; --amber-t: #845f00;
+  --blue:      #2f6fb3; --blue-bg:  #eaf1f8; --blue-t:  #255887;
+  --purple:    #6a5ad0; --purple-bg:#eeecfb; --purple-t:#5143a6;
+  --highlight: rgba(196,238,79,0.30);
+  --highlight-border: rgba(140,180,40,0.55);
+  /* Soft, modern rounding */
+  --radius-sm: 6px; --radius: 8px; --radius-lg: 12px; --radius-xl: 16px;
+  /* Clean grotesque-leaning system sans (air-gap safe) */
+  --font-sans:  'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
+  --font-serif: 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
+}
+[data-theme="dark"][data-palette="ramp"] {
+  --bg:        #0a0a0a;
+  --bg2:       #141414;
+  --bg3:       #1b1b1b;
+  --bg4:       #262626;
+  --surface:   #141414;
+  --surface2:  #1b1b1b;
+  --border:    #272727;
+  --border2:   #3d3d3d;
+  --shadow:    0 1px 2px rgba(0,0,0,0.60), 0 0 1px rgba(0,0,0,0.60);
+  --shadow-md: 0 6px 16px rgba(0,0,0,0.65), 0 0 1px rgba(0,0,0,0.70);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.70), 0 0 1px rgba(0,0,0,0.70);
+  --text:      #f5f5f3;
+  --text2:     #c2c2be;
+  --text3:     #9a9a95;
+  --text4:     #74746f;
+  --accent:    #cdf25a;
+  --accent-bg: #cdf25a;
+  --accent-fg: #0a0a0a;
+  --green:     #74d79b; --green-bg: rgba(116,215,155,0.12); --green-t: #74d79b;
+  --red:       #f2948a; --red-bg:   rgba(242,148,138,0.12); --red-t:   #f2948a;
+  --amber:     #ecc45e; --amber-bg: rgba(236,196,94,0.12);  --amber-t: #ecc45e;
+  --blue:      #6ca8e6; --blue-bg:  rgba(108,168,230,0.14); --blue-t:  #8fbdec;
+  --purple:    #b1a3ea; --purple-bg:rgba(177,163,234,0.14); --purple-t:#b1a3ea;
+  --highlight: rgba(205,242,90,0.14);
+  --highlight-border: rgba(205,242,90,0.45);
+}
+
 /* ----------------------------------------------------------------------------
    NAV / sidebar tokens. Kept separate from the surface tokens so the sidebar can
    be re-themed on its own (e.g. a "dark menu, light page" look) without touching

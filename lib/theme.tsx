@@ -2,25 +2,32 @@
 import React from 'react'
 import { createContext, useContext, useEffect, useState } from 'react'
 
-// Single theme family (the Atlassian-style default, defined in app/globals.css).
-// Only one axis remains: mode ('light' | 'dark'). The old palette selector
-// (mosaic/fluent/aubergine) was removed — see DESIGN_SYSTEM.md.
+// Two independent axes:
+//   mode    — 'light' | 'dark'   (per device)
+//   palette — colour family       (per device). 'default' is the Atlassian-style
+//             base theme (no data-palette attribute); alternates live in
+//             app/globals.css as [data-palette="…"] blocks.
 export type Mode = 'light' | 'dark'
+export type Palette = 'default' | 'editorial' | 'ramp'
+export const PALETTES: Palette[] = ['default', 'editorial', 'ramp']
 
 interface ThemeState {
   theme: Mode
+  palette: Palette
   toggle: () => void
   setMode: (m: Mode) => void
+  setPalette: (p: Palette) => void
 }
 
 const ThemeCtx = createContext<ThemeState>({
-  theme: 'light', toggle: () => {}, setMode: () => {},
+  theme: 'light', palette: 'default', toggle: () => {}, setMode: () => {}, setPalette: () => {},
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Default to the SSR value; the inline script in app/layout.tsx has already set
-  // <html data-theme> on the client before hydration runs.
+  // <html data-theme> / data-palette on the client before hydration runs.
   const [theme, setThemeState] = useState<Mode>('light')
+  const [palette, setPaletteState] = useState<Palette>('default')
 
   useEffect(() => {
     const el = document.documentElement
@@ -29,10 +36,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     if (mode !== theme) setThemeState(mode)
     el.setAttribute('data-theme', mode)
-    // The palette selector is gone: clear any palette a user picked before so
-    // everyone lands on the single default theme (no one stranded on an old look).
-    try { localStorage.removeItem('palette') } catch { /* private mode */ }
-    el.removeAttribute('data-palette')
+
+    // Mirror the saved palette into React state (the inline script already applied
+    // the attribute pre-hydration, so there is no flash).
+    let pal = el.getAttribute('data-palette') as Palette | null
+    if (!pal) { try { pal = localStorage.getItem('palette') as Palette | null } catch { pal = null } }
+    const p: Palette = pal === 'editorial' || pal === 'ramp' ? pal : 'default'
+    if (p !== 'default') el.setAttribute('data-palette', p); else el.removeAttribute('data-palette')
+    if (p !== palette) setPaletteState(p)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -43,7 +54,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
   function toggle() { setMode(theme === 'light' ? 'dark' : 'light') }
 
-  return <ThemeCtx.Provider value={{ theme, toggle, setMode }}>{children}</ThemeCtx.Provider>
+  function setPalette(next: Palette) {
+    const el = document.documentElement
+    try {
+      if (next === 'default') localStorage.removeItem('palette')
+      else localStorage.setItem('palette', next)
+    } catch { /* private mode */ }
+    if (next === 'default') el.removeAttribute('data-palette')
+    else el.setAttribute('data-palette', next)
+    setPaletteState(next)
+  }
+
+  return <ThemeCtx.Provider value={{ theme, palette, toggle, setMode, setPalette }}>{children}</ThemeCtx.Provider>
 }
 
 export const useTheme = () => useContext(ThemeCtx)
