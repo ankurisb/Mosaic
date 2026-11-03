@@ -41,7 +41,7 @@ const swRegister = `(function(){if('serviceWorker'in navigator){window.addEventL
 // Without it, useState defaults to 'light' on both server and client, then a
 // useEffect reads localStorage and switches to 'dark' — producing a hydration
 // mismatch (#418) and a flash of light content on every load.
-const themeInitScript = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';d.setAttribute('data-theme',s||p);var pl=localStorage.getItem('palette');if(pl==='editorial'||pl==='ramp'){d.setAttribute('data-palette',pl);}else{d.removeAttribute('data-palette');}}catch(e){}})();`
+const themeInitScript = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';d.setAttribute('data-theme',s||p);var pl=localStorage.getItem('palette');if(pl==='ramp')pl='graphite';if(pl==='editorial'||pl==='graphite'){d.setAttribute('data-palette',pl);}else{d.removeAttribute('data-palette');}}catch(e){}})();`
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const loc = await getLocaleSettings()

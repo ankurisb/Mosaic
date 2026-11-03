@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.23] - 2026-11-03
+### Changed
+- Theme palette revisions (matching the earlier design mock-ups):
+  - Renamed the two brand-named themes — **Atlassian → Classic**, **Ramp → Graphite**.
+    A previously-saved "ramp" preference migrates to "graphite" automatically.
+  - **Editorial** now uses its intended **deep-green accent (#1f5e4b)** instead of the
+    red used in 1.6.21; red stays only as Editorial's error/danger colour. Dark mode
+    pairs it with a lighter green (#5bbf96).
+
 ## [1.6.22] - 2026-11-03
 ### Changed
 - Agents list is now a **table** (Agent · Status · Trigger · Sources · Actions) instead

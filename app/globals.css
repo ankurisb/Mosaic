@@ -220,16 +220,16 @@ body {
   --text2:     #403b32;
   --text3:     #6a6355;
   --text4:     #938b7a;
-  --accent:    #9c2b16;
-  --accent-bg: #9c2b16;
+  --accent:    #1f5e4b;
+  --accent-bg: #1f5e4b;
   --accent-fg: #fffdf8;
   --green:     #2f7d52; --green-bg: #e7f2e9; --green-t: #245c3d;
   --red:       #ab2f1e; --red-bg:   #f9e8e3; --red-t:   #86271a;
   --amber:     #a9781a; --amber-bg: #f8efd7; --amber-t: #74520f;
   --blue:      #2c5d87; --blue-bg:  #e8eef5; --blue-t:  #234b6c;
   --purple:    #654a8a; --purple-bg:#efeaf5; --purple-t:#4e3a6d;
-  --highlight: rgba(156,43,22,0.12);
-  --highlight-border: rgba(156,43,22,0.38);
+  --highlight: rgba(31,94,75,0.12);
+  --highlight-border: rgba(31,94,75,0.40);
   /* Squared, print-like corners */
   --radius-sm: 2px; --radius: 2px; --radius-lg: 4px; --radius-xl: 8px;
   /* Serif headings/wordmark (var(--font-serif)); body stays legible sans. */
@@ -251,20 +251,20 @@ body {
   --text2:     #c6bdac;
   --text3:     #a59c89;
   --text4:     #847b6a;
-  --accent:    #e06a4f;
-  --accent-bg: #e06a4f;
-  --accent-fg: #1b1915;
+  --accent:    #5bbf96;
+  --accent-bg: #5bbf96;
+  --accent-fg: #0f201a;
   --green:     #83d6a3; --green-bg: rgba(131,214,163,0.12); --green-t: #83d6a3;
   --red:       #f0968a; --red-bg:   rgba(240,150,138,0.12); --red-t:   #f0968a;
   --amber:     #e6bd5c; --amber-bg: rgba(230,189,92,0.12);  --amber-t: #e6bd5c;
   --blue:      #86b2dc; --blue-bg:  rgba(134,178,220,0.14); --blue-t:  #9cc0e4;
   --purple:    #b9a9e0; --purple-bg:rgba(185,169,224,0.14); --purple-t:#b9a9e0;
-  --highlight: rgba(224,106,79,0.16);
-  --highlight-border: rgba(224,106,79,0.45);
+  --highlight: rgba(91,191,150,0.16);
+  --highlight-border: rgba(91,191,150,0.45);
 }
 
-/* ── Ramp — crisp near-white, mono-black ink, lime accent, soft rounded corners ── */
-:root[data-palette="ramp"] {
+/* ── Graphite — crisp near-white, graphite ink, lime accent, soft rounded corners ── */
+:root[data-palette="graphite"] {
   --bg:        #fafaf9;
   --bg2:       #ffffff;
   --bg3:       #f1f1ef;
@@ -296,7 +296,7 @@ body {
   --font-sans:  'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
   --font-serif: 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
 }
-[data-theme="dark"][data-palette="ramp"] {
+[data-theme="dark"][data-palette="graphite"] {
   --bg:        #0a0a0a;
   --bg2:       #141414;
   --bg3:       #1b1b1b;

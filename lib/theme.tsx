@@ -8,8 +8,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 //             base theme (no data-palette attribute); alternates live in
 //             app/globals.css as [data-palette="…"] blocks.
 export type Mode = 'light' | 'dark'
-export type Palette = 'default' | 'editorial' | 'ramp'
-export const PALETTES: Palette[] = ['default', 'editorial', 'ramp']
+export type Palette = 'default' | 'editorial' | 'graphite'
+export const PALETTES: Palette[] = ['default', 'editorial', 'graphite']
 
 interface ThemeState {
   theme: Mode
@@ -39,9 +39,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     // Mirror the saved palette into React state (the inline script already applied
     // the attribute pre-hydration, so there is no flash).
-    let pal = el.getAttribute('data-palette') as Palette | null
-    if (!pal) { try { pal = localStorage.getItem('palette') as Palette | null } catch { pal = null } }
-    const p: Palette = pal === 'editorial' || pal === 'ramp' ? pal : 'default'
+    let raw = el.getAttribute('data-palette') as string | null
+    if (!raw) { try { raw = localStorage.getItem('palette') } catch { raw = null } }
+    if (raw === 'ramp') raw = 'graphite'   // legacy rename (was briefly shipped as "ramp")
+    const p: Palette = raw === 'editorial' || raw === 'graphite' ? raw : 'default'
     if (p !== 'default') el.setAttribute('data-palette', p); else el.removeAttribute('data-palette')
     if (p !== palette) setPaletteState(p)
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -17,9 +17,9 @@ const FONT_SIZES = [{ v: 'small', label: 'Small' }, { v: 'medium', label: 'Mediu
 // Theme (colour palette) options. Swatches are the light-mode representative colours
 // (canvas / accent / ink) for the preview chip — the real tokens live in globals.css.
 const PALETTE_OPTIONS: { v: Palette; label: string; hint: string; sw: { bg: string; accent: string; text: string } }[] = [
-  { v: 'default',   label: 'Atlassian', hint: 'Mosaic default',          sw: { bg: '#ffffff', accent: '#0052cc', text: '#172b4d' } },
-  { v: 'editorial', label: 'Editorial', hint: 'Warm paper, serif titles', sw: { bg: '#fffdf8', accent: '#9c2b16', text: '#1c1a16' } },
-  { v: 'ramp',      label: 'Ramp',      hint: 'Clean mono, lime accent',  sw: { bg: '#ffffff', accent: '#c4ee4f', text: '#0a0a0a' } },
+  { v: 'default',   label: 'Classic',   hint: 'Cobalt blue · the default', sw: { bg: '#ffffff', accent: '#0052cc', text: '#172b4d' } },
+  { v: 'editorial', label: 'Editorial', hint: 'Warm paper, serif, green',  sw: { bg: '#fffdf8', accent: '#1f5e4b', text: '#1c1a16' } },
+  { v: 'graphite',  label: 'Graphite',  hint: 'Graphite ink, lime accent', sw: { bg: '#ffffff', accent: '#c4ee4f', text: '#0a0a0a' } },
 ]
 const UNITS = [{ v: 'metric', label: 'Metric (SI)' }, { v: 'imperial', label: 'US / Imperial' }]
 const LANGUAGES = [
