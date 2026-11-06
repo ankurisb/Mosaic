@@ -194,6 +194,7 @@ export async function POST(req: Request) {
     if (dialect === 'redshift') return '(use standard SQL SELECT -- Amazon Redshift/Postgres dialect; DATEADD/DATEDIFF, GETDATE(), ILIKE supported; columnar MPP, great for aggregations over large tables)'
     if (dialect === 'bigquery') return '(use GoogleSQL/standard SQL SELECT -- reference tables fully-qualified and backtick-quoted `project.dataset.table`; DATE_TRUNC, SAFE_CAST, APPROX_COUNT_DISTINCT available; no DML/DDL)'
     if (dialect === 'snowflake') return '(use Snowflake SQL SELECT -- unquoted identifiers are UPPER-CASED, double-quote to preserve case; DATEADD/DATEDIFF, CURRENT_TIMESTAMP(), ILIKE, QUALIFY supported; columnar MPP)'
+    if (dialect === 'databricks') return '(use Databricks/Spark SQL SELECT -- backtick-quote identifiers, reference `catalog`.`schema`.`table`; date_trunc, QUALIFY, window functions supported; no DML/DDL)'
     if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > ${nowExpr()}-7d GROUP BY tag)`
     if (dialect === 'elasticsearch') return '(use Elasticsearch Query DSL JSON: {"query":{"match_all":{}}} or {"query":{"bool":{"must":[{"match":{"field":"value"}},{"range":{"timestamp":{"gte":"now-7d"}}}]}},"aggs":{"by_field":{"terms":{"field":"keyword_field.keyword"}}}} — for schema discovery use: GET /_cat/indices?format=json or GET /{index}/_mapping)'
     return '(use SELECT queries)'

@@ -481,8 +481,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
           <Field label="Database type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift'],['bigquery','BigQuery'],['snowflake','Snowflake']].map(([v,l]) => {
-                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439',bigquery:'',snowflake:''}
+              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift'],['bigquery','BigQuery'],['snowflake','Snowflake'],['databricks','Databricks']].map(([v,l]) => {
+                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439',bigquery:'',snowflake:'',databricks:''}
                 return (
                   <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || ''); if (v === 'bigquery') set('auth_mode', 'service_account'); if (v === 'snowflake') set('auth_mode', 'password') }}
                     style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.dialect === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.dialect === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.dialect === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.dialect === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
@@ -537,6 +537,18 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 <Field label="Role" hint="Optional"><input style={INP} placeholder="ANALYST" value={String(form.role)} onChange={e => set('role', e.target.value)} /></Field>
               </Grid>
             </div>
+          ) : form.dialect === 'databricks' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Grid cols={2}>
+                <Field label="Workspace host" required hint="e.g. abc.cloud.databricks.com"><input style={INP} placeholder="abc.cloud.databricks.com" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
+                <Field label="HTTP path" required hint="SQL warehouse"><input style={INP} placeholder="/sql/1.0/warehouses/abc123" value={String(form.http_path)} onChange={e => set('http_path', e.target.value)} /></Field>
+              </Grid>
+              <Field label="Access token (PAT)" hint="Stored encrypted"><input style={INP} type="password" placeholder="dapi..." value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+              <Grid cols={2}>
+                <Field label="Catalog" hint="Unity Catalog (optional)"><input style={INP} placeholder="main" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
+                <Field label="Schema" hint="Optional"><input style={INP} placeholder="default" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+              </Grid>
+            </div>
           ) : (
           <Grid cols={3}>
             <Field label="Host" required><input style={INP} placeholder="db.company.com" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
@@ -558,7 +570,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             </div>
           )}
 
-          {!['bigquery','snowflake'].includes(form.dialect) && (
+          {!['bigquery','snowflake','databricks'].includes(form.dialect) && (
           <Grid cols={3}>
             {form.dialect === 'mssql' && form.auth_mode === 'entra_sp' ? (
               <>

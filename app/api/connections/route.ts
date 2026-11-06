@@ -243,6 +243,12 @@ export async function POST(req: Request) {
         return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `Snowflake ${v}` })
       }
 
+      if (dialect === 'databricks') {
+        const { databricksQuery } = await import('@/lib/databricks')
+        await databricksQuery(conn, 'SELECT current_version() AS v', 1)
+        return Response.json({ ok: true, latencyMs: Date.now()-start, detail: 'Databricks SQL' })
+      }
+
       return Response.json({ ok: false, message: `Unknown dialect: ${dialect}` })
     } catch (e) {
       return Response.json({ ok: false, message: (e instanceof Error ? e.message : 'Connection failed') })

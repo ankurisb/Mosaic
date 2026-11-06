@@ -1338,6 +1338,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
       redshift:  [],
       bigquery:  [],
       snowflake: [],
+      databricks:['SHOW', 'DESCRIBE', 'DESC'],
     }
     const allowed = [...baseAllowed, ...(dialectExtras[dialect] || [])]
     const ok = allowed.some(v => upper.startsWith(v))
@@ -1708,7 +1709,14 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
     return capResult(rows, fields)
   }
 
-  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch, bigquery, snowflake.`)
+  // -- Databricks -----------------------------------------------
+  if (dialect === 'databricks') {
+    const { databricksQuery } = await import('./databricks')
+    const { rows, fields } = await databricksQuery(conn, trimmed, fetchN)
+    return capResult(rows, fields)
+  }
+
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch, bigquery, snowflake, databricks.`)
 }
 
 // -- Statistical Analysis ------------------------------------
@@ -3572,6 +3580,26 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String(rec.COLUMN_NAME ?? rec.column_name), type: String(rec.DATA_TYPE ?? rec.data_type), pk: false })
       }
       const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaName, name, columns }))
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byT.size > MAX_TABLES }
+    }
+
+    // -- Databricks (Unity Catalog information_schema) -----------
+    if (dialect === 'databricks') {
+      const { databricksQuery } = await import('./databricks')
+      const cat = String(conn.database_name || '').replace(/[`;]/g, '')
+      const schemaName = String(conn.schema_name || '').replace(/[`;]/g, '')
+      const where = schemaName ? `WHERE table_schema = '${schemaName}'` : ''
+      const q = `SELECT table_name, column_name, data_type FROM ${cat ? `\`${cat}\`.` : ''}information_schema.columns ${where} ORDER BY table_name LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+      const { rows } = await databricksQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
+      const byT = new Map<string, { name: string; type: string; pk: boolean }[]>()
+      for (const r of rows) {
+        const rec = r as Record<string, unknown>
+        const tn = String(rec.table_name ?? rec.TABLE_NAME)
+        if (!byT.has(tn)) byT.set(tn, [])
+        const cols = byT.get(tn)!
+        if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String(rec.column_name ?? rec.COLUMN_NAME), type: String(rec.data_type ?? rec.DATA_TYPE), pk: false })
+      }
+      const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaName || cat, name, columns }))
       return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byT.size > MAX_TABLES }
     }
 

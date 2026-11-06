@@ -72,6 +72,17 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     }
   }
 
+  // Databricks (Spark SQL): INSERT OVERWRITE DIRECTORY and COPY INTO write to cloud
+  // storage; DML/DDL mutate.
+  if (dialect === 'databricks') {
+    if (/(^|[^a-z0-9_])insert\s+overwrite\b/i.test(lower) || /(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
+      throw new SqlGuardError('INSERT OVERWRITE / COPY INTO is blocked (it writes to storage). Return rows instead.')
+    }
+    if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|replace)\s/i.test(lower)) {
+      throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on Databricks.')
+    }
+  }
+
   // Snowflake: COPY INTO <location> exports to a stage/S3/GCS/Azure; DML/DDL mutate.
   if (dialect === 'snowflake') {
     if (/(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {

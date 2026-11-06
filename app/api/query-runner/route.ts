@@ -208,6 +208,13 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
     const r = await snowflakeQuery(conn, query, limit)
     rows = r.rows; columns = r.fields
   }
+  else if (conn.dialect === 'databricks') {
+    const { databricksQuery } = await import('@/lib/databricks')
+    const { assertNoDangerousSql } = await import('@/lib/sql-guard')
+    assertNoDangerousSql(query, 'databricks')  // no READ ONLY txn wrapper; the guard is the control
+    const r = await databricksQuery(conn, query, limit)
+    rows = r.rows; columns = r.fields
+  }
   else { return NextResponse.json({ error: `Unsupported dialect: ${conn.dialect}` }, { status: 400 }) }
 
   meta.durationMs = Date.now() - startMs

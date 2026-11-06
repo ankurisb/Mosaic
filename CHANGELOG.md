@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.34] - 2026-11-06
+### Added
+- **Databricks** SQL warehouse as a queryable source (cloud-warehouse connectors,
+  phase 5). `@databricks/sql` driver (`lib/databricks.ts`) wired across all four
+  dispatch points; PAT auth; workspace host + `http_path` + catalog/schema config;
+  bounded connect timeout. Spark SQL dialect hint; SQL-guard blocks
+  `INSERT OVERWRITE` / `COPY INTO` + DML/DDL; read-only allowlist
+  (SELECT/WITH/SHOW/DESCRIBE). Connection-form fields. Unit-tested; **live
+  validation pending a Databricks workspace**. This completes the warehouse set
+  (Redshift, Azure/Synapse/Fabric, BigQuery, Snowflake, Databricks).
+
 ## [1.6.33] - 2026-11-06
 ### Fixed
 - Snowflake: bound the connection attempt with an explicit timeout

@@ -56,6 +56,22 @@ describe('sql-guard: BigQuery write/exfiltration constructs', () => {
   })
 })
 
+describe('sql-guard: Databricks/Spark write/exfiltration constructs', () => {
+  it('blocks INSERT OVERWRITE and COPY INTO', () => {
+    blocked("INSERT OVERWRITE DIRECTORY 's3://b/k' SELECT * FROM t", 'databricks')
+    blocked("COPY INTO my_table FROM 's3://b/k'", 'databricks')
+  })
+  it('blocks DML/DDL incl CREATE OR REPLACE', () => {
+    blocked('CREATE OR REPLACE VIEW v AS SELECT 1', 'databricks')
+    blocked('DELETE FROM t WHERE a=1', 'databricks')
+  })
+  it('allows read-only SELECT / WITH and the REPLACE() function', () => {
+    ok('SELECT a, COUNT(*) FROM `main`.`default`.`events` GROUP BY a', 'databricks')
+    ok("SELECT REPLACE(name, 'x', 'y') FROM t", 'databricks')
+    ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'databricks')
+  })
+})
+
 describe('sql-guard: Snowflake write/exfiltration constructs', () => {
   it('blocks COPY INTO (stage / cloud storage)', () => {
     blocked("COPY INTO @my_stage/data FROM (SELECT * FROM t)", 'snowflake')
