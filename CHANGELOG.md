@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.37] - 2026-11-06
+### Added
+- **BigQuery cross-project tables.** A BigQuery connection's *Default dataset* may now be a
+  cross-project `project.dataset` (not just a bare `dataset`), for the common enterprise split
+  where data lives in a separate project from the compute/billing project. Introspection reads
+  the data project's `INFORMATION_SCHEMA` and emits 3-part `dataProject.dataset.table` keys, so
+  the generated Cube `sql_table` references the table in the form BigQuery resolves across
+  projects. Jobs still bill to the connection's project; the service account just needs read
+  access on the data. Same-project connections are unchanged (2-part `dataset.table`).
+
+### Verified
+- BigQuery warehouse connector + Cube serving **live-verified against real BigQuery** (service
+  account, sandbox project): connection test, scalar/aggregate/cross-project-public reads, typed
+  scalar flattening, read-only guard (DML/DDL/`EXPORT DATA`), and `probeCubeServing = ok` for
+  both a scalar probe and a monthly time-series.
+- Databricks connector **live-verified against a real serverless SQL warehouse**: connection
+  test, scalar/aggregate reads over `samples.nyctaxi`, Arrow decimal/timestamp decoding, and the
+  read-only guard (DML/DDL/`INSERT OVERWRITE`/`COPY INTO`). Wired into chat + agent tools and
+  introspection; intentionally not a Cube serving target.
+
 ## [1.6.36] - 2026-11-06
 ### Added
 - **Cube serving for cloud-warehouse sources.** The datasource map

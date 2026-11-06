@@ -1,7 +1,12 @@
 // lib/bigquery.ts
 // Google BigQuery source for Mosaic. Field mapping onto the shared db_connections row:
-//   database_name = GCP projectId (billing/default project)
-//   schema_name   = default dataset (optional; used for introspection)
+//   database_name = GCP projectId (billing/default project — where query jobs run)
+//   schema_name   = default dataset (optional; used for introspection). May be a bare
+//                   `dataset` in the billing project, OR a cross-project `dataProject.dataset`
+//                   when the data lives in another project (the enterprise data/compute split).
+//                   In the cross-project case introspection emits 3-part
+//                   `dataProject.dataset.table` keys so Cube references them correctly; jobs
+//                   still bill to database_name and the SA just needs read access on the data.
 //   password_enc  = service-account JSON key (encrypted) when auth_mode='service_account'
 //   host          = apiEndpoint override (optional) — set this to a BigQuery emulator
 //   auth_mode     = 'service_account' (default) | 'none' (emulator / no auth)

@@ -94,4 +94,26 @@ describe('generateCubeSchema', () => {
     expect(js).toContain('sql_table: `plant.production_runs`')
     expect(js).toContain('units_produced')
   })
+
+  // Cross-project BigQuery: when the data lives in a different project than the billing
+  // project, introspection emits `dataProject.dataset.table.column` object keys. The cube
+  // must bind to the full 3-part `dataProject.dataset.table` (the only form BigQuery resolves
+  // across projects) and reference bare columns. Hyphenated project IDs stay intact inside
+  // the rendered backticks.
+  it('handles cross-project tables (project.dataset.table.column)', () => {
+    const cubes = generateCubeSchema([
+      F('bigquery-public-data.austin_bikeshare.bikeshare_trips.duration_minutes', { role: 'measure', default_aggregation: 'sum', data_type: 'number' }),
+      F('bigquery-public-data.austin_bikeshare.bikeshare_trips.start_time', { role: 'time', data_type: 'timestamp' }),
+      F('bigquery-public-data.austin_bikeshare.bikeshare_trips', { role: null }),
+    ], 'conn-bq')
+    expect(cubes).toHaveLength(1)
+    const c = cubes[0]
+    expect(c.sql_table).toBe('bigquery-public-data.austin_bikeshare.bikeshare_trips')
+    expect(c.measures.map(m => m.name).sort()).toEqual(['count', 'duration_minutes'])
+    expect(c.dimensions.map(d => d.name)).toEqual(['start_time'])
+    const js = renderCubeJs(c)
+    expect(js).toContain('sql_table: `bigquery-public-data.austin_bikeshare.bikeshare_trips`')
+    // cube name is hash-namespaced and SQL-safe (hyphens/dots → underscores)
+    expect(c.name).toMatch(/^s_[0-9a-f]{8}_bigquery_public_data_austin_bikeshare_bikeshare_trips$/)
+  })
 })

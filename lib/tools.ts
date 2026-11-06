@@ -3546,12 +3546,27 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
     // -- BigQuery ------------------------------------------------
     if (dialect === 'bigquery') {
       const { bigQueryQuery } = await import('./bigquery')
-      const project = String(conn.database_name || '').replace(/[`;]/g, '')
-      const dataset = String(conn.schema_name || '').replace(/[`;]/g, '')
-      if (!dataset) {
-        return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: [], error: 'set a default dataset to introspect; queries can still use fully-qualified `project.dataset.table`' }
+      // database_name = the BILLING project (where the SA has jobs.create; the driver runs
+      // jobs here). schema_name may be a bare `dataset` in that project, OR a cross-project
+      // `dataProject.dataset` when the data physically lives in another project — the common
+      // enterprise split (a data-prod project holding datasets, a separate compute/billing
+      // project). In the cross-project case we introspect the DATA project's INFORMATION_SCHEMA
+      // and qualify every emitted key with it, so the generated cube's sql_table becomes a
+      // 3-part `dataProject.dataset.table` — the only form BigQuery resolves across projects.
+      // Jobs still bill to database_name; the SA just needs read access on the data project.
+      const billingProject = String(conn.database_name || '').replace(/[`;]/g, '')
+      const rawDataset = String(conn.schema_name || '').replace(/[`;]/g, '')
+      if (!rawDataset) {
+        return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: [], error: 'set a default dataset to introspect (`dataset`, or cross-project `project.dataset`); queries can still use fully-qualified `project.dataset.table`' }
       }
-      const q = `SELECT table_name, column_name, data_type FROM \`${project}.${dataset}.INFORMATION_SCHEMA.COLUMNS\` ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+      const dot = rawDataset.indexOf('.')
+      const dataProject = dot === -1 ? billingProject : rawDataset.slice(0, dot)
+      const dataset = dot === -1 ? rawDataset : rawDataset.slice(dot + 1)
+      // Qualify the schema label with the data project only when it differs from billing, so
+      // the same-project path stays a 2-part `dataset.table` (unchanged) and cross-project
+      // becomes 3-part.
+      const schemaLabel = dataProject && dataProject !== billingProject ? `${dataProject}.${dataset}` : dataset
+      const q = `SELECT table_name, column_name, data_type FROM \`${dataProject}.${dataset}.INFORMATION_SCHEMA.COLUMNS\` ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
       const { rows } = await bigQueryQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
       const byTable = new Map<string, { name: string; type: string; pk: boolean }[]>()
       for (const r of rows) {
@@ -3560,7 +3575,7 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         const cols = byTable.get(tn)!
         if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String((r as Record<string, unknown>).column_name), type: String((r as Record<string, unknown>).data_type), pk: false })
       }
-      const out = [...byTable.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: dataset, name, columns }))
+      const out = [...byTable.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaLabel, name, columns }))
       return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byTable.size > MAX_TABLES }
     }
 

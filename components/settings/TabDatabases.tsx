@@ -505,7 +505,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               </Field>
               <Grid cols={2}>
                 <Field label="Project ID" required><input style={INP} placeholder="my-gcp-project" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
-                <Field label="Default dataset" hint="For schema introspection"><input style={INP} placeholder="analytics" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+                <Field label="Default dataset" hint="For introspection. Cross-project: project.dataset"><input style={INP} placeholder="analytics  (or other-project.analytics)" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
               </Grid>
               {form.auth_mode === 'none'
                 ? <Field label="API endpoint" hint="Emulator URL, e.g. http://bq-emulator:9050"><input style={INP} placeholder="http://localhost:9050" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
