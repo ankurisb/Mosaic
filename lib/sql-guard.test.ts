@@ -56,6 +56,26 @@ describe('sql-guard: BigQuery write/exfiltration constructs', () => {
   })
 })
 
+describe('sql-guard: Snowflake write/exfiltration constructs', () => {
+  it('blocks COPY INTO (stage / cloud storage)', () => {
+    blocked("COPY INTO @my_stage/data FROM (SELECT * FROM t)", 'snowflake')
+    blocked("COPY INTO 's3://b/k' FROM t", 'snowflake')
+  })
+  it('blocks DML/DDL and PUT/REMOVE', () => {
+    blocked('INSERT INTO t VALUES (1)', 'snowflake')
+    blocked('CREATE TABLE t2 AS SELECT 1', 'snowflake')
+    blocked('PUT file:///tmp/x @stage', 'snowflake')
+  })
+  it('allows read-only SELECT / WITH', () => {
+    ok('SELECT a, COUNT(*) FROM orders GROUP BY a QUALIFY ROW_NUMBER() OVER (ORDER BY a) = 1', 'snowflake')
+    ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'snowflake')
+  })
+  it('does not trip on a value/column containing a keyword', () => {
+    ok("SELECT note FROM t WHERE note = 'please copy into the sheet'", 'snowflake')
+    ok('SELECT create_date, put_option FROM t', 'snowflake')
+  })
+})
+
 describe('sql-guard: Redshift exfiltration constructs', () => {
   it('blocks UNLOAD (export to S3)', () => {
     blocked("SELECT 1; UNLOAD ('select * from t') TO 's3://b/k' IAM_ROLE 'arn'", 'redshift')

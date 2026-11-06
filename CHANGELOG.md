@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.32] - 2026-11-06
+### Added
+- **Snowflake** as a queryable source (cloud-warehouse connectors, phase 3).
+  `snowflake-sdk` driver (`lib/snowflake.ts`) wired across all four dispatch points;
+  **password** and **key-pair (JWT)** auth; account / warehouse / role config
+  (migration `031` adds `warehouse`, `role`, `http_path`). Snowflake dialect hint;
+  SQL-guard blocks `COPY INTO` (stage / cloud-storage exfiltration) and DML/DDL;
+  read-only allowlist. Connection-form fields. Unit-tested; **live validation
+  pending a Snowflake trial** (no emulator exists).
+### Changed
+- Add `@databricks/sql` dependency (used by the upcoming Databricks connector, P5).
+
 ## [1.6.31] - 2026-11-06
 ### Fixed
 - BigQuery emulator mode (`auth_mode='none'`): attach a no-network stub auth client

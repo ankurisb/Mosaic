@@ -28,14 +28,14 @@ export async function POST(req: Request) {
   const { action } = body
 
   if (action === 'create' || action === 'update') {
-    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token, auth_mode, tenant_id } = body
+    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token, auth_mode, tenant_id, warehouse, role, http_path } = body
     const passwordEnc = password ? encrypt(password) : null
     const connStrEnc = connection_string ? encrypt(connection_string) : null
     const mcpTokenEnc = mcp_token ? encrypt(mcp_token) : null
     if (action === 'create') {
       const rows = await sql`
-        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token,auth_mode,tenant_id)
-        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc},${auth_mode||'sql'},${tenant_id||null})
+        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token,auth_mode,tenant_id,warehouse,role,http_path)
+        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc},${auth_mode||'sql'},${tenant_id||null},${warehouse||null},${role||null},${http_path||null})
         RETURNING id`
       syncToSuperset({
         id: (rows[0] as { id: string }).id,
@@ -80,7 +80,10 @@ export async function POST(req: Request) {
           read_only          = ${read_only || false},
           mcp_endpoint       = ${mcp_endpoint || null},
           auth_mode          = ${auth_mode || 'sql'},
-          tenant_id          = ${tenant_id || null}
+          tenant_id          = ${tenant_id || null},
+          warehouse          = ${warehouse || null},
+          role               = ${role || null},
+          http_path          = ${http_path || null}
         WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)
@@ -231,6 +234,13 @@ export async function POST(req: Request) {
         await bigQueryQuery(conn, 'SELECT 1 AS ok', 1)
         const proj = String(conn.database_name || '')
         return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `BigQuery${proj ? ` — project ${proj}` : ''}` })
+      }
+
+      if (dialect === 'snowflake') {
+        const { snowflakeQuery } = await import('@/lib/snowflake')
+        const { rows } = await snowflakeQuery(conn, 'SELECT CURRENT_VERSION() AS v', 1)
+        const v = (rows[0] as Record<string, unknown>)?.V ?? (rows[0] as Record<string, unknown>)?.v ?? ''
+        return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `Snowflake ${v}` })
       }
 
       return Response.json({ ok: false, message: `Unknown dialect: ${dialect}` })

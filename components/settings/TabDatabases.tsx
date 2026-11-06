@@ -7,7 +7,7 @@ import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
-const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false, auth_mode: 'sql', tenant_id: '' }
+const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false, auth_mode: 'sql', tenant_id: '', warehouse: '', role: '', http_path: '' }
 
 // Keys whose values look like DB connection strings
 const ENV_KEY_PATTERNS = [/DATABASE_URL/i, /DB_URL/i, /DB_URI/i, /_DSN/i, /POSTGRES/i, /POSTGRESQL/i, /MYSQL/i, /MONGO/i, /CLICKHOUSE/i, /INFLUX/i, /REDIS/i, /SQLITE/i, /CONNECTION_STRING/i, /CONN_STR/i]
@@ -481,10 +481,10 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
           <Field label="Database type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift'],['bigquery','BigQuery']].map(([v,l]) => {
-                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439',bigquery:''}
+              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift'],['bigquery','BigQuery'],['snowflake','Snowflake']].map(([v,l]) => {
+                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439',bigquery:'',snowflake:''}
                 return (
-                  <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || ''); if (v === 'bigquery') set('auth_mode', 'service_account') }}
+                  <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || ''); if (v === 'bigquery') set('auth_mode', 'service_account'); if (v === 'snowflake') set('auth_mode', 'password') }}
                     style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.dialect === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.dialect === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.dialect === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.dialect === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
                     {l}
                   </button>
@@ -511,6 +511,32 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 ? <Field label="API endpoint" hint="Emulator URL, e.g. http://bq-emulator:9050"><input style={INP} placeholder="http://localhost:9050" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
                 : <Field label="Service account JSON" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 90, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder='{ "type": "service_account", "project_id": "...", "client_email": "...", "private_key": "..." }' value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
             </div>
+          ) : form.dialect === 'snowflake' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="Authentication">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['password','Password'],['keypair','Key pair (JWT)']].map(([v,l]) => (
+                    <button key={v} type="button" onClick={() => set('auth_mode', v)}
+                      style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.auth_mode === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.auth_mode === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.auth_mode === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.auth_mode === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>{l}</button>
+                  ))}
+                </div>
+              </Field>
+              <Grid cols={2}>
+                <Field label="Account" required hint="e.g. xy12345.eu-west-1"><input style={INP} placeholder="xy12345.eu-west-1" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
+                <Field label="Username" required><input style={INP} placeholder="svc_user" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
+              </Grid>
+              {form.auth_mode === 'keypair'
+                ? <Field label="Private key (PEM)" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 80, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+                : <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
+              <Grid cols={2}>
+                <Field label="Database"><input style={INP} placeholder="ANALYTICS" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
+                <Field label="Schema"><input style={INP} placeholder="PUBLIC" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+              </Grid>
+              <Grid cols={2}>
+                <Field label="Warehouse" hint="Compute"><input style={INP} placeholder="COMPUTE_WH" value={String(form.warehouse)} onChange={e => set('warehouse', e.target.value)} /></Field>
+                <Field label="Role" hint="Optional"><input style={INP} placeholder="ANALYST" value={String(form.role)} onChange={e => set('role', e.target.value)} /></Field>
+              </Grid>
+            </div>
           ) : (
           <Grid cols={3}>
             <Field label="Host" required><input style={INP} placeholder="db.company.com" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
@@ -532,7 +558,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             </div>
           )}
 
-          {form.dialect !== 'bigquery' && (
+          {!['bigquery','snowflake'].includes(form.dialect) && (
           <Grid cols={3}>
             {form.dialect === 'mssql' && form.auth_mode === 'entra_sp' ? (
               <>

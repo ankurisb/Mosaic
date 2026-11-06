@@ -1337,6 +1337,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
       postgres:  [],
       redshift:  [],
       bigquery:  [],
+      snowflake: [],
     }
     const allowed = [...baseAllowed, ...(dialectExtras[dialect] || [])]
     const ok = allowed.some(v => upper.startsWith(v))
@@ -1700,7 +1701,14 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
     return capResult(rows, fields)
   }
 
-  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch, bigquery.`)
+  // -- Snowflake ------------------------------------------------
+  if (dialect === 'snowflake') {
+    const { snowflakeQuery } = await import('./snowflake')
+    const { rows, fields } = await snowflakeQuery(conn, trimmed, fetchN)
+    return capResult(rows, fields)
+  }
+
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch, bigquery, snowflake.`)
 }
 
 // -- Statistical Analysis ------------------------------------
@@ -3546,6 +3554,25 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
       }
       const out = [...byTable.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: dataset, name, columns }))
       return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byTable.size > MAX_TABLES }
+    }
+
+    // -- Snowflake -----------------------------------------------
+    if (dialect === 'snowflake') {
+      const { snowflakeQuery } = await import('./snowflake')
+      const db = String(conn.database_name || '').replace(/["';]/g, '')
+      const schemaName = String(conn.schema_name || 'PUBLIC').replace(/["';]/g, '')
+      const q = `SELECT table_name, column_name, data_type FROM ${db ? `"${db}".` : ''}INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${schemaName}' ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+      const { rows } = await snowflakeQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
+      const byT = new Map<string, { name: string; type: string; pk: boolean }[]>()
+      for (const r of rows) {
+        const rec = r as Record<string, unknown>
+        const tn = String(rec.TABLE_NAME ?? rec.table_name)
+        if (!byT.has(tn)) byT.set(tn, [])
+        const cols = byT.get(tn)!
+        if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String(rec.COLUMN_NAME ?? rec.column_name), type: String(rec.DATA_TYPE ?? rec.data_type), pk: false })
+      }
+      const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaName, name, columns }))
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byT.size > MAX_TABLES }
     }
 
     return {

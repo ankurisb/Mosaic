@@ -72,6 +72,16 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     }
   }
 
+  // Snowflake: COPY INTO <location> exports to a stage/S3/GCS/Azure; DML/DDL mutate.
+  if (dialect === 'snowflake') {
+    if (/(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
+      throw new SqlGuardError('COPY INTO is blocked (it reads/writes a stage or cloud storage). Return rows instead.')
+    }
+    if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|put|remove)\s/i.test(lower)) {
+      throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on Snowflake.')
+    }
+  }
+
   // Redshift: UNLOAD exports to S3; SELECT … INTO materialises a new table. Both
   // are writes/exfiltration that a SELECT-prefixed statement can still smuggle in.
   if (dialect === 'redshift') {
