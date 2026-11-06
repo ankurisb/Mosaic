@@ -60,10 +60,37 @@ module.exports = {
       throw new Error(`cube: no datasource config for '${dataSource}'`);
     }
     const type = String(ds.type || '').toLowerCase();
-    // Base config shared by all dialects. Cube's Postgres and MySQL drivers read
-    // `host`; its SQL Server driver (tedious) reads `server` and ignores `host`,
-    // so without the mapping below every MSSQL pre-aggregation build dies with
-    // `config.server is required` and the panel silently falls back to SQL.
+
+    // -- Warehouse dialects carry their own driver shape ----------------------
+    // BigQuery: projectId + a parsed service-account credentials object (or an
+    // apiEndpoint override for an emulator).
+    if (type === 'bigquery') {
+      const bq = { type: 'bigquery', projectId: ds.projectId };
+      if (ds.credentials) {
+        try { bq.credentials = JSON.parse(ds.credentials); } catch (_e) { /* leave unset → clear auth error */ }
+      }
+      if (ds.apiEndpoint) bq.apiEndpoint = ds.apiEndpoint;
+      return bq;
+    }
+    // Snowflake: account + warehouse + role (+ database/schema).
+    if (type === 'snowflake') {
+      return {
+        type: 'snowflake',
+        account: ds.account,
+        username: ds.user,
+        password: ds.password,
+        database: ds.database,
+        schema: ds.schema,
+        warehouse: ds.warehouse,
+        role: ds.role,
+      };
+    }
+
+    // Base config shared by the SQL dialects (postgres/mysql/mssql/clickhouse/redshift).
+    // Cube's Postgres and MySQL drivers read `host`; its SQL Server driver (tedious)
+    // reads `server` and ignores `host`, so without the mapping below every MSSQL
+    // pre-aggregation build dies with `config.server is required` and the panel
+    // silently falls back to SQL. Redshift reuses this Postgres-shaped config.
     const cfg = {
       type: ds.type,
       host: ds.host,

@@ -163,5 +163,23 @@ describe('cube-client: buildDatasourceMap', () => {
     expect(map.c2.type).toBe('mssql')
     expect(map.c3).toBeUndefined()
   })
+
+  it('Redshift reuses the Postgres-shaped config', () => {
+    const map = buildDatasourceMap([{ id: 'r1', dialect: 'redshift', host: 'rs.host', port: 5439, database_name: 'dw', username: 'u' }], () => 'pw')
+    expect(map.r1).toEqual({ type: 'redshift', host: 'rs.host', port: 5439, database: 'dw', user: 'u', password: 'pw' })
+  })
+
+  it('BigQuery carries projectId + service-account credentials (or emulator apiEndpoint)', () => {
+    const sa = buildDatasourceMap([{ id: 'bq', dialect: 'bigquery', database_name: 'my-proj', schema_name: 'analytics', auth_mode: 'service_account' }], () => '{"client_email":"x"}')
+    expect(sa.bq).toEqual({ type: 'bigquery', projectId: 'my-proj', credentials: '{"client_email":"x"}', apiEndpoint: undefined, schema: 'analytics' })
+    const emu = buildDatasourceMap([{ id: 'bq2', dialect: 'bigquery', database_name: 'test-proj', host: 'http://bq-emulator:9050', auth_mode: 'none' }], () => 'ignored')
+    expect(emu.bq2.credentials).toBeUndefined()   // emulator has no SA key
+    expect(emu.bq2.apiEndpoint).toBe('http://bq-emulator:9050')
+  })
+
+  it('Snowflake carries account/warehouse/role', () => {
+    const map = buildDatasourceMap([{ id: 'sf', dialect: 'snowflake', host: 'xy123.eu-west-1', username: 'svc', database_name: 'ANALYTICS', schema_name: 'PUBLIC', warehouse: 'WH', role: 'ANALYST' }], () => 'pw')
+    expect(map.sf).toEqual({ type: 'snowflake', account: 'xy123.eu-west-1', user: 'svc', password: 'pw', database: 'ANALYTICS', schema: 'PUBLIC', warehouse: 'WH', role: 'ANALYST' })
+  })
 })
 

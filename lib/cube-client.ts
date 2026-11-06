@@ -135,24 +135,61 @@ export interface DbConnLike {
   port?: number | null
   database_name?: string | null
   username?: string | null
+  schema_name?: string | null
+  warehouse?: string | null
+  role?: string | null
+  auth_mode?: string | null
 }
-export interface CubeDatasource { type: string; host?: string; port?: number; database?: string; user?: string; password?: string }
+export interface CubeDatasource {
+  type: string
+  // SQL family (postgres/mysql/mssql/clickhouse/redshift)
+  host?: string; port?: number; database?: string; user?: string; password?: string; ssl?: boolean
+  // BigQuery
+  projectId?: string; credentials?: string; apiEndpoint?: string
+  // Snowflake
+  account?: string; warehouse?: string; role?: string; schema?: string
+}
 
 // Build the { connId: driverConfig } map Cube's driverFactory consumes. SQLite/unsupported
-// dialects are omitted (those sources never route to Cube). Passwords are injected by the
-// caller (decrypted on the box) — kept out of this pure builder so it stays testable.
+// dialects are omitted (those sources never route to Cube). Secrets are injected by the
+// caller (decrypted on the box) via passwordFor — kept out of this pure builder so it
+// stays testable. Warehouse dialects carry their own shape (BigQuery: projectId +
+// service-account JSON in `credentials`; Snowflake: account/warehouse/role).
 export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string) => string | undefined): Record<string, CubeDatasource> {
   const out: Record<string, CubeDatasource> = {}
   for (const c of conns) {
     if (!cubeDialectSupported(c.dialect)) continue
     const type = String(c.dialect).toLowerCase().replace('postgresql', 'postgres').replace('sqlserver', 'mssql')
-    out[c.id] = {
-      type,
-      host: c.host ?? undefined,
-      port: c.port ?? undefined,
-      database: c.database_name ?? undefined,
-      user: c.username ?? undefined,
-      password: passwordFor(c.id),
+    const secret = passwordFor(c.id)
+    if (type === 'bigquery') {
+      out[c.id] = {
+        type,
+        projectId: c.database_name ?? undefined,
+        credentials: (c.auth_mode === 'none') ? undefined : secret, // SA JSON; emulator has none
+        apiEndpoint: c.host ?? undefined,                           // set for the emulator
+        schema: c.schema_name ?? undefined,
+      }
+    } else if (type === 'snowflake') {
+      out[c.id] = {
+        type,
+        account: c.host ?? undefined,
+        user: c.username ?? undefined,
+        password: secret,
+        database: c.database_name ?? undefined,
+        schema: c.schema_name ?? undefined,
+        warehouse: c.warehouse ?? undefined,
+        role: c.role ?? undefined,
+      }
+    } else {
+      // postgres / mysql / mssql / clickhouse / redshift
+      out[c.id] = {
+        type,
+        host: c.host ?? undefined,
+        port: c.port ?? undefined,
+        database: c.database_name ?? undefined,
+        user: c.username ?? undefined,
+        password: secret,
+      }
     }
   }
   return out

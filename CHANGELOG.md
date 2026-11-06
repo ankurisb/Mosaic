@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.36] - 2026-11-06
+### Added
+- **Cube serving for cloud-warehouse sources.** The datasource map
+  (`buildDatasourceMap`) and the Cube `driverFactory` now carry warehouse-specific
+  driver shapes — **BigQuery** (projectId + service-account credentials, or an
+  emulator `apiEndpoint`), **Snowflake** (account / warehouse / role), and
+  **Redshift** (Postgres-shaped). This lets pre-aggregations and semantic serving
+  run on warehouse sources instead of only the SQL fallback. The sync now also
+  reads `schema_name`/`warehouse`/`role`/`auth_mode`. (Databricks stays SQL-only
+  for now — its Cube driver is JDBC-based.)
+
 ## [1.6.35] - 2026-11-06
 ### Fixed
 - Build: externalize `@databricks/sql` (ships a native kernel binary) and
