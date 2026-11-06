@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.29] - 2026-11-06
+### Added
+- **Google BigQuery** as a queryable source (cloud-warehouse connectors, phase 4).
+  New `@google-cloud/bigquery`-backed driver (`lib/bigquery.ts`) wired across all
+  four dispatch points (chat, introspection, Query Builder, connection test).
+  Supports **service-account JSON** auth and an **emulator / no-auth** mode
+  (`apiEndpoint` override + throwaway signing key). GoogleSQL dialect hint; the SQL
+  guard blocks `EXPORT DATA` (GCS exfiltration) and DML/DDL; read-only allowlist
+  entry. Field mapping onto the shared row: `database_name`=projectId,
+  `schema_name`=default dataset, `password_enc`=SA JSON, `host`=apiEndpoint,
+  `auth_mode`=`service_account`|`none`. Connection-form fields added. Unit-tested;
+  live battery via the open-source `bigquery-emulator`.
+
 ## [1.6.28] - 2026-11-06
 ### Fixed
 - P2 schema: add `auth_mode` / `tenant_id` via a numbered migration

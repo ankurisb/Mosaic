@@ -192,6 +192,7 @@ export async function POST(req: Request) {
     if (dialect === 'mongodb') return '(use JSON: {"collection":"name","filter":{},"limit":20})'
     if (dialect === 'clickhouse') return '(use standard SQL SELECT -- columnar OLAP, great for aggregations)'
     if (dialect === 'redshift') return '(use standard SQL SELECT -- Amazon Redshift/Postgres dialect; DATEADD/DATEDIFF, GETDATE(), ILIKE supported; columnar MPP, great for aggregations over large tables)'
+    if (dialect === 'bigquery') return '(use GoogleSQL/standard SQL SELECT -- reference tables fully-qualified and backtick-quoted `project.dataset.table`; DATE_TRUNC, SAFE_CAST, APPROX_COUNT_DISTINCT available; no DML/DDL)'
     if (dialect === 'influxdb') return `(use InfluxQL: SELECT mean("field") FROM "measurement" WHERE time > ${nowExpr()}-7d GROUP BY tag)`
     if (dialect === 'elasticsearch') return '(use Elasticsearch Query DSL JSON: {"query":{"match_all":{}}} or {"query":{"bool":{"must":[{"match":{"field":"value"}},{"range":{"timestamp":{"gte":"now-7d"}}}]}},"aggs":{"by_field":{"terms":{"field":"keyword_field.keyword"}}}} — for schema discovery use: GET /_cat/indices?format=json or GET /{index}/_mapping)'
     return '(use SELECT queries)'

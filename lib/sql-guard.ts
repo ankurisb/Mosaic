@@ -59,6 +59,19 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     }
   }
 
+  // BigQuery: EXPORT DATA writes query results to Cloud Storage (exfiltration);
+  // DDL/DML and scripting mutate. The statement allowlist already requires a
+  // SELECT/WITH prefix, so this is defence-in-depth against a smuggled trailer.
+  if (dialect === 'bigquery') {
+    if (/(^|[^a-z0-9_])export\s+data\b/i.test(lower)) {
+      throw new SqlGuardError('EXPORT DATA is blocked (it writes results to Cloud Storage). Return rows instead.')
+    }
+    const bqWrite = /(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter)\s/i
+    if (bqWrite.test(lower)) {
+      throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on BigQuery.')
+    }
+  }
+
   // Redshift: UNLOAD exports to S3; SELECT … INTO materialises a new table. Both
   // are writes/exfiltration that a SELECT-prefixed statement can still smuggle in.
   if (dialect === 'redshift') {

@@ -36,6 +36,26 @@ describe('sql-guard: MySQL filesystem constructs', () => {
   })
 })
 
+describe('sql-guard: BigQuery write/exfiltration constructs', () => {
+  it('blocks EXPORT DATA (write to GCS)', () => {
+    blocked("EXPORT DATA OPTIONS(uri='gs://b/*') AS SELECT * FROM t", 'bigquery')
+  })
+  it('blocks DML/DDL', () => {
+    blocked('INSERT INTO `p.d.t` (a) VALUES (1)', 'bigquery')
+    blocked('CREATE TABLE `p.d.t2` AS SELECT 1', 'bigquery')
+    blocked('DELETE FROM `p.d.t` WHERE a=1', 'bigquery')
+    blocked('MERGE `p.d.t` USING `p.d.s` ON TRUE WHEN MATCHED THEN DELETE', 'bigquery')
+  })
+  it('allows read-only SELECT / WITH with fully-qualified tables', () => {
+    ok('SELECT a, COUNT(*) FROM `proj.ds.events` GROUP BY a', 'bigquery')
+    ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'bigquery')
+  })
+  it('does not trip on a value/column containing a keyword', () => {
+    ok("SELECT note FROM `p.d.t` WHERE note = 'please export data later'", 'bigquery')
+    ok('SELECT create_time, update_count FROM `p.d.t`', 'bigquery')
+  })
+})
+
 describe('sql-guard: Redshift exfiltration constructs', () => {
   it('blocks UNLOAD (export to S3)', () => {
     blocked("SELECT 1; UNLOAD ('select * from t') TO 's3://b/k' IAM_ROLE 'arn'", 'redshift')

@@ -194,6 +194,13 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
       else { rows = (d.hits?.hits ?? []).map((h: any) => ({ _id: h._id, _score: h._score, ...h._source })); columns = rows.length > 0 ? Object.keys(rows[0]) : [] }
     }
   }
+  else if (conn.dialect === 'bigquery') {
+    const { bigQueryQuery } = await import('@/lib/bigquery')
+    const { assertNoDangerousSql } = await import('@/lib/sql-guard')
+    assertNoDangerousSql(query, 'bigquery')   // BigQuery has no READ ONLY txn; the guard is the control
+    const r = await bigQueryQuery(conn, query, limit)
+    rows = r.rows; columns = r.fields
+  }
   else { return NextResponse.json({ error: `Unsupported dialect: ${conn.dialect}` }, { status: 400 }) }
 
   meta.durationMs = Date.now() - startMs

@@ -481,10 +481,10 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
           <Field label="Database type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift']].map(([v,l]) => {
-                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439'}
+              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift'],['bigquery','BigQuery']].map(([v,l]) => {
+                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439',bigquery:''}
                 return (
-                  <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || '') }}
+                  <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || ''); if (v === 'bigquery') set('auth_mode', 'service_account') }}
                     style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.dialect === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.dialect === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.dialect === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.dialect === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
                     {l}
                   </button>
@@ -493,11 +493,31 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             </div>
           </Field>
 
+          {form.dialect === 'bigquery' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="Authentication">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['service_account','Service account key'],['none','Emulator (no auth)']].map(([v,l]) => (
+                    <button key={v} type="button" onClick={() => set('auth_mode', v)}
+                      style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.auth_mode === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.auth_mode === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.auth_mode === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.auth_mode === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>{l}</button>
+                  ))}
+                </div>
+              </Field>
+              <Grid cols={2}>
+                <Field label="Project ID" required><input style={INP} placeholder="my-gcp-project" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
+                <Field label="Default dataset" hint="For schema introspection"><input style={INP} placeholder="analytics" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+              </Grid>
+              {form.auth_mode === 'none'
+                ? <Field label="API endpoint" hint="Emulator URL, e.g. http://bq-emulator:9050"><input style={INP} placeholder="http://localhost:9050" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
+                : <Field label="Service account JSON" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 90, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder='{ "type": "service_account", "project_id": "...", "client_email": "...", "private_key": "..." }' value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
+            </div>
+          ) : (
           <Grid cols={3}>
             <Field label="Host" required><input style={INP} placeholder="db.company.com" value={String(form.host)} onChange={e => set('host', e.target.value)} /></Field>
             <Field label="Port"><input style={INP} placeholder="5432" value={String(form.port)} onChange={e => set('port', e.target.value)} /></Field>
             <Field label="Database name"><input style={INP} placeholder="mydb" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
           </Grid>
+          )}
 
           {form.dialect === 'mssql' && (
             <div style={{ marginBottom: 12 }}>
@@ -512,6 +532,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             </div>
           )}
 
+          {form.dialect !== 'bigquery' && (
           <Grid cols={3}>
             {form.dialect === 'mssql' && form.auth_mode === 'entra_sp' ? (
               <>
@@ -527,6 +548,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               </>
             )}
           </Grid>
+          )}
 
           <Field label="Description" hint="Optional — tell Mosaic what this connection contains and how it relates to other sources. Improves query routing and cross-source analysis.">
             <textarea

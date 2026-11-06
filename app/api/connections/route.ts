@@ -226,6 +226,13 @@ export async function POST(req: Request) {
         return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `Elasticsearch ${version} — cluster: ${cluster}` })
       }
 
+      if (dialect === 'bigquery') {
+        const { bigQueryQuery } = await import('@/lib/bigquery')
+        await bigQueryQuery(conn, 'SELECT 1 AS ok', 1)
+        const proj = String(conn.database_name || '')
+        return Response.json({ ok: true, latencyMs: Date.now()-start, detail: `BigQuery${proj ? ` — project ${proj}` : ''}` })
+      }
+
       return Response.json({ ok: false, message: `Unknown dialect: ${dialect}` })
     } catch (e) {
       return Response.json({ ok: false, message: (e instanceof Error ? e.message : 'Connection failed') })

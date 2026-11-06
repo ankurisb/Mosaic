@@ -1336,6 +1336,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
       sqlite:    ['PRAGMA'],
       postgres:  [],
       redshift:  [],
+      bigquery:  [],
     }
     const allowed = [...baseAllowed, ...(dialectExtras[dialect] || [])]
     const ok = allowed.some(v => upper.startsWith(v))
@@ -1692,7 +1693,14 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
     return { rows: hits, rowCount: data.hits?.total?.value ?? hits.length, fields }
   }
 
-  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch.`)
+  // -- BigQuery -------------------------------------------------
+  if (dialect === 'bigquery') {
+    const { bigQueryQuery } = await import('./bigquery')
+    const { rows, fields } = await bigQueryQuery(conn, trimmed, fetchN)
+    return capResult(rows, fields)
+  }
+
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch, bigquery.`)
 }
 
 // -- Statistical Analysis ------------------------------------
@@ -3517,6 +3525,27 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         })
       }
       return { connection_id: connectionId, dialect, fetched_at: stamp(), collections: out, truncated }
+    }
+
+    // -- BigQuery ------------------------------------------------
+    if (dialect === 'bigquery') {
+      const { bigQueryQuery } = await import('./bigquery')
+      const project = String(conn.database_name || '').replace(/[`;]/g, '')
+      const dataset = String(conn.schema_name || '').replace(/[`;]/g, '')
+      if (!dataset) {
+        return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: [], error: 'set a default dataset to introspect; queries can still use fully-qualified `project.dataset.table`' }
+      }
+      const q = `SELECT table_name, column_name, data_type FROM \`${project}.${dataset}.INFORMATION_SCHEMA.COLUMNS\` ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+      const { rows } = await bigQueryQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
+      const byTable = new Map<string, { name: string; type: string; pk: boolean }[]>()
+      for (const r of rows) {
+        const tn = String((r as Record<string, unknown>).table_name)
+        if (!byTable.has(tn)) byTable.set(tn, [])
+        const cols = byTable.get(tn)!
+        if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String((r as Record<string, unknown>).column_name), type: String((r as Record<string, unknown>).data_type), pk: false })
+      }
+      const out = [...byTable.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: dataset, name, columns }))
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byTable.size > MAX_TABLES }
     }
 
     return {
