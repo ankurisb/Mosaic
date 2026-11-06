@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.30] - 2026-11-06
+### Fixed
+- Build: sync `package-lock.json` for `@google-cloud/bigquery` (P4). The image
+  builds with `npm ci`, which requires the lock in sync; adding the dependency to
+  `package.json` alone failed the build.
+
 ## [1.6.29] - 2026-11-06
 ### Added
 - **Google BigQuery** as a queryable source (cloud-warehouse connectors, phase 4).
