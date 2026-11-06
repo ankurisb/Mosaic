@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.24] - 2026-11-06
+### Changed
+- Refreshed chat and agent UI icons for a cleaner, consistent monochrome set:
+  - Agent/bot mark redrawn (rounded head, tick eyes, side ears) and the agents-list avatar is now monochrome (neutral box + muted line icon) instead of a filled accent square.
+  - Folder expand/collapse caret is a drawn line chevron, replacing the raw unicode `▶`/`▼` glyph.
+  - Sidebar new-chat control uses an SVG plus (consistent weight with the rest).
+  - Sidebar-collapse button is borderless and larger.
+  - Crisper composer send arrow.
+
 ## [1.6.23] - 2026-11-03
 ### Changed
 - Theme palette revisions (matching the earlier design mock-ups):

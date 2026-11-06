@@ -1748,14 +1748,13 @@ export default function ChatPage({ user }: { user: SessionUser }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: sidebarCollapsed ? 'auto' : 0, marginRight: sidebarCollapsed ? 'auto' : 0 }}>
             {!sidebarCollapsed && (
               <button onClick={newConv} title="New conversation"
-                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', fontSize: 16, color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+                style={{ width: 28, height: 28, borderRadius: 'var(--radius-pill)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
             )}
             <button onClick={() => setSidebarCollapsed(s => !s)} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: '1px solid var(--nav-border)', background: 'transparent', cursor: 'pointer', color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarCollapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
-                <rect x="1" y="1" width="12" height="12" rx="2"/>
-                <line x1="5" y1="1" x2="5" y2="13"/>
-                <path d="M3 5l-1.5 2 1.5 2" strokeWidth="1.2"/>
+              style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--nav-text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarCollapsed ? 'scaleX(-1)' : 'none', transition: 'transform .2s' }}>
+                <rect x="3" y="4" width="18" height="16" rx="2.5"/>
+                <line x1="9" y1="4" x2="9" y2="20"/>
               </svg>
             </button>
           </div>
@@ -1765,7 +1764,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
         <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--nav-border)' }}>
           {([ 
             { label: 'Chats',         href: null,              active: true,  icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h1v3l3-3h6a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg> },
-            { label: 'Agents',        href: '/agents',         active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="9" height="7" rx="1.5"/><path d="M5 1.5v1.5M9 1.5v1.5M1 5.5v2M13 5.5v2M5 12.5h4"/><circle cx="5.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/><circle cx="8.5" cy="6.3" r=".7" fill="currentColor" stroke="none"/></svg> },
+            { label: 'Agents',        href: '/agents',         active: false, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="4.5" y="8" width="15" height="11" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.3" r="1.1" fill="currentColor" stroke="none"/><path d="M2.5 12.5v3M21.5 12.5v3M9.2 12.8v1.8M14.8 12.8v1.8"/></svg> },
             { label: 'Dashboards',    href: '/dashboards',     active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="7" width="4" height="6" rx="1"/><rect x="5.5" y="4" width="4" height="9" rx="1"/><rect x="10" y="1" width="3" height="12" rx="1"/></svg> },
             { label: 'Digests',       href: '/reports',        active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 1h7l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M9 1v3h3M4 6h6M4 8.5h6M4 11h4"/></svg> },
             { label: 'Query Builder', href: '/query-builder',  active: false, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5l2 2-2 2M8 9.5h2.5"/></svg> },
@@ -1839,7 +1838,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                           <div onClick={() => toggleFolder(f.id)} className="conv-row"
                             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--nav-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <span style={{ fontSize: 9, color: 'var(--nav-muted)', width: 10, flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>▶</span>
+                            <span style={{ display: 'flex', color: 'var(--nav-muted)', width: 10, flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
                             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--nav-muted)', flexShrink: 0 }}><path d="M1 3.5h4l1 1.5h6.5a1 1 0 011 1V11a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z"/></svg>
                             {renamingFolder === f.id ? (
                               <input autoFocus defaultValue={f.name} onClick={e => e.stopPropagation()}
@@ -2449,7 +2448,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                 <button onClick={() => send(input)} disabled={(!input.trim() && !attachHasReady) || attachPending}
                   title={attachPending ? 'Preparing attachment…' : undefined}
                   style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: ((!input.trim() && !attachHasReady) || attachPending) ? 'var(--bg4)' : 'var(--accent-bg)', color: ((!input.trim() && !attachHasReady) || attachPending) ? 'var(--text4)' : 'var(--accent-fg)', cursor: ((!input.trim() && !attachHasReady) || attachPending) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s', boxShadow: ((!input.trim() && !attachHasReady) || attachPending) ? 'none' : 'var(--shadow)' }}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7h10M8 3l4 4-4 4"/></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h13M12 6l6 6-6 6"/></svg>
                 </button>
               )}
             </div>

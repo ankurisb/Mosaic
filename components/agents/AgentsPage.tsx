@@ -360,8 +360,8 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                         <tr key={a.id}>
                           <td style={{ ...td, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg, #2f6df6)', display: 'grid', placeItems: 'center', color: 'var(--accent-fg, #fff)', flexShrink: 0 }}>
-                                <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M5.5 1.5v1.5M10.5 1.5v1.5M6 13h4"/><circle cx="6" cy="7" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7" r=".8" fill="currentColor" stroke="none"/></svg>
+                              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--bg3)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text2)', flexShrink: 0 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="4.5" y="8" width="15" height="11" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.3" r="1.1" fill="currentColor" stroke="none"/><path d="M2.5 12.5v3M21.5 12.5v3M9.2 12.8v1.8M14.8 12.8v1.8"/></svg>
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
