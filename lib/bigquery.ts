@@ -57,14 +57,34 @@ export function buildBigQueryConfig(conn: BigQueryConnRow): BigQueryClientConfig
   return cfg
 }
 
-// BigQuery returns typed scalars (DATE/TIMESTAMP/NUMERIC) as wrapper objects with a
-// `.value`; flatten those so rows are plain JSON for the UI/charting.
-function flattenRow(row: Record<string, unknown>): Record<string, unknown> {
+// Normalise one BigQuery cell for the UI/charting layer.
+//  - Typed scalars (DATE/TIMESTAMP/DATETIME/TIME) arrive as a single-key `{ value }`
+//    wrapper whose `.value` is a primitive → unwrap to that primitive (unchanged behaviour;
+//    NUMERIC/BIGNUMERIC already arrive as strings, GEOGRAPHY as a WKT string, JSON as a string).
+//  - Nested/repeated fields (STRUCT/RECORD, ARRAY) arrive as plain objects/arrays whose leaves
+//    may themselves be `{ value }` wrappers. A raw object/array would render as "[object Object]"
+//    and break charting, so recurse to unwrap the leaves and then JSON-stringify the composite
+//    so it survives as readable text in a single cell.
+// Recursively unwrap `{ value }` typed-scalar leaves while keeping STRUCT/ARRAY shape intact.
+function unwrap(v: unknown): unknown {
+  if (v === null || v === undefined || typeof v !== 'object') return v
+  const o = v as Record<string, unknown>
+  const keys = Object.keys(o)
+  if (keys.length === 1 && keys[0] === 'value' && (o.value === null || typeof o.value !== 'object')) return o.value
+  if (Array.isArray(v)) return v.map(unwrap)
+  const inner: Record<string, unknown> = {}
+  for (const [k, val] of Object.entries(o)) inner[k] = unwrap(val)
+  return inner
+}
+function flattenValue(v: unknown): unknown {
+  const u = unwrap(v)
+  // A composite (STRUCT/ARRAY) is serialised ONCE into a single readable cell so it survives
+  // to the UI/charting layer as text instead of rendering "[object Object]".
+  return u !== null && typeof u === 'object' ? JSON.stringify(u) : u
+}
+export function flattenRow(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(row)) {
-    if (v && typeof v === 'object' && 'value' in (v as Record<string, unknown>)) out[k] = (v as { value: unknown }).value
-    else out[k] = v
-  }
+  for (const [k, v] of Object.entries(row)) out[k] = flattenValue(v)
   return out
 }
 

@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.38] - 2026-11-06
+### Added
+- **BigQuery nested / repeated types.** Query results now flatten `STRUCT`/`RECORD` and
+  repeated `ARRAY` columns into a single readable JSON cell (recursively unwrapping typed-scalar
+  leaves), instead of rendering `[object Object]` and breaking charting. Typed scalars
+  (TIMESTAMP/DATE/…), NUMERIC, GEOGRAPHY and JSON are unchanged.
+
+### Changed
+- **Partitioned, incremental Cube pre-aggregations.** The generated day-grain rollup is now
+  `partition_granularity: month` with an `incremental` refresh over a 7-day `update_window`, so
+  the hourly refresh rebuilds only recent partitions rather than full-scanning the whole source
+  table — a real cost reduction on large warehouse tables (BigQuery/Snowflake/Redshift). Append-
+  mostly time series only; schema drift still forces a full regenerate via the fingerprint gate.
+
 ## [1.6.37] - 2026-11-06
 ### Added
 - **BigQuery cross-project tables.** A BigQuery connection's *Default dataset* may now be a

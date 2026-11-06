@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBigQueryConfig } from './bigquery'
+import { buildBigQueryConfig, flattenRow } from './bigquery'
 
 // password_enc without an enc2:/enc: prefix is returned verbatim by decrypt().
 
@@ -25,5 +25,32 @@ describe('buildBigQueryConfig: emulator (no auth)', () => {
     expect(c.projectId).toBe('test-proj')
     expect(c.emulator).toBe(true)
     expect(c.credentials).toBeUndefined()   // stub auth client is attached at query time
+  })
+})
+
+describe('flattenRow: scalars + nested/repeated types', () => {
+  it('unwraps single-key typed-scalar wrappers and leaves primitives alone', () => {
+    const r = flattenRow({
+      ts: { value: '2020-01-01T00:00:00.000Z' },   // TIMESTAMP wrapper
+      d: { value: '2020-01-01' },                  // DATE wrapper
+      num: '1.5',                                   // NUMERIC → already a string
+      n: 42,
+      s: 'hello',
+      nil: null,
+    })
+    expect(r).toEqual({ ts: '2020-01-01T00:00:00.000Z', d: '2020-01-01', num: '1.5', n: 42, s: 'hello', nil: null })
+  })
+  it('serialises a STRUCT/RECORD to readable JSON, unwrapping its leaves', () => {
+    const r = flattenRow({ driver: { name: 'A', hired: { value: '2021-05-01' }, rating: 4 } })
+    expect(r.driver).toBe('{"name":"A","hired":"2021-05-01","rating":4}')
+  })
+  it('serialises a repeated ARRAY, unwrapping each element', () => {
+    expect(flattenRow({ tags: ['x', 'y'] }).tags).toBe('["x","y"]')
+    expect(flattenRow({ events: [{ at: { value: '2021-01-01' } }, { at: { value: '2021-01-02' } }] }).events)
+      .toBe('[{"at":"2021-01-01"},{"at":"2021-01-02"}]')
+  })
+  it('leaves GEOGRAPHY/JSON (already strings) untouched', () => {
+    const r = flattenRow({ geo: 'POINT(-97 30)', j: '{"k":1}' })
+    expect(r).toEqual({ geo: 'POINT(-97 30)', j: '{"k":1}' })
   })
 })

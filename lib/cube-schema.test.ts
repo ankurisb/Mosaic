@@ -64,6 +64,10 @@ describe('generateCubeSchema', () => {
     expect(js).toContain('time_dimension: production.ts')
     expect(js).toContain('granularity: `day`')
     expect(js).toContain('production.units')
+    // Partitioned + incremental so refreshes don't full-scan the warehouse table.
+    expect(js).toContain('partition_granularity: `month`')
+    expect(js).toContain('incremental: true')
+    expect(js).toContain('update_window: `7 day`')
   })
 
   it('emits no pre-aggregation when the cube has no time dimension', () => {

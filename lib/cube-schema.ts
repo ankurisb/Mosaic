@@ -104,9 +104,17 @@ ${d}
 
 // Conservative pre-aggregation: a day-grain rollup over the time dimension for the
 // aggregatable measures, only when the cube has a time dimension AND at least one
-// additive measure. Refresh keyed every 1h (the app's fingerprint gate catches schema
-// drift separately). Non-additive measures (avg) are included — Cube rolls them up via
+// additive measure. Non-additive measures (avg) are included — Cube rolls them up via
 // its own additive decomposition where possible and falls back otherwise.
+//
+// Partitioned + incremental so the rollup does NOT full-scan the source on every refresh —
+// critical on large warehouse tables (BigQuery/Snowflake/Redshift) where a full re-scan each
+// hour is a real cost. `partition_granularity: month` stores the rollup one partition per
+// month; `incremental: true` with `update_window: 7 day` means only the partitions touching
+// the last 7 days (plus the current one) are rebuilt on refresh — older partitions are left
+// as-is. Trade-off: data arriving more than 7 days late into an old partition won't be picked
+// up until a full rebuild; that's the right default for append-mostly time series, and the
+// fingerprint gate still forces a full regenerate on schema drift.
 function renderPreAggs(cube: CubeDef): string {
   const time = cube.dimensions.find(di => di.type === 'time')
   const rollupMeasures = cube.measures.filter(me => me.type === 'sum' || me.type === 'avg' || me.type === 'count')
@@ -118,7 +126,8 @@ function renderPreAggs(cube: CubeDef): string {
       measures: [${ms}],
       time_dimension: ${cube.name}.${time.name},
       granularity: \`day\`,
-      refresh_key: { every: \`1 hour\` },
+      partition_granularity: \`month\`,
+      refresh_key: { every: \`1 hour\`, incremental: true, update_window: \`7 day\` },
     },
   },`
 }
