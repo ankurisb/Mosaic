@@ -1334,6 +1334,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
       clickhouse:['SHOW', 'DESCRIBE', 'DESC'],
       sqlite:    ['PRAGMA'],
       postgres:  [],
+      redshift:  [],
     }
     const allowed = [...baseAllowed, ...(dialectExtras[dialect] || [])]
     const ok = allowed.some(v => upper.startsWith(v))
@@ -1364,7 +1365,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
   }
 
   // -- PostgreSQL ----------------------------------------------
-  if (dialect === 'postgres') {
+  if (dialect === 'postgres' || dialect === 'redshift') {
     let entry = pgPools.get(connectionId)
     if (!entry) {
       const connStr = decryptConnStr(conn) ||
@@ -3225,7 +3226,7 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
 
   try {
     // -- PostgreSQL ---------------------------------------------
-    if (dialect === 'postgres') {
+    if (dialect === 'postgres' || dialect === 'redshift') {
       let entry = pgPools.get(connectionId)
       if (!entry) {
         const connStr = decryptConnStr(conn) ||

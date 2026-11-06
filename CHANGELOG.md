@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.25] - 2026-11-06
+### Added
+- **Amazon Redshift** as a queryable database source (cloud-warehouse connector, phase 1). Redshift speaks the PostgreSQL wire protocol, so it reuses the existing `pg` driver for both query execution and schema introspection. Added: `redshift` dialect routing, a read-only allowlist entry, a Redshift SQL dialect hint for the model, a connection-form option (default port 5439), and SQL-guard rules blocking `UNLOAD` (S3 export) and `SELECT … INTO` (table materialisation). Cube already recognises the dialect.
+
 ## [1.6.24] - 2026-11-06
 ### Changed
 - Refreshed chat and agent UI icons for a cleaner, consistent monochrome set:
