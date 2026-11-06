@@ -25,6 +25,7 @@ export interface SnowflakeConnRow {
   warehouse?: unknown
   role?: unknown
   auth_mode?: unknown
+  connect_timeout_ms?: unknown
 }
 
 export interface SnowflakeConfig {
@@ -61,9 +62,18 @@ export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
 export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRows: number): Promise<{ rows: Record<string, unknown>[]; fields: string[] }> {
   const mod = await import('snowflake-sdk')
   const snowflake = (mod as unknown as { default?: typeof mod }).default || mod
-  const connection = (snowflake as unknown as { createConnection: (c: SnowflakeConfig) => SnowflakeConn }).createConnection(buildSnowflakeConfig(conn))
+  const timeoutMs = Number(conn.connect_timeout_ms) || 15000
+  const cfg = buildSnowflakeConfig(conn) as SnowflakeConfig & { timeout?: number }
+  cfg.timeout = timeoutMs   // snowflake-sdk login timeout
+  const connection = (snowflake as unknown as { createConnection: (c: SnowflakeConfig) => SnowflakeConn }).createConnection(cfg)
 
-  await new Promise<void>((resolve, reject) => connection.connect((err) => (err ? reject(err) : resolve())))
+  // Bound the connect: snowflake-sdk retries an unreachable account for a long time,
+  // so race it against an explicit timeout and tear the socket down on expiry.
+  await new Promise<void>((resolve, reject) => {
+    let done = false
+    const timer = setTimeout(() => { if (!done) { done = true; try { connection.destroy(() => {}) } catch { /* noop */ } reject(new Error(`Snowflake connection timed out after ${timeoutMs}ms`)) } }, timeoutMs)
+    connection.connect((err) => { if (done) return; done = true; clearTimeout(timer); err ? reject(err) : resolve() })
+  })
   try {
     const rows = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
       connection.execute({

@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.33] - 2026-11-06
+### Fixed
+- Snowflake: bound the connection attempt with an explicit timeout
+  (`connect_timeout_ms`, default 15s) and tear down the socket on expiry.
+  `snowflake-sdk` otherwise retries an unreachable account for a very long time,
+  hanging the request. Found by the P3 battery.
+
 ## [1.6.32] - 2026-11-06
 ### Added
 - **Snowflake** as a queryable source (cloud-warehouse connectors, phase 3).
