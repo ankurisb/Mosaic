@@ -1,6 +1,6 @@
 {
   "name": "mosaic",
-  "version": "1.6.26",
+  "version": "1.6.27",
   "private": true,
   "scripts": {
     "dev": "concurrently \"next dev\" \"cd services/stats-sidecar && python3 main.py\"",

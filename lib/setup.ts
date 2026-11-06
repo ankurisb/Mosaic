@@ -138,6 +138,12 @@ export async function setupDatabase() {
   // The connection is marked with label 'Mosaic Search Index' and is
   // never shown in the admin delete flow (managed = 1).
   await sql`ALTER TABLE db_connections ADD COLUMN managed INTEGER DEFAULT 0`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  // Entra ID (Azure AD) auth for SQL Server family (Azure SQL / Synapse / Fabric):
+  // auth_mode = 'sql' (default) | 'entra_sp' (service principal). For entra_sp the
+  // username/password_enc fields carry the clientId/clientSecret and tenant_id the
+  // directory (tenant) id.
+  await sql`ALTER TABLE db_connections ADD COLUMN auth_mode TEXT DEFAULT 'sql'`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
+  await sql`ALTER TABLE db_connections ADD COLUMN tenant_id TEXT`.catch((e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e })
   const esUrl = process.env.ELASTICSEARCH_INTERNAL_URL
   if (esUrl) {
     const existing = await sql`SELECT id FROM db_connections WHERE managed = 1 AND dialect = 'elasticsearch' LIMIT 1`

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { decrypt } from '@/lib/encrypt'
+import { buildMssqlConfig } from '@/lib/mssql-config'
 import { parseAuthConfig, applyAuth } from '@/lib/api-auth'
 import * as aws4 from 'aws4'
 
@@ -139,7 +140,7 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
   }
   else if (conn.dialect === 'mssql') {
     const sql = await import('mssql')
-    const pool = await sql.connect(cs ?? { server: conn.host, port: conn.port, database: conn.database_name, user: conn.username, password: pwd, options: { trustServerCertificate: true }, connectionTimeout: conn.connect_timeout_ms ?? 5000, requestTimeout: conn.query_timeout_ms ?? 30000 })
+    const pool = await sql.connect(cs ?? buildMssqlConfig(conn) as any)
     try { const r = await pool.request().query(injectLimit(query, limit, 'mssql')); rows = r.recordset; columns = Object.keys(rows[0] ?? {}) } finally { await pool.close() }
   }
   else if (conn.dialect === 'sqlite') {

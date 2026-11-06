@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { log } from './logger'
 import { getDb } from './db'
 import { assertNoDangerousSql } from './sql-guard'
+import { buildMssqlConfig } from './mssql-config'
 import { getKey } from './keys'
 import { emitToolCall, type MeteringEventData } from './metering'
 import {
@@ -1395,23 +1396,10 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
     )
   }
 
-  // -- SQL Server -----------------------------------------------
+  // -- SQL Server family (SQL Server / Azure SQL / Synapse / Fabric) ----------
   if (dialect === 'mssql') {
     const mssql = await import('mssql')
-    const pass = decrypt((conn.password_enc as string) || '')
-    const config: any = {
-      user: conn.username as string,
-      password: pass,
-      server: conn.host as string,
-      port: (conn.port as number) || 1433,
-      database: conn.database_name as string,
-      options: {
-        encrypt: (conn.ssl_mode as string) !== 'disable',
-        trustServerCertificate: (conn.ssl_mode as string) !== 'verify-full',
-      },
-      connectionTimeout: (conn.connect_timeout_ms as number) || 5000,
-      requestTimeout: (conn.query_timeout_ms as number) || 30000,
-    }
+    const config = buildMssqlConfig(conn)
     // Fix #1: wrap in TOP N for MSSQL (no LIMIT support)
     const mssqlQuery = trimmed.replace(/^(SELECT)/i, `SELECT TOP ${fetchN}`)
     const pool = decryptConnStr(conn)

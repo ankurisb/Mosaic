@@ -7,6 +7,7 @@ import { syncToSuperset } from '@/lib/superset-sync'
 import { Pool } from 'pg'
 import { invalidateSchema, refreshSchemaInBackground } from '@/lib/tools'
 import { syncDatasourceMap } from '@/lib/cube-sync'
+import { buildMssqlConfig } from '@/lib/mssql-config'
 export const runtime = 'nodejs'
 
 export async function GET() {
@@ -27,14 +28,14 @@ export async function POST(req: Request) {
   const { action } = body
 
   if (action === 'create' || action === 'update') {
-    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token } = body
+    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token, auth_mode, tenant_id } = body
     const passwordEnc = password ? encrypt(password) : null
     const connStrEnc = connection_string ? encrypt(connection_string) : null
     const mcpTokenEnc = mcp_token ? encrypt(mcp_token) : null
     if (action === 'create') {
       const rows = await sql`
-        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token)
-        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc})
+        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token,auth_mode,tenant_id)
+        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc},${auth_mode||'sql'},${tenant_id||null})
         RETURNING id`
       syncToSuperset({
         id: (rows[0] as { id: string }).id,
@@ -77,7 +78,9 @@ export async function POST(req: Request) {
           connect_timeout_ms = ${connect_timeout_ms || 5000},
           query_timeout_ms   = ${query_timeout_ms || 30000},
           read_only          = ${read_only || false},
-          mcp_endpoint       = ${mcp_endpoint || null}
+          mcp_endpoint       = ${mcp_endpoint || null},
+          auth_mode          = ${auth_mode || 'sql'},
+          tenant_id          = ${tenant_id || null}
         WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)
@@ -139,17 +142,9 @@ export async function POST(req: Request) {
 
       if (dialect === 'mssql') {
         const mssql = await import('mssql')
-        const pass = decrypt((conn.password_enc as string) || '')
-        const config: Record<string, unknown> = {
-          user: conn.username as string, password: pass,
-          server: conn.host as string, port: (conn.port as number) || 1433,
-          database: conn.database_name as string,
-          options: { encrypt: (conn.ssl_mode as string) !== 'disable', trustServerCertificate: (conn.ssl_mode as string) !== 'verify-full' },
-          connectionTimeout: 5000,
-        }
         const pool = conn.connection_string
           ? await mssql.connect(decrypt(conn.connection_string as string))
-          : await mssql.connect(config as any)
+          : await mssql.connect(buildMssqlConfig(conn) as any)
         const result = await pool.request().query('SELECT @@VERSION as v')
         await pool.close()
         const ver = ((result.recordset[0] as {v:string})?.v || 'SQL Server').split('\n')[0].slice(0,40)

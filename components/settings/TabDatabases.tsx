@@ -7,7 +7,7 @@ import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
-const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false }
+const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false, auth_mode: 'sql', tenant_id: '' }
 
 // Keys whose values look like DB connection strings
 const ENV_KEY_PATTERNS = [/DATABASE_URL/i, /DB_URL/i, /DB_URI/i, /_DSN/i, /POSTGRES/i, /POSTGRESQL/i, /MYSQL/i, /MONGO/i, /CLICKHOUSE/i, /INFLUX/i, /REDIS/i, /SQLITE/i, /CONNECTION_STRING/i, /CONN_STR/i]
@@ -499,10 +499,33 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             <Field label="Database name"><input style={INP} placeholder="mydb" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
           </Grid>
 
+          {form.dialect === 'mssql' && (
+            <div style={{ marginBottom: 12 }}>
+              <Field label="Authentication" hint="Azure SQL / Synapse / Microsoft Fabric use Entra ID">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['sql','SQL login'],['entra_sp','Microsoft Entra service principal']].map(([v,l]) => (
+                    <button key={v} type="button" onClick={() => set('auth_mode', v)}
+                      style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.auth_mode === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.auth_mode === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.auth_mode === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.auth_mode === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>{l}</button>
+                  ))}
+                </div>
+              </Field>
+            </div>
+          )}
+
           <Grid cols={3}>
-            <Field label="Username"><input style={INP} placeholder="app_user" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
-            <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" placeholder="" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
-            <Field label="Schema" hint="Default: public"><input style={INP} placeholder="public" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+            {form.dialect === 'mssql' && form.auth_mode === 'entra_sp' ? (
+              <>
+                <Field label="Client ID" hint="App (client) ID of the service principal"><input style={INP} placeholder="00000000-0000-0000-0000-000000000000" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
+                <Field label="Client secret" hint="Stored encrypted"><input style={INP} type="password" placeholder="" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+                <Field label="Tenant ID" hint="Directory (tenant) ID"><input style={INP} placeholder="00000000-0000-0000-0000-000000000000" value={String(form.tenant_id)} onChange={e => set('tenant_id', e.target.value)} /></Field>
+              </>
+            ) : (
+              <>
+                <Field label="Username"><input style={INP} placeholder="app_user" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
+                <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" placeholder="" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+                <Field label="Schema" hint="Default: public"><input style={INP} placeholder="public" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+              </>
+            )}
           </Grid>
 
           <Field label="Description" hint="Optional — tell Mosaic what this connection contains and how it relates to other sources. Improves query routing and cross-source analysis.">

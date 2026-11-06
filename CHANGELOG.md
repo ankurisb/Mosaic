@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.27] - 2026-11-06
+### Added
+- **Microsoft Entra ID (Azure AD) service-principal auth** for the SQL Server
+  family, enabling **Azure SQL Database, Azure Synapse** (dedicated SQL pool) and
+  **Microsoft Fabric's** Warehouse/Lakehouse SQL endpoint as sources (cloud-
+  warehouse connectors, phase 2). Fabric/Azure/Synapse all speak TDS, so they
+  reuse the `mssql` driver and differ only in auth. New `auth_mode` (`sql` |
+  `entra_sp`) and `tenant_id` columns; a shared `buildMssqlConfig` helper now backs
+  every mssql query/test path (tedious runs the client-credentials token exchange
+  natively — no manual token flow); connection-form auth selector with Client ID /
+  Client secret / Tenant ID fields; TLS forced on for Entra. Unit-tested; the TDS
+  path is live-tested against SQL Server. Live Entra validation pending an Azure
+  tenant.
+### Changed
+- De-duplicated three near-identical inline mssql configs into `buildMssqlConfig`.
+
 ## [1.6.26] - 2026-11-06
 ### Fixed
 - Redshift: wire the dialect through the remaining query paths found by the live
