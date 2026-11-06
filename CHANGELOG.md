@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.26] - 2026-11-06
+### Fixed
+- Redshift: wire the dialect through the remaining query paths found by the live
+  battery — the Query Builder executor (`/api/query-runner`, which enforces reads
+  via a `BEGIN READ ONLY` transaction) and the connection-test/health path
+  (`/api/connections`). Previously only the chat/agent path (`queryDatabase`) and
+  schema introspection knew the dialect, so Query Builder and Test Connection
+  returned "Unsupported dialect: redshift". Updated the supported-dialects error
+  message too.
+
 ## [1.6.25] - 2026-11-06
 ### Added
 - **Amazon Redshift** as a queryable database source (cloud-warehouse connector, phase 1). Redshift speaks the PostgreSQL wire protocol, so it reuses the existing `pg` driver for both query execution and schema introspection. Added: `redshift` dialect routing, a read-only allowlist entry, a Redshift SQL dialect hint for the model, a connection-form option (default port 5439), and SQL-guard rules blocking `UNLOAD` (S3 export) and `SELECT … INTO` (table materialisation). Cube already recognises the dialect.

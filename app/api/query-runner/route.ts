@@ -112,7 +112,7 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
   const meta = { durationMs: 0, dialect: conn.dialect, label: conn.label }
   let rows: any[] = [], columns: string[] = []
 
-  if (conn.dialect === 'postgres') {
+  if (conn.dialect === 'postgres' || conn.dialect === 'redshift') {
     const { Client } = await import('pg')
     const c = new Client(cs ?? { host: conn.host, port: conn.port, database: conn.database_name, user: conn.username, password: pwd, ssl: conn.ssl_mode && conn.ssl_mode !== 'disable' ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: conn.connect_timeout_ms ?? 5000, query_timeout: conn.query_timeout_ms ?? 30000 })
     await c.connect()

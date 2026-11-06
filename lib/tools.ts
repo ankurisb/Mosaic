@@ -1704,7 +1704,7 @@ export async function queryDatabase(connectionId: string, queryInput: string, op
     return { rows: hits, rowCount: data.hits?.total?.value ?? hits.length, fields }
   }
 
-  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch.`)
+  throw new Error(`Unsupported dialect: ${dialect}. Supported: postgres, redshift, mysql, mssql, sqlite, mongodb, clickhouse, influxdb, elasticsearch.`)
 }
 
 // -- Statistical Analysis ------------------------------------

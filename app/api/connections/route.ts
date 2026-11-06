@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     const start = Date.now()
 
     try {
-      if (dialect === 'postgres') {
+      if (dialect === 'postgres' || dialect === 'redshift') {
         const connStr = conn.connection_string
           ? decrypt(conn.connection_string as string)
           : `postgresql://${conn.username}:${decrypt((conn.password_enc as string)||'')}@${conn.host}:${conn.port}/${conn.database_name}`
