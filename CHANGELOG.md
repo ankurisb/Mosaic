@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.28] - 2026-11-06
+### Fixed
+- P2 schema: add `auth_mode` / `tenant_id` via a numbered migration
+  (`030_mssql_entra_auth.sql`) so **existing** installs get the columns. They were
+  first added only to `setup.ts`'s fresh-install block, which does not re-run on
+  live databases — schema changes must go through `migrations/` + `runMigrations`.
+  Caught by the P2 live battery (connection create → "no column named auth_mode").
+
 ## [1.6.27] - 2026-11-06
 ### Added
 - **Microsoft Entra ID (Azure AD) service-principal auth** for the SQL Server
