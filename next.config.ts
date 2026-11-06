@@ -7,7 +7,7 @@ const config: NextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
-      config.externals = [...(Array.isArray(config.externals) ? config.externals : []), "better-sqlite3", "pg", "pg-native", "ssh2", "mssql", "tedious", "@duckdb/node-api"]
+      config.externals = [...(Array.isArray(config.externals) ? config.externals : []), "better-sqlite3", "pg", "pg-native", "ssh2", "mssql", "tedious", "@duckdb/node-api", "@databricks/sql", "snowflake-sdk"]
     }
     return config
   },

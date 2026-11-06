@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.35] - 2026-11-06
+### Fixed
+- Build: externalize `@databricks/sql` (ships a native kernel binary) and
+  `snowflake-sdk` from the Next.js server bundle via webpack externals, so the
+  build doesn't try to parse their native `.node` files. Found by the P5 CI build.
+
 ## [1.6.34] - 2026-11-06
 ### Added
 - **Databricks** SQL warehouse as a queryable source (cloud-warehouse connectors,
