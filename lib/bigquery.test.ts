@@ -20,10 +20,10 @@ describe('buildBigQueryConfig: service account', () => {
 
 describe('buildBigQueryConfig: emulator (no auth)', () => {
   const c = buildBigQueryConfig({ database_name: 'test-proj', host: 'http://bq-emulator:9050', auth_mode: 'none' })
-  it('sets the apiEndpoint and a throwaway credential', () => {
+  it('sets the apiEndpoint, marks emulator, and carries no real credentials', () => {
     expect(c.apiEndpoint).toBe('http://bq-emulator:9050')
     expect(c.projectId).toBe('test-proj')
-    expect(c.credentials.private_key).toContain('BEGIN PRIVATE KEY')  // generated throwaway PEM
-    expect(c.credentials.client_email).toBe('emulator@mosaic.local')
+    expect(c.emulator).toBe(true)
+    expect(c.credentials).toBeUndefined()   // stub auth client is attached at query time
   })
 })

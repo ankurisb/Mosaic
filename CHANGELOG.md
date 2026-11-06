@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.31] - 2026-11-06
+### Fixed
+- BigQuery emulator mode (`auth_mode='none'`): attach a no-network stub auth client
+  so the emulator is reached without a real Google OAuth token exchange (previously
+  failed with `invalid_grant`). Service-account mode unchanged.
+
 ## [1.6.30] - 2026-11-06
 ### Fixed
 - Build: sync `package-lock.json` for `@google-cloud/bigquery` (P4). The image

@@ -11,7 +11,6 @@
 // no transaction-wrapped READ ONLY like Postgres, so the guard is the control.
 
 import { decrypt } from './encrypt'
-import { generateKeyPairSync } from 'crypto'
 
 export interface BigQueryConnRow {
   database_name?: unknown
@@ -22,25 +21,13 @@ export interface BigQueryConnRow {
   connect_timeout_ms?: unknown
 }
 
-// A throwaway RSA key so the google-auth JWT signer has a valid PEM to sign with
-// when talking to an emulator that ignores auth. Generated once per process; never
-// a real credential. Only used when auth_mode='none'.
-let _dummyKey: string | null = null
-function dummyPrivateKey(): string {
-  if (_dummyKey) return _dummyKey
-  const { privateKey } = generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-  })
-  _dummyKey = privateKey as string
-  return _dummyKey
-}
-
 export interface BigQueryClientConfig {
   projectId: string
   apiEndpoint?: string
-  credentials: { client_email: string; private_key: string }
+  // For auth_mode='none' (emulator) there are NO credentials — bigQueryQuery
+  // attaches a no-network stub auth client instead (see below).
+  credentials?: { client_email: string; private_key: string }
+  emulator?: boolean
 }
 
 export function buildBigQueryConfig(conn: BigQueryConnRow): BigQueryClientConfig {
@@ -48,12 +35,10 @@ export function buildBigQueryConfig(conn: BigQueryConnRow): BigQueryClientConfig
   const projectId = String(conn.database_name || '') || 'mosaic-local'
 
   if (authMode === 'none') {
-    // Emulator: custom endpoint + a throwaway credential the emulator ignores.
-    return {
-      projectId,
-      apiEndpoint: conn.host ? String(conn.host) : undefined,
-      credentials: { client_email: 'emulator@mosaic.local', private_key: dummyPrivateKey() },
-    }
+    // Emulator: custom endpoint, no real credentials. The google-auth library
+    // would otherwise do a real OAuth2 token exchange with Google even against a
+    // custom apiEndpoint, so bigQueryQuery injects a stub auth client.
+    return { projectId, apiEndpoint: conn.host ? String(conn.host) : undefined, emulator: true }
   }
 
   // Service-account JSON key, stored (encrypted) in password_enc.
@@ -80,7 +65,22 @@ function flattenRow(row: Record<string, unknown>): Record<string, unknown> {
 
 export async function bigQueryQuery(conn: BigQueryConnRow, sql: string, maxRows: number): Promise<{ rows: Record<string, unknown>[]; fields: string[] }> {
   const { BigQuery } = await import('@google-cloud/bigquery')
-  const bq = new BigQuery(buildBigQueryConfig(conn) as unknown as ConstructorParameters<typeof BigQuery>[0])
+  const cfg = buildBigQueryConfig(conn)
+  const opts: Record<string, unknown> = { projectId: cfg.projectId }
+  if (cfg.apiEndpoint) opts.apiEndpoint = cfg.apiEndpoint
+  if (cfg.emulator) {
+    // No-network stub auth client so the emulator (which ignores auth) is reached
+    // without a real Google token exchange.
+    const { OAuth2Client } = await import('google-auth-library')
+    const stub = new OAuth2Client() as unknown as Record<string, unknown>
+    stub.getAccessToken = async () => ({ token: 'emulator', res: null })
+    stub.getRequestHeaders = async () => ({ Authorization: 'Bearer emulator' })
+    stub.request = async (o: { url?: string }) => { const r = await fetch(String(o.url), {}); return { data: await r.json(), status: r.status } }
+    opts.authClient = stub
+  } else if (cfg.credentials) {
+    opts.credentials = cfg.credentials
+  }
+  const bq = new BigQuery(opts as unknown as ConstructorParameters<typeof BigQuery>[0])
   const [raw] = await bq.query({ query: sql, maxResults: maxRows })
   const rows = (raw as Record<string, unknown>[]).map(flattenRow)
   const fields = rows.length ? Object.keys(rows[0]) : []
