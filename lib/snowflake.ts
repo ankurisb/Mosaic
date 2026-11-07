@@ -119,21 +119,37 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
     connection.connect((err) => { if (done) return; done = true; clearTimeout(timer); err ? reject(err) : resolve() })
   })
   try {
+    // STREAM the result and stop at maxRows instead of buffering the whole result set into
+    // memory and slicing after — a `LIMIT 5` over a billion-row table must not pull a billion
+    // rows first. streamResult: true makes snowflake-sdk page rows through a Readable; we push
+    // up to maxRows then destroy the stream so no further pages are fetched.
     const { rows, cols } = await new Promise<{ rows: Record<string, unknown>[]; cols: SfColumn[] }>((resolve, reject) => {
+      let settled = false
+      const acc: Record<string, unknown>[] = []
+      const done = (cols: SfColumn[]) => { if (!settled) { settled = true; resolve({ rows: acc, cols }) } }
+      const fail = (e: Error) => { if (!settled) { settled = true; reject(e) } }
       connection.execute({
         sqlText: sql,
-        // Keep NUMBER exact (see processSnowflakeRows); VARIANT/BINARY handled there too.
-        fetchAsString: ['Number'],
-        complete: (err: Error | undefined, stmt: unknown, out: Record<string, unknown>[] | undefined) => {
-          if (err) return reject(err)
+        fetchAsString: ['Number'],   // keep NUMBER exact (see processSnowflakeRows)
+        streamResult: true,
+        complete: (err: Error | undefined, stmt: unknown) => {
+          if (err) return fail(err)
+          const s = stmt as { streamRows?: () => NodeJS.ReadableStream & { destroy?: () => void }; getColumns?: () => SfColumn[] }
           let cols: SfColumn[] = []
-          try { cols = (stmt as { getColumns?: () => SfColumn[] })?.getColumns?.() || [] } catch { /* no metadata */ }
-          resolve({ rows: out || [], cols })
+          try { cols = s.getColumns?.() || [] } catch { /* no metadata */ }
+          const stream = s.streamRows ? s.streamRows() : null
+          if (!stream) return done(cols)
+          stream.on('error', fail)
+          stream.on('data', (row: Record<string, unknown>) => {
+            if (acc.length < maxRows) acc.push(row)
+            if (acc.length >= maxRows) { try { stream.destroy?.() } catch { /* noop */ } done(cols) }
+          })
+          stream.on('end', () => done(cols))
+          stream.on('close', () => done(cols))
         },
       })
     })
-    const capped = rows.length > maxRows ? rows.slice(0, maxRows) : rows
-    const processed = processSnowflakeRows(capped, cols)
+    const processed = processSnowflakeRows(rows, cols)
     return { rows: processed, fields: processed.length ? Object.keys(processed[0]) : [] }
   } finally {
     await new Promise<void>((resolve) => { try { connection.destroy(() => resolve()) } catch { resolve() } })
@@ -142,6 +158,6 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
 
 interface SnowflakeConn {
   connect: (cb: (err: Error | undefined) => void) => void
-  execute: (opts: { sqlText: string; fetchAsString?: string[]; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => void
+  execute: (opts: { sqlText: string; fetchAsString?: string[]; streamResult?: boolean; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => void
   destroy: (cb: () => void) => void
 }

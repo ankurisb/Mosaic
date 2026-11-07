@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.41] - 2026-11-07
+### Fixed
+- **Snowflake large-result handling.** The connector streamed nothing — it buffered the entire
+  result set into memory and sliced to the row cap after, so a `LIMIT 5` over a huge table still
+  pulled the full result first (seconds of latency, OOM risk at scale). It now streams rows
+  (`streamResult`) and stops at the cap, fetching no further pages. Found by the live B4 probe.
+
 ## [1.6.40] - 2026-11-07
 ### Fixed
 - **Snowflake read-only guard hardening.** Beyond DML/DDL/`COPY INTO`/stage-file commands, the
