@@ -188,5 +188,9 @@ describe('cube-client: buildDatasourceMap', () => {
     expect(map.sf2).toEqual({ type: 'snowflake', account: 'xy123.eu-west-1', user: 'svc', database: 'ANALYTICS', schema: 'PUBLIC', warehouse: 'WH', role: 'ANALYST', authenticator: 'SNOWFLAKE_JWT', privateKey: pem })
     expect((map.sf2 as { password?: string }).password).toBeUndefined()   // never the PEM as a password
   })
+  it('Snowflake multi-schema: driver default schema is the first bare schema (DB prefix stripped)', () => {
+    const map = buildDatasourceMap([{ id: 'sf5', dialect: 'snowflake', host: 'h', username: 'svc', warehouse: 'WH', schema_name: 'TPCH_SF1, TPCH_SF10, OTHER_DB.PUBLIC' }], () => 'pw')
+    expect((map.sf5 as { schema?: string }).schema).toBe('TPCH_SF1')
+  })
 })
 

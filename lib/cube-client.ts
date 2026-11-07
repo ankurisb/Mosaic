@@ -174,12 +174,19 @@ export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string
         schema: c.schema_name ?? undefined,
       }
     } else if (type === 'snowflake') {
+      // schema_name may be a multi-schema / cross-database list; the driver's default schema is
+      // just the first bare schema (generated cubes carry schema-qualified sql_table names, so the
+      // session default is never a correctness dependency). Keep it dependency-light: first spec,
+      // strip any DB prefix and quotes.
+      const firstSchema = c.schema_name
+        ? String(c.schema_name).split(/[,;\n]+/)[0].replace(/["';`]/g, '').trim().split('.').pop() || undefined
+        : undefined
       const ds: CubeDatasource = {
         type,
         account: c.host ?? undefined,
         user: c.username ?? undefined,
         database: c.database_name ?? undefined,
-        schema: c.schema_name ?? undefined,
+        schema: firstSchema,
         warehouse: c.warehouse ?? undefined,
         role: c.role ?? undefined,
       }

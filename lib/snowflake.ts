@@ -56,13 +56,37 @@ export interface SnowflakeConfig {
   privateKey?: string
 }
 
+// A connection's Schema may name several schemas to introspect, comma/semicolon/newline
+// separated, each a bare `SCHEMA` or a cross-database `DATABASE.SCHEMA`. This parses that list
+// into de-duplicated targets, each with the label used for the generated cube's sql_table:
+// a bare schema when it lives in the session's default database, else a 3-part `DB.SCHEMA`.
+export interface SfSchemaTarget { db: string; schema: string; label: string }
+export function parseSnowflakeSchemas(schemaName: unknown, defaultDb: string): SfSchemaTarget[] {
+  const clean = (s: string) => s.replace(/["';`]/g, '').trim()
+  const specs = String(schemaName ?? '').split(/[,;\n]+/).map(clean).filter(Boolean)
+  const list = (specs.length ? specs : ['PUBLIC']).map(spec => {
+    const dot = spec.indexOf('.')
+    const db = dot === -1 ? defaultDb : spec.slice(0, dot)
+    const schema = dot === -1 ? spec : spec.slice(dot + 1)
+    const label = db && db !== defaultDb ? `${db}.${schema}` : schema
+    return { db, schema, label }
+  })
+  const seen = new Set<string>()
+  return list.filter(t => { const k = `${t.db}\u0000${t.schema}`; if (seen.has(k)) return false; seen.add(k); return true })
+}
+
 export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
   const authMode = (conn.auth_mode as string) || 'password'
+  // The session's default schema is the FIRST listed schema (bare, no DB prefix). A multi-schema
+  // or cross-database connection relies on schema-qualified table names (the generated cubes are),
+  // so the session default is just a sensible starting point, never a correctness dependency.
+  const defaultDb = conn.database_name ? String(conn.database_name) : ''
+  const firstTarget = parseSnowflakeSchemas(conn.schema_name, defaultDb)[0]
   const cfg: SnowflakeConfig = {
     account: String(conn.host || ''),
     username: String(conn.username || ''),
     database: conn.database_name ? String(conn.database_name) : undefined,
-    schema: conn.schema_name ? String(conn.schema_name) : undefined,
+    schema: conn.schema_name && firstTarget ? firstTarget.schema : undefined,
     warehouse: conn.warehouse ? String(conn.warehouse) : undefined,
     role: conn.role ? String(conn.role) : undefined,
   }

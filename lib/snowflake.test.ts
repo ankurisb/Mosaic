@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { generateKeyPairSync } from 'crypto'
-import { buildSnowflakeConfig, processSnowflakeRows, snowflakeQuery, toUnencryptedPkcs8 } from './snowflake'
+import { buildSnowflakeConfig, processSnowflakeRows, snowflakeQuery, toUnencryptedPkcs8, parseSnowflakeSchemas } from './snowflake'
 
 // A real RSA key, exported once as an unencrypted PKCS8 PEM and once encrypted with a passphrase.
 // decrypt() returns password_enc verbatim when it has no enc2:/enc: prefix, so we can feed these
@@ -77,6 +77,32 @@ describe('buildSnowflakeConfig: key-pair (JWT) auth', () => {
     const p = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'password', password_enc: 'pw', key_passphrase_enc: 'ignored' })
     expect(p.privateKey).toBeUndefined()
     expect(p.password).toBe('pw')
+  })
+})
+
+describe('parseSnowflakeSchemas', () => {
+  it('defaults to PUBLIC when empty', () => {
+    expect(parseSnowflakeSchemas('', 'DB')).toEqual([{ db: 'DB', schema: 'PUBLIC', label: 'PUBLIC' }])
+    expect(parseSnowflakeSchemas(undefined, 'DB')).toEqual([{ db: 'DB', schema: 'PUBLIC', label: 'PUBLIC' }])
+  })
+  it('a bare schema in the default DB keeps a 2-part label', () => {
+    expect(parseSnowflakeSchemas('TPCH_SF1', 'SNOWFLAKE_SAMPLE_DATA'))
+      .toEqual([{ db: 'SNOWFLAKE_SAMPLE_DATA', schema: 'TPCH_SF1', label: 'TPCH_SF1' }])
+  })
+  it('a cross-database schema gets a 3-part label', () => {
+    expect(parseSnowflakeSchemas('OTHER_DB.PUBLIC', 'SNOWFLAKE'))
+      .toEqual([{ db: 'OTHER_DB', schema: 'PUBLIC', label: 'OTHER_DB.PUBLIC' }])
+  })
+  it('splits a comma/semicolon/newline list and de-duplicates', () => {
+    const r = parseSnowflakeSchemas('TPCH_SF1, TPCH_SF10 ; SNOWFLAKE_SAMPLE_DATA.TPCH_SF1\nTPCH_SF1', 'SNOWFLAKE_SAMPLE_DATA')
+    expect(r).toEqual([
+      { db: 'SNOWFLAKE_SAMPLE_DATA', schema: 'TPCH_SF1', label: 'TPCH_SF1' },
+      { db: 'SNOWFLAKE_SAMPLE_DATA', schema: 'TPCH_SF10', label: 'TPCH_SF10' },
+    ])   // the explicit SNOWFLAKE_SAMPLE_DATA.TPCH_SF1 dups the first (same db+schema) and is dropped
+  })
+  it('strips quotes/backticks that could break out of the SQL literal', () => {
+    expect(parseSnowflakeSchemas("X'Y", 'DB')).toEqual([{ db: 'DB', schema: 'XY', label: 'XY' }])
+    expect(parseSnowflakeSchemas('A"B`C', 'DB')).toEqual([{ db: 'DB', schema: 'ABC', label: 'ABC' }])
   })
 })
 

@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.45] - 2026-11-07
+### Added
+- **Snowflake multi-schema introspection.** A connection's *Schema* may now list several schemas
+  (comma / semicolon / newline separated), each a bare `SCHEMA` or a cross-database
+  `DATABASE.SCHEMA`. Introspection reads them all (one query per database, `table_schema IN (...)`,
+  total table count capped at the usual `MAX_TABLES`) and labels each table so the generated cube's
+  `sql_table` resolves — 2-part within the default database, 3-part across databases. The driver's
+  default schema becomes the first bare schema (queries are schema-qualified, so this is only a
+  starting point). Single-schema connections are unchanged.
+
 ## [1.6.44] - 2026-11-07
 ### Added
 - **Snowflake encrypted private key (passphrase).** Key-pair auth now supports a
