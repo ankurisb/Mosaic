@@ -5,14 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.6.43] - 2026-11-07
+## [1.6.44] - 2026-11-07
 ### Added
 - **Snowflake encrypted private key (passphrase).** Key-pair auth now supports a
   password-protected PEM: a new `key_passphrase` field (stored encrypted as
-  `key_passphrase_enc`, migration 032) is decrypted to `privateKeyPass` for both the direct
-  connector and Cube's driverFactory, so an encrypted key no longer fails to load. An
-  unencrypted key leaves the field blank and behaves exactly as before. UI adds a "Key
-  passphrase" input under the Snowflake key-pair option.
+  `key_passphrase_enc`, migration 032). Because snowflake-sdk only accepts an *unencrypted*
+  PKCS8 key when the key is supplied inline (its `privateKeyPass` option applies only to a key
+  read from a file path), Mosaic decrypts the PEM **in-process** (Node `crypto`) into an
+  unencrypted key before handing it to the driver — both in the direct connector and before
+  writing Cube's datasource map. A wrong passphrase yields a clear error. An unencrypted key
+  leaves the field blank and behaves exactly as before. UI adds a "Key passphrase" input under
+  the Snowflake key-pair option. (Supersedes the never-deployed 1.6.43, which tried the
+  inline-`privateKeyPass` approach that snowflake-sdk rejects — caught in live testing.)
 
 ### Fixed
 - **Postgres warehouse-connector columns.** The Postgres setup path never added the

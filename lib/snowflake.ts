@@ -15,6 +15,20 @@
 // exfiltration + file-transfer paths).
 
 import { decrypt } from './encrypt'
+import { createPrivateKey } from 'crypto'
+
+// snowflake-sdk's inline `privateKey` option must be an UNENCRYPTED PKCS8 PEM — it rejects an
+// encrypted PEM even when `privateKeyPass` is also given (that option only applies to a key read
+// from `privateKeyPath`). So when the stored PEM is password-protected we decrypt it ourselves
+// here and hand the driver the resulting unencrypted PEM. An empty passphrase is a no-op.
+export function toUnencryptedPkcs8(pem: string, passphrase: string): string {
+  if (!passphrase) return pem
+  try {
+    return createPrivateKey({ key: pem, format: 'pem', passphrase }).export({ type: 'pkcs8', format: 'pem' }).toString()
+  } catch {
+    throw new Error('Failed to decrypt the Snowflake private key — check the key passphrase.')
+  }
+}
 
 export interface SnowflakeConnRow {
   host?: unknown
@@ -40,7 +54,6 @@ export interface SnowflakeConfig {
   password?: string
   authenticator?: string
   privateKey?: string
-  privateKeyPass?: string
 }
 
 export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
@@ -55,11 +68,11 @@ export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
   }
   if (authMode === 'keypair') {
     cfg.authenticator = 'SNOWFLAKE_JWT'
-    cfg.privateKey = decrypt((conn.password_enc as string) || '')
-    // An encrypted (password-protected) PEM needs its passphrase so snowflake-sdk
-    // can decrypt it; an unencrypted key leaves this unset.
+    const pem = decrypt((conn.password_enc as string) || '')
+    // A password-protected PEM is decrypted here into an unencrypted PKCS8 key (the only
+    // shape snowflake-sdk accepts inline); an unencrypted key passes through unchanged.
     const pass = conn.key_passphrase_enc ? decrypt(conn.key_passphrase_enc as string) : ''
-    if (pass) cfg.privateKeyPass = pass
+    cfg.privateKey = toUnencryptedPkcs8(pem, pass)
   } else {
     cfg.password = decrypt((conn.password_enc as string) || '')
   }

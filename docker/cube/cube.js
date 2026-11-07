@@ -88,10 +88,10 @@ module.exports = {
         role: ds.role,
       };
       if (ds.authenticator === 'SNOWFLAKE_JWT' && ds.privateKey) {
+        // The PEM in the datasource map is already unencrypted (Mosaic decrypts a
+        // password-protected key before writing the map), so no passphrase is needed here.
         sf.authenticator = 'SNOWFLAKE_JWT';
         sf.privateKey = ds.privateKey.endsWith('\n') ? ds.privateKey : ds.privateKey + '\n';
-        // Encrypted (password-protected) PEM: pass its passphrase so the driver can decrypt it.
-        if (ds.privateKeyPass) sf.privateKeyPass = ds.privateKeyPass;
       } else {
         sf.password = ds.password;
       }

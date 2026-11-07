@@ -1,5 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildSnowflakeConfig, processSnowflakeRows, snowflakeQuery } from './snowflake'
+import { generateKeyPairSync } from 'crypto'
+import { buildSnowflakeConfig, processSnowflakeRows, snowflakeQuery, toUnencryptedPkcs8 } from './snowflake'
+
+// A real RSA key, exported once as an unencrypted PKCS8 PEM and once encrypted with a passphrase.
+// decrypt() returns password_enc verbatim when it has no enc2:/enc: prefix, so we can feed these
+// PEMs straight into buildSnowflakeConfig as password_enc / key_passphrase_enc.
+const PASS = 'unit-test-pass-4417'
+const { privateKey: KEY } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const PLAIN_PEM = KEY.export({ type: 'pkcs8', format: 'pem' }).toString()
+const ENC_PEM = KEY.export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase: PASS }).toString()
 
 // Fake snowflake-sdk column objects (name + type), as stmt.getColumns() returns.
 const col = (name: string, type: string) => ({ getName: () => name, getType: () => type })
@@ -50,18 +59,35 @@ describe('buildSnowflakeConfig: key-pair (JWT) auth', () => {
     expect(c.privateKey).toContain('BEGIN PRIVATE KEY')
     expect(c.password).toBeUndefined()
   })
-  it('omits privateKeyPass when the key is unencrypted (no passphrase stored)', () => {
-    expect(c.privateKeyPass).toBeUndefined()
+  it('passes an unencrypted key through unchanged when no passphrase is stored', () => {
+    const u = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'keypair', password_enc: PLAIN_PEM })
+    expect(u.privateKey).toBe(PLAIN_PEM)
   })
-  it('passes the decrypted passphrase as privateKeyPass for an encrypted key', () => {
-    const e = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'keypair', password_enc: '-----BEGIN ENCRYPTED PRIVATE KEY-----\\nX\\n-----END ENCRYPTED PRIVATE KEY-----', key_passphrase_enc: 's3cret-pass' })
+  it('decrypts an encrypted PEM in-process to an unencrypted PKCS8 key (snowflake-sdk takes no encrypted inline key)', () => {
+    const e = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'keypair', password_enc: ENC_PEM, key_passphrase_enc: PASS })
     expect(e.authenticator).toBe('SNOWFLAKE_JWT')
-    expect(e.privateKeyPass).toBe('s3cret-pass')
+    expect(e.privateKey).toContain('BEGIN PRIVATE KEY')          // unencrypted
+    expect(e.privateKey).not.toContain('ENCRYPTED')
   })
-  it('does not set privateKeyPass on password auth even if a passphrase leaked into the row', () => {
+  it('throws a clear error when the passphrase is wrong', () => {
+    expect(() => buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'keypair', password_enc: ENC_PEM, key_passphrase_enc: 'wrong-pass' }))
+      .toThrow(/check the key passphrase/)
+  })
+  it('does not touch the key on password auth even if a passphrase leaked into the row', () => {
     const p = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'password', password_enc: 'pw', key_passphrase_enc: 'ignored' })
-    expect(p.privateKeyPass).toBeUndefined()
+    expect(p.privateKey).toBeUndefined()
     expect(p.password).toBe('pw')
+  })
+})
+
+describe('toUnencryptedPkcs8', () => {
+  it('is a no-op without a passphrase', () => { expect(toUnencryptedPkcs8(PLAIN_PEM, '')).toBe(PLAIN_PEM) })
+  it('decrypts an encrypted PEM with the right passphrase', () => {
+    const out = toUnencryptedPkcs8(ENC_PEM, PASS)
+    expect(out).toContain('BEGIN PRIVATE KEY'); expect(out).not.toContain('ENCRYPTED')
+  })
+  it('throws a friendly error on a wrong passphrase', () => {
+    expect(() => toUnencryptedPkcs8(ENC_PEM, 'nope')).toThrow(/check the key passphrase/)
   })
 })
 

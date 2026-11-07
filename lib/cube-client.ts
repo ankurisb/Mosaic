@@ -149,8 +149,9 @@ export interface CubeDatasource {
   // Snowflake
   account?: string; warehouse?: string; role?: string; schema?: string
   // Snowflake key-pair auth: authenticator SNOWFLAKE_JWT + the private-key PEM (no password).
-  // privateKeyPass is set only when the PEM is itself encrypted (password-protected).
-  authenticator?: string; privateKey?: string; privateKeyPass?: string
+  // The PEM is always unencrypted here — an encrypted key is decrypted upstream (cube-sync)
+  // before the map is built, because snowflake-sdk only accepts an unencrypted inline key.
+  authenticator?: string; privateKey?: string
 }
 
 // Build the { connId: driverConfig } map Cube's driverFactory consumes. SQLite/unsupported
@@ -158,7 +159,7 @@ export interface CubeDatasource {
 // caller (decrypted on the box) via passwordFor — kept out of this pure builder so it
 // stays testable. Warehouse dialects carry their own shape (BigQuery: projectId +
 // service-account JSON in `credentials`; Snowflake: account/warehouse/role).
-export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string) => string | undefined, passphraseFor?: (id: string) => string | undefined): Record<string, CubeDatasource> {
+export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string) => string | undefined): Record<string, CubeDatasource> {
   const out: Record<string, CubeDatasource> = {}
   for (const c of conns) {
     if (!cubeDialectSupported(c.dialect)) continue
@@ -186,11 +187,7 @@ export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string
       // driver authenticates with SNOWFLAKE_JWT + the inline private key; passing the PEM as
       // a password makes it attempt password auth, which fails (and repeated failures lock
       // the Snowflake user). Password auth keeps the plain password.
-      if (c.auth_mode === 'keypair') {
-        ds.authenticator = 'SNOWFLAKE_JWT'; ds.privateKey = secret
-        const pp = passphraseFor?.(c.id)   // only when the PEM is encrypted
-        if (pp) ds.privateKeyPass = pp
-      }
+      if (c.auth_mode === 'keypair') { ds.authenticator = 'SNOWFLAKE_JWT'; ds.privateKey = secret }
       else { ds.password = secret }
       out[c.id] = ds
     } else {

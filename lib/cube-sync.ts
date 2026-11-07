@@ -12,6 +12,7 @@ import { log } from './logger'
 import { getSemanticModel } from './semantic-model'
 import { generateCubeSchema, renderAllCubes } from './cube-schema'
 import { buildDatasourceMap, cubeDialectSupported, type DbConnLike } from './cube-client'
+import { toUnencryptedPkcs8 } from './snowflake'
 
 function modelDir(): string | null {
   const d = process.env.CUBE_MODEL_DIR
@@ -27,13 +28,18 @@ export async function syncDatasourceMap(): Promise<number> {
   const rows = await sql`SELECT id, dialect, host, port, database_name, username, schema_name, warehouse, role, auth_mode, password_enc, key_passphrase_enc FROM db_connections` as unknown as Array<DbConnLike & { password_enc?: string | null; key_passphrase_enc?: string | null }>
   const passwordFor = (id: string) => {
     const r = rows.find(x => x.id === id)
-    try { return r?.password_enc ? decrypt(r.password_enc) : undefined } catch { return undefined }
+    if (!r?.password_enc) return undefined
+    try {
+      const secret = decrypt(r.password_enc)
+      // Snowflake key-pair with an encrypted PEM: decrypt it to an unencrypted key here so the
+      // map (and Cube's driver) only ever see a plain PKCS8 PEM, which is all snowflake-sdk takes.
+      if (r.auth_mode === 'keypair' && r.key_passphrase_enc) {
+        return toUnencryptedPkcs8(secret, decrypt(r.key_passphrase_enc))
+      }
+      return secret
+    } catch { return undefined }
   }
-  const passphraseFor = (id: string) => {
-    const r = rows.find(x => x.id === id)
-    try { return r?.key_passphrase_enc ? decrypt(r.key_passphrase_enc) : undefined } catch { return undefined }
-  }
-  const map = buildDatasourceMap(rows, passwordFor, passphraseFor)
+  const map = buildDatasourceMap(rows, passwordFor)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, '.datasources.json'), JSON.stringify(map, null, 2), { mode: 0o600 })
   return Object.keys(map).length
