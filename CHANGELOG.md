@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.40] - 2026-11-07
+### Fixed
+- **Snowflake read-only guard hardening.** Beyond DML/DDL/`COPY INTO`/stage-file commands, the
+  guard now also blocks procedural/session/privilege statements — `CALL` (stored procedures),
+  `EXECUTE [IMMEDIATE|TASK]`, anonymous `BEGIN`/`DECLARE` scripting blocks, `USE`, `GRANT`/`REVOKE`
+  — and smuggled **multi-statements** (`SELECT 1; DROP TABLE t`), while still allowing a single
+  terminated/commented SELECT and columns named like the verbs.
+- **Snowflake result types.** NUMBER is now fetched as a string and converted back only when
+  lossless, so high-precision `NUMBER(38,0)` keys/counters no longer silently lose precision
+  (`…e+37`). `VARIANT`/`OBJECT`/`ARRAY` serialise to a single JSON-string cell instead of
+  `[object Object]`, and `BINARY` renders as a hex string.
+
+### Added
+- **Snowflake cross-database tables.** A connection's *Schema* may now be a cross-database
+  `DATABASE.SCHEMA` (not just `SCHEMA`); introspection reads that database's `INFORMATION_SCHEMA`
+  and emits 3-part `DATABASE.SCHEMA.TABLE` keys so the generated Cube `sql_table` resolves across
+  databases (same approach as the BigQuery cross-project fix). Same-database connections unchanged.
+
 ## [1.6.39] - 2026-11-07
 ### Fixed
 - **Snowflake read-only guard: block `GET` (and `LIST`/`REMOVE`).** The stage file-transfer

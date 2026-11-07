@@ -90,6 +90,28 @@ describe('sql-guard: Snowflake write/exfiltration constructs', () => {
     blocked('REMOVE @~/old.csv', 'snowflake')
     blocked('RM @my_stage/x', 'snowflake')
   })
+  it('blocks procedural / dynamic / session commands', () => {
+    blocked('CALL my_proc(1)', 'snowflake')                 // stored proc: can mutate / reach out
+    blocked('EXECUTE IMMEDIATE $$ DROP TABLE t $$', 'snowflake')
+    blocked('EXECUTE TASK my_task', 'snowflake')
+    blocked('BEGIN DROP TABLE t; END', 'snowflake')         // anonymous scripting block
+    blocked('DECLARE x INT; BEGIN NULL; END', 'snowflake')
+    blocked('USE ROLE ACCOUNTADMIN', 'snowflake')           // session context change
+    blocked('USE WAREHOUSE wh', 'snowflake')
+    blocked('GRANT SELECT ON t TO ROLE r', 'snowflake')
+    blocked('REVOKE SELECT ON t FROM ROLE r', 'snowflake')
+  })
+  it('blocks smuggled multi-statements but allows a single terminated/commented SELECT', () => {
+    blocked('SELECT 1; DROP TABLE t', 'snowflake')          // second statement smuggled in
+    blocked('SELECT 1; SELECT 2', 'snowflake')
+    ok('SELECT 1;', 'snowflake')                            // trailing terminator is fine
+    ok('SELECT 1;   ', 'snowflake')
+    ok('SELECT 1; -- trailing comment', 'snowflake')
+    ok("SELECT note FROM t WHERE note = 'a; DROP TABLE t'", 'snowflake')  // ; inside a literal
+  })
+  it('does not trip on columns named like the blocked verbs', () => {
+    ok('SELECT use_count, call_id, begin_date, execute_flag FROM t', 'snowflake')
+  })
   it('allows read-only SELECT / WITH', () => {
     ok('SELECT a, COUNT(*) FROM orders GROUP BY a QUALIFY ROW_NUMBER() OVER (ORDER BY a) = 1', 'snowflake')
     ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'snowflake')

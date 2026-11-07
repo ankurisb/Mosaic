@@ -1,5 +1,31 @@
 import { describe, it, expect } from 'vitest'
-import { buildSnowflakeConfig } from './snowflake'
+import { buildSnowflakeConfig, processSnowflakeRows } from './snowflake'
+
+// Fake snowflake-sdk column objects (name + type), as stmt.getColumns() returns.
+const col = (name: string, type: string) => ({ getName: () => name, getType: () => type })
+
+describe('processSnowflakeRows: type normalisation', () => {
+  it('keeps high-precision NUMBER exact (string) but converts safe numbers to JS numbers', () => {
+    const cols = [col('BIGNUM', 'fixed'), col('PRICE', 'fixed'), col('RATIO', 'real')]
+    const rows = [{ BIGNUM: '12345678901234567890123456789012345678', PRICE: '173665.47', RATIO: '3.14' }]
+    expect(processSnowflakeRows(rows, cols)).toEqual([{ BIGNUM: '12345678901234567890123456789012345678', PRICE: 173665.47, RATIO: 3.14 }])
+  })
+  it('serialises VARIANT/OBJECT/ARRAY to a JSON string cell', () => {
+    const cols = [col('V', 'variant'), col('O', 'object'), col('A', 'array')]
+    const rows = [{ V: { a: 1, b: [2, 3] }, O: { name: 'A' }, A: [{ id: 1 }, { id: 2 }] }]
+    expect(processSnowflakeRows(rows, cols)).toEqual([{ V: '{"a":1,"b":[2,3]}', O: '{"name":"A"}', A: '[{"id":1},{"id":2}]' }])
+  })
+  it('renders BINARY as a hex string', () => {
+    const cols = [col('B', 'binary')]
+    const rows = [{ B: Buffer.from([0xde, 0xad, 0xbe, 0xef]) }]
+    expect(processSnowflakeRows(rows, cols)).toEqual([{ B: 'deadbeef' }])
+  })
+  it('leaves text/boolean/null/timestamps untouched and never numberifies a VARCHAR', () => {
+    const cols = [col('NAME', 'text'), col('FLAG', 'boolean'), col('NOTHING', 'text'), col('CODE', 'text')]
+    const rows = [{ NAME: 'hello', FLAG: true, NOTHING: null, CODE: '00123' }]
+    expect(processSnowflakeRows(rows, cols)).toEqual([{ NAME: 'hello', FLAG: true, NOTHING: null, CODE: '00123' }])
+  })
+})
 
 // password_enc without an enc2:/enc: prefix is returned verbatim by decrypt().
 

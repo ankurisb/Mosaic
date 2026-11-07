@@ -3582,9 +3582,19 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
     // -- Snowflake -----------------------------------------------
     if (dialect === 'snowflake') {
       const { snowflakeQuery } = await import('./snowflake')
-      const db = String(conn.database_name || '').replace(/["';]/g, '')
-      const schemaName = String(conn.schema_name || 'PUBLIC').replace(/["';]/g, '')
-      const q = `SELECT table_name, column_name, data_type FROM ${db ? `"${db}".` : ''}INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${schemaName}' ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+      // database_name = the session's default database. schema_name may be a bare `SCHEMA` in
+      // that database, OR a cross-database `DATABASE.SCHEMA` when the data lives in another
+      // database (Snowflake is idiomatically multi-database). In the cross-database case we
+      // introspect that database's INFORMATION_SCHEMA and qualify every emitted key with it,
+      // so the generated cube's sql_table becomes a 3-part `DATABASE.SCHEMA.TABLE` — the form
+      // Snowflake resolves across databases. Same-database connections stay 2-part (unchanged).
+      const defaultDb = String(conn.database_name || '').replace(/["';]/g, '')
+      const raw = String(conn.schema_name || 'PUBLIC').replace(/["';]/g, '')
+      const dot = raw.indexOf('.')
+      const dataDb = dot === -1 ? defaultDb : raw.slice(0, dot)
+      const dataSchema = dot === -1 ? raw : raw.slice(dot + 1)
+      const schemaLabel = dataDb && dataDb !== defaultDb ? `${dataDb}.${dataSchema}` : dataSchema
+      const q = `SELECT table_name, column_name, data_type FROM ${dataDb ? `"${dataDb}".` : ''}INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${dataSchema}' ORDER BY table_name, ordinal_position LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
       const { rows } = await snowflakeQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
       const byT = new Map<string, { name: string; type: string; pk: boolean }[]>()
       for (const r of rows) {
@@ -3594,7 +3604,7 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         const cols = byT.get(tn)!
         if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String(rec.COLUMN_NAME ?? rec.column_name), type: String(rec.DATA_TYPE ?? rec.data_type), pk: false })
       }
-      const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaName, name, columns }))
+      const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaLabel, name, columns }))
       return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byT.size > MAX_TABLES }
     }
 

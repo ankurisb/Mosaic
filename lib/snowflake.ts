@@ -59,6 +59,50 @@ export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
   return cfg
 }
 
+// --- result normalisation ---------------------------------------------------
+// snowflake-sdk returns some types in shapes the UI/charting layer can't use directly:
+//  - NUMBER is returned as a JS double, so a NUMBER(38,0) key/counter silently loses
+//    precision (…e+37). We fetch numbers AS STRINGS to keep them exact, then convert back
+//    to a JS number only when that is lossless (≤15 significant digits); bigger values stay
+//    strings.
+//  - VARIANT/OBJECT/ARRAY come back as parsed JS objects/arrays → would render as
+//    "[object Object]". Serialise them to a single JSON string cell.
+//  - BINARY comes back as a Node Buffer → emit a hex string.
+function numMaybeString(s: unknown): unknown {
+  if (typeof s !== 'string' || !/^-?\d+(\.\d+)?$/.test(s)) return s
+  const sig = s.replace(/[-.]/g, '').replace(/^0+/, '')
+  return sig.length > 15 ? s : Number(s)
+}
+interface SfColumn { getName?: () => string; getType?: () => string; isNumber?: () => boolean; isBinary?: () => boolean }
+export function processSnowflakeRows(rows: Record<string, unknown>[], cols: SfColumn[] | undefined): Record<string, unknown>[] {
+  if (!rows.length) return rows
+  const kind: Record<string, 'number' | 'semi' | 'binary'> = {}
+  try {
+    for (const c of cols || []) {
+      const name = c.getName ? c.getName() : ''
+      if (!name) continue
+      let t = ''
+      try { t = String(c.getType ? c.getType() : '').toLowerCase() } catch { /* ignore */ }
+      if (t === 'fixed' || t === 'real' || (c.isNumber && c.isNumber())) kind[name] = 'number'
+      else if (t === 'variant' || t === 'object' || t === 'array') kind[name] = 'semi'
+      else if (t === 'binary' || (c.isBinary && c.isBinary())) kind[name] = 'binary'
+    }
+  } catch { /* no metadata → fall back to value-shape handling below */ }
+  const hex = (v: unknown) => { try { return Buffer.from(v as Buffer).toString('hex') } catch { return String(v) } }
+  return rows.map(r => {
+    const o: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(r)) {
+      if (v === null || v === undefined) { o[k] = v; continue }
+      const kd = kind[k]
+      if (kd === 'number') o[k] = numMaybeString(v)
+      else if (kd === 'binary' || Buffer.isBuffer(v)) o[k] = hex(v)
+      else if (kd === 'semi' || (typeof v === 'object' && !(v instanceof Date))) o[k] = JSON.stringify(v)
+      else o[k] = v
+    }
+    return o
+  })
+}
+
 export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRows: number): Promise<{ rows: Record<string, unknown>[]; fields: string[] }> {
   const mod = await import('snowflake-sdk')
   const snowflake = (mod as unknown as { default?: typeof mod }).default || mod
@@ -75,14 +119,22 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
     connection.connect((err) => { if (done) return; done = true; clearTimeout(timer); err ? reject(err) : resolve() })
   })
   try {
-    const rows = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+    const { rows, cols } = await new Promise<{ rows: Record<string, unknown>[]; cols: SfColumn[] }>((resolve, reject) => {
       connection.execute({
         sqlText: sql,
-        complete: (err: Error | undefined, _stmt: unknown, out: Record<string, unknown>[] | undefined) => (err ? reject(err) : resolve(out || [])),
+        // Keep NUMBER exact (see processSnowflakeRows); VARIANT/BINARY handled there too.
+        fetchAsString: ['Number'],
+        complete: (err: Error | undefined, stmt: unknown, out: Record<string, unknown>[] | undefined) => {
+          if (err) return reject(err)
+          let cols: SfColumn[] = []
+          try { cols = (stmt as { getColumns?: () => SfColumn[] })?.getColumns?.() || [] } catch { /* no metadata */ }
+          resolve({ rows: out || [], cols })
+        },
       })
     })
     const capped = rows.length > maxRows ? rows.slice(0, maxRows) : rows
-    return { rows: capped, fields: capped.length ? Object.keys(capped[0]) : [] }
+    const processed = processSnowflakeRows(capped, cols)
+    return { rows: processed, fields: processed.length ? Object.keys(processed[0]) : [] }
   } finally {
     await new Promise<void>((resolve) => { try { connection.destroy(() => resolve()) } catch { resolve() } })
   }
@@ -90,6 +142,6 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
 
 interface SnowflakeConn {
   connect: (cb: (err: Error | undefined) => void) => void
-  execute: (opts: { sqlText: string; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => void
+  execute: (opts: { sqlText: string; fetchAsString?: string[]; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => void
   destroy: (cb: () => void) => void
 }

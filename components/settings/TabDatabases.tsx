@@ -530,7 +530,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 : <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
               <Grid cols={2}>
                 <Field label="Database"><input style={INP} placeholder="ANALYTICS" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
-                <Field label="Schema"><input style={INP} placeholder="PUBLIC" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+                <Field label="Schema" hint="Cross-database: DATABASE.SCHEMA"><input style={INP} placeholder="PUBLIC  (or OTHER_DB.PUBLIC)" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
               </Grid>
               <Grid cols={2}>
                 <Field label="Warehouse" hint="Compute"><input style={INP} placeholder="COMPUTE_WH" value={String(form.warehouse)} onChange={e => set('warehouse', e.target.value)} /></Field>

@@ -89,13 +89,29 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
   // it. GET in particular is not caught by the DML/DDL keyword list, so block the whole
   // family by their leading verb.
   if (dialect === 'snowflake') {
+    // Single statement only: a `;` that isn't a trailing terminator means a smuggled second
+    // statement (e.g. `SELECT 1; DROP TABLE t`). Strip comments + a trailing `;` first so a
+    // legitimate terminator or trailing comment doesn't trip it. (The driver also rejects
+    // multi-statement by default; this is defence-in-depth.)
+    const noComments = stripped.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    if (/;\s*\S/.test(noComments.replace(/;\s*$/, ''))) {
+      throw new SqlGuardError('Multiple statements are not allowed; run a single SELECT.')
+    }
+    // Stage file-transfer commands are statement-leading: GET downloads a stage file to the
+    // client (exfiltration), PUT uploads, LIST/LS enumerate, REMOVE/RM delete.
     if (/^\s*(get|put|list|ls|remove|rm)\b/i.test(stripped)) {
       throw new SqlGuardError('Stage file commands (GET/PUT/LIST/REMOVE) are blocked; return rows with a SELECT instead.')
+    }
+    // Procedural / dynamic / session commands: CALL runs a stored procedure (can mutate or
+    // reach the network), EXECUTE [IMMEDIATE|TASK] runs dynamic or scheduled SQL, BEGIN/DECLARE
+    // open an anonymous scripting block, USE changes the session's role/warehouse/database.
+    if (/^\s*(call|execute|begin|declare|use)\b/i.test(stripped)) {
+      throw new SqlGuardError('Procedural / session commands (CALL/EXECUTE/BEGIN/DECLARE/USE) are blocked; run a single SELECT.')
     }
     if (/(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
       throw new SqlGuardError('COPY INTO is blocked (it reads/writes a stage or cloud storage). Return rows instead.')
     }
-    if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|put|remove)\s/i.test(lower)) {
+    if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|put|remove|grant|revoke|call|execute)\s/i.test(lower)) {
       throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on Snowflake.')
     }
   }
