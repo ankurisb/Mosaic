@@ -107,6 +107,9 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
   const mod = await import('snowflake-sdk')
   const snowflake = (mod as unknown as { default?: typeof mod }).default || mod
   const timeoutMs = Number(conn.connect_timeout_ms) || 15000
+  // Bound query EXECUTION separately from the login: a runaway/heavy query must not hang the
+  // request forever. Default 120s, overridable per connection via query_timeout_ms.
+  const queryTimeoutMs = Number((conn as { query_timeout_ms?: number }).query_timeout_ms) || 120000
   const cfg = buildSnowflakeConfig(conn) as SnowflakeConfig & { timeout?: number }
   cfg.timeout = timeoutMs   // snowflake-sdk login timeout
   const connection = (snowflake as unknown as { createConnection: (c: SnowflakeConfig) => SnowflakeConn }).createConnection(cfg)
@@ -125,10 +128,11 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
     // up to maxRows then destroy the stream so no further pages are fetched.
     const { rows, cols } = await new Promise<{ rows: Record<string, unknown>[]; cols: SfColumn[] }>((resolve, reject) => {
       let settled = false
+      let qTimer: ReturnType<typeof setTimeout> | undefined
       const acc: Record<string, unknown>[] = []
-      const done = (cols: SfColumn[]) => { if (!settled) { settled = true; resolve({ rows: acc, cols }) } }
-      const fail = (e: Error) => { if (!settled) { settled = true; reject(e) } }
-      connection.execute({
+      const done = (cols: SfColumn[]) => { if (!settled) { settled = true; if (qTimer) clearTimeout(qTimer); resolve({ rows: acc, cols }) } }
+      const fail = (e: Error) => { if (!settled) { settled = true; if (qTimer) clearTimeout(qTimer); reject(e) } }
+      const statement = connection.execute({
         sqlText: sql,
         fetchAsString: ['Number'],   // keep NUMBER exact (see processSnowflakeRows)
         streamResult: true,
@@ -148,6 +152,13 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
           stream.on('close', () => done(cols))
         },
       })
+      // Server-side cancel on expiry: stmt.cancel() aborts the running query in Snowflake and
+      // fires complete() with a cancellation error. We also reject here so the request is bounded
+      // even if the driver never calls back.
+      qTimer = setTimeout(() => {
+        try { (statement as { cancel?: (cb: (e?: Error) => void) => void })?.cancel?.(() => {}) } catch { /* noop */ }
+        fail(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`))
+      }, queryTimeoutMs)
     })
     const processed = processSnowflakeRows(rows, cols)
     return { rows: processed, fields: processed.length ? Object.keys(processed[0]) : [] }
@@ -158,6 +169,6 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
 
 interface SnowflakeConn {
   connect: (cb: (err: Error | undefined) => void) => void
-  execute: (opts: { sqlText: string; fetchAsString?: string[]; streamResult?: boolean; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => void
+  execute: (opts: { sqlText: string; fetchAsString?: string[]; streamResult?: boolean; complete: (err: Error | undefined, stmt: unknown, rows: Record<string, unknown>[] | undefined) => void }) => { cancel?: (cb: (err?: Error) => void) => void } | void
   destroy: (cb: () => void) => void
 }

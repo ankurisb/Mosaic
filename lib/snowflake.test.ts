@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { buildSnowflakeConfig, processSnowflakeRows } from './snowflake'
+import { describe, it, expect, vi } from 'vitest'
+import { buildSnowflakeConfig, processSnowflakeRows, snowflakeQuery } from './snowflake'
 
 // Fake snowflake-sdk column objects (name + type), as stmt.getColumns() returns.
 const col = (name: string, type: string) => ({ getName: () => name, getType: () => type })
@@ -50,4 +50,30 @@ describe('buildSnowflakeConfig: key-pair (JWT) auth', () => {
     expect(c.privateKey).toContain('BEGIN PRIVATE KEY')
     expect(c.password).toBeUndefined()
   })
+})
+
+describe('snowflakeQuery: query execution timeout', () => {
+  it('cancels the statement and rejects with a bounded error when a query overruns query_timeout_ms', async () => {
+    const cancel = vi.fn((cb: (e?: Error) => void) => cb())
+    const destroy = vi.fn((cb: () => void) => cb())
+    const createConnection = () => ({
+      connect: (cb: (err?: Error) => void) => cb(undefined),
+      // Never invoke complete() → simulate a runaway/heavy query that hangs.
+      execute: () => ({ cancel }),
+      destroy,
+    })
+    vi.doMock('snowflake-sdk', () => ({ default: { createConnection }, createConnection }))
+    const { snowflakeQuery: freshQuery } = await import('./snowflake')
+    await expect(
+      freshQuery(
+        { host: 'acct', username: 'svc', password_enc: 'pw', query_timeout_ms: 40 } as never,
+        'SELECT * FROM huge_cross_join',
+        100,
+      ),
+    ).rejects.toThrow(/timed out after 40ms/)
+    expect(cancel).toHaveBeenCalled()   // server-side cancel was issued
+    expect(destroy).toHaveBeenCalled()  // connection torn down in finally
+    vi.doUnmock('snowflake-sdk')
+  })
+  it('exports snowflakeQuery', () => { expect(typeof snowflakeQuery).toBe('function') })
 })

@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.42] - 2026-11-07
+### Added
+- **Snowflake query execution timeout.** The connector bounded the *login* but not the running
+  query, so a runaway or heavy statement could hang the request indefinitely. Execution is now
+  bounded too (default 120s, overridable per connection via `query_timeout_ms`): on expiry the
+  statement is cancelled server-side via `stmt.cancel()` and the request rejects with a clean
+  `Snowflake query timed out after <n>ms` instead of hanging.
+
 ## [1.6.41] - 2026-11-07
 ### Fixed
 - **Snowflake large-result handling.** The connector streamed nothing — it buffered the entire
