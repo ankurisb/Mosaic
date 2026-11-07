@@ -82,6 +82,14 @@ describe('sql-guard: Snowflake write/exfiltration constructs', () => {
     blocked('CREATE TABLE t2 AS SELECT 1', 'snowflake')
     blocked('PUT file:///tmp/x @stage', 'snowflake')
   })
+  it('blocks the stage file-transfer commands incl. GET (download / exfil path)', () => {
+    blocked('GET @~/data.csv file:///tmp/', 'snowflake')   // downloads a stage file to the client
+    blocked('get @my_stage/x file:///tmp/', 'snowflake')
+    blocked('LIST @~', 'snowflake')
+    blocked('LS @my_stage', 'snowflake')
+    blocked('REMOVE @~/old.csv', 'snowflake')
+    blocked('RM @my_stage/x', 'snowflake')
+  })
   it('allows read-only SELECT / WITH', () => {
     ok('SELECT a, COUNT(*) FROM orders GROUP BY a QUALIFY ROW_NUMBER() OVER (ORDER BY a) = 1', 'snowflake')
     ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'snowflake')
@@ -89,6 +97,8 @@ describe('sql-guard: Snowflake write/exfiltration constructs', () => {
   it('does not trip on a value/column containing a keyword', () => {
     ok("SELECT note FROM t WHERE note = 'please copy into the sheet'", 'snowflake')
     ok('SELECT create_date, put_option FROM t', 'snowflake')
+    ok('SELECT GETDATE() AS now_ts', 'snowflake')        // GETDATE() is not the GET command
+    ok('SELECT get_total, list_price FROM t', 'snowflake')
   })
 })
 

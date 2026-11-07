@@ -72,18 +72,28 @@ module.exports = {
       if (ds.apiEndpoint) bq.apiEndpoint = ds.apiEndpoint;
       return bq;
     }
-    // Snowflake: account + warehouse + role (+ database/schema).
+    // Snowflake: account + warehouse + role (+ database/schema). Auth is either a password
+    // or a key pair. The driver spreads this config over its env defaults, so whatever we
+    // return wins. For key-pair we must set authenticator=SNOWFLAKE_JWT and the inline
+    // privateKey (PEM); passing the PEM as `password` makes the driver try password auth,
+    // which fails and — after a few retries — temporarily LOCKS the Snowflake user.
     if (type === 'snowflake') {
-      return {
+      const sf = {
         type: 'snowflake',
         account: ds.account,
         username: ds.user,
-        password: ds.password,
         database: ds.database,
         schema: ds.schema,
         warehouse: ds.warehouse,
         role: ds.role,
       };
+      if (ds.authenticator === 'SNOWFLAKE_JWT' && ds.privateKey) {
+        sf.authenticator = 'SNOWFLAKE_JWT';
+        sf.privateKey = ds.privateKey.endsWith('\n') ? ds.privateKey : ds.privateKey + '\n';
+      } else {
+        sf.password = ds.password;
+      }
+      return sf;
     }
 
     // Base config shared by the SQL dialects (postgres/mysql/mssql/clickhouse/redshift).

@@ -148,6 +148,8 @@ export interface CubeDatasource {
   projectId?: string; credentials?: string; apiEndpoint?: string
   // Snowflake
   account?: string; warehouse?: string; role?: string; schema?: string
+  // Snowflake key-pair auth: authenticator SNOWFLAKE_JWT + the private-key PEM (no password)
+  authenticator?: string; privateKey?: string
 }
 
 // Build the { connId: driverConfig } map Cube's driverFactory consumes. SQLite/unsupported
@@ -170,16 +172,22 @@ export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string
         schema: c.schema_name ?? undefined,
       }
     } else if (type === 'snowflake') {
-      out[c.id] = {
+      const ds: CubeDatasource = {
         type,
         account: c.host ?? undefined,
         user: c.username ?? undefined,
-        password: secret,
         database: c.database_name ?? undefined,
         schema: c.schema_name ?? undefined,
         warehouse: c.warehouse ?? undefined,
         role: c.role ?? undefined,
       }
+      // Key-pair auth: the secret is a private-key PEM, not a password. Cube's Snowflake
+      // driver authenticates with SNOWFLAKE_JWT + the inline private key; passing the PEM as
+      // a password makes it attempt password auth, which fails (and repeated failures lock
+      // the Snowflake user). Password auth keeps the plain password.
+      if (c.auth_mode === 'keypair') { ds.authenticator = 'SNOWFLAKE_JWT'; ds.privateKey = secret }
+      else { ds.password = secret }
+      out[c.id] = ds
     } else {
       // postgres / mysql / mssql / clickhouse / redshift
       out[c.id] = {

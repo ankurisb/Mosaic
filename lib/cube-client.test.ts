@@ -177,9 +177,16 @@ describe('cube-client: buildDatasourceMap', () => {
     expect(emu.bq2.apiEndpoint).toBe('http://bq-emulator:9050')
   })
 
-  it('Snowflake carries account/warehouse/role', () => {
+  it('Snowflake (password auth) carries account/warehouse/role + password', () => {
     const map = buildDatasourceMap([{ id: 'sf', dialect: 'snowflake', host: 'xy123.eu-west-1', username: 'svc', database_name: 'ANALYTICS', schema_name: 'PUBLIC', warehouse: 'WH', role: 'ANALYST' }], () => 'pw')
     expect(map.sf).toEqual({ type: 'snowflake', account: 'xy123.eu-west-1', user: 'svc', password: 'pw', database: 'ANALYTICS', schema: 'PUBLIC', warehouse: 'WH', role: 'ANALYST' })
+  })
+
+  it('Snowflake (key-pair auth) emits SNOWFLAKE_JWT + privateKey and NO password', () => {
+    const pem = '-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n'
+    const map = buildDatasourceMap([{ id: 'sf2', dialect: 'snowflake', host: 'xy123.eu-west-1', username: 'svc', database_name: 'ANALYTICS', schema_name: 'PUBLIC', warehouse: 'WH', role: 'ANALYST', auth_mode: 'keypair' }], () => pem)
+    expect(map.sf2).toEqual({ type: 'snowflake', account: 'xy123.eu-west-1', user: 'svc', database: 'ANALYTICS', schema: 'PUBLIC', warehouse: 'WH', role: 'ANALYST', authenticator: 'SNOWFLAKE_JWT', privateKey: pem })
+    expect((map.sf2 as { password?: string }).password).toBeUndefined()   // never the PEM as a password
   })
 })
 

@@ -83,8 +83,15 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     }
   }
 
-  // Snowflake: COPY INTO <location> exports to a stage/S3/GCS/Azure; DML/DDL mutate.
+  // Snowflake: COPY INTO <location> exports to a stage/S3/GCS/Azure; DML/DDL mutate. The
+  // stage file commands are statement-leading: GET downloads a stage file to the client
+  // (data exfiltration), PUT uploads one, LIST/LS enumerate a stage, REMOVE/RM delete from
+  // it. GET in particular is not caught by the DML/DDL keyword list, so block the whole
+  // family by their leading verb.
   if (dialect === 'snowflake') {
+    if (/^\s*(get|put|list|ls|remove|rm)\b/i.test(stripped)) {
+      throw new SqlGuardError('Stage file commands (GET/PUT/LIST/REMOVE) are blocked; return rows with a SELECT instead.')
+    }
     if (/(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
       throw new SqlGuardError('COPY INTO is blocked (it reads/writes a stage or cloud storage). Return rows instead.')
     }

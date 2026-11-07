@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.39] - 2026-11-07
+### Fixed
+- **Snowflake read-only guard: block `GET` (and `LIST`/`REMOVE`).** The stage file-transfer
+  commands are statement-leading and were not all caught by the DML/DDL keyword list — `GET`
+  (which downloads a stage file to the client, a data-exfiltration path) slipped through and
+  executed. All of `GET`/`PUT`/`LIST`/`LS`/`REMOVE`/`RM` are now blocked by their leading verb;
+  `GETDATE()` and columns like `get_total` are unaffected. Found by the live Snowflake battery.
+- **Snowflake Cube serving with key-pair auth.** The Cube `driverFactory` passed the private-key
+  PEM as a *password*, so the Snowflake driver attempted password auth on every pre-aggregation
+  refresh — which fails and, after a few retries, temporarily locks the Snowflake user. The
+  datasource map + `driverFactory` now emit `authenticator: SNOWFLAKE_JWT` + the inline
+  `privateKey` for `auth_mode='keypair'` (password auth unchanged). Also found by the live battery.
+
+### Verified
+- Snowflake connector **live-verified against a real Snowflake account** (key-pair / JWT auth,
+  TPC-H sample data): connection test (Snowflake 10.40.103), scalar/aggregate reads, NUMBER +
+  DATE decode, and the read-only guard (DML/DDL + `COPY INTO`/`PUT`/`GET`). Wired into chat +
+  agent tools and introspection. Cube serving fix above verified at unit level; live re-check
+  pending (the pre-fix attempt locked the trial user).
+
 ## [1.6.38] - 2026-11-06
 ### Added
 - **BigQuery nested / repeated types.** Query results now flatten `STRUCT`/`RECORD` and
