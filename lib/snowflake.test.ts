@@ -50,6 +50,19 @@ describe('buildSnowflakeConfig: key-pair (JWT) auth', () => {
     expect(c.privateKey).toContain('BEGIN PRIVATE KEY')
     expect(c.password).toBeUndefined()
   })
+  it('omits privateKeyPass when the key is unencrypted (no passphrase stored)', () => {
+    expect(c.privateKeyPass).toBeUndefined()
+  })
+  it('passes the decrypted passphrase as privateKeyPass for an encrypted key', () => {
+    const e = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'keypair', password_enc: '-----BEGIN ENCRYPTED PRIVATE KEY-----\\nX\\n-----END ENCRYPTED PRIVATE KEY-----', key_passphrase_enc: 's3cret-pass' })
+    expect(e.authenticator).toBe('SNOWFLAKE_JWT')
+    expect(e.privateKeyPass).toBe('s3cret-pass')
+  })
+  it('does not set privateKeyPass on password auth even if a passphrase leaked into the row', () => {
+    const p = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'password', password_enc: 'pw', key_passphrase_enc: 'ignored' })
+    expect(p.privateKeyPass).toBeUndefined()
+    expect(p.password).toBe('pw')
+  })
 })
 
 describe('snowflakeQuery: query execution timeout', () => {

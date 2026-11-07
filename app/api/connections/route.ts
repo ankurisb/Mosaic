@@ -28,14 +28,15 @@ export async function POST(req: Request) {
   const { action } = body
 
   if (action === 'create' || action === 'update') {
-    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token, auth_mode, tenant_id, warehouse, role, http_path } = body
+    const { id, label, dialect, environment, host, port, database_name, username, password, connection_string, schema_name, ssl_mode, ssl_ca, pool_min, pool_max, connect_timeout_ms, query_timeout_ms, read_only, mcp_endpoint, mcp_token, auth_mode, tenant_id, warehouse, role, http_path, key_passphrase } = body
     const passwordEnc = password ? encrypt(password) : null
     const connStrEnc = connection_string ? encrypt(connection_string) : null
     const mcpTokenEnc = mcp_token ? encrypt(mcp_token) : null
+    const keyPassEnc = key_passphrase ? encrypt(key_passphrase) : null
     if (action === 'create') {
       const rows = await sql`
-        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token,auth_mode,tenant_id,warehouse,role,http_path)
-        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc},${auth_mode||'sql'},${tenant_id||null},${warehouse||null},${role||null},${http_path||null})
+        INSERT INTO db_connections(label,dialect,environment,host,port,database_name,username,password_enc,connection_string,schema_name,ssl_mode,ssl_ca,pool_min,pool_max,connect_timeout_ms,query_timeout_ms,read_only,mcp_endpoint,mcp_token,auth_mode,tenant_id,warehouse,role,http_path,key_passphrase_enc)
+        VALUES(${label},${dialect||'postgres'},${environment||'development'},${host||null},${port||5432},${database_name||null},${username||null},${passwordEnc},${connStrEnc},${schema_name||'public'},${ssl_mode||'prefer'},${ssl_ca||null},${pool_min||1},${pool_max||5},${connect_timeout_ms||5000},${query_timeout_ms||30000},${read_only||false},${mcp_endpoint||null},${mcpTokenEnc},${auth_mode||'sql'},${tenant_id||null},${warehouse||null},${role||null},${http_path||null},${keyPassEnc})
         RETURNING id`
       syncToSuperset({
         id: (rows[0] as { id: string }).id,
@@ -83,7 +84,8 @@ export async function POST(req: Request) {
           tenant_id          = ${tenant_id || null},
           warehouse          = ${warehouse || null},
           role               = ${role || null},
-          http_path          = ${http_path || null}
+          http_path          = ${http_path || null},
+          key_passphrase_enc = COALESCE(${keyPassEnc}, key_passphrase_enc)
         WHERE id = ${id}`
       invalidateSchema(id)
       refreshSchemaInBackground(id)

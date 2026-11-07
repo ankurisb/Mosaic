@@ -7,7 +7,7 @@ import SemanticDescriptionsModal from './SemanticDescriptionsModal'
 
 interface DbConn { id: string; label: string; dialect: string; environment: string; host: string; port: number; database_name: string; username: string; schema_name: string; ssl_mode: string; pool_min: number; pool_max: number; read_only: boolean; mcp_endpoint?: string; mcp_token?: string; full_text_search?: boolean | number; fts_airbyte_conn_id?: string; managed?: boolean | number; description?: string }
 interface TestResult { ok: boolean; message?: string; latencyMs?: number; detail?: string }
-const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false, auth_mode: 'sql', tenant_id: '', warehouse: '', role: '', http_path: '' }
+const EMPTY = { label: '', dialect: 'postgres', environment: 'development', host: '', port: '5432', database_name: '', username: '', password: '', connection_string: '', schema_name: 'public', ssl_mode: 'prefer', ssl_ca: '', pool_min: '1', pool_max: '5', connect_timeout_ms: '5000', query_timeout_ms: '30000', read_only: false, mcp_endpoint: '', mcp_token: '', description: '', full_text_search: false, fts_airbyte_conn_id: '', managed: false, auth_mode: 'sql', tenant_id: '', warehouse: '', role: '', http_path: '', key_passphrase: '' }
 
 // Keys whose values look like DB connection strings
 const ENV_KEY_PATTERNS = [/DATABASE_URL/i, /DB_URL/i, /DB_URI/i, /_DSN/i, /POSTGRES/i, /POSTGRESQL/i, /MYSQL/i, /MONGO/i, /CLICKHOUSE/i, /INFLUX/i, /REDIS/i, /SQLITE/i, /CONNECTION_STRING/i, /CONN_STR/i]
@@ -526,7 +526,10 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                 <Field label="Username" required><input style={INP} placeholder="svc_user" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
               </Grid>
               {form.auth_mode === 'keypair'
-                ? <Field label="Private key (PEM)" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 80, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+                ? <>
+                    <Field label="Private key (PEM)" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 80, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
+                    <Field label="Key passphrase" hint="Only if the private key is encrypted — stored encrypted"><input style={INP} type="password" placeholder="Leave blank for an unencrypted key" value={String(form.key_passphrase)} onChange={e => set('key_passphrase', e.target.value)} /></Field>
+                  </>
                 : <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
               <Grid cols={2}>
                 <Field label="Database"><input style={INP} placeholder="ANALYTICS" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>

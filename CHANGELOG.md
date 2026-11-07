@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.43] - 2026-11-07
+### Added
+- **Snowflake encrypted private key (passphrase).** Key-pair auth now supports a
+  password-protected PEM: a new `key_passphrase` field (stored encrypted as
+  `key_passphrase_enc`, migration 032) is decrypted to `privateKeyPass` for both the direct
+  connector and Cube's driverFactory, so an encrypted key no longer fails to load. An
+  unencrypted key leaves the field blank and behaves exactly as before. UI adds a "Key
+  passphrase" input under the Snowflake key-pair option.
+
+### Fixed
+- **Postgres warehouse-connector columns.** The Postgres setup path never added the
+  `auth_mode`/`tenant_id`/`warehouse`/`role`/`http_path` columns (those ship as SQLite
+  migrations 030–031, which Postgres doesn't run), so Snowflake/Databricks connections were
+  unusable on a Postgres-backed install. `setup-pg` now adds them (plus `key_passphrase_enc`)
+  idempotently.
+
 ## [1.6.42] - 2026-11-07
 ### Added
 - **Snowflake query execution timeout.** The connector bounded the *login* but not the running

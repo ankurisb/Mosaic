@@ -112,6 +112,14 @@ export async function setupDatabasePostgres(): Promise<void> {
     managed             INTEGER DEFAULT 0,
     created_at          TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`
+  // Warehouse-connector + alt-auth columns. The SQLite path gets these via
+  // migrations/030–032; Postgres doesn't run those SQL files, so add them here.
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS auth_mode          TEXT DEFAULT 'sql'`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS tenant_id          TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS warehouse          TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS role               TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS http_path          TEXT`.catch(() => {})
+  await sql`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS key_passphrase_enc TEXT`.catch(() => {})
 
   await sql`CREATE TABLE IF NOT EXISTS api_services (
     id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

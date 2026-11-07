@@ -26,6 +26,8 @@ export interface SnowflakeConnRow {
   role?: unknown
   auth_mode?: unknown
   connect_timeout_ms?: unknown
+  query_timeout_ms?: unknown
+  key_passphrase_enc?: unknown
 }
 
 export interface SnowflakeConfig {
@@ -38,6 +40,7 @@ export interface SnowflakeConfig {
   password?: string
   authenticator?: string
   privateKey?: string
+  privateKeyPass?: string
 }
 
 export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
@@ -53,6 +56,10 @@ export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
   if (authMode === 'keypair') {
     cfg.authenticator = 'SNOWFLAKE_JWT'
     cfg.privateKey = decrypt((conn.password_enc as string) || '')
+    // An encrypted (password-protected) PEM needs its passphrase so snowflake-sdk
+    // can decrypt it; an unencrypted key leaves this unset.
+    const pass = conn.key_passphrase_enc ? decrypt(conn.key_passphrase_enc as string) : ''
+    if (pass) cfg.privateKeyPass = pass
   } else {
     cfg.password = decrypt((conn.password_enc as string) || '')
   }
@@ -109,7 +116,7 @@ export async function snowflakeQuery(conn: SnowflakeConnRow, sql: string, maxRow
   const timeoutMs = Number(conn.connect_timeout_ms) || 15000
   // Bound query EXECUTION separately from the login: a runaway/heavy query must not hang the
   // request forever. Default 120s, overridable per connection via query_timeout_ms.
-  const queryTimeoutMs = Number((conn as { query_timeout_ms?: number }).query_timeout_ms) || 120000
+  const queryTimeoutMs = Number(conn.query_timeout_ms) || 120000
   const cfg = buildSnowflakeConfig(conn) as SnowflakeConfig & { timeout?: number }
   cfg.timeout = timeoutMs   // snowflake-sdk login timeout
   const connection = (snowflake as unknown as { createConnection: (c: SnowflakeConfig) => SnowflakeConn }).createConnection(cfg)

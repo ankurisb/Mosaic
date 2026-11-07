@@ -187,6 +187,27 @@ describe('cube-client: buildDatasourceMap', () => {
     const map = buildDatasourceMap([{ id: 'sf2', dialect: 'snowflake', host: 'xy123.eu-west-1', username: 'svc', database_name: 'ANALYTICS', schema_name: 'PUBLIC', warehouse: 'WH', role: 'ANALYST', auth_mode: 'keypair' }], () => pem)
     expect(map.sf2).toEqual({ type: 'snowflake', account: 'xy123.eu-west-1', user: 'svc', database: 'ANALYTICS', schema: 'PUBLIC', warehouse: 'WH', role: 'ANALYST', authenticator: 'SNOWFLAKE_JWT', privateKey: pem })
     expect((map.sf2 as { password?: string }).password).toBeUndefined()   // never the PEM as a password
+    expect((map.sf2 as { privateKeyPass?: string }).privateKeyPass).toBeUndefined()  // no passphrase → unset
+  })
+  it('Snowflake (encrypted key-pair) adds privateKeyPass from the passphrase resolver', () => {
+    const pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----\nABC\n-----END ENCRYPTED PRIVATE KEY-----\n'
+    const map = buildDatasourceMap(
+      [{ id: 'sf3', dialect: 'snowflake', host: 'xy123.eu-west-1', username: 'svc', warehouse: 'WH', auth_mode: 'keypair' }],
+      () => pem,
+      (id) => (id === 'sf3' ? 'pem-pass' : undefined),
+    )
+    expect((map.sf3 as { authenticator?: string }).authenticator).toBe('SNOWFLAKE_JWT')
+    expect((map.sf3 as { privateKey?: string }).privateKey).toBe(pem)
+    expect((map.sf3 as { privateKeyPass?: string }).privateKeyPass).toBe('pem-pass')
+  })
+  it('Snowflake (password auth) ignores the passphrase resolver', () => {
+    const map = buildDatasourceMap(
+      [{ id: 'sf4', dialect: 'snowflake', host: 'h', username: 'svc', warehouse: 'WH' }],
+      () => 'pw',
+      () => 'should-be-ignored',
+    )
+    expect((map.sf4 as { password?: string }).password).toBe('pw')
+    expect((map.sf4 as { privateKeyPass?: string }).privateKeyPass).toBeUndefined()
   })
 })
 
