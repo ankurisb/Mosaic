@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.61] - 2026-11-08
+### Fixed
+- **Browse: Back button now returns to the catalog, not a random settings tab.** Picking a source
+  from the Browse grid opened the owning tab's form via React state alone, which pushed no
+  browser-history entry — so pressing Back skipped the grid and popped to whatever settings tab was
+  previously in history (e.g. Customization). `TabDataSources` now pushes a synthetic
+  return-to-Browse history entry on pick (same URL — doesn't disturb the `#data-sources` hash
+  routing) and intercepts the matching Back, so the first Back lands on the Browse grid and a second
+  Back leaves as before.
+
 ## [1.6.60] - 2026-11-08
 ### Added
 - **Catalog: the final oversized logos are now bundled too.** cimis, Google Forms, Microsoft

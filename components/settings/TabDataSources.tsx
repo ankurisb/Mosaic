@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import TabDatabases from './TabDatabases'
 import TabAPIs from './TabAPIs'
@@ -20,6 +20,24 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
   const [apiPreset, setApiPreset] = useState<{ label: string; nonce: number } | null>(null)
   const [filePreset, setFilePreset] = useState<{ transport: string; nonce: number } | null>(null)
 
+  // Picking a source from Browse opens the owning tab's form via React state, which pushes no
+  // browser-history entry — so the Back button would skip the Browse grid and leave the Data
+  // Sources tab entirely. We push a synthetic history entry on pick and intercept the matching
+  // Back (popstate) to return to the grid, so the first Back lands on Browse as expected.
+  const pushedRef = useRef(false)
+  useEffect(() => {
+    function onPop() {
+      if (pushedRef.current) {
+        pushedRef.current = false
+        setActiveTab('browse')
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  // Any time we're on Browse, there's no pending return-hop to consume.
+  useEffect(() => { if (activeTab === 'browse') pushedRef.current = false }, [activeTab])
+
   const onPick = (entry: DsEntry) => {
     const tab = (CATEGORY_TAB[entry.category] || 'databases') as SubTab
     if (entry.category === 'database' && entry.dialect) {
@@ -28,6 +46,11 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       setApiPreset({ label: entry.apiPreset || 'Custom', nonce: Date.now() })
     } else if (entry.category === 'file' && entry.fileTransport) {
       setFilePreset({ transport: entry.fileTransport, nonce: Date.now() })
+    }
+    // Leave a return-to-Browse marker in history (same URL — doesn't disturb the #data-sources
+    // hash routing), once per Browse→form hop.
+    if (activeTab === 'browse' && tab !== 'browse' && !pushedRef.current) {
+      try { window.history.pushState({ mosaicDsBrowseReturn: true }, '') ; pushedRef.current = true } catch { /* history unavailable */ }
     }
     setActiveTab(tab)
   }
