@@ -101,6 +101,21 @@ module.exports = {
       return sf;
     }
 
+    // Databricks SQL warehouse via Cube's databricks-jdbc driver. Build the JDBC URL from the
+    // workspace host + the SQL-warehouse HTTP path; authenticate with the PAT (token). catalog is
+    // the Unity Catalog default; generated cubes carry fully-qualified catalog.schema.table.
+    // NOTE: requires the Cube image to bundle @cubejs-backend/databricks-jdbc (JDBC/Java). Not yet
+    // live-verified against a workspace — see docs/DATABRICKS_HARDENING.md / the parity notes.
+    if (type === 'databricks') {
+      const host = String(ds.host || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const httpPath = ds.path || '';
+      const url = `jdbc:databricks://${host}:443;httpPath=${httpPath};ssl=1;transportMode=http;AuthMech=3;UID=token`;
+      const dbx = { type: 'databricks-jdbc', url, token: ds.token };
+      if (ds.catalog) dbx.catalog = ds.catalog;
+      if (ds.schema) dbx.database = ds.schema;
+      return dbx;
+    }
+
     // Base config shared by the SQL dialects (postgres/mysql/mssql/clickhouse/redshift).
     // Cube's Postgres and MySQL drivers read `host`; its SQL Server driver (tedious)
     // reads `server` and ignores `host`, so without the mapping below every MSSQL

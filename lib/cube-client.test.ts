@@ -198,5 +198,9 @@ describe('cube-client: buildDatasourceMap', () => {
     expect(d.authenticator).toBe('OAUTH'); expect(d.token).toBe('tok-123')
     expect(d.password).toBeUndefined(); expect(d.privateKey).toBeUndefined()
   })
+  it('Databricks is a Cube dialect: emits host/path/token/catalog + first bare schema', () => {
+    const map = buildDatasourceMap([{ id: 'dbx1', dialect: 'databricks', host: 'abc.cloud.databricks.com', http_path: '/sql/1.0/warehouses/xyz', database_name: 'main', schema_name: 'sales, marketing' }], () => 'dapi-token')
+    expect(map.dbx1).toEqual({ type: 'databricks', host: 'abc.cloud.databricks.com', path: '/sql/1.0/warehouses/xyz', token: 'dapi-token', catalog: 'main', schema: 'sales' })
+  })
 })
 

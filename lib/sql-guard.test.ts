@@ -74,6 +74,16 @@ describe('sql-guard: Databricks/Spark write/exfiltration constructs', () => {
     ok("SELECT REPLACE(name, 'x', 'y') FROM t", 'databricks')
     ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'databricks')
   })
+  it('blocks direct path-based file reads (delta/parquet/csv .`path`)', () => {
+    blocked('SELECT * FROM delta.`s3://bucket/p`', 'databricks')
+    blocked('SELECT * FROM parquet.`/Volumes/main/vol/f`', 'databricks')
+    blocked("SELECT * FROM csv.`abfss://c@a.dfs.core.windows.net/x`", 'databricks')
+  })
+  it('does not trip on a normal catalog.schema.table or a value containing a format name', () => {
+    ok('SELECT * FROM delta_lake.sales.orders', 'databricks')      // catalog named delta_lake, not delta.`path`
+    ok('SELECT * FROM main.parquet_zone.t', 'databricks')          // schema named parquet_zone
+    ok("SELECT note FROM t WHERE note = 'see parquet.`/x`'", 'databricks')  // inside a literal
+  })
 })
 
 describe('sql-guard: Snowflake write/exfiltration constructs', () => {

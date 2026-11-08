@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.52] - 2026-11-08
+### Added
+- **Databricks Cube serving.** Databricks is now a Cube serving target (previously query-path
+  only): added to `CUBE_DIALECTS`, with a datasource-map entry (host / http_path / token / catalog)
+  and a `cube.js` driverFactory branch that builds the Databricks JDBC URL for Cube's
+  `databricks-jdbc` driver. Generated cubes reference fully-qualified `catalog.schema.table`.
+- **Databricks query timeout + cancellation.** `databricksQuery` now bounds execution by the
+  connection's `query_timeout_ms` (default 120s) and **cancels the running statement** server-side
+  on overrun (previously only the connect was bounded).
+- **Databricks multi-catalog/schema introspection.** The Schema field accepts a comma/`;`/newline
+  list (bare `schema` in the default catalog, or `catalog.schema`); with none set, all schemas in
+  the default catalog are introspected. Tables are labelled `catalog.schema` so `sql_table`
+  resolves across catalogs.
+### Security
+- **Databricks guard: block direct path-based file reads** (``delta.`s3://…` ``,
+  ``parquet.`/Volumes/…` ``, ``csv.`abfss://…` ``) that sidestep Unity Catalog table grants,
+  alongside the existing `COPY INTO` / `INSERT OVERWRITE` / DML/DDL rules. A normal
+  `catalog.schema.table` or a format name inside a literal is unaffected.
+### Docs
+- **Databricks least-privilege onboarding guide** (`docs/DATABRICKS_HARDENING.md`): dedicated
+  read-only service principal (USE + SELECT), external-location/volume/credential and
+  federation/UDF grants to withhold, warehouse CAN USE + auto-stop, query timeout, IP access lists.
+
+> Build + unit-tested; the path-read guard block is live-verified on the box. Query timeout,
+> multi-catalog introspection, and **Cube serving** live-verification are deferred (need a
+> Databricks workspace + PAT; Cube serving also needs the Cube image to bundle `databricks-jdbc`).
+
 ## [1.6.51] - 2026-11-08
 ### Added
 - **BigQuery multi-dataset introspection.** The *Default dataset* field now accepts a comma/`;`/

@@ -25,7 +25,7 @@ export async function syncDatasourceMap(): Promise<number> {
   const dir = modelDir()
   if (!dir) return 0
   const sql = getDb()
-  const rows = await sql`SELECT id, dialect, host, port, database_name, username, schema_name, warehouse, role, auth_mode, password_enc, key_passphrase_enc FROM db_connections` as unknown as Array<DbConnLike & { password_enc?: string | null; key_passphrase_enc?: string | null }>
+  const rows = await sql`SELECT id, dialect, host, port, database_name, username, schema_name, warehouse, role, auth_mode, http_path, password_enc, key_passphrase_enc FROM db_connections` as unknown as Array<DbConnLike & { password_enc?: string | null; key_passphrase_enc?: string | null }>
   const passwordFor = (id: string) => {
     const r = rows.find(x => x.id === id)
     if (!r?.password_enc) return undefined

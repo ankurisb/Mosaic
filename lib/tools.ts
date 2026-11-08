@@ -3625,22 +3625,42 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
 
     // -- Databricks (Unity Catalog information_schema) -----------
     if (dialect === 'databricks') {
-      const { databricksQuery } = await import('./databricks')
-      const cat = String(conn.database_name || '').replace(/[`;]/g, '')
-      const schemaName = String(conn.schema_name || '').replace(/[`;]/g, '')
-      const where = schemaName ? `WHERE table_schema = '${schemaName}'` : ''
-      const q = `SELECT table_name, column_name, data_type FROM ${cat ? `\`${cat}\`.` : ''}information_schema.columns ${where} ORDER BY table_name LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
-      const { rows } = await databricksQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
-      const byT = new Map<string, { name: string; type: string; pk: boolean }[]>()
-      for (const r of rows) {
-        const rec = r as Record<string, unknown>
-        const tn = String(rec.table_name ?? rec.TABLE_NAME)
-        if (!byT.has(tn)) byT.set(tn, [])
-        const cols = byT.get(tn)!
-        if (cols.length < MAX_COLS_PER_TBL) cols.push({ name: String(rec.column_name ?? rec.COLUMN_NAME), type: String(rec.data_type ?? rec.DATA_TYPE), pk: false })
+      const { databricksQuery, parseDatabricksSchemas } = await import('./databricks')
+      // database_name = the default catalog. schema_name may name SEVERAL schemas (comma/;/newline
+      // separated), each a bare `schema` in the default catalog or a `catalog.schema` elsewhere.
+      // With no schema set we introspect ALL schemas in the default catalog. Tables are labelled
+      // `catalog.schema` so the generated cube's sql_table resolves as `catalog.schema.table` —
+      // the fully-qualified Unity Catalog form. One information_schema query per catalog; total
+      // tables capped at MAX_TABLES.
+      const defaultCatalog = String(conn.database_name || '').replace(/[`;]/g, '')
+      const targets = parseDatabricksSchemas(conn.schema_name, defaultCatalog)
+      const byCat = new Map<string, string[]>()
+      for (const t of targets) { const k = t.catalog || ''; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k)!.push(t.schema) }
+      const groups: Array<{ cat: string; schemas: string[] | null }> = targets.length
+        ? [...byCat.entries()].map(([cat, schemas]) => ({ cat, schemas }))
+        : [{ cat: defaultCatalog, schemas: null }]   // null = all schemas in the default catalog
+      const byT = new Map<string, { schema: string; name: string; columns: { name: string; type: string; pk: boolean }[] }>()
+      let truncated = false
+      for (const { cat, schemas } of groups) {
+        const where = schemas && schemas.length ? `WHERE table_schema IN (${schemas.map(s => `'${s}'`).join(',')})` : ''
+        const q = `SELECT table_schema, table_name, column_name, data_type FROM ${cat ? `\`${cat}\`.` : ''}information_schema.columns ${where} ORDER BY table_schema, table_name LIMIT ${MAX_TABLES * MAX_COLS_PER_TBL}`
+        const { rows } = await databricksQuery(conn, q, MAX_TABLES * MAX_COLS_PER_TBL)
+        for (const r of rows) {
+          const rec = r as Record<string, unknown>
+          const ts = String(rec.table_schema ?? rec.TABLE_SCHEMA)
+          const label = cat ? `${cat}.${ts}` : ts
+          const tn = String(rec.table_name ?? rec.TABLE_NAME)
+          const key = `${label}\u0000${tn}`
+          let entry = byT.get(key)
+          if (!entry) {
+            if (byT.size >= MAX_TABLES) { truncated = true; continue }
+            entry = { schema: label, name: tn, columns: [] }
+            byT.set(key, entry)
+          }
+          if (entry.columns.length < MAX_COLS_PER_TBL) entry.columns.push({ name: String(rec.column_name ?? rec.COLUMN_NAME), type: String(rec.data_type ?? rec.DATA_TYPE), pk: false })
+        }
       }
-      const out = [...byT.entries()].slice(0, MAX_TABLES).map(([name, columns]) => ({ schema: schemaName || cat, name, columns }))
-      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: out, truncated: byT.size > MAX_TABLES }
+      return { connection_id: connectionId, dialect, fetched_at: stamp(), tables: [...byT.values()], truncated }
     }
 
     return {

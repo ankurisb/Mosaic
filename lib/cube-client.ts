@@ -12,7 +12,7 @@ import { cubeNameFor } from './cube-schema'
 // ---- dialect support -------------------------------------------------------
 // Cube ships native drivers for these. SQLite (incl. Mosaic's own metadata DB) and
 // Mongo have no usable Cube SQL driver → those sources always use the SQL pipeline.
-const CUBE_DIALECTS = new Set(['postgres', 'postgresql', 'mysql', 'mariadb', 'mssql', 'sqlserver', 'clickhouse', 'redshift', 'bigquery', 'snowflake'])
+const CUBE_DIALECTS = new Set(['postgres', 'postgresql', 'mysql', 'mariadb', 'mssql', 'sqlserver', 'clickhouse', 'redshift', 'bigquery', 'snowflake', 'databricks'])
 export function cubeDialectSupported(dialect: string | null | undefined): boolean {
   return CUBE_DIALECTS.has(String(dialect ?? '').trim().toLowerCase())
 }
@@ -139,6 +139,7 @@ export interface DbConnLike {
   warehouse?: string | null
   role?: string | null
   auth_mode?: string | null
+  http_path?: string | null
 }
 export interface CubeDatasource {
   type: string
@@ -153,6 +154,8 @@ export interface CubeDatasource {
   // before the map is built, because snowflake-sdk only accepts an unencrypted inline key.
   // OAuth auth: authenticator OAUTH + an access token (no password/key).
   authenticator?: string; privateKey?: string; token?: string
+  // Databricks: SQL-warehouse HTTP path + PAT (the driverFactory builds the JDBC URL from host+path).
+  path?: string; catalog?: string
 }
 
 // Build the { connId: driverConfig } map Cube's driverFactory consumes. SQLite/unsupported
@@ -199,6 +202,18 @@ export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string
       else if (c.auth_mode === 'oauth') { ds.authenticator = 'OAUTH'; ds.token = secret }
       else { ds.password = secret }
       out[c.id] = ds
+    } else if (type === 'databricks') {
+      // Databricks SQL warehouse: the driverFactory builds a JDBC URL from host + http_path and
+      // authenticates with the PAT (secret). catalog/schema set the session defaults; generated
+      // cubes carry fully-qualified catalog.schema.table so serving resolves across catalogs.
+      out[c.id] = {
+        type,
+        host: c.host ?? undefined,
+        path: c.http_path ?? undefined,
+        token: secret,
+        catalog: c.database_name ?? undefined,
+        schema: c.schema_name ? String(c.schema_name).split(/[,;\n]+/)[0].replace(/["';`]/g, '').trim().split('.').pop() || undefined : undefined,
+      }
     } else {
       // postgres / mysql / mssql / clickhouse / redshift
       out[c.id] = {

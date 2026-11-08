@@ -91,6 +91,13 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     if (/(^|[^a-z0-9_])insert\s+overwrite\b/i.test(lower) || /(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
       throw new SqlGuardError('INSERT OVERWRITE / COPY INTO is blocked (it writes to storage). Return rows instead.')
     }
+    // Direct path-based file reads — e.g. SELECT * FROM delta.`s3://bucket/p`, parquet.`/Volumes/…`,
+    // csv.`abfss://…` — read straight from cloud storage / a volume, sidestepping Unity Catalog
+    // table grants. (stripLiterals has blanked any backtick path, so a `format.` followed by a
+    // residual quote/backtick is a path read; `catalog.schema.table` has no quote and is safe.)
+    if (/(^|[^a-z0-9_])(delta|parquet|csv|json|orc|avro|text|binaryfile)\s*\.\s*[`'"]/i.test(stripped)) {
+      throw new SqlGuardError('Direct path-based file reads (e.g. delta.`/path`) are blocked; query your Unity Catalog tables instead.')
+    }
     if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|replace)\s/i.test(lower)) {
       throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on Databricks.')
     }

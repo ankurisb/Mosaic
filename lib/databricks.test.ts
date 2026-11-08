@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest'
-import { buildDatabricksConfig } from './databricks'
+import { buildDatabricksConfig, parseDatabricksSchemas } from './databricks'
+
+describe('parseDatabricksSchemas', () => {
+  it('a bare schema in the default catalog is labelled catalog.schema', () => {
+    expect(parseDatabricksSchemas('sales', 'main')).toEqual([{ catalog: 'main', schema: 'sales', label: 'main.sales' }])
+  })
+  it('a catalog.schema spec keeps its own catalog', () => {
+    expect(parseDatabricksSchemas('other_cat.sales', 'main')).toEqual([{ catalog: 'other_cat', schema: 'sales', label: 'other_cat.sales' }])
+  })
+  it('splits a comma/;/newline list and de-duplicates', () => {
+    expect(parseDatabricksSchemas('sales, marketing ; other_cat.ops\nsales', 'main')).toEqual([
+      { catalog: 'main', schema: 'sales', label: 'main.sales' },
+      { catalog: 'main', schema: 'marketing', label: 'main.marketing' },
+      { catalog: 'other_cat', schema: 'ops', label: 'other_cat.ops' },
+    ])
+  })
+  it('no catalog set → label is the bare schema', () => {
+    expect(parseDatabricksSchemas('sales', '')).toEqual([{ catalog: '', schema: 'sales', label: 'sales' }])
+  })
+  it('empty yields no targets (caller introspects all schemas in the default catalog)', () => {
+    expect(parseDatabricksSchemas('', 'main')).toEqual([])
+  })
+})
 
 // password_enc without an enc2:/enc: prefix is returned verbatim by decrypt().
 

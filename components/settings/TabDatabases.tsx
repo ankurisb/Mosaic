@@ -551,7 +551,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               <Field label="Access token (PAT)" hint="Stored encrypted"><input style={INP} type="password" placeholder="dapi..." value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
               <Grid cols={2}>
                 <Field label="Catalog" hint="Unity Catalog (optional)"><input style={INP} placeholder="main" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>
-                <Field label="Schema" hint="Optional"><input style={INP} placeholder="default" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+                <Field label="Schema" hint="Optional; comma-separate for several, or catalog.schema"><input style={INP} placeholder="default  (or sales, marketing  or  other_cat.sales)" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
               </Grid>
             </div>
           ) : (
