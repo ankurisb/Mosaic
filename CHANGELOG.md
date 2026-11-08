@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.48] - 2026-11-08
+### Docs
+- **Snowflake least-privilege onboarding guide** (`docs/SNOWFLAKE_HARDENING.md`, mirroring the
+  ClickHouse one). Covers the dedicated read-only role (`USAGE` + `SELECT` incl. future grants),
+  the grants a security review must confirm the role *lacks* (write/DDL, external functions, API
+  / external-access integrations, network rules, secrets, stages) — the authoritative control
+  for the external-function egress path the SQL guard can't detect — plus the three auth modes
+  (key-pair incl. encrypted passphrase, OAuth token, password), statement-timeout / resource
+  monitor, and an optional network policy.
+
 ## [1.6.47] - 2026-11-08
 ### Security
 - **Snowflake guard: block direct stage reads.** A `SELECT … FROM @stage` (named, user `@~`,
