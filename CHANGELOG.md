@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.59] - 2026-11-08
+### Added
+- **Catalog: pulled the remaining connector logos (one-time, bundled).** The ~178 connectors that
+  were still falling back to the generic glyph now carry their real brand logo. Fetched once from
+  the Airbyte connector metadata CDN (GitHub raw as fallback) and bundled into
+  `public/connectors/airbyte-icons.json` so they load same-origin with no runtime internet
+  dependency (air-gap safe). **588 of 591 connectors now have a real logo**; the 3 left on the
+  generic glyph have logos too large to be worth bundling (cimis, Google Forms, Microsoft Dataverse,
+  Sharetribe — 290–425 KB each).
+### Changed
+- Monochrome (black-only) connector marks are recolored to `currentColor` at bundle time and the
+  logo tile sets `color: var(--text)`, so marks like Vercel, PagerDuty and Todoist stay visible in
+  dark mode instead of disappearing into the tile.
+- The connector grid now renders whatever logo exists in the bundle rather than gating on a stale
+  per-source `icon` boolean, so added logos light up without touching `airbyte-sources.ts`.
+
 ## [1.6.58] - 2026-11-08
 ### Fixed
 - **Catalog: connector logos were rendering blank.** The bundled connector logos ship at their own

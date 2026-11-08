@@ -91,7 +91,7 @@ export default function TabDataSourceCatalog({ onPick }: { onPick: (entry: DsEnt
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 10 }}>
             {pageItems.map(s => (
               <Tile key={s.slug} name={s.name} onClick={() => onPick(connEntry(s))}>
-                <DataSourceIcon name={s.name} size={44} kind="connector" svg={s.icon ? connIcons?.[s.slug] : undefined} />
+                <DataSourceIcon name={s.name} size={44} kind="connector" svg={connIcons?.[s.slug] || undefined} />
               </Tile>
             ))}
           </div>

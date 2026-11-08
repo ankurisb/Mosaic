@@ -54,7 +54,7 @@ export default function DataSourceIcon({ icon, color, name, size = 44, svg, kind
     const g = Math.round(size * 0.62)
     return (
       <div style={{ ...tileBase, background: 'var(--surface)', border: '1px solid var(--border)' }} aria-hidden>
-        <span style={{ width: g, height: g, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: fitSvg(svg, g) }} />
+        <span style={{ width: g, height: g, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: fitSvg(svg, g) }} />
       </div>
     )
   }
