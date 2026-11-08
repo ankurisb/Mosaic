@@ -1,11 +1,32 @@
 'use client'
-// Airbyte data-source tab — moved out of the Databases tab into its own sub-tab so
-// it sits in line with Databases / API connections / File servers / MCP servers / Prism.
+// Third-party connector tab — its own sub-tab in line with Databases / API connections /
+// File servers / MCP servers / Prism. The underlying sync engine is deliberately NOT surfaced
+// to end users: the UI calls it the "connector engine" and connector logos are served from the
+// bundled, same-origin icon set (no vendor CDN, no vendor name in the network tab).
 import React, { useState, useCallback } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { Btn, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
 import { ObjectFields, seedConfig, type Schema } from './SpecFields'
+import DataSourceIcon from './DataSourceIcon'
+
+// Shared, one-time load of the bundled connector icon set (same-origin, air-gap).
+let _connIcons: Record<string, string> | null = null
+let _connIconsP: Promise<Record<string, string>> | null = null
+function loadConnIcons(): Promise<Record<string, string>> {
+  if (_connIcons) return Promise.resolve(_connIcons)
+  if (!_connIconsP) _connIconsP = fetch('/connectors/airbyte-icons.json').then(r => r.ok ? r.json() : {}).then(d => { _connIcons = d; return d }).catch(() => ({}))
+  return _connIconsP
+}
+function useConnIcons() {
+  const [icons, setIcons] = React.useState<Record<string, string> | null>(_connIcons)
+  React.useEffect(() => { if (!_connIcons) loadConnIcons().then(setIcons) }, [])
+  return icons || _connIcons
+}
+// Normalise a connector display name / type into the bundled icon key.
+function connIconSlug(name: string): string {
+  return (name || '').toLowerCase().replace(/^source-/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
 
 export default function TabAirbyte({ user }: { user: SessionUser }) {
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
@@ -32,19 +53,19 @@ export default function TabAirbyte({ user }: { user: SessionUser }) {
           {airbyteCount === 0 && (
             <button onClick={() => setShowAirbyteForm(true)}
               style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontFamily: 'inherit' }}>
-              + Connect Airbyte
+              + Connect engine
             </button>
           )}
         </div>
       )}
       {user.role === 'admin' && airbyteIsCloud && (
-        <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 560 }}>
+        <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-fg) 6%, transparent), color-mix(in srgb, var(--accent-fg) 2%, transparent))', maxWidth: 560 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: 'rgba(97,92,245,0.12)' }}>
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: 'color-mix(in srgb, var(--accent-fg) 12%, transparent)' }}>
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="var(--accent-fg)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
             </span>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '2px 7px', borderRadius: 999 }}>Enterprise</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--accent-fg)', background: 'color-mix(in srgb, var(--accent-fg) 10%, transparent)', padding: '2px 7px', borderRadius: 999 }}>Enterprise</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
             Build a connector to <em>any</em> source — including your proprietary and internal systems — by describing it in plain language. Available on the self-hosted Enterprise edition, where connectors are built and run entirely within your network. The standard catalog of 300+ connectors is available here.
@@ -62,37 +83,14 @@ interface AbDest     { destinationId?: string; id?: string; name: string; destin
 interface AbConn     { connectionId?: string; id?: string; name: string; status: string; schedule?: Record<string,unknown>; syncCatalog?: { streams?: unknown[] } }
 interface AbJob      { id?: number; jobId?: number; status: string; createdAt?: number; updatedAt?: number; job?: { id: number; status: string; createdAt: number; updatedAt: number } }
 
-const AB_EMPTY = { label: 'Local Airbyte', url: 'http://localhost:8000', username: 'airbyte', password: '', client_id: '', client_secret: '' }
+const AB_EMPTY = { label: 'Connector engine', url: 'http://localhost:8000', username: 'airbyte', password: '', client_id: '', client_secret: '' }
 
+// Connector logo chip — served entirely from the bundled icon set (same-origin, air-gap, no vendor
+// CDN or vendor name in the network tab). Falls back to a generic glyph when no logo is bundled.
 function AbIcon({ name, size = 26 }: { name: string; size?: number }) {
-  const slug = abSlug(name)
-  const [err, setErr] = React.useState(false)
-  const abbr = (name || '??').replace(/[^a-zA-Z0-9 ]/g,'').split(' ').map((w:string) => w[0]||'').join('').slice(0,2).toUpperCase()
-  if (!slug || err) return (
-    <div style={{ width: size, height: size, borderRadius: 6, background: 'var(--bg4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: 'var(--text3)', flexShrink: 0 }}>{abbr}</div>
-  )
-  return <img src={`https://connectors.airbyte.com/files/metadata/airbyte/${slug}/latest/icon.svg`} onError={() => setErr(true)} style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4, flexShrink: 0 }} />
-}
-
-function abSlug(name: string) {
-  const n = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-  const m: Record<string,string> = {
-    postgres: 'source-postgres', postgresql: 'source-postgres', mysql: 'source-mysql',
-    mssql: 'source-mssql', sqlserver: 'source-mssql', mongodb: 'source-mongodb-v2',
-    elasticsearch: 'source-elasticsearch', clickhouse: 'source-clickhouse',
-    snowflake: 'source-snowflake', bigquery: 'source-bigquery', redshift: 'source-redshift',
-    s3: 'source-s3', influxdb: 'source-influxdb', kafka: 'source-kafka',
-    salesforce: 'source-salesforce', hubspot: 'source-hubspot', github: 'source-github',
-    gitlab: 'source-gitlab', slack: 'source-slack', stripe: 'source-stripe',
-    shopify: 'source-shopify', notion: 'source-notion', jira: 'source-jira',
-    googlesheetsv4: 'source-google-sheets', googlesheets: 'source-google-sheets',
-    googleanalytics: 'source-google-analytics-v4', airtable: 'source-airtable',
-    zendesk: 'source-zendesk-support', intercom: 'source-intercom',
-    mixpanel: 'source-mixpanel', amplitude: 'source-amplitude', stripe2: 'source-stripe',
-    sap: 'source-sap-fieldglass', asana: 'source-asana', pipedrive: 'source-pipedrive',
-  }
-  for (const k of Object.keys(m)) { if (n.includes(k)) return m[k] }
-  return null
+  const icons = useConnIcons()
+  const svg = icons?.[connIconSlug(name)]
+  return <DataSourceIcon name={name} size={size} kind="connector" svg={svg || undefined} />
 }
 
 function AbStatusBadge({ status }: { status: string }) {
@@ -150,7 +148,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   const loadInstances = useCallback(async () => {
     setLoading(true)
     try { const r = await fetch('/api/airbyte?action=list'); const d = await r.json(); const insts = d.instances || []; setInstances(insts); onCountChangeRef.current?.(insts.length) }
-    catch { showToast('Failed to load Airbyte instances', false) }
+    catch { showToast('Failed to load connector engines', false) }
     finally { setLoading(false) }
   }, [])
 
@@ -216,7 +214,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
   }
 
   async function deleteSource(instanceId: string, sourceId: string) {
-    if (!confirm('Delete this source from Airbyte?')) return
+    if (!confirm('Delete this source?')) return
     try {
       const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete_source', instanceId, sourceId }) })
       const d = await r.json(); if (d.error) throw new Error(d.error)
@@ -230,13 +228,13 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
       const r = await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: editing ? 'update_instance' : 'create_instance', id: editing, ...form }) })
       const d = await r.json(); if (d.error) throw new Error(d.error)
       setShowForm(false); setEditing(null); setForm(AB_EMPTY); loadInstances()
-      showToast(editing ? 'Instance updated' : 'Airbyte connected')
+      showToast(editing ? 'Engine updated' : 'Connector engine connected')
     } catch (e) { showToast((e as Error).message, false) }
     finally { setSaving(false) }
   }
 
   async function deleteInstance(id: string) {
-    if (!confirm('Disconnect this Airbyte instance?')) return
+    if (!confirm('Disconnect this connector engine?')) return
     await fetch('/api/airbyte', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete_instance', id }) })
     loadInstances()
   }
@@ -253,7 +251,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
       // Airbyte Cloud doesn't expose the catalog — show it as an intentional
       // edition boundary, not a failure.
       if (d.error === 'catalog_unavailable_on_cloud' || d.cloud) {
-        setCatalogNotice(d.message || 'The connector catalog isn\u2019t available on Airbyte Cloud.')
+        setCatalogNotice(d.message || 'The connector catalog is available on the self-hosted engine only.')
         setConnDefs([])
       } else {
         setConnDefs(d.definitions || [])
@@ -330,7 +328,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
 
       {!loading && instances.length === 0 && (
         <div style={{ padding: '28px 20px', background: 'var(--bg3)', borderRadius: 10, textAlign: 'center', fontSize: 13, color: 'var(--text3)', marginTop: 12 }}>
-          No Airbyte instance connected. Start Airbyte with <code style={{ background: 'var(--bg4)', padding: '1px 5px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>docker compose up -d</code> then click "+ Connect Airbyte" above.
+          No connector engine connected. Start it with <code style={{ background: 'var(--bg4)', padding: '1px 5px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>docker compose up -d</code> then click "+ Connect engine" above.
         </div>
       )}
 
@@ -344,7 +342,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
         return (
           <div key={inst.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 12, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
             <div style={{ padding: '13px 18px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 8, background: 'linear-gradient(135deg,#615cf5,#a78bfa)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: 'linear-gradient(135deg, var(--accent-fg), color-mix(in srgb, var(--accent-fg) 55%, var(--surface)))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="white" strokeWidth="1.6" strokeLinecap="round"><polygon points="11,2 14,8 20,9 16,14 17,20 11,17 5,20 6,14 2,9 8,8"/></svg>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -602,17 +600,17 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
         <div onClick={e => { if (e.target === e.currentTarget) { setShowForm(false); setEditing(null); setForm(AB_EMPTY) } }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 14, padding: 28, width: 420, maxWidth: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{editing ? 'Edit Airbyte instance' : 'Connect Airbyte instance'}</div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{editing ? 'Edit connector engine' : 'Connect connector engine'}</div>
               <button onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
             <div style={{ padding: '8px 12px', background: 'var(--green-bg)', borderRadius: 8, fontSize: 12, color: 'var(--green-t)', lineHeight: 1.5, marginBottom: 16, border: '1px solid color-mix(in srgb, var(--green-t) 35%, transparent)' }}>
-              <strong>Docker Compose</strong> — use Username: <code style={{fontFamily:'var(--font-mono)'}}>airbyte</code> / Password: <code style={{fontFamily:'var(--font-mono)'}}>password</code><br/>
-              <strong>abctl (Kubernetes)</strong> — use your email + password from <code style={{fontFamily:'var(--font-mono)'}}>abctl local credentials</code>, plus Client ID &amp; Secret below.<br/>
-              <strong>Airbyte Cloud</strong> — URL <code style={{fontFamily:'var(--font-mono)'}}>https://api.airbyte.com</code> + the Client ID &amp; Secret from an Application (Cloud → Settings → Applications). Standard 300+ connectors; AI custom connectors are Enterprise (self-hosted) only.
+              <strong>Docker (recommended)</strong> — use Username: <code style={{fontFamily:'var(--font-mono)'}}>airbyte</code> / Password: <code style={{fontFamily:'var(--font-mono)'}}>password</code><br/>
+              <strong>Kubernetes</strong> — use the email + password from your engine&apos;s local credentials, plus Client ID &amp; Secret below.<br/>
+              <strong>Hosted engine</strong> — enter the engine URL plus the Client ID &amp; Secret from its application settings. Standard 300+ connectors; AI custom connectors are Enterprise (self-hosted) only.
             </div>
             {([
-              { key: 'label',         label: 'Label',            ph: 'Local Airbyte',              type: 'text',     hint: '' },
-              { key: 'url',           label: 'Airbyte URL',      ph: 'http://localhost:8000',      type: 'text',     hint: 'Self-hosted: http://localhost:8000 · Airbyte Cloud: https://api.airbyte.com (with your Cloud application client ID & secret)', req: true },
+              { key: 'label',         label: 'Label',            ph: 'Connector engine',           type: 'text',     hint: '' },
+              { key: 'url',           label: 'Engine URL',       ph: 'http://localhost:8000',      type: 'text',     hint: 'Self-hosted: http://localhost:8000 · Hosted engine: enter its API URL plus the application client ID & secret', req: true },
               { key: 'username',      label: 'Email / Username', ph: 'airbyte or your@email.com', type: 'text',     hint: '' },
               { key: 'password',      label: 'Password',         ph: editing ? '(unchanged)' : 'password', type: 'password', hint: editing ? 'Leave blank to keep existing' : '' },
               { key: 'client_id',     label: 'Client ID',        ph: 'abctl only',                 type: 'text',     hint: 'OAuth2 client ID for abctl deployments' },
@@ -626,7 +624,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
               </div>
             ))}
             <div style={{ padding: '10px 12px', background: 'var(--blue-bg)', borderRadius: 8, fontSize: 12, color: 'var(--blue-t)', lineHeight: 1.6, marginBottom: 20 }}>
-              Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(37,99,235,.12)', padding: '1px 5px', borderRadius: 4 }}>docker compose up -d</code> in your Airbyte directory.
+              Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(37,99,235,.12)', padding: '1px 5px', borderRadius: 4 }}>docker compose up -d</code> in your connector-engine directory.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <Btn onClick={() => { setShowForm(false); setEditing(null); setForm(AB_EMPTY) }}>Cancel</Btn>
@@ -719,7 +717,7 @@ function CustomConnectorsList({ instanceId, isCloud }: { instanceId: string; isC
   React.useEffect(() => { load() }, [load])
 
   async function remove(item: CustomConnectorItem) {
-    if (!confirm(`Delete "${item.name}"? This removes the ${item.status} connector from Airbyte.`)) return
+    if (!confirm(`Delete "${item.name}"? This removes the ${item.status} connector.`)) return
     setBusy(item.id)
     const action = item.status === 'published' ? 'delete_source_definition' : 'delete_project'
     const key = item.status === 'published' ? 'sourceDefinitionId' : 'projectId'
@@ -817,7 +815,7 @@ function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector:
         const instRes = await fetch('/api/airbyte?action=list')
         const instJson = await instRes.json()
         const inst = (instJson.instances || []).find((i: { id: string; workspace_id?: string }) => i.id === instanceId)
-        if (!inst?.workspace_id) { setErr('Airbyte workspace not discovered yet.'); setPhase('pick'); return }
+        if (!inst?.workspace_id) { setErr('Connector engine workspace not discovered yet.'); setPhase('pick'); return }
         setWorkspaceId(inst.workspace_id)
         const destRes = await fetch(`/api/airbyte?action=destinations&id=${instanceId}`)
         const destJson = await destRes.json()
@@ -874,7 +872,7 @@ function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector:
           <div>
             {destinations.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 14 }}>
-                No destinations are configured in Airbyte yet. Add a destination (Postgres, Snowflake, BigQuery, etc.) in the Airbyte interface, then come back to set up the sync.
+                No destinations are configured yet. Add a destination (Postgres, Snowflake, BigQuery, etc.) in the connector engine, then come back to set up the sync.
               </div>
             ) : (
               <div style={{ marginBottom: 14 }}>
@@ -882,7 +880,7 @@ function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector:
                 <select value={destId} onChange={e => setDestId(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
                   {destinations.map(d => { const id = d.destinationId || d.id || ''; return <option key={id} value={id}>{destName(d)}</option> })}
                 </select>
-                <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Destinations are managed in Airbyte. To add one, use the Airbyte interface.</div>
+                <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 6 }}>Destinations are managed in the connector engine.</div>
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -897,7 +895,7 @@ function SetUpSyncModal({ connector, instanceId, onClose, onDone }: { connector:
         {(phase === 'built' || phase === 'registering') && (
           <div>
             <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 12 }}>
-              Sync started{info?.streamCount ? ` (${info.streamCount} stream${info.streamCount === 1 ? '' : 's'})` : ''}. To query the landed data from Mosaic, register the destination as a connection — enter its database password (Airbyte doesn&rsquo;t expose it).
+              Sync started{info?.streamCount ? ` (${info.streamCount} stream${info.streamCount === 1 ? '' : 's'})` : ''}. To query the landed data from Mosaic, register the destination as a connection — enter its database password (the connector engine doesn&rsquo;t expose it).
             </div>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Destination database password" style={{ ...field, marginBottom: 12 }} />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

@@ -122,20 +122,20 @@ export default function ConnectorsPage({ user }: { user: SessionUser }) {
           </div>
 
           {gate === 'checking' ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Checking your Airbyte connection…</div>
+            <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Checking your connector engine…</div>
           ) : gate !== 'ok' ? (
-            <div style={{ padding: '28px 24px', borderRadius: 14, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, rgba(97,92,245,0.06), rgba(97,92,245,0.02))', maxWidth: 620 }}>
+            <div style={{ padding: '28px 24px', borderRadius: 14, border: '1px solid var(--border2)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-fg) 6%, transparent), color-mix(in srgb, var(--accent-fg) 2%, transparent))', maxWidth: 620 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, background: 'rgba(97,92,245,0.12)' }}>
-                  <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="#615cf5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, background: 'color-mix(in srgb, var(--accent-fg) 12%, transparent)' }}>
+                  <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="var(--accent-fg)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6.5" width="9" height="6" rx="1.2"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
                 </span>
                 <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>AI custom connectors</span>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#615cf5', background: 'rgba(97,92,245,0.1)', padding: '3px 8px', borderRadius: 999 }}>Enterprise</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--accent-fg)', background: 'color-mix(in srgb, var(--accent-fg) 10%, transparent)', padding: '3px 8px', borderRadius: 999 }}>Enterprise</span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, margin: 0 }}>
                 {gate === 'cloud'
-                  ? <>You&rsquo;re connected to <strong>Airbyte Cloud</strong>, which gives you the standard catalog of 300+ connectors. Building a connector to <em>any</em> source — including your proprietary and internal systems — from a plain-language description is available on the <strong>self-hosted Enterprise edition</strong>, where connectors are built and run entirely within your network.</>
-                  : <>Building AI custom connectors needs a <strong>self-hosted Airbyte</strong> instance. Connect one under <strong>Settings → Data sources → Airbyte</strong>, or use <strong>Airbyte Cloud</strong> for the standard 300+ connector catalog. The AI connector builder is part of the self-hosted <strong>Enterprise edition</strong>.</>}
+                  ? <>You&rsquo;re connected to a <strong>hosted connector engine</strong>, which gives you the standard catalog of 300+ connectors. Building a connector to <em>any</em> source — including your proprietary and internal systems — from a plain-language description is available on the <strong>self-hosted Enterprise edition</strong>, where connectors are built and run entirely within your network.</>
+                  : <>Building AI custom connectors needs a <strong>self-hosted connector engine</strong>. Connect one under <strong>Settings → Data sources → 3rd party connectors</strong>, or use a <strong>hosted engine</strong> for the standard 300+ connector catalog. The AI connector builder is part of the self-hosted <strong>Enterprise edition</strong>.</>}
               </p>
               <a href="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 16, padding: '8px 14px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--bg)', fontSize: 12, fontWeight: 500, color: 'var(--text)', textDecoration: 'none' }}>
                 Go to Data sources

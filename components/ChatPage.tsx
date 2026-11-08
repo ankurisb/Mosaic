@@ -108,7 +108,7 @@ const SOURCE_CATEGORIES: { key: DataSource['type']; label: string }[] = [
   { key: 'api', label: 'APIs' },
   { key: 'file_server', label: 'File servers' },
   { key: 'prism', label: 'Prism' },
-  { key: 'airbyte', label: 'Airbyte' },
+  { key: 'airbyte', label: 'Connectors' },
   { key: 'mcp', label: 'MCP servers' },
 ]
 
@@ -230,7 +230,7 @@ function ToolCalls({
     query_database: 'Database query',
     call_api: 'API call',
     read_file_server: 'File read',
-    query_airbyte: 'Airbyte query',
+    query_airbyte: 'Connector query',
   }
   const names = tools.map(t => toolLabel[t.name] || t.name)
   const uniqueNames = [...new Set(names)]
@@ -279,7 +279,7 @@ function ToolCalls({
     if (t.name === 'web_search') return `Searching the web for "${String(inp.query || '').slice(0, 40)}"…`
     if (t.name === 'call_api') return 'Calling API…'
     if (t.name === 'read_file_server') return 'Reading file…'
-    if (t.name === 'query_airbyte') return 'Querying Airbyte…'
+    if (t.name === 'query_airbyte') return 'Querying connectors…'
     return `Running ${t.name}…`
   }
 
@@ -1245,7 +1245,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
       // Airbyte instances — each instance appears as one source
       const airbytes: DataSource[] = (abData.instances || []).map((inst: Record<string,unknown>) => ({
-        id: `airbyte:${String(inst.id)}`, label: String(inst.label || 'Airbyte'),
+        id: `airbyte:${String(inst.id)}`, label: String(inst.label || 'Connectors'),
         type: 'airbyte' as const, dialect: 'airbyte',
         host: String(inst.url || ''), database_name: String(inst.workspace_id || ''),
       }))
@@ -1698,7 +1698,7 @@ export default function ChatPage({ user }: { user: SessionUser }) {
 
   function sourceIcon(src: DataSource) {
     if (src.type === 'airbyte') return (
-      <svg width="12" height="12" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><polygon points="11,2 14,8 20,9 16,14 17,20 11,17 5,20 6,14 2,9 8,8"/></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
     )
     if (src.type === 'api') return (
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="3" width="10" height="6" rx="1.5"/><path d="M3 6h2M7 6h2"/></svg>

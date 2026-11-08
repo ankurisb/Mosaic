@@ -9,7 +9,7 @@ import { SURFACES, type Surface } from '@/lib/surfaces'
 const META: Record<Surface, { label: string; desc: string; href: string; external?: boolean }> = {
   n8n:      { label: 'Workflow Automation', desc: 'Build and run automation workflows (n8n).',        href: '/api/authz/n8n-login' },
   superset: { label: 'Analytics',           desc: 'Explore and build dashboards (Superset).',         href: '/api/authz/superset-login' },
-  airbyte:  { label: 'Data Pipelines',      desc: 'Manage data source syncs (Airbyte).',              href: '/settings#data-sources' },
+  airbyte:  { label: 'Data Pipelines',      desc: 'Manage third-party connector syncs.',              href: '/settings#data-sources' },
   ciso:     { label: 'Compliance',          desc: 'Governance, risk & compliance (CISO Assistant).',  href: process.env.NEXT_PUBLIC_CISO_URL || '', external: true },
 }
 
@@ -177,7 +177,7 @@ export default function TabInterfaces() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}
-                    title="Open the raw Airbyte portal (admin fallback)"
+                    title="Open the connector engine portal (admin fallback)"
                     style={{ fontSize: 12, color: 'var(--text3)', textDecoration: 'none', whiteSpace: 'nowrap', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)' }}
                   >
                     Portal ↗

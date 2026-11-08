@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.60] - 2026-11-08
+### Added
+- **Catalog: the final oversized logos are now bundled too.** cimis, Google Forms, Microsoft
+  Dataverse and Sharetribe were the last connectors on the generic glyph because their source SVGs
+  were 290–435 KB. Optimised them (SVGO precision reduction for the vectors; the Dataverse embedded
+  768×768 PNG downscaled to 96×96) down to 4–103 KB each and bundled them. **All 591 connectors now
+  carry a real logo**, verified legible in both light and dark mode.
+### Changed
+- **White-labelled the connector engine.** The third-party connector flow no longer reveals that it
+  is driven by Airbyte:
+  - Connector logos are served from the bundled, same-origin icon set instead of the vendor CDN —
+    no vendor domain in the browser network tab, and air-gap safe.
+  - All user-visible "Airbyte" strings are renamed to neutral wording ("connector engine",
+    "Connectors") across the connectors tab, the chat source picker and progress text
+    ("Querying connectors…"), the AI-connectors page, the interfaces list, the databases subtitle,
+    the developer-API reference, and the agent-builder capability chip.
+  - The vendor brand colour (#615CF5) and the vendor-style logo mark are replaced with Mosaic's own
+    accent token and a neutral connector glyph.
+  - Backend route names (`/api/airbyte`), the engine's own default credentials, and the raw
+    admin-only engine portal are left intact (functional, admin-only).
+
 ## [1.6.59] - 2026-11-08
 ### Added
 - **Catalog: pulled the remaining connector logos (one-time, bundled).** The ~178 connectors that

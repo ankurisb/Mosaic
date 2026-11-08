@@ -328,7 +328,7 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
         <PageTitle>Data sources</PageTitle>
         {user.role === 'admin' && <Btn variant="primary" onClick={() => { setShowForm(!showForm); setEditing(null); setForm(EMPTY); setError(''); setParsedOk(false) }}>+ Add database</Btn>}
       </div>
-      <PageSub>Direct database connections for live queries. Use the Airbyte tab to connect SaaS systems, ERP and APIs.</PageSub>
+      <PageSub>Direct database connections for live queries. Use the 3rd party connectors tab to connect SaaS systems, ERP and APIs.</PageSub>
 
       {/* Sandbox test DB */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>

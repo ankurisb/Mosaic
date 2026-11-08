@@ -215,7 +215,7 @@ export default function TabDeveloperAPI({ user }: { user: SessionUser }) {
           { method: 'POST', path: '/api/v1/rca',                   desc: 'Trigger a Root Cause Analysis programmatically' },
           { method: 'GET',  path: '/api/v1/conversations',         desc: 'List conversation history' },
           { method: 'GET',  path: '/api/v1/connections',           desc: 'List all databases, APIs, and file servers' },
-          { method: 'GET',  path: '/api/v1/connections/airbyte',   desc: 'List Airbyte sources and sync connections' },
+          { method: 'GET',  path: '/api/v1/connections/airbyte',   desc: 'List connector sources and sync connections' },
           { method: 'GET',  path: '/api/v1/connections/:id/health',desc: 'Check health of a specific data source' },
           { method: 'GET',  path: '/api/v1/users',                 desc: 'List all users' },
         ].map((ep, i, arr) => (

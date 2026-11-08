@@ -422,7 +422,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
                     <button key={t.id} onClick={() => setDraft({ ...draft, tools: on ? draft.tools.filter(x => x !== t.id) : [...draft.tools, t.id] })}
                       title={t.w ? 'Write action — needs approval at run time' : t.se ? 'Side-effect tool' : ''}
                       style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? (t.w ? 'var(--amber-t,#b45309)' : 'var(--accent-bg,#2f6df6)') : 'var(--surface)', color: on ? (t.w ? '#fff' : 'var(--accent-fg,#fff)') : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
-                      {t.w ? '✎ ' : ''}{t.id}
+                      {t.w ? '✎ ' : ''}{t.id === 'query_airbyte' ? 'query_connectors' : t.id}
                     </button>
                   )
                 })}
