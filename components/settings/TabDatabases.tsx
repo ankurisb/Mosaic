@@ -587,7 +587,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
               <>
                 <Field label="Username"><input style={INP} placeholder="app_user" value={String(form.username)} onChange={e => set('username', e.target.value)} /></Field>
                 <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" placeholder="" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
-                <Field label="Schema" hint="Default: public"><input style={INP} placeholder="public" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
+                <Field label="Schema" hint="Default public; comma-separate for several, or * for all"><input style={INP} placeholder="public  (or sales, marketing  or  *)" value={String(form.schema_name)} onChange={e => set('schema_name', e.target.value)} /></Field>
               </>
             )}
           </Grid>

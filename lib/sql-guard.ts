@@ -140,6 +140,11 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     if (/(^|[^a-z0-9_])unload\s*\(/i.test(lower)) {
       throw new SqlGuardError('UNLOAD is blocked (it exports data to S3). Query only your configured tables.')
     }
+    // COPY loads from S3 / DynamoDB / EMR / an SSH host into a table — a write + an ingest path
+    // that can reach external storage and read credentials. It's statement-leading in Redshift.
+    if (/^\s*copy\s/i.test(stripped)) {
+      throw new SqlGuardError('COPY is blocked (it loads from S3 / DynamoDB and writes a table). Return rows with a SELECT instead.')
+    }
     if (/(^|[^a-z0-9_])into\s+[a-z_#"]/i.test(lower) && !/\binto\s+outfile\b/i.test(lower)) {
       throw new SqlGuardError('SELECT … INTO is blocked (it writes a new table); return rows instead.')
     }

@@ -144,6 +144,14 @@ describe('sql-guard: Redshift exfiltration constructs', () => {
     blocked('SELECT a, b INTO new_table FROM t', 'redshift')
     blocked('SELECT * INTO #temp FROM t', 'redshift')
   })
+  it('blocks COPY (S3 / DynamoDB ingest + table write)', () => {
+    blocked("COPY sales FROM 's3://bucket/data' IAM_ROLE 'arn:aws:iam::123:role/r'", 'redshift')
+    blocked('copy t from \'s3://b/k\' credentials \'…\'', 'redshift')
+  })
+  it('does not trip on a column/value containing the word copy', () => {
+    ok('SELECT copy_count, hard_copy FROM t', 'redshift')
+    ok("SELECT note FROM t WHERE note = 'please copy to sheet'", 'redshift')
+  })
   it('allows ordinary SELECT / WITH / aggregations', () => {
     ok('SELECT date_trunc(\'day\', ts) d, sum(units) FROM production GROUP BY 1', 'redshift')
     ok('WITH x AS (SELECT 1) SELECT * FROM x', 'redshift')

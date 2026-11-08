@@ -3254,15 +3254,19 @@ export async function introspectSchema(connectionId: string): Promise<CachedSche
         pgPools.set(connectionId, entry)
       }
       entry.lastUsed = Date.now()
-      const schemaName = (conn.schema_name as string) || 'public'
+      // schema_name may name ONE schema, SEVERAL (comma/;/newline separated), or '*' for all
+      // user schemas. A specific list filters table_schema = ANY(list); '*' or empty = all.
+      const schemaList = String(conn.schema_name || 'public')
+        .split(/[,;\n]+/).map(s => s.replace(/["';`]/g, '').trim()).filter(Boolean)
+      const wildcard = schemaList.length === 0 || schemaList.includes('*')
       const tables = await entry.pool.query(
         `SELECT table_schema, table_name
            FROM information_schema.tables
           WHERE table_type='BASE TABLE'
             AND table_schema NOT IN ('pg_catalog','information_schema')
-            AND ($1='*' OR table_schema=$1)
+            AND ($1::boolean OR table_schema = ANY($2::text[]))
           ORDER BY table_schema, table_name LIMIT ${MAX_TABLES + 1}`,
-        [schemaName],
+        [wildcard, schemaList],
       )
       const truncated = tables.rows.length > MAX_TABLES
       const out: CachedSchema['tables'] = []

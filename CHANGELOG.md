@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.49] - 2026-11-08
+### Added
+- **Redshift multi-schema introspection.** The Schema field now accepts a comma/`;`/newline list
+  (e.g. `sales, marketing`) as well as a single schema or `*` (all user schemas); introspection
+  filters `table_schema = ANY(list)`. (Parity with the Snowflake multi-schema feature.)
+### Security
+- **Redshift guard: block `COPY`.** `COPY` loads from S3 / DynamoDB into a table (a write + an
+  external ingest path that can reference credentials); it's now blocked alongside the existing
+  `UNLOAD` / `SELECT … INTO` / multi-statement rules. A column/value containing "copy" is
+  unaffected.
+### Docs
+- **Redshift least-privilege onboarding guide** (`docs/REDSHIFT_HARDENING.md`): read-only
+  user/group, the privileges + IAM-role / Spectrum external-schema access to withhold, statement
+  timeout / WLM, and network. Note: query-timeout+cancel parity was already in place for
+  redshift/postgres via pg `statement_timeout` (= the connection's `query_timeout_ms`).
+
 ## [1.6.48] - 2026-11-08
 ### Docs
 - **Snowflake least-privilege onboarding guide** (`docs/SNOWFLAKE_HARDENING.md`, mirroring the
