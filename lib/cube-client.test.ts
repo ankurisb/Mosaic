@@ -192,5 +192,11 @@ describe('cube-client: buildDatasourceMap', () => {
     const map = buildDatasourceMap([{ id: 'sf5', dialect: 'snowflake', host: 'h', username: 'svc', warehouse: 'WH', schema_name: 'TPCH_SF1, TPCH_SF10, OTHER_DB.PUBLIC' }], () => 'pw')
     expect((map.sf5 as { schema?: string }).schema).toBe('TPCH_SF1')
   })
+  it('Snowflake (OAuth) emits authenticator OAUTH + token and no password/key', () => {
+    const map = buildDatasourceMap([{ id: 'sf6', dialect: 'snowflake', host: 'h', username: 'svc', warehouse: 'WH', auth_mode: 'oauth' }], () => 'tok-123')
+    const d = map.sf6 as { authenticator?: string; token?: string; password?: string; privateKey?: string }
+    expect(d.authenticator).toBe('OAUTH'); expect(d.token).toBe('tok-123')
+    expect(d.password).toBeUndefined(); expect(d.privateKey).toBeUndefined()
+  })
 })
 

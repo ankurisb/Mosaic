@@ -80,6 +80,16 @@ describe('buildSnowflakeConfig: key-pair (JWT) auth', () => {
   })
 })
 
+describe('buildSnowflakeConfig: OAuth token auth', () => {
+  const c = buildSnowflakeConfig({ host: 'acct', username: 'svc', auth_mode: 'oauth', password_enc: 'oauth-access-token' })
+  it('uses authenticator OAUTH with the token and no password/key', () => {
+    expect(c.authenticator).toBe('OAUTH')
+    expect(c.token).toBe('oauth-access-token')
+    expect(c.password).toBeUndefined()
+    expect(c.privateKey).toBeUndefined()
+  })
+})
+
 describe('parseSnowflakeSchemas', () => {
   it('defaults to PUBLIC when empty', () => {
     expect(parseSnowflakeSchemas('', 'DB')).toEqual([{ db: 'DB', schema: 'PUBLIC', label: 'PUBLIC' }])

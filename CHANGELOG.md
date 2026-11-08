@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.46] - 2026-11-08
+### Added
+- **Snowflake OAuth token auth.** A third key-pair alternative: `auth_mode = 'oauth'` authenticates
+  with `authenticator=OAUTH` + an OAuth access token (stored encrypted in `password_enc`, reusing
+  the existing field), for tokens minted by an IdP through a Snowflake OAuth security integration.
+  Wired through the connector and Cube's driverFactory; UI adds an "OAuth token" option with an
+  access-token field. (Interactive `externalbrowser` SSO remains out of scope — it needs a user at
+  a browser, which a headless connector/serving layer can't drive.)
+
 ## [1.6.45] - 2026-11-07
 ### Added
 - **Snowflake multi-schema introspection.** A connection's *Schema* may now list several schemas

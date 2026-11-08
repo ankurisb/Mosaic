@@ -92,6 +92,9 @@ module.exports = {
         // password-protected key before writing the map), so no passphrase is needed here.
         sf.authenticator = 'SNOWFLAKE_JWT';
         sf.privateKey = ds.privateKey.endsWith('\n') ? ds.privateKey : ds.privateKey + '\n';
+      } else if (ds.authenticator === 'OAUTH' && ds.token) {
+        sf.authenticator = 'OAUTH';
+        sf.token = ds.token;
       } else {
         sf.password = ds.password;
       }

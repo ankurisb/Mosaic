@@ -515,7 +515,7 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="Authentication">
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {[['password','Password'],['keypair','Key pair (JWT)']].map(([v,l]) => (
+                  {[['password','Password'],['keypair','Key pair (JWT)'],['oauth','OAuth token']].map(([v,l]) => (
                     <button key={v} type="button" onClick={() => set('auth_mode', v)}
                       style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: `1.5px solid ${form.auth_mode === v ? 'var(--blue)' : 'var(--border2)'}`, background: form.auth_mode === v ? 'var(--blue-bg)' : 'var(--bg)', color: form.auth_mode === v ? 'var(--blue-t)' : 'var(--text2)', fontSize: 13, fontWeight: form.auth_mode === v ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>{l}</button>
                   ))}
@@ -530,6 +530,8 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
                     <Field label="Private key (PEM)" hint="Stored encrypted"><textarea style={{ ...INP, minHeight: 80, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
                     <Field label="Key passphrase" hint="Only if the private key is encrypted — stored encrypted"><input style={INP} type="password" placeholder="Leave blank for an unencrypted key" value={String(form.key_passphrase)} onChange={e => set('key_passphrase', e.target.value)} /></Field>
                   </>
+                : form.auth_mode === 'oauth'
+                ? <Field label="OAuth access token" hint="From your IdP via a Snowflake OAuth security integration — stored encrypted"><textarea style={{ ...INP, minHeight: 60, fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="eyJ…" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>
                 : <Field label="Password" hint="Stored encrypted"><input style={INP} type="password" value={String(form.password)} onChange={e => set('password', e.target.value)} /></Field>}
               <Grid cols={2}>
                 <Field label="Database"><input style={INP} placeholder="ANALYTICS" value={String(form.database_name)} onChange={e => set('database_name', e.target.value)} /></Field>

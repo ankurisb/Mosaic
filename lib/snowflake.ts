@@ -54,6 +54,7 @@ export interface SnowflakeConfig {
   password?: string
   authenticator?: string
   privateKey?: string
+  token?: string
 }
 
 // A connection's Schema may name several schemas to introspect, comma/semicolon/newline
@@ -97,6 +98,11 @@ export function buildSnowflakeConfig(conn: SnowflakeConnRow): SnowflakeConfig {
     // shape snowflake-sdk accepts inline); an unencrypted key passes through unchanged.
     const pass = conn.key_passphrase_enc ? decrypt(conn.key_passphrase_enc as string) : ''
     cfg.privateKey = toUnencryptedPkcs8(pem, pass)
+  } else if (authMode === 'oauth') {
+    // OAuth: password_enc holds an OAuth access token (from an IdP via a Snowflake OAuth
+    // security integration). snowflake-sdk authenticates with authenticator=OAUTH + token.
+    cfg.authenticator = 'OAUTH'
+    cfg.token = decrypt((conn.password_enc as string) || '')
   } else {
     cfg.password = decrypt((conn.password_enc as string) || '')
   }

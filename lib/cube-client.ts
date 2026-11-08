@@ -151,7 +151,8 @@ export interface CubeDatasource {
   // Snowflake key-pair auth: authenticator SNOWFLAKE_JWT + the private-key PEM (no password).
   // The PEM is always unencrypted here — an encrypted key is decrypted upstream (cube-sync)
   // before the map is built, because snowflake-sdk only accepts an unencrypted inline key.
-  authenticator?: string; privateKey?: string
+  // OAuth auth: authenticator OAUTH + an access token (no password/key).
+  authenticator?: string; privateKey?: string; token?: string
 }
 
 // Build the { connId: driverConfig } map Cube's driverFactory consumes. SQLite/unsupported
@@ -195,6 +196,7 @@ export function buildDatasourceMap(conns: DbConnLike[], passwordFor: (id: string
       // a password makes it attempt password auth, which fails (and repeated failures lock
       // the Snowflake user). Password auth keeps the plain password.
       if (c.auth_mode === 'keypair') { ds.authenticator = 'SNOWFLAKE_JWT'; ds.privateKey = secret }
+      else if (c.auth_mode === 'oauth') { ds.authenticator = 'OAUTH'; ds.token = secret }
       else { ds.password = secret }
       out[c.id] = ds
     } else {
