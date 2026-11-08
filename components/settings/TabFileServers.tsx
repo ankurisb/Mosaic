@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { SessionUser } from '@/lib/auth'
 import { PageTitle, PageSub, INP, SEL, Btn, Badge, StatusDot, Field, Grid, Alert, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
@@ -39,13 +39,28 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
   const [fsSearch, setFsSearch] = useState('')
   const [fsPage, setFsPage] = useState(1)
 
+  // The form opens as its own full-page view (replacing the list). Opening pushes a history entry
+  // so the browser Back button — and the in-page Back / Cancel — return to the list.
+  const formPushedRef = useRef(false)
+  const resetForm = () => { setShowForm(false); setEditing(null); setForm(EMPTY); setError('') }
+  const openForm = (setup?: () => void) => {
+    if (setup) setup()
+    if (!formPushedRef.current) { try { window.history.pushState({ mosaicFsForm: true }, '') ; formPushedRef.current = true } catch { /* no history */ } }
+    setShowForm(true)
+  }
+  const closeForm = () => { if (formPushedRef.current) window.history.back(); else resetForm() }
+  useEffect(() => {
+    function onPop() { if (formPushedRef.current) { formPushedRef.current = false; resetForm() } }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Opened from the "Browse" catalog with a chosen file source: open a fresh form pre-set to that
   // transport (SMB / SFTP / S3 / SharePoint / local), as if the admin picked it by hand.
   useEffect(() => {
     if (!openTransport?.transport || user.role !== 'admin') return
-    setEditing(null)
-    setForm({ ...EMPTY, transport: openTransport.transport })
-    setError(''); setShowForm(true)
+    openForm(() => { setEditing(null); setForm({ ...EMPTY, transport: openTransport.transport }); setError('') })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTransport?.nonce])
 
@@ -72,7 +87,9 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
       })
       const { error: err } = await safeJson(r)
       if (err) { setError(err); return }
-      setShowForm(false); setEditing(null); setForm(EMPTY); await load()
+      setShowForm(false); setEditing(null); setForm(EMPTY)
+      if (formPushedRef.current) { formPushedRef.current = false; try { window.history.back() } catch { /* no history */ } }
+      await load()
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
   }
@@ -94,8 +111,10 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
   }
 
   function startEdit(s: FileServer) {
-    setForm({ ...EMPTY, ...s, port: String(s.port || ''), poll_interval_sec: String(s.poll_interval_sec), max_files: String(s.max_files), max_rows: String(s.max_rows), password: '', ssh_key: '', secret_key: '' })
-    setEditing(s.id); setShowForm(true); setError('')
+    openForm(() => {
+      setForm({ ...EMPTY, ...s, port: String(s.port || ''), poll_interval_sec: String(s.poll_interval_sec), max_files: String(s.max_files), max_rows: String(s.max_rows), password: '', ssh_key: '', secret_key: '' })
+      setEditing(s.id); setError('')
+    })
   }
 
   const t = form.transport
@@ -106,18 +125,25 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
 
   return (
     <div className="fade-in">
+      {!showForm && (<>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <PageTitle>File servers</PageTitle>
-        {user.role === 'admin' && <Btn variant="primary" onClick={() => { setShowForm(!showForm); setEditing(null); setForm(EMPTY); setError('') }}>+ Add file server</Btn>}
+        {user.role === 'admin' && <Btn variant="primary" onClick={() => openForm(() => { setEditing(null); setForm(EMPTY); setError('') })}>+ Add file server</Btn>}
       </div>
       <PageSub>Connect SMB shares, SFTP, S3 buckets, or local paths. Mosaic can read CSV, Excel, PDF, XML, and JSON files.</PageSub>
+      </>)}
 
 
-      {error && <Alert variant="error">{error}</Alert>}
+      {!showForm && error && <Alert variant="error">{error}</Alert>}
 
       {showForm && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginTop: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>{editing ? 'Edit file server' : 'Add file server'}</div>
+          <button onClick={closeForm} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, fontFamily: 'inherit', padding: 0, marginBottom: 16 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
+            Back to file servers
+          </button>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>{editing ? 'Edit file server' : 'Add file server'}</div>
+          {error && <div style={{ marginBottom: 16 }}><Alert variant="error">{error}</Alert></div>}
           <Grid cols={2}>
             <Field label="Label *"><input style={INP} type="text" value={form.label} onChange={e => f('label', e.target.value)} placeholder="Plant A SMB Share" /></Field>
             <Field label="Transport">
@@ -187,12 +213,12 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <Btn variant="primary" onClick={save} disabled={saving}>{saving ? <Spinner size={13} /> : (editing ? 'Save changes' : 'Add server')}</Btn>
-            <Btn variant="ghost" onClick={() => { setShowForm(false); setEditing(null); setForm(EMPTY); setError('') }}>Cancel</Btn>
+            <Btn variant="ghost" onClick={closeForm}>Cancel</Btn>
           </div>
         </div>
       )}
 
-      {loading ? (
+      {!showForm && (loading ? (
         <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={18} /></div>
       ) : servers.length === 0 ? (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '48px 24px', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>
@@ -235,7 +261,7 @@ export default function TabFileServers({ user, openTransport }: { user: SessionU
             </div>
           )}
         </>
-      )}
+      ))}
     </div>
   )
 }

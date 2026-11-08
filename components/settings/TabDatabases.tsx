@@ -113,13 +113,26 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
   const [error, setError] = useState('')
   const [parsedOk, setParsedOk] = useState(false)
   const formRef = useRef<HTMLDivElement>(null)
+  const formPushedRef = useRef(false)
 
-  // Scroll edit form into view when it opens
+  // The connection form opens as its own full-page view (replacing the list), not inline below it.
+  // Opening pushes a history entry so the browser Back button — and the in-page Back / Cancel —
+  // return to the list instead of leaving the Data Sources tab.
+  const resetForm = () => { setShowForm(false); setEditing(null); setForm(EMPTY); setError(''); setParsedOk(false) }
+  const openForm = (setup?: () => void) => {
+    if (setup) setup()
+    if (!formPushedRef.current) { try { window.history.pushState({ mosaicDbForm: true }, '') ; formPushedRef.current = true } catch { /* no history */ } }
+    setShowForm(true)
+  }
+  const closeForm = () => { if (formPushedRef.current) window.history.back(); else resetForm() }
   useEffect(() => {
-    if (showForm && formRef.current) {
-      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [showForm, editing])
+    function onPop() { if (formPushedRef.current) { formPushedRef.current = false; resetForm() } }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // Bring the form view to the top when it opens.
+  useEffect(() => { if (showForm) formRef.current?.scrollIntoView({ block: 'start' }) }, [showForm, editing])
 
   // Opened from the "Browse" catalog with a chosen data source: open a fresh form pre-selected to
   // that dialect (with its default port + the right auth mode), as if the user picked it by hand.
@@ -129,9 +142,11 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
     const d = preset.dialect
     const defaultPorts: Record<string, string> = { postgres: '5432', mysql: '3306', mssql: '1433', sqlite: '', mongodb: '27017', clickhouse: '8123', influxdb: '8086', elasticsearch: '9200', redshift: '5439', bigquery: '', snowflake: '', databricks: '' }
     const auth_mode = d === 'bigquery' ? 'service_account' : d === 'snowflake' ? 'password' : 'sql'
-    setEditing(null)
-    setForm({ ...EMPTY, dialect: d, port: defaultPorts[d] || '', auth_mode })
-    setError(''); setParsedOk(false); setShowForm(true)
+    openForm(() => {
+      setEditing(null)
+      setForm({ ...EMPTY, dialect: d, port: defaultPorts[d] || '', auth_mode })
+      setError(''); setParsedOk(false)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset?.nonce])
   // .env import state
@@ -294,6 +309,7 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
       // button drives the same check; this just runs it automatically once.
       const savedId = editing || data?.id
       setShowForm(false); setEditing(null); setForm(EMPTY); setError('')
+      if (formPushedRef.current) { formPushedRef.current = false; try { window.history.back() } catch { /* no history */ } }
       await load()
       if (savedId) test(savedId)
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') }
@@ -324,9 +340,10 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
 
   return (
     <div className="fade-in">
+      {!showForm && (<>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <PageTitle>Data sources</PageTitle>
-        {user.role === 'admin' && <Btn variant="primary" onClick={() => { setShowForm(!showForm); setEditing(null); setForm(EMPTY); setError(''); setParsedOk(false) }}>+ Add database</Btn>}
+        {user.role === 'admin' && <Btn variant="primary" onClick={() => openForm(() => { setEditing(null); setForm(EMPTY); setError(''); setParsedOk(false) })}>+ Add database</Btn>}
       </div>
       <PageSub>Direct database connections for live queries. Use the 3rd party connectors tab to connect SaaS systems, ERP and APIs.</PageSub>
 
@@ -449,10 +466,17 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
           )}
         </>
       )}
+      </>)}
 
       {showForm && (
         <div ref={formRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 20 }}>{editing ? 'Edit connection' : 'New database connection'}</div>
+          <button onClick={closeForm} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, fontFamily: 'inherit', padding: 0, marginBottom: 16 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
+            Back to data sources
+          </button>
+          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{editing ? 'Edit connection' : 'New database connection'}</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{editing ? 'Update this database connection.' : 'Connect a database for live querying from chat.'}</div>
+          {error && <div style={{ marginBottom: 16 }}><Alert variant="error">{error}</Alert></div>}
 
           {/* -- Connection string -- primary input -- */}
           <Field label="Connection string" hint="Paste from your DB dashboard -- fields below will fill automatically">
@@ -718,13 +742,13 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <Btn variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save connection'}</Btn>
-              <Btn onClick={() => { setShowForm(false); setEditing(null); setError(''); setParsedOk(false) }}>Cancel</Btn>
+              <Btn onClick={closeForm}>Cancel</Btn>
             </div>
           </div>
         </div>
       )}
 
-      {loading ? (
+      {!showForm && (loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spinner size={24} /></div>
       ) : conns.length === 0 ? (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '48px 24px', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>
@@ -806,7 +830,7 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
                     return <button onClick={() => recheckCube(c.id)} title="Verified. Click to check whether this source is servable." style={{ ...neutral, cursor: 'pointer' }}>✓ Verified · check</button>
                   })()}
                   {user.role === 'admin' && <Btn size="sm" variant="ghost" onClick={() => setDescribing(c)} title="Describe tables & columns so Mosaic's AI understands this source">Describe</Btn>}
-                  {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setShowForm(true); setParsedOk(false) }}>Edit</Btn>}
+                  {user.role === 'admin' && !c.managed && <Btn size="sm" onClick={() => { openForm(() => { setForm({ ...EMPTY, ...c, port: String(c.port), pool_min: String(c.pool_min), pool_max: String(c.pool_max), mcp_endpoint: c.mcp_endpoint || '', mcp_token: c.mcp_token || '', description: c.description || '', full_text_search: !!c.full_text_search, managed: !!c.managed, fts_airbyte_conn_id: c.fts_airbyte_conn_id || '' }); setEditing(c.id); setParsedOk(false) }) }}>Edit</Btn>}
                   {user.role === 'admin' && !c.managed && <Btn size="sm" variant="danger" onClick={() => del(c.id, c.label)}>Delete</Btn>}
                 </div>
               </div>
@@ -828,7 +852,7 @@ export default function TabDatabases({ user, preset }: { user: SessionUser; pres
             </div>
           )}
         </>
-      )}
+      ))}
 
     </div>
   )

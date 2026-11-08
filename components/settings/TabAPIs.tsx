@@ -600,15 +600,30 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
   const [showOpenApiZone, setShowOpenApiZone] = useState(false)
   const [addMenu, setAddMenu] = useState(false)   // unified "Add API" launcher
 
+  // The add-forms (manual service + SAP catalogue) open as their own full-page view, replacing the
+  // list. Opening pushes a history entry so the browser Back button — and the in-page Back / Cancel
+  // — return to the list instead of leaving the API connections tab.
+  const formPushedRef = useRef(false)
+  const pushFormHistory = () => { if (!formPushedRef.current) { try { window.history.pushState({ mosaicApiForm: true }, '') ; formPushedRef.current = true } catch { /* no history */ } } }
+  const resetForms = () => { setShowSvcForm(false); setShowSapForm(false); setEditingSvc(null); setError(''); setSapError('') }
+  const closeForms = () => { if (formPushedRef.current) window.history.back(); else resetForms() }
+  const consumeFormHistory = () => { if (formPushedRef.current) { formPushedRef.current = false; try { window.history.back() } catch { /* no history */ } } }
+  useEffect(() => {
+    function onPop() { if (formPushedRef.current) { formPushedRef.current = false; resetForms() } }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Opened from the "Browse" catalog with a chosen API: open the matching add-form pre-filled —
   // SAP routes to its catalogue flow; a known preset fills base URL + auth; anything else is blank.
   useEffect(() => {
     if (!openPreset?.label || user.role !== 'admin') return
-    if (openPreset.label === 'SAP S/4HANA') { setShowSapForm(true); setSapError('') ; return }
+    if (openPreset.label === 'SAP S/4HANA') { pushFormHistory(); setShowSapForm(true); setSapError('') ; return }
     const p = PRESETS.find(x => x.label === openPreset.label)
     setEditingSvc(null)
     setSvcForm(p ? { ...SVC_EMPTY, label: p.label, base_url: p.base_url, auth_type: p.auth_type } : SVC_EMPTY)
-    setError(''); setShowSvcForm(true)
+    setError(''); pushFormHistory(); setShowSvcForm(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openPreset?.nonce])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -639,7 +654,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
       const r = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingSvc ? 'updateService' : 'createService', id: editingSvc, ...svcForm, auth_config: buildAuth() }) })
       const d = await r.json().catch(() => ({ error: `Server returned ${r.status} ${r.statusText}` }))
       if (!r.ok) { setError(d.error || 'Save failed'); return }
-      setShowSvcForm(false); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError(''); load()
+      setShowSvcForm(false); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError(''); consumeFormHistory(); load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error - service may not have saved')
     } finally {
@@ -917,7 +932,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
           }),
         })
       }
-      setShowSapForm(false); setSapHost(''); setSapUser(''); setSapPass('')
+      setShowSapForm(false); setSapHost(''); setSapUser(''); setSapPass(''); consumeFormHistory()
       setSapSelected(new Set(SAP_CONNECTIONS.map((_,i)=>i)))
       setExpanded(prev => new Set([...prev, svcData.id]))
       load()
@@ -972,6 +987,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
     </button>
   )
 
+  const anyForm = showSapForm || showSvcForm
   return (
     <div className="fade-in">
       {user.role === 'admin' && showBuilder ? (
@@ -984,6 +1000,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
         />
       ) : (
       <>
+      {!anyForm && (<>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <PageTitle>API connections</PageTitle>
         {user.role === 'admin' && (
@@ -994,11 +1011,11 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
                 <div onClick={() => setAddMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 50, width: 320, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', padding: 6 }}>
                   {addOpt('Build with AI', 'Drop an OpenAPI / Postman / HAR file, or just describe the API — Mosaic drafts and probes the connection.', () => { setAddMenu(false); setResumeDraftId(null); setShowBuilder(true); setError(''); setTryIt(null); setTryResult(null) }, true)}
-                  {addOpt('SAP S/4HANA', 'Connect standard S/4HANA OData services from the built-in catalogue (host + credentials).', () => { setAddMenu(false); setShowSapForm(true); setSapError('') })}
+                  {addOpt('SAP S/4HANA', 'Connect standard S/4HANA OData services from the built-in catalogue (host + credentials).', () => { setAddMenu(false); pushFormHistory(); setShowSapForm(true); setSapError('') })}
                   <div style={{ height: 1, background: 'var(--border)', margin: '6px 8px' }} />
                   {addOpt('Import OpenAPI (no AI)', 'Paste a spec URL or raw JSON/YAML for a deterministic endpoint preview.', () => { setAddMenu(false); setShowOpenApiZone(true); setShowPostmanZone(false); setImportError(''); setOpenApiUrl('') })}
                   {addOpt('Import Postman (no AI)', 'Drop a Postman v2.1 collection for a deterministic endpoint preview.', () => { setAddMenu(false); setShowPostmanZone(true); setShowOpenApiZone(false); setImportError('') })}
-                  {addOpt('Add manually', 'Enter the base URL and auth yourself.', () => { setAddMenu(false); setShowSvcForm(true); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') })}
+                  {addOpt('Add manually', 'Enter the base URL and auth yourself.', () => { setAddMenu(false); pushFormHistory(); setShowSvcForm(true); setEditingSvc(null); setSvcForm(SVC_EMPTY); setError('') })}
                 </div>
               </>
             )}
@@ -1050,9 +1067,15 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
         </div>
       )}
 
+      </>)}
+
       {/* -- SAP S/4HANA setup panel -- */}
       {showSapForm && (
         <div style={{ background: 'var(--surface)', border: '1.5px solid rgba(0,112,243,0.22)', borderRadius: 'var(--radius)', boxShadow: '0 4px 20px rgba(0,112,243,0.08)', padding: 20, marginBottom: 16 }}>
+          <button onClick={closeForms} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, fontFamily: 'inherit', padding: 0, marginBottom: 14 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
+            Back to API connections
+          </button>
 
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -1063,7 +1086,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
                 Creates a service with {SAP_CONNECTIONS.length} pre-configured manufacturing OData endpoints
               </div>
             </div>
-            <button onClick={() => setShowSapForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1 }}></button>
+            <button onClick={closeForms} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1 }}></button>
           </div>
 
           {/* Connection fields */}
@@ -1227,11 +1250,12 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
             <Btn variant="primary" onClick={importSap} disabled={sapImporting || sapSelected.size === 0}>
               {sapImporting ? <><Spinner size={12} /> Connecting...</> : `Add SAP S/4HANA . ${sapOdataVer.toUpperCase()} . ${sapSelected.size} endpoints`}
             </Btn>
-            <Btn onClick={() => { setShowSapForm(false); setSapError('') }}>Cancel</Btn>
+            <Btn onClick={closeForms}>Cancel</Btn>
           </div>
         </div>
       )}
 
+      {!anyForm && (<>
       {/* -- Import preview -- */}
             {/* -- Import preview -- */}
       {importPreview && (
@@ -1611,9 +1635,15 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
         )
       })()}
 
+      </>)}
+
       {/* -- Manual service form -- */}
       {showSvcForm && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: 24, marginBottom: 20 }}>
+          <button onClick={closeForms} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, fontFamily: 'inherit', padding: 0, marginBottom: 14 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
+            Back to API connections
+          </button>
           <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 18 }}>{editingSvc ? 'Edit service' : 'New API service'}</div>
 
           {!editingSvc && (
@@ -1659,11 +1689,12 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
 
           <div style={{ display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
             <Btn variant="primary" onClick={saveSvc} disabled={saving}>{saving ? 'Saving...' : 'Save service'}</Btn>
-            <Btn onClick={() => { setShowSvcForm(false); setEditingSvc(null); setError('') }}>Cancel</Btn>
+            <Btn onClick={closeForms}>Cancel</Btn>
           </div>
         </div>
       )}
 
+      {!anyForm && (<>
       {/* -- Services list -- */}
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spinner size={24} /></div>
@@ -1786,6 +1817,7 @@ export default function TabAPIs({ user, openPreset }: { user: SessionUser; openP
         })()}
         </>
       )}
+      </>)}
       </>
       )}
       {describing && (

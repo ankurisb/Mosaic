@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.62] - 2026-11-08
+### Changed
+- **Data-source forms now open as a full page, not inline below the list.** Adding or editing a
+  database, API connection, or file server used to reveal the form inline (above/below the existing
+  list) and auto-scroll to it, which read as "the form appeared somewhere down the page" — worst on
+  mobile. The form now replaces the list as its own view, with a `← Back to …` header at the top.
+  - Applies to **Databases**, **API connections** (both the manual-service and SAP catalogue forms),
+    and **File servers**.
+  - Opening a form pushes a history entry and the browser **Back** button (plus the in-page Back /
+    Cancel) returns to the list — same reversible-navigation pattern as the Browse grid, so Back is
+    consistent across the data-source flow.
+
 ## [1.6.61] - 2026-11-08
 ### Fixed
 - **Browse: Back button now returns to the catalog, not a random settings tab.** Picking a source
