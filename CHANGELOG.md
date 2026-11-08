@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.51] - 2026-11-08
+### Added
+- **BigQuery multi-dataset introspection.** The *Default dataset* field now accepts a comma/`;`/
+  newline list (e.g. `analytics, events`, or cross-project `data-proj.sales`); introspection reads
+  each dataset's `INFORMATION_SCHEMA` and labels tables for `sql_table` resolution (2-part in the
+  billing project, 3-part across projects). (Parity with the Snowflake multi-schema feature.)
+- **BigQuery query/job timeout.** `bigQueryQuery` now passes `jobTimeoutMs` (= the connection's
+  `query_timeout_ms`, default 120s) so BigQuery stops a runaway job server-side instead of hanging
+  the request. (Parity with the Snowflake/Redshift execution-timeout feature.)
+### Security
+- **BigQuery guard: block `LOAD DATA`.** `LOAD DATA INTO/OVERWRITE` ingests from Cloud Storage into
+  a table; it's now blocked alongside the existing `EXPORT DATA` / DML/DDL rules. Remote/external
+  functions remain an IAM concern (a call is indistinguishable from a normal function call) —
+  documented in the hardening guide.
+### Docs
+- **BigQuery least-privilege onboarding guide** (`docs/BIGQUERY_HARDENING.md`): dedicated read-only
+  service account (jobUser + dataset-scoped dataViewer), the roles/permissions to withhold
+  (dataEditor, GCS write, `bigquery.connections.use` for remote functions), job timeout / max bytes
+  billed, and VPC-SC.
+
+> Build + unit-tested; `LOAD DATA` guard block live-verified on the box. Multi-dataset
+> introspection and `jobTimeoutMs` live-verification deferred (needs a BigQuery service-account
+> key / sandbox).
+
 ## [1.6.50] - 2026-11-08
 ### Security
 - **Redshift guard now enforced on the Query Builder path too.** `/api/query-runner` applied the

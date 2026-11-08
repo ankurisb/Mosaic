@@ -24,6 +24,26 @@ export interface BigQueryConnRow {
   host?: unknown
   auth_mode?: unknown
   connect_timeout_ms?: unknown
+  query_timeout_ms?: unknown
+}
+
+// A connection's default dataset may name SEVERAL datasets to introspect, comma/semicolon/newline
+// separated, each a bare `dataset` in the billing project or a cross-project `project.dataset`.
+// Parsed into de-duplicated targets, each with the label used for the generated cube's sql_table:
+// a bare dataset when it lives in the billing project, else a 3-part `project.dataset`.
+export interface BqDatasetTarget { project: string; dataset: string; label: string }
+export function parseBigQueryDatasets(schemaName: unknown, billingProject: string): BqDatasetTarget[] {
+  const clean = (s: string) => s.replace(/[`"';]/g, '').trim()
+  const specs = String(schemaName ?? '').split(/[,;\n]+/).map(clean).filter(Boolean)
+  const list = specs.map(spec => {
+    const dot = spec.indexOf('.')
+    const project = dot === -1 ? billingProject : spec.slice(0, dot)
+    const dataset = dot === -1 ? spec : spec.slice(dot + 1)
+    const label = project && project !== billingProject ? `${project}.${dataset}` : dataset
+    return { project, dataset, label }
+  })
+  const seen = new Set<string>()
+  return list.filter(t => { const k = `${t.project}\u0000${t.dataset}`; if (seen.has(k)) return false; seen.add(k); return true })
 }
 
 export interface BigQueryClientConfig {
@@ -106,7 +126,11 @@ export async function bigQueryQuery(conn: BigQueryConnRow, sql: string, maxRows:
     opts.credentials = cfg.credentials
   }
   const bq = new BigQuery(opts as unknown as ConstructorParameters<typeof BigQuery>[0])
-  const [raw] = await bq.query({ query: sql, maxResults: maxRows })
+  // Bound query EXECUTION: jobTimeoutMs makes BigQuery stop/cancel the job server-side if it
+  // overruns, so a runaway query can't hang the request (analogue of the Snowflake stmt timeout
+  // and the pg statement_timeout). Default 120s, overridable via the connection's query_timeout_ms.
+  const jobTimeoutMs = Number(conn.query_timeout_ms) || 120000
+  const [raw] = await bq.query({ query: sql, maxResults: maxRows, jobTimeoutMs })
   const rows = (raw as Record<string, unknown>[]).map(flattenRow)
   const fields = rows.length ? Object.keys(rows[0]) : []
   return { rows, fields }

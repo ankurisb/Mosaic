@@ -46,6 +46,10 @@ describe('sql-guard: BigQuery write/exfiltration constructs', () => {
     blocked('DELETE FROM `p.d.t` WHERE a=1', 'bigquery')
     blocked('MERGE `p.d.t` USING `p.d.s` ON TRUE WHEN MATCHED THEN DELETE', 'bigquery')
   })
+  it('blocks LOAD DATA (GCS ingest)', () => {
+    blocked("LOAD DATA INTO mydataset.t FROM FILES(uris=['gs://b/*'])", 'bigquery')
+    blocked('LOAD DATA OVERWRITE d.t FROM FILES(format=\'CSV\')', 'bigquery')
+  })
   it('allows read-only SELECT / WITH with fully-qualified tables', () => {
     ok('SELECT a, COUNT(*) FROM `proj.ds.events` GROUP BY a', 'bigquery')
     ok('WITH x AS (SELECT 1 AS a) SELECT a FROM x', 'bigquery')

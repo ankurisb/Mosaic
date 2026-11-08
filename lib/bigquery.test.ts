@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest'
-import { buildBigQueryConfig, flattenRow } from './bigquery'
+import { buildBigQueryConfig, flattenRow, parseBigQueryDatasets } from './bigquery'
+
+describe('parseBigQueryDatasets', () => {
+  it('a bare dataset in the billing project keeps a 2-part label', () => {
+    expect(parseBigQueryDatasets('analytics', 'bill-proj')).toEqual([{ project: 'bill-proj', dataset: 'analytics', label: 'analytics' }])
+  })
+  it('a cross-project dataset gets a 3-part label', () => {
+    expect(parseBigQueryDatasets('data-proj.sales', 'bill-proj')).toEqual([{ project: 'data-proj', dataset: 'sales', label: 'data-proj.sales' }])
+  })
+  it('splits a comma/;/newline list and de-duplicates', () => {
+    expect(parseBigQueryDatasets('analytics, events ; data-proj.sales\nanalytics', 'bill-proj')).toEqual([
+      { project: 'bill-proj', dataset: 'analytics', label: 'analytics' },
+      { project: 'bill-proj', dataset: 'events', label: 'events' },
+      { project: 'data-proj', dataset: 'sales', label: 'data-proj.sales' },
+    ])
+  })
+  it('strips backticks/quotes that could break the table reference', () => {
+    expect(parseBigQueryDatasets('`analytics`', 'p')).toEqual([{ project: 'p', dataset: 'analytics', label: 'analytics' }])
+  })
+  it('empty yields no targets (caller surfaces the "set a dataset" hint)', () => {
+    expect(parseBigQueryDatasets('', 'p')).toEqual([])
+  })
+})
 
 // password_enc without an enc2:/enc: prefix is returned verbatim by decrypt().
 

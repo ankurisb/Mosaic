@@ -74,6 +74,11 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     if (/(^|[^a-z0-9_])export\s+data\b/i.test(lower)) {
       throw new SqlGuardError('EXPORT DATA is blocked (it writes results to Cloud Storage). Return rows instead.')
     }
+    // LOAD DATA INTO/OVERWRITE ingests from Cloud Storage / local files into a table — a write +
+    // external ingest path, statement-leading in GoogleSQL.
+    if (/^\s*load\s+data\b/i.test(stripped)) {
+      throw new SqlGuardError('LOAD DATA is blocked (it ingests from Cloud Storage into a table). Return rows instead.')
+    }
     const bqWrite = /(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter)\s/i
     if (bqWrite.test(lower)) {
       throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on BigQuery.')
