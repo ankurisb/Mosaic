@@ -114,6 +114,11 @@ async function runDbQuery(db: any, connectionId: string, query: string, limit: n
   let rows: any[] = [], columns: string[] = []
 
   if (conn.dialect === 'postgres' || conn.dialect === 'redshift') {
+    // Defence-in-depth beyond the READ ONLY txn below: a read-only transaction does NOT stop
+    // Redshift UNLOAD (it exports to S3 without a table write) or COPY, so apply the dialect
+    // guard here too — matching the chat path (queryDatabase) and the warehouse branches below.
+    const { assertNoDangerousSql } = await import('@/lib/sql-guard')
+    assertNoDangerousSql(query, conn.dialect)
     const { Client } = await import('pg')
     const c = new Client(cs ?? { host: conn.host, port: conn.port, database: conn.database_name, user: conn.username, password: pwd, ssl: conn.ssl_mode && conn.ssl_mode !== 'disable' ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: conn.connect_timeout_ms ?? 5000, query_timeout: conn.query_timeout_ms ?? 30000 })
     await c.connect()

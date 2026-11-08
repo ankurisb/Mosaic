@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.50] - 2026-11-08
+### Security
+- **Redshift guard now enforced on the Query Builder path too.** `/api/query-runner` applied the
+  SQL guard only for the warehouse dialects (BigQuery/Snowflake/Databricks); the postgres/redshift
+  branch relied on the `BEGIN READ ONLY` transaction, which does **not** stop Redshift `UNLOAD`
+  (S3 export without a table write) or `COPY`. The guard (`UNLOAD`/`COPY`/`SELECT … INTO`) now runs
+  on this path as well, matching the chat path. Found by the Redshift live parity battery (a `COPY`
+  reached the server instead of being blocked).
+
 ## [1.6.49] - 2026-11-08
 ### Added
 - **Redshift multi-schema introspection.** The Schema field now accepts a comma/`;`/newline list
