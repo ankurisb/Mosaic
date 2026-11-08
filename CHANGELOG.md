@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.58] - 2026-11-08
+### Fixed
+- **Catalog: connector logos were rendering blank.** The bundled connector logos ship at their own
+  intrinsic size (e.g. `width="250"`, `height="824"`, `500pt`) and did not scale to the small tile,
+  so `overflow:hidden` clipped each one to an empty corner — the logo tiles looked blank while the
+  logo-less ones correctly showed a generic glyph. `DataSourceIcon` now normalises every raw SVG
+  (guarantees a `viewBox`, deriving it from the SVG's own width/height when absent; strips the fixed
+  width/height; sizes it to the tile with `preserveAspectRatio="xMidYMid meet"`) so all 414 brand
+  logos render at the correct size and centred.
+
 ## [1.6.57] - 2026-11-08
 ### Fixed
 - **Catalog: hide the lone "Airbyte" connector tile.** The upstream catalogue includes one entry

@@ -20,6 +20,24 @@ const GENERIC: Record<string, string> = {
   prism: '<path d="M12 2 2 20h20z"/><path d="M12 2v18"/>',
 }
 
+// Connector logos ship at their own intrinsic size (e.g. width="250", height="824", "500pt"), which
+// does not fit a small tile — so the raw SVG would be clipped to a blank corner. Normalise the root
+// <svg>: guarantee a viewBox (derived from its own width/height when absent), strip the fixed
+// width/height, and set the tile size so the art scales to fit (preserveAspectRatio centres it).
+function fitSvg(raw: string, px: number): string {
+  const m = raw.match(/<svg\b[^>]*>/i)
+  if (!m) return raw
+  let tag = m[0]
+  if (!/viewBox\s*=/i.test(tag)) {
+    const w = (tag.match(/\bwidth\s*=\s*["']?([\d.]+)/i) || [])[1]
+    const h = (tag.match(/\bheight\s*=\s*["']?([\d.]+)/i) || [])[1]
+    if (w && h) tag = tag.replace(/<svg\b/i, `<svg viewBox="0 0 ${w} ${h}"`)
+  }
+  tag = tag.replace(/\s(width|height)\s*=\s*(["'][^"']*["']|[\d.]+)/gi, '')
+  tag = tag.replace(/<svg\b/i, `<svg width="${px}" height="${px}" preserveAspectRatio="xMidYMid meet"`)
+  return raw.replace(m[0], tag)
+}
+
 // A data-source logo tile. In order: a raw brand SVG (`svg`, Airbyte connector logos from the local
 // asset), a bundled brand glyph (`icon` → BRAND_ICONS, air-gap), or a generic glyph for `kind`.
 // Chrome uses tokens; the brand colour is DATA.
@@ -31,12 +49,12 @@ export default function DataSourceIcon({ icon, color, name, size = 44, svg, kind
     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   }
 
-  // Airbyte connector logo (full-colour SVG) on a neutral tile.
+  // Connector logo (full-colour SVG) on a neutral tile, normalised to fit.
   if (svg) {
     const g = Math.round(size * 0.62)
     return (
       <div style={{ ...tileBase, background: 'var(--surface)', border: '1px solid var(--border)' }} aria-hidden>
-        <span style={{ width: g, height: g, display: 'inline-flex' }} dangerouslySetInnerHTML={{ __html: svg }} />
+        <span style={{ width: g, height: g, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: fitSvg(svg, g) }} />
       </div>
     )
   }
