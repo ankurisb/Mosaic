@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.53] - 2026-11-08
+### Added
+- **Data-source catalog ("Browse" front door).** A new first sub-tab under Settings → Data Sources
+  lets a user start from *what* they want to connect to (Snowflake, Databricks, BigQuery, Postgres,
+  an API, an MCP server, …) instead of first choosing *how* (database vs API vs MCP). A search box
+  filters a grid of brand-icon cards grouped by kind; picking one routes to the right existing flow
+  — and for databases, opens the connection form pre-selected to that dialect. All existing tabs
+  are unchanged.
+  - Brand icons are **bundled** (simple-icons, CC0) as inline SVG — no runtime internet dependency
+    (air-gap friendly); sources without a bundled glyph get a clean monogram.
+  - `lib/datasource-catalog.ts` (registry), `components/settings/DataSourceIcon.tsx`,
+    `TabDataSourceCatalog.tsx`, `datasource-icons-data.ts`.
+
 ## [1.6.52] - 2026-11-08
 ### Added
 - **Databricks Cube serving.** Databricks is now a Cube serving target (previously query-path

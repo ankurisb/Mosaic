@@ -76,7 +76,7 @@ function parseConnStr(raw: string): Partial<typeof EMPTY> | null {
   return null
 }
 
-export default function TabDatabases({ user }: { user: SessionUser }) {
+export default function TabDatabases({ user, preset }: { user: SessionUser; preset?: { dialect: string; nonce: number } | null }) {
   const [conns, setConns] = useState<DbConn[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -120,6 +120,20 @@ export default function TabDatabases({ user }: { user: SessionUser }) {
       formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [showForm, editing])
+
+  // Opened from the "Browse" catalog with a chosen data source: open a fresh form pre-selected to
+  // that dialect (with its default port + the right auth mode), as if the user picked it by hand.
+  useEffect(() => {
+    if (!preset?.dialect) return
+    if (user.role !== 'admin') return
+    const d = preset.dialect
+    const defaultPorts: Record<string, string> = { postgres: '5432', mysql: '3306', mssql: '1433', sqlite: '', mongodb: '27017', clickhouse: '8123', influxdb: '8086', elasticsearch: '9200', redshift: '5439', bigquery: '', snowflake: '', databricks: '' }
+    const auth_mode = d === 'bigquery' ? 'service_account' : d === 'snowflake' ? 'password' : 'sql'
+    setEditing(null)
+    setForm({ ...EMPTY, dialect: d, port: defaultPorts[d] || '', auth_mode })
+    setError(''); setParsedOk(false); setShowForm(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset?.nonce])
   // .env import state
   const envFileRef = useRef<HTMLInputElement>(null)
   const [envPreview, setEnvPreview] = useState<Array<{ key: string; value: string; selected: boolean; parsed: Partial<typeof EMPTY> | null }> | null>(null)
