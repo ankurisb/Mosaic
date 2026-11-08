@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.56] - 2026-11-08
+### Changed
+- **Data-source catalog ("Browse") — refinements.**
+  - **An icon on every tile.** Connectors without a published logo no longer show a letter
+    monogram; they fall back to a clean generic glyph chosen by kind (database / API / MCP /
+    file / connector / Prism). Recovered 23 more connector logos from upstream (414 of 592 now
+    carry a real logo; `DataSourceIcon` gained a `kind` prop and a near-black-brand luminance
+    check so marks like GitHub/Notion stay visible in dark mode).
+  - **White-labelled the connector catalogue.** Removed the vendor name from the page: the
+    section heading is now **"Connectors"** (was "Connectors (via Airbyte)"), and the standalone
+    "Airbyte connector" tile is gone from Business apps & APIs.
+  - **Pagination instead of "Show all".** The connector grid now pages through all 592 entries
+    60 at a time (Prev / page indicator / Next, top and bottom), replacing the "Show all 592"
+    toggle. Searching filters across the whole catalogue and resets to page 1.
+  - Removed the intro helper paragraph above the search box.
+
 ## [1.6.55] - 2026-11-08
 ### Added
 - **Catalog: complete file-server coverage.** The "Browse" catalog listed only S3 and SFTP; it now

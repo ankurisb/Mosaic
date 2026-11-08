@@ -1,7 +1,7 @@
 // Catalog of data sources Mosaic can connect to — the model-first "what do you want to connect
 // to?" front door. Each entry knows which connection FLOW it routes to (category → a Data Sources
 // sub-tab) and, for databases, which dialect to pre-select. Icons are bundled brand glyphs (see
-// datasource-icons-data.ts) keyed by `icon`; entries without one fall back to a monogram.
+// datasource-icons-data.ts) keyed by `icon`; entries without one fall back to a generic glyph.
 
 export type DsCategory = 'database' | 'api' | 'mcp' | 'file' | 'airbyte' | 'prism'
 
@@ -19,8 +19,8 @@ export interface DsEntry {
   blurb?: string            // one-line description under the name
 }
 
-// Section display order. (Airbyte's 592 connectors are rendered as their own section by the
-// catalog component from lib/airbyte-sources.ts, not listed here.)
+// Section display order. (The 592 connector catalogue is rendered as its own paginated section by
+// the catalog component from lib/airbyte-sources.ts, not listed here.)
 export const DS_GROUPS = ['Data warehouses', 'Databases', 'Search & time-series', 'Business apps & APIs', 'Files', 'Industrial'] as const
 
 export const DATA_SOURCES: DsEntry[] = [
@@ -55,7 +55,6 @@ export const DATA_SOURCES: DsEntry[] = [
   { id: 'jira', name: 'Jira', category: 'api', apiPreset: 'Jira', icon: 'jira', color: '#0052CC', group: 'Business apps & APIs', keywords: ['atlassian', 'issues', 'tickets'], blurb: 'Issues — built-in API template' },
   { id: 'sap', name: 'SAP S/4HANA', category: 'api', apiPreset: 'SAP S/4HANA', icon: 'sap', color: '#0FAAFF', group: 'Business apps & APIs', keywords: ['erp', 'odata', 's4hana'], blurb: 'ERP OData — built-in API template' },
   { id: 'mcp', name: 'MCP Server', category: 'mcp', color: '#7A5AF8', group: 'Business apps & APIs', keywords: ['model context protocol', 'tools', 'agent'], blurb: 'Model Context Protocol server' },
-  { id: 'airbyte', name: 'Airbyte connector', category: 'airbyte', icon: 'airbyte', color: '#615EFF', group: 'Business apps & APIs', keywords: ['etl', 'connector', 'sync', 'saas'], blurb: '590+ SaaS & DB connectors' },
 
   // ---- Files (CSV / Excel / PDF / XML / JSON from a share, bucket or path) ----
   { id: 'smb', name: 'SMB / Windows share', category: 'file', fileTransport: 'smb', color: '#1E7FD6', group: 'Files', keywords: ['windows', 'cifs', 'network share', 'files'], blurb: 'Windows / CIFS network share' },
