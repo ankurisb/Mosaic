@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.47] - 2026-11-08
+### Security
+- **Snowflake guard: block direct stage reads.** A `SELECT … FROM @stage` (named, user `@~`,
+  table `@%t`, or fully-qualified stage, incl. `DIRECTORY(@stage)`) reads files straight from a
+  possibly-external stage — a data path that sidesteps table grants and can pull from S3/GCS/Azure.
+  The existing GET/PUT/LIST block only caught the leading-verb commands; the guard now also blocks
+  any `@` stage reference in a query (string literals are stripped first, so an email like
+  `a@b.com` in a WHERE value is unaffected). Defence-in-depth for external functions / network
+  UDFs remains RBAC (a call to a pre-existing one is indistinguishable from a normal function
+  call) — documented in the least-privilege onboarding guide.
+
 ## [1.6.46] - 2026-11-08
 ### Added
 - **Snowflake OAuth token auth.** A third key-pair alternative: `auth_mode = 'oauth'` authenticates

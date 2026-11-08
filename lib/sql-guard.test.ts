@@ -101,6 +101,17 @@ describe('sql-guard: Snowflake write/exfiltration constructs', () => {
     blocked('GRANT SELECT ON t TO ROLE r', 'snowflake')
     blocked('REVOKE SELECT ON t FROM ROLE r', 'snowflake')
   })
+  it('blocks direct stage reads (@stage) inside a SELECT', () => {
+    blocked('SELECT $1, $2 FROM @my_stage', 'snowflake')               // read files from a named stage
+    blocked('SELECT metadata$filename FROM @~', 'snowflake')            // user stage
+    blocked('SELECT $1 FROM @%mytable', 'snowflake')                    // table stage
+    blocked('SELECT * FROM DIRECTORY(@ext_stage)', 'snowflake')         // directory table over a stage
+    blocked('SELECT $1 FROM @my_db.my_schema.ext_stage', 'snowflake')   // fully-qualified stage
+  })
+  it('does not trip on an @ that is inside a string literal (e.g. an email)', () => {
+    ok("SELECT id FROM users WHERE email = 'alice@example.com'", 'snowflake')
+    ok("SELECT name, 'ping @here' AS note FROM t", 'snowflake')
+  })
   it('blocks smuggled multi-statements but allows a single terminated/commented SELECT', () => {
     blocked('SELECT 1; DROP TABLE t', 'snowflake')          // second statement smuggled in
     blocked('SELECT 1; SELECT 2', 'snowflake')

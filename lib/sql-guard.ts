@@ -6,6 +6,14 @@
 // hosts. This is the app-side layer; the authoritative control is a locked-down DB user
 // (ClickHouse readonly=1, no REMOTE/URL/S3/FILE grants) — see the onboarding doc.
 //
+// Snowflake note: an EXTERNAL FUNCTION or a network/Python UDF can reach the internet from
+// inside a SELECT, but a *call* to a pre-existing one is syntactically identical to any other
+// function call — there is no reliable token to block without breaking ordinary queries. The
+// authoritative control for that egress path is RBAC: do not grant the read-only role USAGE on
+// external functions, API / external-access integrations, network rules, or secrets (see the
+// least-privilege onboarding doc). The guard still blocks what IS detectable: creating such
+// objects (CREATE/ALTER/DROP ... FUNCTION/INTEGRATION/…), COPY INTO, and direct @stage reads.
+//
 // Pure + unit-tested. Throws on a violation; returns void when clean.
 
 // ClickHouse table/source functions that reach network, filesystem, or another database.
@@ -110,6 +118,16 @@ export function assertNoDangerousSql(query: string, dialect: string): void {
     }
     if (/(^|[^a-z0-9_])copy\s+into\b/i.test(lower)) {
       throw new SqlGuardError('COPY INTO is blocked (it reads/writes a stage or cloud storage). Return rows instead.')
+    }
+    // Direct stage references — @stage, @~ (user stage), @%table (table stage),
+    // @db.schema.stage, @"quoted stage" — read files straight from a (possibly external) stage,
+    // a data path that sidesteps table grants and can pull from S3/GCS/Azure, e.g.
+    // `SELECT $1 FROM @ext_stage` or `FROM DIRECTORY(@stage)`. The GET/PUT/LIST block above only
+    // catches the leading-verb commands, not a stage read inside a SELECT. `@` denotes a stage in
+    // Snowflake and appears nowhere else in analytic SQL once string/quoted literals are stripped,
+    // so treat any residual `@` as a stage reference.
+    if (/@/.test(noComments)) {
+      throw new SqlGuardError('Direct stage references (@stage) are blocked; query your configured tables, not stage files.')
     }
     if (/(^|[^a-z0-9_])(insert|update|delete|merge|truncate|create|drop|alter|put|remove|grant|revoke|call|execute)\s/i.test(lower)) {
       throw new SqlGuardError('Only read-only SELECT/WITH queries are allowed on Snowflake.')
