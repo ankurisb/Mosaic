@@ -552,7 +552,7 @@ function parsePostmanCollection(json: PostmanCollection): ImportPreview | null {
   }
 }
 
-export default function TabAPIs({ user }: { user: SessionUser }) {
+export default function TabAPIs({ user, openPreset }: { user: SessionUser; openPreset?: { label: string; nonce: number } | null }) {
   const [services, setServices] = useState<ApiService[]>([])
   const [connections, setConnections] = useState<ApiConn[]>([])
   const [loading, setLoading] = useState(true)
@@ -599,6 +599,18 @@ export default function TabAPIs({ user }: { user: SessionUser }) {
   const [showPostmanZone, setShowPostmanZone] = useState(false)
   const [showOpenApiZone, setShowOpenApiZone] = useState(false)
   const [addMenu, setAddMenu] = useState(false)   // unified "Add API" launcher
+
+  // Opened from the "Browse" catalog with a chosen API: open the matching add-form pre-filled —
+  // SAP routes to its catalogue flow; a known preset fills base URL + auth; anything else is blank.
+  useEffect(() => {
+    if (!openPreset?.label || user.role !== 'admin') return
+    if (openPreset.label === 'SAP S/4HANA') { setShowSapForm(true); setSapError('') ; return }
+    const p = PRESETS.find(x => x.label === openPreset.label)
+    setEditingSvc(null)
+    setSvcForm(p ? { ...SVC_EMPTY, label: p.label, base_url: p.base_url, auth_type: p.auth_type } : SVC_EMPTY)
+    setError(''); setShowSvcForm(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPreset?.nonce])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [apiSearch, setApiSearch] = useState('')
   const [apiPage, setApiPage] = useState(1)

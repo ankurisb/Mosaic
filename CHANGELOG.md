@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.54] - 2026-11-08
+### Changed
+- **Data-source catalog ("Browse") — extended.**
+  - **NxN icon grid** (app-launcher tiles) instead of the list rows.
+  - **Built-in API templates** now appear as first-class cards (Salesforce, HubSpot, Stripe, Slack,
+    GitHub, Notion, Jira, SAP S/4HANA, plus generic REST) — picking one opens the API add-form
+    pre-filled with that template (base URL + auth). `TabAPIs` gained an `openPreset` prop.
+  - **Full Airbyte connector catalogue** (592 sources) is now searchable in the grid; picking one
+    routes to the Airbyte tab. A preview set shows first, with "Show all 592". Connector icons are
+    **bundled once** as a single same-origin asset (`public/connectors/airbyte-icons.json`,
+    391 real logos) — air-gap, no runtime internet; monogram fallback for the rest.
+  - Near-black brand marks (GitHub, Notion) now adapt to the theme so they stay visible in dark mode.
+  - New: `lib/airbyte-sources.ts`, `public/connectors/airbyte-icons.json`; extended
+    `datasource-icons-data.ts` (22 brand glyphs incl. the API templates).
+
 ## [1.6.53] - 2026-11-08
 ### Added
 - **Data-source catalog ("Browse" front door).** A new first sub-tab under Settings → Data Sources

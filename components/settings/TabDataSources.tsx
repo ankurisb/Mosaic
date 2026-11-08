@@ -14,14 +14,17 @@ type SubTab = 'browse' | 'databases' | 'apis' | 'files' | 'mcp' | 'prism' | 'air
 
 export default function TabDataSources({ user }: { user: SessionUser }) {
   const [activeTab, setActiveTab] = useState<SubTab>('browse')
-  // A pre-selected database dialect handed to TabDatabases when the user picks a database from the
-  // catalog. `nonce` re-triggers the open even if the same dialect is picked twice.
+  // Presets handed to the owning tab when the user picks from the catalog. `nonce` re-triggers the
+  // open even if the same source is picked twice.
   const [dbPreset, setDbPreset] = useState<{ dialect: string; nonce: number } | null>(null)
+  const [apiPreset, setApiPreset] = useState<{ label: string; nonce: number } | null>(null)
 
   const onPick = (entry: DsEntry) => {
     const tab = (CATEGORY_TAB[entry.category] || 'databases') as SubTab
     if (entry.category === 'database' && entry.dialect) {
       setDbPreset({ dialect: entry.dialect, nonce: Date.now() })
+    } else if (entry.category === 'api') {
+      setApiPreset({ label: entry.apiPreset || 'Custom', nonce: Date.now() })
     }
     setActiveTab(tab)
   }
@@ -50,7 +53,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
 
       {activeTab === 'browse'    && <TabDataSourceCatalog onPick={onPick} />}
       {activeTab === 'databases' && <TabDatabases user={user} preset={dbPreset} />}
-      {activeTab === 'apis'      && <TabAPIs user={user} />}
+      {activeTab === 'apis'      && <TabAPIs user={user} openPreset={apiPreset} />}
       {activeTab === 'airbyte'   && <TabAirbyte user={user} />}
       {activeTab === 'files'     && <TabFileServers user={user} />}
       {activeTab === 'mcp'       && <TabMcp user={user} />}

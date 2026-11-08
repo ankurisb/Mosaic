@@ -10,6 +10,7 @@ export interface DsEntry {
   name: string
   category: DsCategory
   dialect?: string          // for category 'database' — pre-selects the dialect in the form
+  apiPreset?: string        // for category 'api' — pre-selects this built-in API template (PRESETS label)
   icon?: string             // key into BRAND_ICONS; omit for a monogram fallback
   color?: string            // brand colour (data) for the icon tile
   group: string             // section heading in the catalog
@@ -17,8 +18,9 @@ export interface DsEntry {
   blurb?: string            // one-line description under the name
 }
 
-// Section display order.
-export const DS_GROUPS = ['Data warehouses', 'Databases', 'Search & time-series', 'APIs & connectors', 'Files', 'Industrial'] as const
+// Section display order. (Airbyte's 592 connectors are rendered as their own section by the
+// catalog component from lib/airbyte-sources.ts, not listed here.)
+export const DS_GROUPS = ['Data warehouses', 'Databases', 'Search & time-series', 'Business apps & APIs', 'Files', 'Industrial'] as const
 
 export const DATA_SOURCES: DsEntry[] = [
   // ---- Data warehouses ----
@@ -41,10 +43,18 @@ export const DATA_SOURCES: DsEntry[] = [
   { id: 'elasticsearch', name: 'Elasticsearch', category: 'database', dialect: 'elasticsearch', icon: 'elasticsearch', color: '#005571', group: 'Search & time-series', keywords: ['search', 'elk', 'lucene'], blurb: 'Search & analytics engine' },
   { id: 'influxdb', name: 'InfluxDB', category: 'database', dialect: 'influxdb', icon: 'influxdb', color: '#22ADF6', group: 'Search & time-series', keywords: ['timeseries', 'metrics', 'iot'], blurb: 'Time-series database' },
 
-  // ---- APIs & connectors ----
-  { id: 'rest-api', name: 'REST / HTTP API', category: 'api', color: '#2F8F5B', group: 'APIs & connectors', keywords: ['rest', 'http', 'openapi', 'webhook', 'json'], blurb: 'Connect any HTTP/JSON API' },
-  { id: 'mcp', name: 'MCP Server', category: 'mcp', color: '#7A5AF8', group: 'APIs & connectors', keywords: ['model context protocol', 'tools', 'agent'], blurb: 'Model Context Protocol server' },
-  { id: 'airbyte', name: 'Airbyte (3rd-party connectors)', category: 'airbyte', icon: 'airbyte', color: '#615EFF', group: 'APIs & connectors', keywords: ['etl', 'connector', 'sync', 'saas'], blurb: '300+ SaaS & DB connectors' },
+  // ---- Business apps & APIs (built-in API templates + the generic flows) ----
+  { id: 'rest-api', name: 'REST / HTTP API', category: 'api', apiPreset: 'Custom', color: '#2F8F5B', group: 'Business apps & APIs', keywords: ['rest', 'http', 'openapi', 'webhook', 'json', 'custom'], blurb: 'Connect any HTTP/JSON API' },
+  { id: 'salesforce', name: 'Salesforce', category: 'api', apiPreset: 'Salesforce', icon: 'salesforce', color: '#00A1E0', group: 'Business apps & APIs', keywords: ['crm', 'sfdc'], blurb: 'CRM — built-in API template' },
+  { id: 'hubspot', name: 'HubSpot', category: 'api', apiPreset: 'HubSpot', icon: 'hubspot', color: '#FF7A59', group: 'Business apps & APIs', keywords: ['crm', 'marketing'], blurb: 'CRM — built-in API template' },
+  { id: 'stripe', name: 'Stripe', category: 'api', apiPreset: 'Stripe', icon: 'stripe', color: '#635BFF', group: 'Business apps & APIs', keywords: ['payments', 'billing'], blurb: 'Payments — built-in API template' },
+  { id: 'slack', name: 'Slack', category: 'api', apiPreset: 'Slack', icon: 'slack', color: '#4A154B', group: 'Business apps & APIs', keywords: ['chat', 'messaging'], blurb: 'Messaging — built-in API template' },
+  { id: 'github', name: 'GitHub', category: 'api', apiPreset: 'GitHub', icon: 'github', color: '#181717', group: 'Business apps & APIs', keywords: ['git', 'repos', 'issues'], blurb: 'Repos & issues — built-in API template' },
+  { id: 'notion', name: 'Notion', category: 'api', apiPreset: 'Notion', icon: 'notion', color: '#0A0A0A', group: 'Business apps & APIs', keywords: ['docs', 'wiki'], blurb: 'Docs — built-in API template' },
+  { id: 'jira', name: 'Jira', category: 'api', apiPreset: 'Jira', icon: 'jira', color: '#0052CC', group: 'Business apps & APIs', keywords: ['atlassian', 'issues', 'tickets'], blurb: 'Issues — built-in API template' },
+  { id: 'sap', name: 'SAP S/4HANA', category: 'api', apiPreset: 'SAP S/4HANA', icon: 'sap', color: '#0FAAFF', group: 'Business apps & APIs', keywords: ['erp', 'odata', 's4hana'], blurb: 'ERP OData — built-in API template' },
+  { id: 'mcp', name: 'MCP Server', category: 'mcp', color: '#7A5AF8', group: 'Business apps & APIs', keywords: ['model context protocol', 'tools', 'agent'], blurb: 'Model Context Protocol server' },
+  { id: 'airbyte', name: 'Airbyte connector', category: 'airbyte', icon: 'airbyte', color: '#615EFF', group: 'Business apps & APIs', keywords: ['etl', 'connector', 'sync', 'saas'], blurb: '590+ SaaS & DB connectors' },
 
   // ---- Files ----
   { id: 's3', name: 'Amazon S3', category: 'file', dialect: undefined, icon: 's3', color: '#569A31', group: 'Files', keywords: ['bucket', 'object storage', 'aws', 'file'], blurb: 'Object storage bucket' },
