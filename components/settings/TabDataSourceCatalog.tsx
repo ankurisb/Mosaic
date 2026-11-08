@@ -8,6 +8,10 @@ import { INP } from './ui'
 const CONNECTORS_GROUP = 'Connectors'
 const PAGE_SIZE = 60
 
+// The connector catalogue is shown white-labelled, so drop the one upstream entry that is itself
+// named after the connector platform.
+const CONNECTORS = AIRBYTE_SOURCES.filter(s => s.slug !== 'airbyte' && !/airbyte/i.test(s.name))
+
 // The "Browse" front door: pick WHAT you want to connect to and Mosaic routes you into the right
 // flow. A search box over an NxN icon grid; curated sources (warehouses, databases, business apps,
 // built-in API templates) plus the full connector catalogue (paginated, icons served locally).
@@ -36,7 +40,7 @@ export default function TabDataSourceCatalog({ onPick }: { onPick: (entry: DsEnt
   }, [needle])
 
   const connectors = useMemo(
-    () => needle ? AIRBYTE_SOURCES.filter(s => s.name.toLowerCase().includes(needle) || s.slug.includes(needle)) : AIRBYTE_SOURCES,
+    () => needle ? CONNECTORS.filter(s => s.name.toLowerCase().includes(needle) || s.slug.includes(needle)) : CONNECTORS,
     [needle],
   )
   const pageCount = Math.max(1, Math.ceil(connectors.length / PAGE_SIZE))

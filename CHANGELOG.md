@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.57] - 2026-11-08
+### Fixed
+- **Catalog: hide the lone "Airbyte" connector tile.** The upstream catalogue includes one entry
+  literally named "Airbyte" (the connector-platform meta-source), which sorted onto the first page
+  of the connector grid and showed a visible "Airbyte" tile — the last vendor reference on the
+  otherwise white-labelled Browse page. It is now filtered out of the grid (count reads 591).
+
 ## [1.6.56] - 2026-11-08
 ### Changed
 - **Data-source catalog ("Browse") — refinements.**
@@ -16,9 +23,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **White-labelled the connector catalogue.** Removed the vendor name from the page: the
     section heading is now **"Connectors"** (was "Connectors (via Airbyte)"), and the standalone
     "Airbyte connector" tile is gone from Business apps & APIs.
-  - **Pagination instead of "Show all".** The connector grid now pages through all 592 entries
-    60 at a time (Prev / page indicator / Next, top and bottom), replacing the "Show all 592"
-    toggle. Searching filters across the whole catalogue and resets to page 1.
+  - **Pagination instead of "Show all".** The connector grid now pages through the whole
+    catalogue 60 at a time (Prev / page indicator / Next, top and bottom), replacing the
+    "Show all 592" toggle. Searching filters across the whole catalogue and resets to page 1.
+    The one upstream entry named after the connector platform is hidden to keep the page
+    white-labelled.
   - Removed the intro helper paragraph above the search box.
 
 ## [1.6.55] - 2026-11-08
