@@ -11,6 +11,7 @@ export interface DsEntry {
   category: DsCategory
   dialect?: string          // for category 'database' — pre-selects the dialect in the form
   apiPreset?: string        // for category 'api' — pre-selects this built-in API template (PRESETS label)
+  fileTransport?: string    // for category 'file' — pre-selects the file-server transport (smb/sftp/s3/sharepoint/local)
   icon?: string             // key into BRAND_ICONS; omit for a monogram fallback
   color?: string            // brand colour (data) for the icon tile
   group: string             // section heading in the catalog
@@ -56,9 +57,12 @@ export const DATA_SOURCES: DsEntry[] = [
   { id: 'mcp', name: 'MCP Server', category: 'mcp', color: '#7A5AF8', group: 'Business apps & APIs', keywords: ['model context protocol', 'tools', 'agent'], blurb: 'Model Context Protocol server' },
   { id: 'airbyte', name: 'Airbyte connector', category: 'airbyte', icon: 'airbyte', color: '#615EFF', group: 'Business apps & APIs', keywords: ['etl', 'connector', 'sync', 'saas'], blurb: '590+ SaaS & DB connectors' },
 
-  // ---- Files ----
-  { id: 's3', name: 'Amazon S3', category: 'file', dialect: undefined, icon: 's3', color: '#569A31', group: 'Files', keywords: ['bucket', 'object storage', 'aws', 'file'], blurb: 'Object storage bucket' },
-  { id: 'sftp', name: 'SFTP / File server', category: 'file', color: '#5B6472', group: 'Files', keywords: ['ftp', 'files', 'csv', 'excel', 'parquet'], blurb: 'Files over SFTP/FTP' },
+  // ---- Files (CSV / Excel / PDF / XML / JSON from a share, bucket or path) ----
+  { id: 'smb', name: 'SMB / Windows share', category: 'file', fileTransport: 'smb', color: '#1E7FD6', group: 'Files', keywords: ['windows', 'cifs', 'network share', 'files'], blurb: 'Windows / CIFS network share' },
+  { id: 'sftp', name: 'SFTP', category: 'file', fileTransport: 'sftp', color: '#5B6472', group: 'Files', keywords: ['ftp', 'ssh', 'files'], blurb: 'Files over SFTP' },
+  { id: 's3', name: 'Amazon S3', category: 'file', fileTransport: 's3', icon: 's3', color: '#569A31', group: 'Files', keywords: ['bucket', 'object storage', 'aws'], blurb: 'Object storage bucket' },
+  { id: 'sharepoint', name: 'SharePoint', category: 'file', fileTransport: 'sharepoint', color: '#038387', group: 'Files', keywords: ['microsoft', 'office 365', 'documents'], blurb: 'SharePoint document library' },
+  { id: 'local', name: 'Local path', category: 'file', fileTransport: 'local', color: '#5B6472', group: 'Files', keywords: ['folder', 'directory', 'disk'], blurb: 'A path on the Mosaic host' },
 
   // ---- Industrial ----
   { id: 'prism', name: 'Prism (IIoT)', category: 'prism', color: '#0E9F9F', group: 'Industrial', keywords: ['iiot', 'energy', 'sensors', 'opc', 'historian'], blurb: 'Mosaic PRISM energy / IIoT' },

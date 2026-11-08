@@ -26,7 +26,7 @@ const EMPTY = {
   filename_date_pattern: '', ts_strategy: 'auto',
 }
 
-export default function TabFileServers({ user }: { user: SessionUser }) {
+export default function TabFileServers({ user, openTransport }: { user: SessionUser; openTransport?: { transport: string; nonce: number } | null }) {
   const [servers, setServers] = useState<FileServer[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -38,6 +38,16 @@ export default function TabFileServers({ user }: { user: SessionUser }) {
   const [results, setResults] = useState<Record<string, { ok: boolean; message?: string; latencyMs?: number }>>({})
   const [fsSearch, setFsSearch] = useState('')
   const [fsPage, setFsPage] = useState(1)
+
+  // Opened from the "Browse" catalog with a chosen file source: open a fresh form pre-set to that
+  // transport (SMB / SFTP / S3 / SharePoint / local), as if the admin picked it by hand.
+  useEffect(() => {
+    if (!openTransport?.transport || user.role !== 'admin') return
+    setEditing(null)
+    setForm({ ...EMPTY, transport: openTransport.transport })
+    setError(''); setShowForm(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTransport?.nonce])
 
   async function load() {
     setLoading(true)

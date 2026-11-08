@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.55] - 2026-11-08
+### Added
+- **Catalog: complete file-server coverage.** The "Browse" catalog listed only S3 and SFTP; it now
+  covers **all five** file-server transports Mosaic supports — **SMB / Windows share, SFTP, Amazon
+  S3, SharePoint, Local path** — and picking one opens the File-servers form pre-selected to that
+  transport (`TabFileServers` gained an `openTransport` prop). With this the catalog is complete
+  across every source type: all 12 database dialects, all built-in API templates, every file
+  transport, MCP, Prism, and the full Airbyte connector list.
+
 ## [1.6.54] - 2026-11-08
 ### Changed
 - **Data-source catalog ("Browse") — extended.**

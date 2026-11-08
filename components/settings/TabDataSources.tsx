@@ -18,6 +18,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
   // open even if the same source is picked twice.
   const [dbPreset, setDbPreset] = useState<{ dialect: string; nonce: number } | null>(null)
   const [apiPreset, setApiPreset] = useState<{ label: string; nonce: number } | null>(null)
+  const [filePreset, setFilePreset] = useState<{ transport: string; nonce: number } | null>(null)
 
   const onPick = (entry: DsEntry) => {
     const tab = (CATEGORY_TAB[entry.category] || 'databases') as SubTab
@@ -25,6 +26,8 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       setDbPreset({ dialect: entry.dialect, nonce: Date.now() })
     } else if (entry.category === 'api') {
       setApiPreset({ label: entry.apiPreset || 'Custom', nonce: Date.now() })
+    } else if (entry.category === 'file' && entry.fileTransport) {
+      setFilePreset({ transport: entry.fileTransport, nonce: Date.now() })
     }
     setActiveTab(tab)
   }
@@ -55,7 +58,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       {activeTab === 'databases' && <TabDatabases user={user} preset={dbPreset} />}
       {activeTab === 'apis'      && <TabAPIs user={user} openPreset={apiPreset} />}
       {activeTab === 'airbyte'   && <TabAirbyte user={user} />}
-      {activeTab === 'files'     && <TabFileServers user={user} />}
+      {activeTab === 'files'     && <TabFileServers user={user} openTransport={filePreset} />}
       {activeTab === 'mcp'       && <TabMcp user={user} />}
       {activeTab === 'prism'     && <TabPrism user={user} />}
     </div>
