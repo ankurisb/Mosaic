@@ -67,3 +67,7 @@ scratch-*.mjs
 
 # Claude Code local worktrees / tooling state
 .claude/
+
+# MCP sidecar secrets (see docs/MCP_SIDECARS.md)
+tb-mcp.env
+*-mcp.env
