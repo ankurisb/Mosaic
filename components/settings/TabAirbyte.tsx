@@ -264,6 +264,10 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange, openConnec
       if (d.error === 'catalog_unavailable_on_cloud' || d.cloud) {
         setCatalogNotice(d.message || 'The connector catalog is available on the self-hosted engine only.')
         setConnDefs([])
+      } else if (d.error) {
+        // Real backend failure — surface it rather than a silent, misleading "No connectors found".
+        setConnDefs([])
+        showToast(`Couldn't load connectors: ${d.error}`, false)
       } else {
         const defs = d.definitions || []
         setConnDefs(defs)

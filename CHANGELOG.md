@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.68] - 2026-11-09
+### Fixed
+- **Browse → Add source dead-ended with "No connectors found" for every connector.** The Airbyte
+  API helper tries several endpoint flavours in turn (public `/v1`, public `/api/public/v1`, then
+  the config `/api/v1`). On a self-hosted abctl engine the public `source_definitions` endpoint
+  returns **403**, and the helper's "surface real business errors" logic threw on any JSON non-404
+  response — so it never reached the config API, which actually serves all 583 definitions. A
+  401/403 on one flavour is now remembered rather than thrown, letting a working fallback flavour
+  answer; genuinely URL-independent errors (400/409/429/JSON 5xx) and the Airbyte Cloud 403 →
+  "catalog unavailable on Cloud" message are unchanged.
+- The Add-source wizard now shows the actual backend error if the catalog can't load, instead of a
+  silent, misleading "No connectors found".
+
 ## [1.6.67] - 2026-11-09
 ### Added
 - **Full tool inventory viewer for MCP connections.** The test result only previewed the first few

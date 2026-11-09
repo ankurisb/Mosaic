@@ -129,6 +129,7 @@ async function ab(
   ]
 
   let lastErr = ''
+  let authErr = ''   // a 401/403 seen on one flavour; surfaced only if every candidate fails
   for (const a of attempts) {
     try {
       const hasBody = ['POST','PUT','PATCH'].includes(a.method) && body !== undefined
@@ -160,8 +161,17 @@ async function ab(
       // 403. Otherwise meaningful Cloud errors get masked.
       const ct = res.headers.get('content-type') || ''
       const looksJson = ct.includes('application/json') || /^\s*[[{]/.test(errTxt)
+      // 401/403 can legitimately differ BETWEEN API flavours: abctl's public API
+      // (/api/public/v1) commonly 403s while the config API (/api/v1) serves the same
+      // call fine. So an auth/permission error on ONE candidate URL must not mask a
+      // working fallback — remember it and keep trying the other flavours. Genuinely
+      // URL-independent business errors (400 bad request, 409 conflict, 429 rate limit,
+      // JSON 5xx) are still surfaced immediately. If every candidate fails, the auth
+      // error (if any) is surfaced in preference to a trailing 404 so the Cloud 403
+      // → "catalog unavailable on Cloud" message still fires.
       if (res.status !== 404 && looksJson) {
-        throw new Error(lastErr)
+        if (res.status === 401 || res.status === 403) { if (!authErr) authErr = lastErr }
+        else throw new Error(lastErr)
       }
     } catch (e) {
       // Re-throw a surfaced business error; otherwise record and try next URL.
@@ -169,7 +179,7 @@ async function ab(
       lastErr = (e as Error).message
     }
   }
-  throw new Error(lastErr || 'Airbyte unreachable')
+  throw new Error(authErr || lastErr || 'Airbyte unreachable')
 }
 
 // Translate a raw Airbyte API error (often "409 Conflict: {json…}") into a clean,
