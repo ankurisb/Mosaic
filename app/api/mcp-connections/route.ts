@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/encrypt'
 import { setupDatabase } from '@/lib/setup'
-import { testMcpEndpoint } from '@/lib/tools'
+import { testMcpEndpoint, getMcpTools } from '@/lib/tools'
 import { catalogForClient, getCatalogEntry, sidecarEndpoint } from '@/lib/mcp-catalog'
 import { managerConfigured, provisionSidecar, removeSidecar, sidecarStatus } from '@/lib/mcp-manager'
 export const runtime = 'nodejs'
@@ -65,6 +65,17 @@ export async function POST(req: Request) {
     if (!endpoint) return Response.json({ error: 'endpoint_url required' }, { status: 400 })
     const result = await testMcpEndpoint(endpoint, token, (transport as 'http' | 'sse' | 'stdio') || 'http')
     return Response.json(result)
+  }
+
+  // -- LIST-TOOLS -- full tool inventory (name + description) for a saved connection --
+  if (action === 'list-tools') {
+    const { id } = body as { id?: string }
+    if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const rows = await sql`SELECT endpoint_url FROM mcp_connections WHERE id=${id}`
+    if (!rows.length) return Response.json({ error: 'Not found' }, { status: 404 })
+    const endpoint = (rows[0] as { endpoint_url: string }).endpoint_url
+    const tools = await getMcpTools(id, endpoint)   // loads token + transport from the row
+    return Response.json({ ok: true, tools: tools.map(t => ({ name: t.name, description: t.description || '' })) })
   }
 
   // -- CATALOG -- list the provisionable managed-server descriptors (redacted) --

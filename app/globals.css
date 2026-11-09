@@ -61,6 +61,7 @@ body {
   --shadow:    0 1px 1px rgba(9,30,66,0.25), 0 0 1px rgba(9,30,66,0.31);
   --shadow-md: 0 4px 8px rgba(9,30,66,0.16), 0 0 1px rgba(9,30,66,0.31);
   --shadow-lg: 0 8px 16px rgba(9,30,66,0.22), 0 0 1px rgba(9,30,66,0.31);
+  --overlay:   rgba(9,30,66,0.54);  /* modal scrim (ADS blanket) */
 
   --text:      #172b4d;
   --text2:     #44546f;
@@ -162,6 +163,7 @@ body {
   --shadow:    0 1px 1px rgba(3,4,4,0.50), 0 0 1px rgba(3,4,4,0.50);
   --shadow-md: 0 4px 8px rgba(3,4,4,0.52), 0 0 1px rgba(3,4,4,0.60);
   --shadow-lg: 0 8px 16px rgba(3,4,4,0.56), 0 0 1px rgba(3,4,4,0.60);
+  --overlay:   rgba(3,4,4,0.64);  /* modal scrim (ADS blanket) */
 
   --text:      #c7d1db;
   --text2:     #9fadbc;

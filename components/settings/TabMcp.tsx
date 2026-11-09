@@ -38,6 +38,8 @@ export default function TabMcp({ user }: { user: SessionUser }) {
   const [catForm, setCatForm] = useState<CatForm | null>(null)
   // Per-row connection test (re-check a saved connection on demand).
   const [rowTest, setRowTest] = useState<{ id: string; busy: boolean; ok?: boolean; tools?: string[]; error?: string } | null>(null)
+  // Full tool inventory viewer (name + description), opened per connection.
+  const [toolsModal, setToolsModal] = useState<{ id: string; label: string; busy: boolean; tools?: { name: string; description: string }[]; error?: string; filter: string } | null>(null)
 
   async function load() {
     const r = await fetch('/api/mcp-connections')
@@ -159,6 +161,20 @@ export default function TabMcp({ user }: { user: SessionUser }) {
       const d = await r.json()
       setRowTest({ id: c.id, busy: false, ok: !!d.ok, tools: d.tools, error: d.error })
     } catch (e) { setRowTest({ id: c.id, busy: false, ok: false, error: (e as Error).message }) }
+  }
+
+  // Open the full tool list (name + description) for a connection.
+  async function openTools(c: McpConn) {
+    setToolsModal({ id: c.id, label: c.label, busy: true, filter: '' })
+    try {
+      const r = await fetch('/api/mcp-connections', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list-tools', id: c.id }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.ok) throw new Error(d.error || 'Could not list tools')
+      setToolsModal({ id: c.id, label: c.label, busy: false, tools: d.tools || [], filter: '' })
+    } catch (e) { setToolsModal({ id: c.id, label: c.label, busy: false, error: (e as Error).message, filter: '' }) }
   }
 
   async function remove(c: McpConn) {
@@ -333,7 +349,14 @@ export default function TabMcp({ user }: { user: SessionUser }) {
               {rowTest?.id === c.id && !rowTest.busy && (
                 <div style={{ padding: '0 18px 14px' }}>
                   {rowTest.ok
-                    ? <Alert variant="success">Connected — {rowTest.tools?.length || 0} tool{rowTest.tools?.length === 1 ? '' : 's'}{rowTest.tools?.length ? `: ${rowTest.tools.slice(0, 8).join(', ')}${rowTest.tools.length > 8 ? '…' : ''}` : ''}</Alert>
+                    ? <div>
+                        <Alert variant="success">Connected — {rowTest.tools?.length || 0} tool{rowTest.tools?.length === 1 ? '' : 's'}{rowTest.tools?.length ? `: ${rowTest.tools.slice(0, 8).join(', ')}${rowTest.tools.length > 8 ? '…' : ''}` : ''}</Alert>
+                        {(rowTest.tools?.length || 0) > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <Btn size="sm" onClick={() => openTools(c)}>View all {rowTest.tools?.length} tools</Btn>
+                          </div>
+                        )}
+                      </div>
                     : <Alert variant="error">{c.managed ? 'Not responding yet. A just-provisioned server can take up to a minute to boot — wait and press Test again. ' : ''}{rowTest.error ? `(${rowTest.error})` : ''}</Alert>}
                 </div>
               )}
@@ -341,6 +364,49 @@ export default function TabMcp({ user }: { user: SessionUser }) {
           ))}
         </div>
       )}
+
+      {/* ── Tool inventory modal ───────────────────────────────── */}
+      {toolsModal && (() => {
+        const all = toolsModal.tools || []
+        const q = toolsModal.filter.trim().toLowerCase()
+        const shown = q ? all.filter(t => t.name.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q)) : all
+        return (
+          <div onClick={() => setToolsModal(null)}
+            style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', width: 'min(720px, 100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{toolsModal.label} — tools</div>
+                  {!toolsModal.busy && !toolsModal.error && <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{all.length} tool{all.length === 1 ? '' : 's'} exposed{q ? ` · ${shown.length} match${shown.length === 1 ? '' : 'es'}` : ''}</div>}
+                </div>
+                <Btn size="sm" onClick={() => setToolsModal(null)}>Close</Btn>
+              </div>
+              {toolsModal.busy ? (
+                <div style={{ padding: 40, textAlign: 'center' }}><Spinner size={16} /></div>
+              ) : toolsModal.error ? (
+                <div style={{ padding: 20 }}><Alert variant="error">{toolsModal.error}</Alert></div>
+              ) : (
+                <>
+                  <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>
+                    <input style={INP} value={toolsModal.filter} onChange={e => setToolsModal({ ...toolsModal, filter: e.target.value })} placeholder="Filter tools by name or description…" />
+                  </div>
+                  <div style={{ overflowY: 'auto', padding: '4px 0' }}>
+                    {shown.length === 0 ? (
+                      <div style={{ padding: 20 }}><Alert variant="info">No tools match “{toolsModal.filter}”.</Alert></div>
+                    ) : shown.map((t, i) => (
+                      <div key={t.name} style={{ padding: '10px 20px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-mono, monospace)' }}>{t.name}</div>
+                        {t.description && <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3, lineHeight: 1.45 }}>{t.description}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

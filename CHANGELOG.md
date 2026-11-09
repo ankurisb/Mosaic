@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.67] - 2026-11-09
+### Added
+- **Full tool inventory viewer for MCP connections.** The test result only previewed the first few
+  tool names. A successful test now offers **View all N tools**, opening a searchable list of every
+  exposed tool with its name and description (filter by name or description). Backed by a new
+  `list-tools` action that returns the complete `tools/list` inventory for a saved connection.
+
 ## [1.6.66] - 2026-11-09
 ### Added
 - **Test button on every MCP connection row.** You can now re-check a saved MCP connection on
