@@ -36,6 +36,8 @@ export default function TabMcp({ user }: { user: SessionUser }) {
   const [managerReady, setManagerReady] = useState(false)
   const [picking, setPicking] = useState(false)
   const [catForm, setCatForm] = useState<CatForm | null>(null)
+  // Per-row connection test (re-check a saved connection on demand).
+  const [rowTest, setRowTest] = useState<{ id: string; busy: boolean; ok?: boolean; tools?: string[]; error?: string } | null>(null)
 
   async function load() {
     const r = await fetch('/api/mcp-connections')
@@ -117,20 +119,46 @@ export default function TabMcp({ user }: { user: SessionUser }) {
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Provisioning failed')
-      // Confirm the freshly started sidecar actually serves tools.
+      // Confirm the freshly started sidecar actually serves tools. A just-started server
+      // (ThingsBoard, etc.) can take ~30–60s to boot, so an immediate failure here is NOT
+      // a real failure — tell the user to re-test rather than reporting it as broken.
+      let tools: number | null = null
       if (d.endpoint_url) {
         try {
           const t = await fetch('/api/mcp-connections', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'test', endpoint_url: d.endpoint_url, transport: entry.transport }),
           })
-          setTestResult(await t.json())
-        } catch { /* test is best-effort confirmation */ }
+          const tr = await t.json()
+          if (tr.ok) tools = (tr.tools?.length ?? 0)
+        } catch { /* best-effort; row Test covers the retry */ }
       }
+      const newId = d.id as string | undefined
       setCatForm(null); await load()
-      setMsg({ ok: true, text: catForm.id ? `${entry.name} updated and restarted.` : `${entry.name} provisioned and connected.` })
+      if (tools != null) {
+        setMsg({ ok: true, text: `${entry.name} ${catForm.id ? 'updated' : 'provisioned'} and connected — ${tools} tool${tools === 1 ? '' : 's'} available.` })
+      } else {
+        setMsg({ ok: true, text: `${entry.name} ${catForm.id ? 'updated' : 'provisioned'}. The server can take up to a minute to start — press Test on the connection below to confirm it’s serving tools.` })
+        // Kick off a row test so the result appears without the user having to click.
+        if (newId) setTimeout(() => testRow({ id: newId } as McpConn), 1500)
+      }
     } catch (e) { setMsg({ ok: false, text: (e as Error).message }) }
     finally { setBusy(false) }
+  }
+
+  // Re-test a saved connection by id (works for managed and custom alike — the route
+  // loads the stored endpoint + transport + token). Useful because a freshly provisioned
+  // server (ThingsBoard, etc.) can take ~30–60s to boot before it serves tools.
+  async function testRow(c: McpConn) {
+    setRowTest({ id: c.id, busy: true })
+    try {
+      const r = await fetch('/api/mcp-connections', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', id: c.id }),
+      })
+      const d = await r.json()
+      setRowTest({ id: c.id, busy: false, ok: !!d.ok, tools: d.tools, error: d.error })
+    } catch (e) { setRowTest({ id: c.id, busy: false, ok: false, error: (e as Error).message }) }
   }
 
   async function remove(c: McpConn) {
@@ -287,18 +315,28 @@ export default function TabMcp({ user }: { user: SessionUser }) {
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
           {conns.map((c, i) => (
-            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{c.label}</span>
-                  {c.managed ? <Badge label="managed" /> : null}
-                  {!c.enabled && <Badge label="disabled" />}
-                  {c.has_token ? <Badge label="auth" /> : null}
+            <div key={c.id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{c.label}</span>
+                    {c.managed ? <Badge label="managed" /> : null}
+                    {!c.enabled && <Badge label="disabled" />}
+                    {c.has_token ? <Badge label="auth" /> : null}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.managed ? (c.description || catEntry(c.catalog_id)?.blurb || 'Managed server') : `${c.endpoint_url}${c.description ? ` · ${c.description}` : ''}`}</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.managed ? (c.description || catEntry(c.catalog_id)?.blurb || 'Managed server') : `${c.endpoint_url}${c.description ? ` · ${c.description}` : ''}`}</div>
+                <Btn onClick={() => testRow(c)} disabled={rowTest?.id === c.id && rowTest.busy}>{rowTest?.id === c.id && rowTest.busy ? 'Testing…' : 'Test'}</Btn>
+                <Btn onClick={() => c.managed ? startEditManaged(c) : startEdit(c)}>Edit</Btn>
+                <Btn onClick={() => remove(c)}>Delete</Btn>
               </div>
-              <Btn onClick={() => c.managed ? startEditManaged(c) : startEdit(c)}>Edit</Btn>
-              <Btn onClick={() => remove(c)}>Delete</Btn>
+              {rowTest?.id === c.id && !rowTest.busy && (
+                <div style={{ padding: '0 18px 14px' }}>
+                  {rowTest.ok
+                    ? <Alert variant="success">Connected — {rowTest.tools?.length || 0} tool{rowTest.tools?.length === 1 ? '' : 's'}{rowTest.tools?.length ? `: ${rowTest.tools.slice(0, 8).join(', ')}${rowTest.tools.length > 8 ? '…' : ''}` : ''}</Alert>
+                    : <Alert variant="error">{c.managed ? 'Not responding yet. A just-provisioned server can take up to a minute to boot — wait and press Test again. ' : ''}{rowTest.error ? `(${rowTest.error})` : ''}</Alert>}
+                </div>
+              )}
             </div>
           ))}
         </div>

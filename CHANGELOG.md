@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.66] - 2026-11-09
+### Added
+- **Test button on every MCP connection row.** You can now re-check a saved MCP connection on
+  demand (managed or custom), not only while adding one. This matters because a freshly provisioned
+  managed server — ThingsBoard's MCP image, for instance — takes ~30–60s to boot and authenticate,
+  so the test that runs the instant you click Provision can fire before the server is ready.
+### Changed
+- **Provisioning no longer reports a transient boot delay as a failure.** After provisioning a
+  managed server, if the immediate connection test doesn't yet return tools, Mosaic now says the
+  server is still starting and to press Test in a moment (and auto-retries once), rather than
+  surfacing a scary "connection test failed". A successful test reports the tool count inline.
+
 ## [1.6.65] - 2026-11-09
 ### Added
 - **Managed MCP servers — provision a self-hosted MCP server from the UI.** Until now the MCP tab
