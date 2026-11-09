@@ -389,6 +389,11 @@ export async function setupDatabasePostgres(): Promise<void> {
     created_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
     updated_at    TEXT DEFAULT (to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
   )`.catch(() => {})
+  // Managed MCP connections (Mosaic provisions the sidecar from a catalog descriptor).
+  await sql`ALTER TABLE mcp_connections ADD COLUMN IF NOT EXISTS managed      BOOLEAN DEFAULT false`.catch(() => {})
+  await sql`ALTER TABLE mcp_connections ADD COLUMN IF NOT EXISTS catalog_id   TEXT`.catch(() => {})
+  await sql`ALTER TABLE mcp_connections ADD COLUMN IF NOT EXISTS sidecar_name TEXT`.catch(() => {})
+  await sql`ALTER TABLE mcp_connections ADD COLUMN IF NOT EXISTS env_enc      TEXT`.catch(() => {})
 
   // -- Prism instances (Postgres) --------------------------------
   await sql`CREATE TABLE IF NOT EXISTS prism_instances (

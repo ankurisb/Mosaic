@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.65] - 2026-11-09
+### Added
+- **Managed MCP servers — provision a self-hosted MCP server from the UI.** Until now the MCP tab
+  only pointed Mosaic at an endpoint you had already stood up yourself. You can now pick a server
+  from a catalog (**ThingsBoard** first), enter your credentials, and Mosaic starts and wires up the
+  server for you — no Docker, compose files, or shell required.
+  - **Architecture.** The Mosaic web app stays unprivileged and never touches Docker. A small,
+    separate **mcp-manager** sidecar holds the Docker socket and exposes a narrow,
+    token-authenticated API (provision / remove / status). The web app calls it over the internal
+    network. The manager fails closed: it only pulls images on an explicit allowlist
+    (`MCP_ALLOWED_IMAGES`), only manages containers it labelled itself, binds no host ports, and
+    accepts no command/volume/privileged flags from requests.
+  - **Catalog descriptors, not bespoke code.** Each managed server is one declarative entry in
+    `lib/mcp-catalog.ts` (image, port, transport, and the credential fields to render). Adding a new
+    managed server is authoring one object plus allowlisting its image — the generic engine renders
+    the form, encrypts the secrets, starts the sidecar, and registers the connection.
+  - **Secrets at rest.** Credentials you enter are encrypted (`env_enc`) exactly like database and
+    API-connection secrets, so edits can restart the server without re-prompting.
+  - The MCP tab now offers **Add managed server** (catalog) alongside **Add custom connection** (the
+    existing point-at-an-endpoint path). Managed rows carry a `managed` badge; deleting one stops and
+    removes its server.
+
 ## [1.6.64] - 2026-11-09
 ### Added
 - **MCP connector now supports all three transports.** The MCP client was Streamable-HTTP-only, so

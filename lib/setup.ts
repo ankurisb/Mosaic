@@ -278,6 +278,13 @@ export async function setupDatabase() {
     created_at    TEXT DEFAULT (datetime('now')),
     updated_at    TEXT DEFAULT (datetime('now'))
   )`
+  // Managed MCP connections: Mosaic provisions the sidecar container (via the mcp-manager) from a
+  // catalog descriptor, so it also owns the backend credentials (encrypted) needed to (re)create it.
+  const mcpCol = (e: unknown) => { if (!String(e).includes('duplicate column') && !String(e).includes('syntax error')) throw e }
+  await sql`ALTER TABLE mcp_connections ADD COLUMN managed      INTEGER DEFAULT 0`.catch(mcpCol)
+  await sql`ALTER TABLE mcp_connections ADD COLUMN catalog_id   TEXT`.catch(mcpCol)
+  await sql`ALTER TABLE mcp_connections ADD COLUMN sidecar_name TEXT`.catch(mcpCol)
+  await sql`ALTER TABLE mcp_connections ADD COLUMN env_enc      TEXT`.catch(mcpCol)
 
   // -- Analytics dashboards --------------------------------------
   await sql`CREATE TABLE IF NOT EXISTS dashboards (

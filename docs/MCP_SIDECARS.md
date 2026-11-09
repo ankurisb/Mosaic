@@ -76,8 +76,65 @@ See `tb-mcp.env.example`. SSE mode plus **one** auth method; use a **Tenant Admi
 `docker compose up -d <name>` (compose detects the change and **recreates** the container). A plain
 `docker restart` silently keeps the old environment.
 
-## Roadmap
+## Managed servers (in-app provisioning)
 
-This pattern is reproducible and auditable but still per-server shell config. A first-class in-app
-flow — where the MCP tab collects a known server's backend credentials (encrypted at rest like DB/
-API connections) and provisions the sidecar — would remove the shell step entirely. Not yet built.
+The compose pattern above is the **manual** path — still available as *Add custom connection*. For
+catalogued servers there is now a first-class flow: **MCP servers → Add managed server → pick a
+server → enter credentials → Provision**. Mosaic starts the sidecar and registers the connection;
+no shell, env files, or compose edits.
+
+### How it works
+
+```
+browser ──POST /api/mcp-connections {action:'provision'}──▶ Mosaic (unprivileged)
+                                                              │  encrypts creds (env_enc)
+                                                              ▼
+                                            POST /provision  mcp-manager (holds docker.sock)
+                                                              │  docker create+start, labelled
+                                                              ▼
+                                                        <sidecar container> on mosaic-net
+          Mosaic connection.endpoint_url = http://<sidecar-name>:<port>/sse
+```
+
+- **`mcp-manager`** (`mcp-manager/server.mjs`) is a small privileged helper, run as its **own**
+  container with `/var/run/docker.sock` mounted. The Mosaic web app never touches Docker; it calls
+  the manager over the internal network with a bearer token (`MCP_MANAGER_TOKEN`).
+- The manager **fails closed**: it only pulls images on `MCP_ALLOWED_IMAGES`, only manages
+  containers it labelled `mosaic.mcp.managed=true`, binds **no** host ports, uses a fixed network
+  (`MCP_NETWORK`), and ignores any command / volume / privileged / port-binding in a request.
+- **Catalog.** Each managed server is one descriptor in `lib/mcp-catalog.ts` (image, port,
+  transport, credential fields). The generic engine renders the form, so adding a server = authoring
+  one object **and** adding its image to `MCP_ALLOWED_IMAGES`.
+- **Secrets at rest.** The values you enter are encrypted into `mcp_connections.env_enc` (same
+  `lib/encrypt.ts` as DB/API secrets), so *Edit → Update & restart* re-provisions without
+  re-prompting. Deleting a managed connection stops and removes its sidecar.
+
+### Compose wiring (on the box)
+
+The manager runs from the Mosaic image but as a separate service, added to
+`docker-compose.override.yml`:
+
+```yaml
+  mcp-manager:
+    image: ghcr.io/ankurisb/mosaic:latest     # same image; different entrypoint
+    container_name: mcp-manager
+    command: ["node", "/app/mcp-manager/server.mjs"]
+    restart: unless-stopped
+    environment:
+      - MCP_MANAGER_TOKEN=${MCP_MANAGER_TOKEN}   # shared secret, ≥16 chars
+      - MCP_ALLOWED_IMAGES=thingsboard/mcp
+      - MCP_NETWORK=mosaic_mosaic-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - mosaic-net
+    # NO host ports — only reachable inside the compose network
+```
+
+And Mosaic's own service gets `MCP_MANAGER_URL=http://mcp-manager:9100` and the same
+`MCP_MANAGER_TOKEN`. When the token is unset, the managed flow is simply hidden/disabled and the
+custom path still works.
+
+> **Why a separate container?** Mounting the Docker socket into a container is equivalent to root on
+> the host. Keeping it out of the internet-facing web app and inside a tiny, allowlist-only helper
+> is the whole point of the split — the blast radius of the socket is one auditable file.

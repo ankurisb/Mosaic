@@ -52,6 +52,9 @@ COPY --from=builder /app/next.config.ts ./next.config.ts
 # Without this the migration runner finds no directory and silently skips, so schema
 # changes never reach production installs.
 COPY --from=builder /app/migrations ./migrations
+# mcp-manager: the privileged MCP-sidecar provisioner. Shipped in the image but run as its OWN
+# container (with the Docker socket) via a compose `command:` override — the web app never runs it.
+COPY --from=builder /app/mcp-manager ./mcp-manager
 
 # Data directory for SQLite
 RUN mkdir -p /data && chown mosaic:nodejs /data
