@@ -29,11 +29,11 @@ const id = crypto.randomUUID();
 if (cols.includes('client_id') && cols.includes('client_secret_enc')) {
   db.prepare(`INSERT INTO airbyte_instances (id,label,url,username,password_enc,client_id,client_secret_enc,active,created_at)
     VALUES (?,?,?,?,?,?,?,1,datetime('now'))`)
-    .run(id, 'Bundled Airbyte (abctl)', URL, CLIENT_ID, encrypt(CLIENT_SECRET), CLIENT_ID, encrypt(CLIENT_SECRET));
+    .run(id, 'Bundled connector engine', URL, CLIENT_ID, encrypt(CLIENT_SECRET), CLIENT_ID, encrypt(CLIENT_SECRET));
 } else {
   db.prepare(`INSERT INTO airbyte_instances (id,label,url,username,password_enc,active,created_at)
     VALUES (?,?,?,?,?,1,datetime('now'))`)
-    .run(id, 'Bundled Airbyte (abctl)', URL, CLIENT_ID, encrypt(CLIENT_SECRET));
+    .run(id, 'Bundled connector engine', URL, CLIENT_ID, encrypt(CLIENT_SECRET));
 }
 console.log('re-registered Airbyte:', URL, 'client', CLIENT_ID.slice(0, 8) + '...');
 db.close();

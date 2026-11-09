@@ -27,8 +27,13 @@ function useConnIcons() {
 function connIconSlug(name: string): string {
   return (name || '').toLowerCase().replace(/^source-/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
+// White-label the engine instance label for display (covers rows seeded before the rename): drop
+// the "(abctl)" deployment tag and swap the vendor word for the neutral term.
+function displayEngineLabel(label: string): string {
+  return (label || 'Connector engine').replace(/\s*\(abctl\)\s*/i, ' ').replace(/airbyte/ig, 'Connector Engine').replace(/\s{2,}/g, ' ').trim()
+}
 
-export default function TabAirbyte({ user }: { user: SessionUser }) {
+export default function TabAirbyte({ user, openConnector }: { user: SessionUser; openConnector?: { name: string; nonce: number } | null }) {
   const [showAirbyteForm, setShowAirbyteForm] = useState(false)
   const [airbyteCount, setAirbyteCount] = useState(0)
   const [airbyteIsCloud, setAirbyteIsCloud] = useState(false)
@@ -72,7 +77,7 @@ export default function TabAirbyte({ user }: { user: SessionUser }) {
           </div>
         </div>
       )}
-      <AirbyteSection user={user} showForm={showAirbyteForm} setShowForm={setShowAirbyteForm} onCountChange={setAirbyteCount} />
+      <AirbyteSection user={user} showForm={showAirbyteForm} setShowForm={setShowAirbyteForm} onCountChange={setAirbyteCount} openConnector={openConnector} />
     </div>
   )
 }
@@ -104,7 +109,7 @@ function AbStatusBadge({ status }: { status: string }) {
   return <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: bg, color: fg }}>{status || '—'}</span>
 }
 
-function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: SessionUser; showForm: boolean; setShowForm: (v: boolean) => void; onCountChange?: (n: number) => void }) {
+function AirbyteSection({ user, showForm, setShowForm, onCountChange, openConnector }: { user: SessionUser; showForm: boolean; setShowForm: (v: boolean) => void; onCountChange?: (n: number) => void; openConnector?: { name: string; nonce: number } | null }) {
   const isAdmin = user.role === 'admin'
   const [instances, setInstances]     = React.useState<AbInstance[]>([])
   const [loading, setLoading]         = React.useState(true)
@@ -241,7 +246,13 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
 
   function openEdit(inst: AbInstance) { setForm({ label: inst.label, url: inst.url, username: inst.username, password: '', client_id: '', client_secret: '' }); setEditing(inst.id); setShowForm(true) }
 
-  async function openWizard(instId: string) {
+  // When the wizard is opened from the "Browse" catalogue, the chosen connector's name is passed so
+  // we can skip the duplicate "choose connector" step: after the live catalogue loads, if exactly
+  // one definition matches the name we jump straight to Configure (step 2); otherwise we pre-fill
+  // the search so the admin never retypes. We never guess a definition — only an exact name match
+  // auto-advances, so a catalogue that differs from the static Browse list can't misfire.
+  const normName = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  async function openWizard(instId: string, targetName?: string) {
     setWizardInst(instId); setWizardStep(1); setSelectedDef(null)
     setSourceSpec(null); setSourceConfig({}); setSourceName(''); setDefSearch('')
     setCatalogNotice(''); setShowWizard(true); setDefsLoading(true)
@@ -254,17 +265,24 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
         setCatalogNotice(d.message || 'The connector catalog is available on the self-hosted engine only.')
         setConnDefs([])
       } else {
-        setConnDefs(d.definitions || [])
+        const defs = d.definitions || []
+        setConnDefs(defs)
+        if (targetName) {
+          const matches = defs.filter((x: any) => normName(x.name) === normName(targetName))
+          if (matches.length === 1) { setDefsLoading(false); await selectDef(matches[0], instId); return }
+          setDefSearch(targetName)   // 0 or >1 matches: pre-fill the search, stay on step 1
+        }
       }
     }
     catch { showToast('Failed to load connectors', false) }
     finally { setDefsLoading(false) }
   }
 
-  async function selectDef(def: any) {
+  async function selectDef(def: any, instId?: string) {
+    const inst = instId || wizardInst
     setSelectedDef(def); setWizardStep(2); setSpecLoading(true); setSourceName(def.name || '')
     try {
-      const r = await fetch(`/api/airbyte?action=source_spec&id=${wizardInst}&definitionId=${def.sourceDefinitionId || def.id}`)
+      const r = await fetch(`/api/airbyte?action=source_spec&id=${inst}&definitionId=${def.sourceDefinitionId || def.id}`)
       const d = await r.json(); setSourceSpec(d.spec)
       // seedConfig walks the schema for defaults, const values, and oneOf
       // discriminators — producing the nested shape Airbyte expects.
@@ -272,6 +290,19 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
     } catch { showToast('Failed to load connector spec', false) }
     finally { setSpecLoading(false) }
   }
+
+  // Deep-link from the Browse catalogue: remember the picked connector, then open the wizard for it
+  // as soon as a ready engine (with a workspace) is available.
+  const pendingConnRef = React.useRef<string | null>(null)
+  React.useEffect(() => { if (openConnector?.name) pendingConnRef.current = openConnector.name }, [openConnector?.nonce])
+  React.useEffect(() => {
+    if (!pendingConnRef.current || !isAdmin || showWizard) return
+    const ready = instances.find(i => i.workspace_id)
+    if (!ready) return
+    const name = pendingConnRef.current; pendingConnRef.current = null
+    openWizard(ready.id, name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instances, openConnector?.nonce])
 
   async function createSource() {
     setWizardSaving(true)
@@ -346,7 +377,7 @@ function AirbyteSection({ user, showForm, setShowForm, onCountChange }: { user: 
                 <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="white" strokeWidth="1.6" strokeLinecap="round"><polygon points="11,2 14,8 20,9 16,14 17,20 11,17 5,20 6,14 2,9 8,8"/></svg>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{inst.label}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{displayEngineLabel(inst.label)}</div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {inst.url}{inst.workspace_id ? ` · ws:${inst.workspace_id.slice(0,8)}` : ''}
                 </div>

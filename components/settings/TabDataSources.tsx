@@ -19,6 +19,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
   const [dbPreset, setDbPreset] = useState<{ dialect: string; nonce: number } | null>(null)
   const [apiPreset, setApiPreset] = useState<{ label: string; nonce: number } | null>(null)
   const [filePreset, setFilePreset] = useState<{ transport: string; nonce: number } | null>(null)
+  const [abPreset, setAbPreset] = useState<{ name: string; nonce: number } | null>(null)
 
   // Picking a source from Browse opens the owning tab's form via React state, which pushes no
   // browser-history entry — so the Back button would skip the Browse grid and leave the Data
@@ -46,6 +47,10 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       setApiPreset({ label: entry.apiPreset || 'Custom', nonce: Date.now() })
     } else if (entry.category === 'file' && entry.fileTransport) {
       setFilePreset({ transport: entry.fileTransport, nonce: Date.now() })
+    } else if (entry.category === 'airbyte') {
+      // Carry the chosen connector into the connector tab so it opens its add-wizard pre-selected,
+      // skipping the duplicate "choose connector" search.
+      setAbPreset({ name: entry.name, nonce: Date.now() })
     }
     // Leave a return-to-Browse marker in history (same URL — doesn't disturb the #data-sources
     // hash routing), once per Browse→form hop.
@@ -70,7 +75,12 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       {/* Tab strip */}
       <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', marginBottom: 24 }}>
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => {
+            // Manual tab selection is not a catalogue deep-link: clear any pending presets so a
+            // re-mount of the target tab doesn't re-trigger its add-form/wizard from a stale pick.
+            setDbPreset(null); setApiPreset(null); setFilePreset(null); setAbPreset(null)
+            setActiveTab(tab.id)
+          }}
             style={{ padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab.id ? 600 : 400, color: activeTab === tab.id ? 'var(--text)' : 'var(--text3)', background: 'none', border: 'none', borderBottom: activeTab === tab.id ? '2px solid var(--accent-fg)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1 }}>
             {tab.label}
           </button>
@@ -80,7 +90,7 @@ export default function TabDataSources({ user }: { user: SessionUser }) {
       {activeTab === 'browse'    && <TabDataSourceCatalog onPick={onPick} />}
       {activeTab === 'databases' && <TabDatabases user={user} preset={dbPreset} />}
       {activeTab === 'apis'      && <TabAPIs user={user} openPreset={apiPreset} />}
-      {activeTab === 'airbyte'   && <TabAirbyte user={user} />}
+      {activeTab === 'airbyte'   && <TabAirbyte user={user} openConnector={abPreset} />}
       {activeTab === 'files'     && <TabFileServers user={user} openTransport={filePreset} />}
       {activeTab === 'mcp'       && <TabMcp user={user} />}
       {activeTab === 'prism'     && <TabPrism user={user} />}

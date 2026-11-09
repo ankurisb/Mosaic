@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.63] - 2026-11-09
+### Changed
+- **Connector engine: finish white-labelling the instance card.** Engine instances seeded as
+  "Bundled Airbyte (abctl)" now display as "Bundled connector engine" — the seed label is renamed
+  going forward, and existing rows are sanitised at display time (drops the "(abctl)" tag and swaps
+  the vendor word), so no "Airbyte" text appears on the connectors page.
+- **Browse → connector: skip the duplicate "choose connector" step.** Picking a connector from the
+  Browse catalogue now carries that choice into the connector tab and opens the add-wizard already
+  advanced to **Configure source** for it, instead of making you search the catalogue a second time.
+  Done cautiously so it can't break the integration: it only auto-advances on an **exact** match in
+  the engine's live catalogue; if the engine's catalogue differs, is empty, or has more than one
+  match, the wizard stays on step 1 with the connector name pre-filled in the search — nothing is
+  ever guessed or mis-selected.
+
 ## [1.6.62] - 2026-11-08
 ### Changed
 - **Data-source forms now open as a full page, not inline below the list.** Adding or editing a
