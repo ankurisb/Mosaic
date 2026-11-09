@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.64] - 2026-11-09
+### Added
+- **MCP connector now supports all three transports.** The MCP client was Streamable-HTTP-only, so
+  it couldn't talk to servers that expose stdio or legacy HTTP+SSE (most self-hosted servers today,
+  ThingsBoard included). The client is now transport-aware, selected per connection:
+  - **Streamable HTTP** (`http`, default) — unchanged; existing connections keep working.
+  - **HTTP + SSE** (`sse`) — opens the `GET /sse` stream, reads the server-advertised message
+    endpoint from the `endpoint` event, POSTs requests there and correlates responses off the
+    stream. This is what Spring-AI servers such as the ThingsBoard MCP server expose.
+  - **stdio** (`stdio`) — runs the server as a local subprocess and speaks newline-delimited
+    JSON-RPC over stdin/stdout. Restricted to a small allowlist of launchers (docker / npx / node /
+    uvx / python / deno / bun), no shell, and can be disabled with `MCP_STDIO_ENABLED=0`.
+  - MCP servers tab gains a transport selector; the endpoint field adapts (URL vs launch command).
+### Changed
+- MCP endpoint SSRF checks move from `strict` to `lan` mode: on-prem MCP sidecars live on the
+  plant/compose network, so private IPs are now allowed while loopback (Mosaic's own API) and
+  cloud-metadata stay blocked. The SSE message endpoint the server advertises is re-validated the
+  same way. Health probes now test each MCP connection on its own transport and with its token.
+### Validated
+- All three transports pass against reference servers (full `initialize` + `tools/list`). The real
+  `thingsboard/mcp` image (SSE mode, v2.1.0) completes the MCP handshake through Mosaic's SSE
+  client end-to-end — it emits `event: endpoint` → `data:/mcp/message?sessionId=…` and `initialize`
+  round-trips over the stream. `tools/list` is gated behind a valid ThingsBoard session, so the full
+  tool catalogue needs real TB credentials (not a transport matter).
+
 ## [1.6.63] - 2026-11-09
 ### Changed
 - **Connector engine: finish white-labelling the instance card.** Engine instances seeded as

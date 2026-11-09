@@ -58,7 +58,7 @@ export default function TabMcp({ user }: { user: SessionUser }) {
     try {
       const r = await fetch('/api/mcp-connections', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test', endpoint_url: form.endpoint_url, token: form.token || undefined }),
+        body: JSON.stringify({ action: 'test', endpoint_url: form.endpoint_url, token: form.token || undefined, transport: form.transport || 'http' }),
       })
       setTestResult(await r.json())
     } catch (e) { setTestResult({ ok: false, error: (e as Error).message }) }
@@ -88,10 +88,25 @@ export default function TabMcp({ user }: { user: SessionUser }) {
           <Field label="Name">
             <input style={INP} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="e.g. Plant historian MCP" />
           </Field>
-          <Field label="Endpoint URL">
-            <input style={INP} value={form.endpoint_url} onChange={e => setForm({ ...form, endpoint_url: e.target.value })} placeholder="https://mcp.internal:8080/rpc" />
+          <Field label="Transport">
+            <select style={INP} value={form.transport || 'http'} onChange={e => setForm({ ...form, transport: e.target.value })}>
+              <option value="http">Streamable HTTP — one URL, modern servers (default)</option>
+              <option value="sse">HTTP + SSE — GET /sse stream (Spring AI, ThingsBoard, legacy servers)</option>
+              <option value="stdio">stdio — run the server as a local command</option>
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+              {form.transport === 'sse'
+                ? 'Point at the server’s SSE URL (e.g. http://host:8000/sse). Mosaic reads the message endpoint from the stream.'
+                : form.transport === 'stdio'
+                ? 'A launcher command run on the Mosaic host (docker / npx / node / uvx / python). Mosaic speaks JSON-RPC over stdin/stdout.'
+                : 'A single endpoint that accepts JSON-RPC over POST.'}
+            </div>
           </Field>
-          <Field label="Bearer token (optional)">
+          <Field label={form.transport === 'stdio' ? 'Launch command' : 'Endpoint URL'}>
+            <input style={INP} value={form.endpoint_url} onChange={e => setForm({ ...form, endpoint_url: e.target.value })}
+              placeholder={form.transport === 'stdio' ? 'docker run -i --rm -e THINGSBOARD_URL -e THINGSBOARD_API_KEY thingsboard/mcp' : form.transport === 'sse' ? 'http://host:8000/sse' : 'https://mcp.internal:8080/rpc'} />
+          </Field>
+          <Field label={form.transport === 'stdio' ? 'Bearer token (unused for stdio)' : 'Bearer token (optional)'}>
             <input style={INP} type="password" value={form.token} onChange={e => setForm({ ...form, token: e.target.value })} placeholder={form.id ? 'Leave blank to keep existing' : 'Optional auth token'} />
           </Field>
           <Field label="Description (optional)">

@@ -35,15 +35,17 @@ export async function POST(req: Request) {
   if (action === 'test') {
     let endpoint: string | undefined = body.endpoint_url
     let token: string | undefined = body.token
+    let transport: string | undefined = body.transport
     if (!endpoint && body.id) {
-      const rows = await sql`SELECT endpoint_url, token_enc FROM mcp_connections WHERE id=${body.id}`
+      const rows = await sql`SELECT endpoint_url, token_enc, transport FROM mcp_connections WHERE id=${body.id}`
       if (!rows.length) return Response.json({ error: 'Not found' }, { status: 404 })
       endpoint = (rows[0] as { endpoint_url: string }).endpoint_url
       const enc = (rows[0] as { token_enc: string | null }).token_enc
       token = enc ? decrypt(enc) : undefined
+      transport = (rows[0] as { transport: string | null }).transport || 'http'
     }
     if (!endpoint) return Response.json({ error: 'endpoint_url required' }, { status: 400 })
-    const result = await testMcpEndpoint(endpoint, token)
+    const result = await testMcpEndpoint(endpoint, token, (transport as 'http' | 'sse' | 'stdio') || 'http')
     return Response.json(result)
   }
 
@@ -52,10 +54,13 @@ export async function POST(req: Request) {
     const { label, endpoint_url, transport, token, description } = body
     if (!label) return Response.json({ error: 'Label is required' }, { status: 400 })
     if (!endpoint_url) return Response.json({ error: 'Endpoint URL is required' }, { status: 400 })
-    // SSRF guard at registration (defense-in-depth; call-time is also enforced).
-    const { assertUrlSafe } = await import('@/lib/ssrf-guard')
-    const safe = await assertUrlSafe(String(endpoint_url))
-    if (!safe.ok) return Response.json({ error: safe.reason }, { status: 400 })
+    // SSRF guard at registration for URL transports (defense-in-depth; call-time is also enforced).
+    // stdio's endpoint_url is a launcher command, not a URL, so the URL check doesn't apply there.
+    if ((transport || 'http') !== 'stdio') {
+      const { assertUrlSafe } = await import('@/lib/ssrf-guard')
+      const safe = await assertUrlSafe(String(endpoint_url), 'lan') // on-prem MCP sidecars live on the LAN; loopback + metadata stay blocked
+      if (!safe.ok) return Response.json({ error: safe.reason }, { status: 400 })
+    }
     const tokenEnc = token ? encrypt(token) : null
     const rows = await sql`
       INSERT INTO mcp_connections (label, endpoint_url, transport, token_enc, description)

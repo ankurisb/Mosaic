@@ -1138,35 +1138,227 @@ function parseMcpBody(contentType: string, text: string): Record<string, unknown
   try { return JSON.parse(text) } catch { return null }
 }
 
-interface McpSession { endpoint: string; token?: string; sessionId?: string }
+// MCP standardises the message layer (JSON-RPC: initialize / tools/list / tools/call) but NOT the
+// transport. Three exist in the wild and a client only interoperates with a server on a shared one:
+//   • 'http'  — Streamable HTTP (MCP 2025-03-26+): one URL, JSON-RPC over POST, session via header.
+//   • 'sse'   — legacy HTTP+SSE (MCP 2024-11-05): GET <url> opens an event stream that first emits an
+//               `endpoint` event naming a message URL; requests POST there and responses arrive back
+//               on the stream (what Spring-AI servers such as the ThingsBoard MCP server expose).
+//   • 'stdio' — the server runs as a local subprocess; JSON-RPC is newline-delimited over stdin/out.
+// Every client speaks the same JSON-RPC above the transport, so callers use McpClient uniformly.
+export type McpTransport = 'http' | 'sse' | 'stdio'
 
-async function mcpRpc(session: McpSession, method: string, params: Record<string, unknown>, isNotification = false, timeoutMs = 30000): Promise<Record<string, unknown> | null> {
-  const msg: Record<string, unknown> = { jsonrpc: '2.0', method, params }
-  if (!isNotification) msg.id = 1
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-    'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+interface McpClient {
+  rpc(method: string, params: Record<string, unknown>, isNotification?: boolean, timeoutMs?: number): Promise<Record<string, unknown> | null>
+  close(): void
+}
+
+type Pending = { resolve: (v: Record<string, unknown> | null) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+
+// -- Streamable HTTP (one endpoint, JSON-RPC over POST) -----------------------
+class HttpMcpClient implements McpClient {
+  private sessionId?: string
+  constructor(private endpoint: string, private token?: string) {}
+  async rpc(method: string, params: Record<string, unknown>, isNotification = false, timeoutMs = 30000) {
+    const msg: Record<string, unknown> = { jsonrpc: '2.0', method, params }
+    if (!isNotification) msg.id = 1
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+    }
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId
+    const res = await fetch(this.endpoint, { method: 'POST', headers, body: JSON.stringify(msg), signal: AbortSignal.timeout(timeoutMs) })
+    const sid = res.headers.get('mcp-session-id')
+    if (sid) this.sessionId = sid
+    if (isNotification) return null
+    if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
+    const text = await readCapped(res, 1_000_000)
+    const body = parseMcpBody(res.headers.get('content-type') || '', text)
+    if (!body) throw new Error('MCP server returned an unparseable response')
+    if (body.error) throw new Error(`MCP error: ${(body.error as { message?: string }).message || JSON.stringify(body.error)}`)
+    return body
   }
-  if (session.token) headers['Authorization'] = `Bearer ${session.token}`
-  if (session.sessionId) headers['Mcp-Session-Id'] = session.sessionId
+  close() { /* stateless */ }
+}
 
-  const res = await fetch(session.endpoint, {
-    method: 'POST', headers, body: JSON.stringify(msg), signal: AbortSignal.timeout(timeoutMs),
-  })
-  const sid = res.headers.get('mcp-session-id')
-  if (sid) session.sessionId = sid
+// -- Legacy HTTP+SSE (GET stream + POST message endpoint) ---------------------
+class SseMcpClient implements McpClient {
+  private messageUrl = ''
+  private ctrl = new AbortController()
+  private pending = new Map<number, Pending>()
+  private nextId = 1
+  private closed = false
+  private ready: Promise<void>
+  private resolveReady!: () => void
+  private rejectReady!: (e: Error) => void
+  constructor(private sseUrl: string, private token?: string) {
+    this.ready = new Promise((res, rej) => { this.resolveReady = res; this.rejectReady = rej })
+  }
+  async open(timeoutMs: number) {
+    const headers: Record<string, string> = { Accept: 'text/event-stream' }
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.sseUrl, { method: 'GET', headers, signal: this.ctrl.signal })
+    if (!res.ok || !res.body) throw new Error(`MCP SSE connect failed: HTTP ${res.status}`)
+    this.readLoop(res.body).catch(e => this.failAll(e as Error))
+    const timer = setTimeout(() => this.rejectReady(new Error('MCP SSE: server sent no endpoint event in time')), timeoutMs)
+    try { await this.ready } finally { clearTimeout(timer) }
+  }
+  private async readLoop(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        let idx: number
+        while ((idx = buf.indexOf('\n\n')) >= 0) { const raw = buf.slice(0, idx); buf = buf.slice(idx + 2); this.handleEvent(raw) }
+        if (buf.length > 2_000_000) throw new Error('MCP SSE stream exceeded buffer limit')
+      }
+    } finally { try { reader.releaseLock() } catch {} }
+    if (!this.closed) this.failAll(new Error('MCP SSE stream closed by server'))
+  }
+  private handleEvent(raw: string) {
+    let event = 'message'; const data: string[] = []
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^\s/, ''))
+    }
+    const payload = data.join('\n')
+    if (event === 'endpoint') {
+      try { this.messageUrl = new URL(payload, this.sseUrl).toString() } catch { this.messageUrl = payload }
+      this.resolveReady()
+      return
+    }
+    if (!payload) return
+    try {
+      const msg = JSON.parse(payload) as Record<string, unknown>
+      const id = msg.id as number | undefined
+      if (id != null && this.pending.has(id)) {
+        const p = this.pending.get(id)!; this.pending.delete(id); clearTimeout(p.timer)
+        if (msg.error) p.reject(new Error(`MCP error: ${(msg.error as { message?: string }).message || JSON.stringify(msg.error)}`))
+        else p.resolve(msg)
+      }
+    } catch { /* ignore non-JSON keepalives */ }
+  }
+  private failAll(e: Error) {
+    try { this.rejectReady(e) } catch {}
+    for (const [, p] of this.pending) { clearTimeout(p.timer); p.reject(e) }
+    this.pending.clear()
+  }
+  async rpc(method: string, params: Record<string, unknown>, isNotification = false, timeoutMs = 30000) {
+    await this.ready
+    if (!this.messageUrl) throw new Error('MCP SSE: no message endpoint advertised')
+    // The message URL is chosen by the server (via the endpoint event) — re-validate it against the
+    // SSRF guard so a server can't redirect our POSTs at an internal address.
+    const { assertUrlSafe } = await import('./ssrf-guard')
+    const safe = await assertUrlSafe(this.messageUrl, 'lan')
+    if (!safe.ok) throw new Error(`MCP SSE message endpoint blocked: ${safe.reason}`)
+    const id = this.nextId++
+    const msg: Record<string, unknown> = { jsonrpc: '2.0', method, params }
+    if (!isNotification) msg.id = id
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    let waiter: Promise<Record<string, unknown> | null> | null = null
+    if (!isNotification) {
+      waiter = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('MCP SSE: timed out waiting for response')) }, timeoutMs)
+        this.pending.set(id, { resolve, reject, timer })
+      })
+    }
+    const res = await fetch(this.messageUrl, { method: 'POST', headers, body: JSON.stringify(msg), signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok && res.status !== 202) {
+      const p = this.pending.get(id); if (p) { clearTimeout(p.timer); this.pending.delete(id) }
+      throw new Error(`MCP SSE POST failed: HTTP ${res.status}`)
+    }
+    if (isNotification) return null
+    // Most SSE servers ack the POST (200/202, empty) and deliver the result on the stream; a few
+    // return it inline. Use an inline result if present, otherwise wait on the stream.
+    try {
+      const text = await readCapped(res, 1_000_000)
+      const body = parseMcpBody(res.headers.get('content-type') || '', text)
+      if (body && body.id === id && (body.result !== undefined || body.error !== undefined)) {
+        const p = this.pending.get(id); if (p) { clearTimeout(p.timer); this.pending.delete(id) }
+        if (body.error) throw new Error(`MCP error: ${(body.error as { message?: string }).message || JSON.stringify(body.error)}`)
+        return body
+      }
+    } catch (e) { if (!this.pending.has(id)) throw e /* inline error */ }
+    return await waiter!
+  }
+  close() { this.closed = true; try { this.ctrl.abort() } catch {}; this.failAll(new Error('closed')) }
+}
 
-  if (isNotification) return null
-  if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}`)
-  // Cap the response body a hostile MCP server can return (context-blowup / DoS
-  // guard). Read the stream and stop once we exceed the limit.
-  const MAX_MCP_BYTES = 1_000_000 // 1 MB
-  const text = await readCapped(res, MAX_MCP_BYTES)
-  const body = parseMcpBody(res.headers.get('content-type') || '', text)
-  if (!body) throw new Error('MCP server returned an unparseable response')
-  if (body.error) throw new Error(`MCP error: ${(body.error as { message?: string }).message || JSON.stringify(body.error)}`)
-  return body
+// -- stdio (local subprocess, newline-delimited JSON-RPC) ---------------------
+// Launching a subprocess from admin config is a real surface, so it is restricted to a small set of
+// known MCP launchers (no shell, literal argv) and can be disabled with MCP_STDIO_ENABLED=0.
+const STDIO_ALLOWED = new Set(['docker', 'npx', 'node', 'uvx', 'uv', 'python', 'python3', 'deno', 'bunx', 'bun'])
+function splitCommand(cmd: string): string[] {
+  const out: string[] = []; let cur = ''; let q: string | null = null
+  for (const c of cmd) {
+    if (q) { if (c === q) q = null; else cur += c }
+    else if (c === '"' || c === "'") q = c
+    else if (/\s/.test(c)) { if (cur) { out.push(cur); cur = '' } }
+    else cur += c
+  }
+  if (cur) out.push(cur)
+  return out
+}
+class StdioMcpClient implements McpClient {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private proc: any
+  private pending = new Map<number, Pending>()
+  private nextId = 1
+  private buf = ''
+  private closed = false
+  constructor(private command: string) {}
+  async spawnProc() {
+    if (process.env.MCP_STDIO_ENABLED === '0') throw new Error('MCP stdio transport is disabled on this server (MCP_STDIO_ENABLED=0)')
+    const argv = splitCommand(this.command)
+    if (!argv.length) throw new Error('MCP stdio: empty command')
+    const bin = (argv[0].split('/').pop() || argv[0])
+    if (!STDIO_ALLOWED.has(bin)) throw new Error(`MCP stdio: "${bin}" is not an allowed launcher (allowed: ${[...STDIO_ALLOWED].join(', ')})`)
+    const { spawn } = await import('node:child_process')
+    this.proc = spawn(argv[0], argv.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] })
+    this.proc.stdout.setEncoding('utf8')
+    this.proc.stdout.on('data', (chunk: string) => this.onData(chunk))
+    this.proc.on('error', (e: Error) => this.failAll(e))
+    this.proc.on('exit', (code: number | null) => { if (!this.closed) this.failAll(new Error(`MCP stdio process exited (code ${code})`)) })
+  }
+  private onData(chunk: string) {
+    this.buf += chunk
+    let idx: number
+    while ((idx = this.buf.indexOf('\n')) >= 0) {
+      const line = this.buf.slice(0, idx).trim(); this.buf = this.buf.slice(idx + 1)
+      if (!line) continue
+      try {
+        const msg = JSON.parse(line) as Record<string, unknown>
+        const id = msg.id as number | undefined
+        if (id != null && this.pending.has(id)) {
+          const p = this.pending.get(id)!; this.pending.delete(id); clearTimeout(p.timer)
+          if (msg.error) p.reject(new Error(`MCP error: ${(msg.error as { message?: string }).message || JSON.stringify(msg.error)}`))
+          else p.resolve(msg)
+        }
+      } catch { /* server may log non-JSON to stdout; ignore */ }
+    }
+    if (this.buf.length > 2_000_000) this.buf = this.buf.slice(-1_000_000)
+  }
+  private failAll(e: Error) { for (const [, p] of this.pending) { clearTimeout(p.timer); p.reject(e) } this.pending.clear() }
+  async rpc(method: string, params: Record<string, unknown>, isNotification = false, timeoutMs = 30000) {
+    const id = this.nextId++
+    const msg: Record<string, unknown> = { jsonrpc: '2.0', method, params }
+    if (!isNotification) msg.id = id
+    const line = JSON.stringify(msg) + '\n'
+    if (isNotification) { this.proc.stdin.write(line); return null }
+    return await new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('MCP stdio: response timeout')) }, timeoutMs)
+      this.pending.set(id, { resolve, reject, timer })
+      this.proc.stdin.write(line)
+    })
+  }
+  close() { this.closed = true; try { this.proc?.kill() } catch {}; this.failAll(new Error('closed')) }
 }
 
 // Read a fetch Response body as text, aborting once it exceeds maxBytes so a
@@ -1190,37 +1382,42 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
   return Buffer.concat(chunks.map(c => Buffer.from(c))).toString('utf8')
 }
 
-async function mcpConnect(endpoint: string, token?: string, timeoutMs = 15000): Promise<McpSession> {
-  // SSRF guard: MCP endpoints are admin-supplied URLs the SERVER fetches, so a
-  // malicious/compromised endpoint could reach internal services (Mosaic's own
-  // APIs, other Docker services, cloud metadata). Validate at CALL time (not just
-  // registration) so a DNS name re-pointed at an internal IP after registration
-  // is still blocked.
-  const { assertUrlSafe } = await import('./ssrf-guard')
-  const safe = await assertUrlSafe(endpoint)
-  if (!safe.ok) throw new Error(`MCP endpoint blocked: ${safe.reason}`)
-
-  const session: McpSession = { endpoint, token }
-  await mcpRpc(session, 'initialize', {
-    protocolVersion: MCP_PROTOCOL_VERSION,
-    capabilities: {},
-    clientInfo: { name: 'mosaic', version: '1.0' },
-  }, false, timeoutMs)
-  try { await mcpRpc(session, 'notifications/initialized', {}, true, timeoutMs) } catch { /* non-fatal */ }
-  return session
+// Connect + MCP handshake (initialize → notifications/initialized) for the chosen transport.
+async function mcpConnect(endpoint: string, token?: string, timeoutMs = 15000, transport: McpTransport = 'http'): Promise<McpClient> {
+  let client: McpClient
+  if (transport === 'stdio') {
+    // No URL/SSRF check — `endpoint` is a launcher command, guarded in spawnProc().
+    const sc = new StdioMcpClient(endpoint); await sc.spawnProc(); client = sc
+  } else {
+    // SSRF guard: these endpoints are admin-supplied URLs the SERVER fetches, so a malicious or
+    // re-pointed endpoint could reach internal services. Validate at CALL time, not just at
+    // registration (SSE re-validates its server-advertised message URL too). 'lan' mode: on-prem MCP
+    // sidecars live on the plant/compose network, so private IPs are allowed while loopback (Mosaic's
+    // own API) and cloud-metadata stay blocked.
+    const { assertUrlSafe } = await import('./ssrf-guard')
+    const safe = await assertUrlSafe(endpoint, 'lan')
+    if (!safe.ok) throw new Error(`MCP endpoint blocked: ${safe.reason}`)
+    if (transport === 'sse') { const s = new SseMcpClient(endpoint, token); await s.open(timeoutMs); client = s }
+    else client = new HttpMcpClient(endpoint, token)
+  }
+  await client.rpc('initialize', { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'mosaic', version: '1.0' } }, false, timeoutMs)
+  try { await client.rpc('notifications/initialized', {}, true, timeoutMs) } catch { /* non-fatal */ }
+  return client
 }
 
 // -- Generic MCP connection executor -----------------------------------------
 async function queryMcpConnection(connectionId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
   const sql = getDb()
-  const rows = await sql`SELECT label, endpoint_url, token_enc, enabled FROM mcp_connections WHERE id=${connectionId}`
+  const rows = await sql`SELECT label, endpoint_url, token_enc, enabled, transport FROM mcp_connections WHERE id=${connectionId}`
   if (!rows.length) throw new Error('MCP connection not found')
-  const conn = rows[0] as { label: string; endpoint_url: string; token_enc: string | null; enabled: number | boolean }
+  const conn = rows[0] as { label: string; endpoint_url: string; token_enc: string | null; enabled: number | boolean; transport: string | null }
   if (!conn.enabled) throw new Error(`MCP connection "${conn.label}" is disabled`)
 
   const token = conn.token_enc ? decrypt(conn.token_enc) : undefined
-  const session = await mcpConnect(conn.endpoint_url, token)
-  const body = await mcpRpc(session, 'tools/call', { name: toolName, arguments: args || {} })
+  const client = await mcpConnect(conn.endpoint_url, token, 15000, (conn.transport as McpTransport) || 'http')
+  let body: Record<string, unknown> | null
+  try { body = await client.rpc('tools/call', { name: toolName, arguments: args || {} }) }
+  finally { client.close() }
   const result = (body?.result ?? null) as Record<string, unknown> | null
   if (!result) throw new Error('MCP server returned no result')
 
@@ -1248,37 +1445,41 @@ async function queryMcpConnection(connectionId: string, toolName: string, args: 
   return wrapUntrusted(result)
 }
 
-async function listMcpConnectionTools(endpoint: string, token?: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
+async function listMcpConnectionTools(endpoint: string, token?: string, transport: McpTransport = 'http'): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
+  let client: McpClient | undefined
   try {
-    const session = await mcpConnect(endpoint, token, 10000)
-    const body = await mcpRpc(session, 'tools/list', {}, false, 10000)
+    client = await mcpConnect(endpoint, token, 10000, transport)
+    const body = await client.rpc('tools/list', {}, false, 10000)
     const tools = ((body?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> })?.tools) || []
     return tools.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema }))
   } catch { return [] }
+  finally { client?.close() }
 }
 
 export async function getMcpTools(connectionId: string, endpoint: string): Promise<Array<{ name: string; description?: string; input_schema?: unknown }>> {
   try {
     const sql = getDb()
-    const rows = await sql`SELECT token_enc FROM mcp_connections WHERE id=${connectionId}`
+    const rows = await sql`SELECT token_enc, transport FROM mcp_connections WHERE id=${connectionId}`
     const enc = rows.length ? (rows[0] as { token_enc: string | null }).token_enc : null
+    const transport = (rows.length ? (rows[0] as { transport: string | null }).transport : null) as McpTransport | null
     const token = enc ? decrypt(enc) : undefined
-    return listMcpConnectionTools(endpoint, token)
+    return listMcpConnectionTools(endpoint, token, transport || 'http')
   } catch { return [] }
 }
 
-export async function testMcpEndpoint(endpoint: string, token?: string): Promise<{ ok: boolean; tools?: string[]; error?: string }> {
+export async function testMcpEndpoint(endpoint: string, token?: string, transport: McpTransport = 'http'): Promise<{ ok: boolean; tools?: string[]; error?: string }> {
+  let client: McpClient | undefined
   try {
     // Do the handshake directly (not via listMcpConnectionTools, which swallows
     // errors into []) so a 401/404/405/timeout surfaces as a real failure rather
     // than a misleading "ok, no tools".
-    const session = await mcpConnect(endpoint, token, 12000)
-    const body = await mcpRpc(session, 'tools/list', {}, false, 12000)
+    client = await mcpConnect(endpoint, token, 12000, transport)
+    const body = await client.rpc('tools/list', {}, false, 12000)
     const tools = ((body?.result as { tools?: Array<{ name: string }> })?.tools) || []
     return { ok: true, tools: tools.map(t => t.name) }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
-  }
+  } finally { client?.close() }
 }
 
 // Truncate individual cell values that are excessively long (e.g. CLOB columns,
@@ -2865,7 +3066,7 @@ export async function checkDataSources(guardrailCtx: { allowedSources?: string[]
          FROM api_services s WHERE COALESCE(s.status,'published') = 'published'`.catch(() => []),
     db`SELECT id, label, base_url, username, password_enc FROM prism_instances WHERE active = true`.catch(() => []),
     db`SELECT id, label, transport FROM file_servers`.catch(() => []),
-    db`SELECT id, label, endpoint_url FROM mcp_connections WHERE enabled = true`.catch(() => []),
+    db`SELECT id, label, endpoint_url, transport, token_enc FROM mcp_connections WHERE enabled = true`.catch(() => []),
   ]) as [Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[]]
 
   // One probe task per source, each resolving to a SourceHealth (never throws).
@@ -2925,7 +3126,8 @@ export async function checkDataSources(guardrailCtx: { allowedSources?: string[]
     const t0 = Date.now()
     const probe = (async (): Promise<SourceHealth> => {
       try {
-        const r = await testMcpEndpoint(String(m.endpoint_url))
+        const mToken = (m as { token_enc?: string | null }).token_enc
+        const r = await testMcpEndpoint(String(m.endpoint_url), mToken ? decrypt(mToken) : undefined, ((m as { transport?: string }).transport as McpTransport) || 'http')
         return { id: String(m.id), label: String(m.label), type: 'mcp', status: r.ok ? 'ok' : (isConnFailure(r.error || '') ? 'down' : 'degraded'), latencyMs: Date.now() - t0, detail: r.ok ? `${r.tools?.length ?? 0} tools` : (r.error || 'unreachable') }
       } catch (e) {
         return { id: String(m.id), label: String(m.label), type: 'mcp', status: 'down', latencyMs: Date.now() - t0, detail: e instanceof Error ? e.message : 'failed' }
