@@ -5,7 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.6.69] - 2026-11-23
+## [1.6.70] - 2026-11-23
+### Fixed
+- **AI Provider: selecting a provider no longer silently switches the live backend.** Clicking a
+  provider card used to save `AI_PROVIDER` immediately, so the “active” badge followed whatever card
+  you clicked and merely opening (say) Vertex to enter its keys would point the whole app at an
+  unconfigured backend and break chat. Selecting a card now only **opens its configuration**; the
+  green **active** badge reflects the persisted provider only.
+### Changed
+- **Explicit, guarded provider switching (“change on the go”).** The viewed provider shows a **Use
+  this provider** button, enabled only once its required fields are configured — so you can switch
+  Mosaic between Anthropic / Bedrock / Foundry / Vertex at any time without risking a broken,
+  half-configured backend. **Test connection** now appears only for the active provider (the test
+  runs server-side against `AI_PROVIDER`), so it can’t mislead you about a card you’re only editing.
 ### Added
 - **Google Vertex AI as a fourth LLM provider.** Settings → AI Provider now offers **Claude on Google
   Cloud Vertex AI** alongside Anthropic, Amazon Bedrock and Azure AI Foundry — so a customer whose

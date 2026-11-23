@@ -49,7 +49,8 @@ const FIELDS: Record<Provider, FieldDef[]> = {
 
 export default function TabAiProvider({ user }: { user: SessionUser }) {
   const [keys, setKeys] = useState<Record<string, KeyStatus>>({})
-  const [provider, setProvider] = useState<Provider>('anthropic')
+  const [provider, setProvider] = useState<Provider>('anthropic')        // the card being viewed/edited
+  const [activeProvider, setActiveProvider] = useState<Provider>('anthropic')  // the persisted AI_PROVIDER
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<string | null>(null)
   const [vals, setVals] = useState<Record<string, string>>({})
@@ -66,8 +67,9 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
       const k: Record<string, KeyStatus> = d.keys || {}
       setKeys(k)
       const p = (k['AI_PROVIDER']?.value || '').toLowerCase()
-      if (p === 'bedrock' || p === 'foundry' || p === 'vertex') setProvider(p)
-      else setProvider('anthropic')
+      const act: Provider = (p === 'bedrock' || p === 'foundry' || p === 'vertex') ? p : 'anthropic'
+      setActiveProvider(act)
+      setProvider(act)   // open the active provider's config by default
     } finally { setLoading(false) }
   }, [])
 
@@ -83,14 +85,22 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
     if (error || !data?.ok) throw new Error(error || 'Save failed')
   }
 
-  async function selectProvider(p: Provider) {
+  // Selecting a card only OPENS that provider's config — it does NOT switch the live
+  // provider. (Saving on select was a foot-gun: clicking a card to enter its keys
+  // instantly pointed the whole app at an unconfigured backend and broke chat.)
+  function selectProvider(p: Provider) {
     if (p === provider) return
     setProvider(p)
     setTestResult(null)
+  }
+
+  // Explicit, guarded switch: make the viewed provider the active one for every query.
+  async function activateProvider(p: Provider) {
     try {
       await saveKey('AI_PROVIDER', p)
+      setActiveProvider(p)
       setKeys(prev => ({ ...prev, AI_PROVIDER: { configured: true, source: 'kv', preview: p, value: p } }))
-      setToast(`Provider set to ${PROVIDERS.find(x => x.id === p)!.name}`)
+      setToast(`${PROVIDERS.find(x => x.id === p)!.name} is now the active provider`)
     } catch (e) { setToast('Error: ' + (e instanceof Error ? e.message : 'failed')) }
   }
 
@@ -135,6 +145,8 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
   )
 
   const fields = FIELDS[provider]
+  // The viewed provider is ready to activate once its required (non-optional) fields are set.
+  const requiredSet = fields.filter(f => !f.optional).every(f => keys[f.key]?.configured)
 
   return (
     <div className="fade-in">
@@ -153,14 +165,15 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
           <SectionLabel>Provider</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, marginBottom: 24 }}>
             {PROVIDERS.map(p => {
-              const active = provider === p.id
+              const selected = provider === p.id   // the card you're viewing
+              const active = activeProvider === p.id   // the one Mosaic actually uses
               return (
                 <button key={p.id} onClick={() => selectProvider(p.id)}
                   style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 'var(--radius)', cursor: 'pointer',
-                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--border)',
+                    border: selected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
                     background: 'var(--surface)',
-                    boxShadow: active ? 'var(--shadow)' : 'none',
-                    outline: active ? '3px solid var(--accent-bg, rgba(37,99,235,.08))' : 'none', outlineOffset: -1,
+                    boxShadow: selected ? 'var(--shadow)' : 'none',
+                    outline: selected ? '3px solid var(--accent-bg, rgba(37,99,235,.08))' : 'none', outlineOffset: -1,
                     transition: 'all .12s' }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                     {p.name}
@@ -245,12 +258,28 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
             })}
           </Card>
 
-          <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Btn variant="primary" onClick={runTest} disabled={testing}>
-              {testing ? <><Spinner size={12} /> &nbsp;Testing…</> : 'Test connection'}
-            </Btn>
-            <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>Makes one tiny live request through this provider.</span>
-          </div>
+          {/* Activation — the viewed provider becomes the one Mosaic uses for every query. */}
+          {provider === activeProvider ? (
+            <Alert variant="success">This is the <strong>active</strong> provider — Mosaic uses it for every query. To switch, open another provider, configure it, then click “Use this provider”.</Alert>
+          ) : (
+            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <Btn variant="primary" onClick={() => activateProvider(provider)} disabled={!requiredSet}>Use this provider</Btn>
+              <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>
+                {requiredSet
+                  ? `Switch Mosaic to ${PROVIDERS.find(p => p.id === provider)!.name} for all queries — ${PROVIDERS.find(p => p.id === activeProvider)!.name} is active now.`
+                  : 'Fill in the required fields above, then you can make this the active provider.'}
+              </span>
+            </div>
+          )}
+
+          {provider === activeProvider && (
+            <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Btn variant="primary" onClick={runTest} disabled={testing}>
+                {testing ? <><Spinner size={12} /> &nbsp;Testing…</> : 'Test connection'}
+              </Btn>
+              <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>Makes one tiny live request through the active provider.</span>
+            </div>
+          )}
 
           {testResult && (
             <div style={{ marginTop: 14 }}>
