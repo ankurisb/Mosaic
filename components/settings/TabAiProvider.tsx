@@ -4,7 +4,7 @@ import type { SessionUser } from '@/lib/auth'
 import { PageTitle, SectionLabel, Card, INP, Btn, Badge, Alert, Spinner } from './ui'
 import { safeJson } from '@/lib/fetch'
 
-type Provider = 'anthropic' | 'bedrock' | 'foundry'
+type Provider = 'anthropic' | 'bedrock' | 'foundry' | 'vertex'
 
 interface KeyStatus { configured: boolean; source?: 'kv' | 'env' | 'none'; preview: string; value?: string }
 
@@ -12,9 +12,10 @@ const PROVIDERS: { id: Provider; name: string; blurb: string }[] = [
   { id: 'anthropic', name: 'Anthropic API',     blurb: 'Direct to Anthropic. Simplest to set up — just an API key.' },
   { id: 'bedrock',   name: 'Amazon Bedrock',    blurb: 'Mosaic runs inside your AWS account. Data stays in your AWS region.' },
   { id: 'foundry',   name: 'Azure AI Foundry',  blurb: 'Mosaic runs inside your Azure tenancy. Data stays in your Azure region.' },
+  { id: 'vertex',    name: 'Google Vertex AI',  blurb: 'Mosaic runs inside your Google Cloud project. Data stays in your GCP region.' },
 ]
 
-interface FieldDef { key: string; label: string; hint: string; placeholder: string; secret?: boolean; optional?: boolean }
+interface FieldDef { key: string; label: string; hint: string; placeholder: string; secret?: boolean; optional?: boolean; multiline?: boolean }
 
 const FIELDS: Record<Provider, FieldDef[]> = {
   anthropic: [
@@ -35,6 +36,14 @@ const FIELDS: Record<Provider, FieldDef[]> = {
     { key: 'FOUNDRY_DEPLOYMENT', label: 'Deployment id', hint: 'The Azure deployment name used as the model', placeholder: 'claude-sonnet-4-5', },
     { key: 'FOUNDRY_DEPLOYMENT_FAST', label: 'Fast deployment id', hint: 'Cheaper deployment for routing & short helper calls', placeholder: 'claude-haiku-4-5', optional: true },
     { key: 'FOUNDRY_DEPLOYMENT_TOP', label: 'Top deployment id', hint: 'Most capable deployment for the hardest queries', placeholder: 'claude-opus-...', optional: true },
+  ],
+  vertex: [
+    { key: 'VERTEX_PROJECT_ID', label: 'GCP project id', hint: 'The Google Cloud project where Claude on Vertex is enabled', placeholder: 'my-gcp-project' },
+    { key: 'VERTEX_REGION', label: 'Region', hint: 'Vertex region where the model is served', placeholder: 'us-east5' },
+    { key: 'VERTEX_MODEL', label: 'Model id', hint: 'The Vertex model id used for chat & RCA', placeholder: 'claude-sonnet-4-5@20250929' },
+    { key: 'VERTEX_MODEL_FAST', label: 'Fast model id', hint: 'Cheaper model for routing & short helper calls', placeholder: 'claude-haiku-4-5@20251001', optional: true },
+    { key: 'VERTEX_MODEL_TOP', label: 'Top model id', hint: 'Most capable model for the hardest queries', placeholder: 'claude-opus-...@...', optional: true },
+    { key: 'VERTEX_SERVICE_ACCOUNT_JSON', label: 'Service-account JSON', hint: 'Leave blank to use workload identity / the mounted ADC credentials (recommended). Paste a key only if not using ADC.', placeholder: '{ "type": "service_account", ... }', secret: true, optional: true, multiline: true },
   ],
 }
 
@@ -57,7 +66,7 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
       const k: Record<string, KeyStatus> = d.keys || {}
       setKeys(k)
       const p = (k['AI_PROVIDER']?.value || '').toLowerCase()
-      if (p === 'bedrock' || p === 'foundry') setProvider(p)
+      if (p === 'bedrock' || p === 'foundry' || p === 'vertex') setProvider(p)
       else setProvider('anthropic')
     } finally { setLoading(false) }
   }, [])
@@ -166,6 +175,9 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
           {provider === 'bedrock' && (
             <Alert variant="info">Leave the access-key fields blank to use the EC2/ECS instance role — the cleanest setup, with no long-lived secrets stored. Make sure the role has <code>bedrock:InvokeModel</code> and the model is enabled in your region.</Alert>
           )}
+          {provider === 'vertex' && (
+            <Alert variant="info">Leave the service-account JSON blank to use workload identity / the mounted ADC credentials — the cleanest setup, with no long-lived secrets stored. The identity needs the <code>Vertex AI User</code> role and Claude enabled in your region.</Alert>
+          )}
 
           <SectionLabel>{PROVIDERS.find(p => p.id === provider)!.name} configuration</SectionLabel>
           <Card>
@@ -189,16 +201,27 @@ export default function TabAiProvider({ user }: { user: SessionUser }) {
                         <div style={{ fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{status.preview}</div>
                       )}
                       {isEditing && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <input
-                            type={f.secret ? 'password' : 'text'}
-                            style={{ ...INP, flex: 1, fontFamily: f.secret ? 'var(--font-mono)' : 'inherit', fontSize: 12 }}
-                            placeholder={f.placeholder}
-                            value={vals[f.key] || ''}
-                            onChange={e => setVals(p => ({ ...p, [f.key]: e.target.value }))}
-                            onKeyDown={e => { if (e.key === 'Enter') save(f.key); if (e.key === 'Escape') setEditing(null) }}
-                            autoFocus
-                          />
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'flex-start' }}>
+                          {f.multiline ? (
+                            <textarea
+                              style={{ ...INP, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12, minHeight: 120, resize: 'vertical', lineHeight: 1.4 }}
+                              placeholder={f.placeholder}
+                              value={vals[f.key] || ''}
+                              onChange={e => setVals(p => ({ ...p, [f.key]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Escape') setEditing(null) }}
+                              autoFocus
+                            />
+                          ) : (
+                            <input
+                              type={f.secret ? 'password' : 'text'}
+                              style={{ ...INP, flex: 1, fontFamily: f.secret ? 'var(--font-mono)' : 'inherit', fontSize: 12 }}
+                              placeholder={f.placeholder}
+                              value={vals[f.key] || ''}
+                              onChange={e => setVals(p => ({ ...p, [f.key]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter') save(f.key); if (e.key === 'Escape') setEditing(null) }}
+                              autoFocus
+                            />
+                          )}
                           <Btn variant="primary" onClick={() => save(f.key)} disabled={saving === f.key}>
                             {saving === f.key ? <Spinner size={12} /> : 'Save'}
                           </Btn>

@@ -638,7 +638,7 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
   // Resolve the active LLM provider at request time (env → kv_settings)
   if (!(await isAiConfigured())) {
     return Response.json(
-      { error: 'No LLM provider configured. Go to Settings → AI Provider to set up Anthropic, Amazon Bedrock, or Azure AI Foundry.' },
+      { error: 'No LLM provider configured. Go to Settings → AI Provider to set up Anthropic, Amazon Bedrock, Azure AI Foundry, or Google Vertex AI.' },
       { status: 503 }
     )
   }

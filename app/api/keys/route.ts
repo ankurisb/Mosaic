@@ -30,6 +30,10 @@ const KNOWN_KEYS = [
   // Azure AI Foundry. Base URL is https://<resource>.services.ai.azure.com/anthropic;
   // DEPLOYMENT names are the Azure deployment ids used as the model.
   'FOUNDRY_BASE_URL', 'FOUNDRY_API_KEY', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP',
+  // Google Cloud Vertex AI. Project + region are required; credentials come from the
+  // Google ADC chain (workload identity / mounted SA file) unless VERTEX_SERVICE_ACCOUNT_JSON
+  // is pasted (the one secret). VERTEX_MODEL ids look like 'claude-sonnet-4-5@20250929'.
+  'VERTEX_PROJECT_ID', 'VERTEX_REGION', 'VERTEX_MODEL', 'VERTEX_MODEL_FAST', 'VERTEX_MODEL_TOP', 'VERTEX_SERVICE_ACCOUNT_JSON',
   // Appearance + localisation (deployment-wide, admin-set). None are secrets.
   //   UI_FONT_FAMILY / UI_FONT_SIZE  — applied to <html> server-side (lib/locale)
   //   MOSAIC_LOCALE                  — BCP-47 for number/date formatting (en-GB default)
@@ -105,6 +109,8 @@ export async function GET() {
     // render the right provider panel and pre-fill region/model/deployment fields.
     'AI_PROVIDER', 'BEDROCK_REGION', 'BEDROCK_MODEL', 'BEDROCK_MODEL_FAST', 'BEDROCK_MODEL_TOP',
     'FOUNDRY_BASE_URL', 'FOUNDRY_DEPLOYMENT', 'FOUNDRY_DEPLOYMENT_FAST', 'FOUNDRY_DEPLOYMENT_TOP',
+    // Vertex — project/region/model ids are not secrets (the SA JSON is, and is omitted here).
+    'VERTEX_PROJECT_ID', 'VERTEX_REGION', 'VERTEX_MODEL', 'VERTEX_MODEL_FAST', 'VERTEX_MODEL_TOP',
     // Appearance + localisation — the UI needs the actual values to render.
     'UI_FONT_FAMILY', 'UI_FONT_SIZE', 'MOSAIC_LOCALE', 'MOSAIC_TIMEZONE', 'MOSAIC_RESPONSE_LANGUAGE', 'MOSAIC_UNITS'])
 

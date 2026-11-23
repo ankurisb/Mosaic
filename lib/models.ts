@@ -24,10 +24,11 @@ import { getKey } from './keys'
 //   - anthropic : direct Anthropic API (api key)
 //   - bedrock   : Claude on Amazon Bedrock, inside the customer's AWS account
 //   - foundry   : Claude on Azure AI Foundry, inside the customer's Azure tenancy
-export type AiProvider = 'anthropic' | 'bedrock' | 'foundry'
+//   - vertex    : Claude on Google Cloud Vertex AI, inside the customer's GCP project
+export type AiProvider = 'anthropic' | 'bedrock' | 'foundry' | 'vertex'
 
 export async function getProvider(): Promise<AiProvider> {
-  try { const p = (await getKey('AI_PROVIDER') || '').toLowerCase(); if (p === 'bedrock' || p === 'foundry') return p } catch { /* default */ }
+  try { const p = (await getKey('AI_PROVIDER') || '').toLowerCase(); if (p === 'bedrock' || p === 'foundry' || p === 'vertex') return p } catch { /* default */ }
   return 'anthropic'
 }
 
@@ -59,6 +60,27 @@ export async function getAiClient(): Promise<Anthropic> {
     const apiKey = (await getKey('FOUNDRY_API_KEY')) || undefined
     return new Anthropic({ baseURL: baseURL || undefined, apiKey })
   }
+  if (provider === 'vertex') {
+    // Claude on Google Cloud Vertex AI, inside the customer's GCP project. Same
+    // Anthropic Messages API; the vertex SDK shares the `.messages` interface.
+    // Auth mirrors Bedrock's clean path: by DEFAULT the Google Application Default
+    // Credentials chain (workload identity, or a mounted service-account file via
+    // GOOGLE_APPLICATION_CREDENTIALS) — nothing stored. An explicit service-account
+    // JSON is used only when the admin pastes one.
+    const { AnthropicVertex } = await import('@anthropic-ai/vertex-sdk')
+    const projectId = (await getKey('VERTEX_PROJECT_ID')) || undefined
+    const region = (await getKey('VERTEX_REGION')) || 'us-east5'
+    const cfg: Record<string, unknown> = { projectId, region }
+    const saJson = ((await getKey('VERTEX_SERVICE_ACCOUNT_JSON')) || '').trim()
+    if (saJson) {
+      const { GoogleAuth } = await import('google-auth-library')
+      try {
+        const credentials = JSON.parse(saJson)
+        cfg.googleAuth = new GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/cloud-platform'] })
+      } catch { /* malformed JSON → fall back to the ADC chain */ }
+    }
+    return new AnthropicVertex(cfg) as unknown as Anthropic
+  }
   return new Anthropic({ apiKey: (await getKey('ANTHROPIC_API_KEY')) || undefined })
 }
 
@@ -74,6 +96,9 @@ export async function isAiConfigured(): Promise<boolean> {
   const provider = await getProvider()
   if (provider === 'bedrock') return true
   if (provider === 'foundry') return !!(await getKey('FOUNDRY_BASE_URL'))
+  // vertex: ready once the project is set; region defaults and credentials come
+  // from the ADC chain (workload identity / mounted SA) unless a JSON was pasted.
+  if (provider === 'vertex') return !!(await getKey('VERTEX_PROJECT_ID'))
   try { return !!(await getKey('ANTHROPIC_API_KEY')) } catch { return false }
 }
 
@@ -85,6 +110,9 @@ async function configuredModels(provider: AiProvider): Promise<{ primary?: strin
   }
   if (provider === 'foundry') {
     return { primary: (await getKey('FOUNDRY_DEPLOYMENT')) || undefined, fast: (await getKey('FOUNDRY_DEPLOYMENT_FAST')) || undefined, top: (await getKey('FOUNDRY_DEPLOYMENT_TOP')) || undefined }
+  }
+  if (provider === 'vertex') {
+    return { primary: (await getKey('VERTEX_MODEL')) || undefined, fast: (await getKey('VERTEX_MODEL_FAST')) || undefined, top: (await getKey('VERTEX_MODEL_TOP')) || undefined }
   }
   return {}
 }

@@ -5,7 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [1.6.68] - 2026-11-09
+## [1.6.69] - 2026-11-23
+### Added
+- **Google Vertex AI as a fourth LLM provider.** Settings → AI Provider now offers **Claude on Google
+  Cloud Vertex AI** alongside Anthropic, Amazon Bedrock and Azure AI Foundry — so a customer whose
+  data must stay in their own GCP project can run Mosaic's inference inside Vertex. All four providers
+  speak the same Anthropic Messages API, so the choice stays config-only (`getAiClient()`); no call
+  site changes.
+  - **Auth mirrors Bedrock's clean path:** by default it uses the Google Application Default
+    Credentials chain (workload identity, or a mounted service-account file) — **no long-lived secrets
+    stored**. An explicit service-account JSON can be pasted if ADC isn't available.
+  - Config: `VERTEX_PROJECT_ID` + `VERTEX_REGION` (required), `VERTEX_MODEL` / `_FAST` / `_TOP`
+    (ids like `claude-sonnet-4-5@20250929`), and optional `VERTEX_SERVICE_ACCOUNT_JSON`.
+  - The AI-Provider **Test connection** check and the first-run setup copy cover Vertex, with a
+    Vertex-specific hint when Google credentials or the Vertex AI User role are missing.
 ### Fixed
 - **Browse → Add source dead-ended with "No connectors found" for every connector.** The Airbyte
   API helper tries several endpoint flavours in turn (public `/v1`, public `/api/public/v1`, then

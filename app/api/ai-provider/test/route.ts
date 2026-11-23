@@ -23,6 +23,8 @@ export async function POST(req: Request) {
       ok: false, provider,
       error: provider === 'foundry'
         ? 'Set the Foundry base URL before testing.'
+        : provider === 'vertex'
+        ? 'Set the Vertex project id (and region) before testing.'
         : 'No credentials configured for this provider yet.',
     })
   }
@@ -46,6 +48,8 @@ export async function POST(req: Request) {
     if (/credential|security token|UnrecognizedClient|not authorized|AccessDenied/i.test(raw))
       hint = provider === 'bedrock'
         ? 'AWS credentials were rejected or the role lacks bedrock:InvokeModel. Check the IAM role / access keys and that the model is enabled in this region.'
+        : provider === 'vertex'
+        ? 'Google credentials were rejected or lack the Vertex AI User role (aiplatform.endpoints.predict). Check the service account / workload identity and that Claude is enabled in this region.'
         : 'Authentication was rejected. Check the API key.'
     else if (/could not resolve|ENOTFOUND|ECONNREFUSED|getaddrinfo|fetch failed/i.test(raw))
       hint = 'Could not reach the endpoint. Check the base URL / region and network egress.'
