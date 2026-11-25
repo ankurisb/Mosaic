@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { log, newRequestId } from '@/lib/logger'
 import { audit, AUDIT } from '@/lib/audit'
-import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools } from '@/lib/tools'
+import { TOOLS, runTool, getOrFetchSchema, formatSchemaForPrompt, getMcpTools, extractMarkdownTables } from '@/lib/tools'
 import { getSchemaHints } from '@/lib/semantic'
 import { enrichPlan } from '@/lib/dashboard-build'
 import type { DashboardPlan } from '@/lib/dashboard-plan'
@@ -761,9 +761,9 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           // and generous max_tokens so the model can produce the rca_output JSON.
           const approachingCap = !forceSynthesis && !buildOnly && toolCallsUsed >= TOOL_CALL_BUDGET - 4
           const turnNudge = forceSynthesis
-            ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
+            ? '\n\nYou have gathered sufficient data. Produce your final answer now in conversational prose. Any tabular data MUST be rendered with the render_chart tool (type "table") — never as a markdown table; the "|" pipe character must not appear in your text. If this was an RCA query, append the <rca_output> JSON block at the very end. Do not call any more tools.'
             : buildOnly
-            ? '\n\nYou have reached this turn\'s data-gathering limit — do NOT query any data source again. Using ONLY the data already gathered, call run_code / render_chart / render_map to build and return the deliverable the user asked for, then give your final answer in prose. If a deliverable cannot be built from what you have, say so plainly and summarise what you found — never end silently.'
+            ? '\n\nYou have reached this turn\'s data-gathering limit — do NOT query any data source again. Using ONLY the data already gathered, call render_chart (type "table" for any tabular data — never a markdown table, no "|" pipes in your text) / run_code / render_map to build and return the deliverable the user asked for, then give your final answer in prose. If a deliverable cannot be built from what you have, say so plainly and summarise what you found — never end silently.'
             : approachingCap
             ? '\n\nYou are close to this turn\'s tool-call limit. Stop opening new data sources and prioritise building the deliverable and your final answer from the data you already have.'
             : ''
@@ -1055,6 +1055,28 @@ Output title template: ${(() => { try { return JSON.parse((matchedWorkflow.outpu
           finalText = notice
         }
         // Persist assistant message + update conversation timestamp
+        // Always-on visualisation backstop. The model is instructed never to emit
+        // a markdown table (it must use render_chart type:'table'), but that is a
+        // prompt rule, not a guarantee. Deterministically convert any pipe-table
+        // the model still left in its final text into render_chart table artifacts
+        // and strip it from the persisted text, so a raw markdown table can NEVER
+        // reach the stored transcript regardless of model behaviour. (The live
+        // stream already emitted the text; remark-gfm renders it as a table there,
+        // and the reloaded view shows the chart artifact — no raw pipes either way.)
+        if (finalText && finalText.includes('|')) {
+          const rcaM = finalText.match(/<rca_output>[\s\S]*?<\/rca_output>/)
+          const rcaStr = rcaM ? rcaM[0] : ''
+          const prose = rcaStr ? finalText.replace(rcaStr, '') : finalText
+          const { cleanText: strippedProse, charts } = extractMarkdownTables(prose)
+          if (charts.length) {
+            for (const chart of charts) {
+              finalToolCalls.push({ name: 'render_chart', input: { type: 'table', title: chart.spec.title }, result: chart })
+            }
+            finalText = (strippedProse + (rcaStr ? '\n\n' + rcaStr : '')).trim()
+            reqLog.info({ tables: charts.length }, 'visualisation backstop: converted markdown table(s) to chart artifact(s)')
+          }
+        }
+
         let rcaBlock: unknown = null
         let persistedMessageId: string | null = null
         try {

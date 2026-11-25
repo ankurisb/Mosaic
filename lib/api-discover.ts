@@ -21,7 +21,12 @@ export interface DiscoveredCollection { path: string; label: string; name?: stri
 export interface DiscoverResult { source: 'spec' | 'metadata' | 'route-map' | 'none'; collections: DiscoveredCollection[]; note?: string; odataVersion?: '2' | '4' | 'unknown' }
 
 // Both JSON and YAML spec filenames — many APIs serve openapi.yaml rather than .json.
-const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json', '/openapi.yaml', '/openapi.yml', '/swagger.yaml']
+const SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json', '/openapi.yaml', '/openapi.yml', '/swagger.yaml',
+  // drf-yasg / DRF spectacular and content-negotiated roots. FactoryOS serves its
+  // Swagger 2.0 doc at /api/ (negotiated on Accept: application/json) and at
+  // /api/?format=openapi; drf-yasg's default routes live under /swagger/ and
+  // /api/schema/. ?format=openapi forces JSON regardless of content negotiation.
+  '/api/?format=openapi', '/api/', '/swagger/?format=openapi', '/api/schema/', '/schema/', '/api/swagger.json', '/api/openapi.json']
 
 // Title-case the last meaningful path segment for a readable label, keeping the
 // module prefix so two "metrics" under different modules stay distinguishable.
@@ -118,14 +123,26 @@ export function collectionsFromEdmx(xml: string, serviceUrl?: string): { collect
 }
 
 /** Extract GET collection paths (no path templating) from an OpenAPI/Swagger doc. */
-function collectionsFromOpenApi(spec: unknown): DiscoveredCollection[] {
-  const paths = (spec as { paths?: Record<string, Record<string, unknown>> })?.paths
+export function collectionsFromOpenApi(spec: unknown): DiscoveredCollection[] {
+  const s = spec as { paths?: Record<string, Record<string, unknown>>; swagger?: string; basePath?: string }
+  const paths = s?.paths
   if (!paths || typeof paths !== 'object') return []
+  // Swagger 2.0 declares a `basePath` (e.g. "/api") that every path is relative
+  // to; it is NOT part of the `paths` keys. When the service root is the baseUrl
+  // (as with FactoryOS, root host + basePath "/api"), the discovered collections
+  // must carry that prefix or every call 404s. Only applied for Swagger 2.0 docs
+  // with an explicit basePath — OpenAPI 3 `servers` are left untouched so existing
+  // integrations that point baseUrl at the server root keep working.
+  let prefix = ''
+  if (typeof s.swagger === 'string' && typeof s.basePath === 'string') {
+    prefix = s.basePath.replace(/\/+$/, '')
+    if (prefix === '/') prefix = ''
+  }
   const routes: { path: string }[] = []
   for (const [p, ops] of Object.entries(paths)) {
     if (!ops || typeof ops !== 'object') continue
     if (!('get' in ops)) continue              // listable = has a GET
-    routes.push({ path: p })
+    routes.push({ path: prefix + p })
   }
   return selectCollectionPaths(routes)
 }
@@ -205,6 +222,17 @@ export async function discoverEndpoints(input: {
   // return the real fix instead of a generic "nothing found".
   {
     const root = await runCandidateProbe({ ...common, basePath: '', path: '/' })
+    // Some APIs serve their OpenAPI/Swagger doc straight from the base root
+    // (negotiated on Accept). Try to parse it as a spec before treating the root
+    // as a SAP activation signal.
+    if (root.status >= 200 && root.status < 300) {
+      let spec: unknown = root.body
+      if (typeof spec === 'string') spec = parseSpec(spec)
+      if (spec && typeof spec === 'object' && (spec as { paths?: unknown }).paths) {
+        const cols = collectionsFromOpenApi(spec)
+        if (cols.length) return { source: 'spec', collections: cols, note: `Read ${cols.length} GET collections from the OpenAPI spec at the base root.` }
+      }
+    }
     const act = diagnoseSapActivation(root.status, root.body)
     if (act.likelyInactive) return { source: 'none', collections: [], note: act.message }
   }

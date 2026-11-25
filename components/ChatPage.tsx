@@ -12,6 +12,7 @@ import { UpdateModal } from '@/components/UpdateModal'
 import RcaRenderer from './rca/RcaRenderer'
 import PanelChart from './dashboards/PanelChart'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import * as XLSX from 'xlsx'
 import SetupBanner from './SetupBanner'
 import { parseRcaOutput, KNOWN_ACTION_IDS } from '@/lib/rca'
@@ -560,7 +561,7 @@ function FilePreviewPanel({ file, onClose, panelW, setPanelW, mobile }: { file: 
   )
   else if (kind === 'pdf') body = <iframe src={url} title={file.name} style={{ width: '100%', height: '100%', border: 0 }} />
   else if (kind === 'html') body = <iframe title={file.name} sandbox="" srcDoc={st.text} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
-  else if (kind === 'markdown') body = <div className="prose-mosaic" style={{ padding: 18, fontSize: 14, lineHeight: 1.7, color: 'var(--text)', overflow: 'auto', height: '100%' }}><ReactMarkdown>{st.text || ''}</ReactMarkdown></div>
+  else if (kind === 'markdown') body = <div className="prose-mosaic" style={{ padding: 18, fontSize: 14, lineHeight: 1.7, color: 'var(--text)', overflow: 'auto', height: '100%' }}><ReactMarkdown remarkPlugins={[remarkGfm]}>{st.text || ''}</ReactMarkdown></div>
   else if (kind === 'json') { let t = st.text || ''; try { t = JSON.stringify(JSON.parse(t), null, 2) } catch {} body = <pre style={{ margin: 0, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, color: 'var(--text)', overflow: 'auto', height: '100%', whiteSpace: 'pre' }}>{t}</pre> }
   else if (kind === 'code' || kind === 'text') body = <pre style={{ margin: 0, padding: 16, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, color: 'var(--text)', overflow: 'auto', height: '100%', whiteSpace: 'pre' }}>{st.text}</pre>
   else if ((kind === 'csv' || kind === 'tsv' || kind === 'xlsx') && st.sheets) {
@@ -2062,8 +2063,15 @@ export default function ChatPage({ user }: { user: SessionUser }) {
                     <>
                       <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)' }} className="prose-mosaic">
                         <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
                           components={{
                             p: ({children}) => <p style={{ margin: '0 0 10px', lineHeight: 1.8 }}>{children}</p>,
+                            table: ({children}) => <div style={{ overflowX: 'auto', margin: '10px 0' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table></div>,
+                            thead: ({children}) => <thead>{children}</thead>,
+                            tbody: ({children}) => <tbody>{children}</tbody>,
+                            tr: ({children}) => <tr style={{ borderBottom: '1px solid var(--border)' }}>{children}</tr>,
+                            th: ({children}) => <th style={{ textAlign: 'left', padding: '7px 12px', fontWeight: 600, color: 'var(--text2)', background: 'var(--bg3)', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>{children}</th>,
+                            td: ({children}) => <td style={{ padding: '7px 12px', color: 'var(--text)', verticalAlign: 'top' }}>{children}</td>,
                             strong: ({children}) => <strong style={{ fontWeight: 600, color: 'var(--text)' }}>{children}</strong>,
                             ul: ({children}) => <ul style={{ margin: '6px 0 10px', paddingLeft: 20 }}>{children}</ul>,
                             ol: ({children}) => <ol style={{ margin: '6px 0 10px', paddingLeft: 20 }}>{children}</ol>,

@@ -3,7 +3,7 @@
 // and the collection selector. Uses a fragment shaped like the real FactoryOS
 // 404 debug page that motivated this.
 import { describe, it, expect } from 'vitest'
-import { parseDjangoDebugRoutes, selectCollectionPaths, collectionsFromEdmx, parseSapCatalog, diagnoseSapActivation } from './api-discover'
+import { parseDjangoDebugRoutes, selectCollectionPaths, collectionsFromEdmx, parseSapCatalog, diagnoseSapActivation, collectionsFromOpenApi } from './api-discover'
 
 // Shaped like the REAL FactoryOS page: each <code> block is indented so its
 // content starts with a newline (the path is the first non-empty line, the
@@ -153,6 +153,39 @@ describe('parseSapCatalog', () => {
 })
 
 // --- Stage 4: SAP activation signal ----------------------------------------
+describe('collectionsFromOpenApi', () => {
+  it('prepends the Swagger 2.0 basePath to each collection (FactoryOS /api case)', () => {
+    const spec = {
+      swagger: '2.0',
+      basePath: '/api',
+      paths: {
+        '/monitoring/machine-status/': { get: {} },
+        '/planning/orders/': { get: {} },
+        '/auth/login/': { post: {} },          // no GET → dropped
+        '/monitoring/machine/{id}/': { get: {} }, // path param → dropped
+      },
+    }
+    const cols = collectionsFromOpenApi(spec).map(c => c.path)
+    // selectCollectionPaths normalises away the trailing slash.
+    expect(cols).toContain('/api/monitoring/machine-status')
+    expect(cols).toContain('/api/planning/orders')
+    expect(cols).not.toContain('/api/auth/login')
+    expect(cols.some(p => p.includes('{id}'))).toBe(false)
+  })
+  it('does NOT prefix an OpenAPI 3 doc (servers left untouched)', () => {
+    const spec = {
+      openapi: '3.0.0',
+      servers: [{ url: 'https://x/api' }],
+      paths: { '/widgets': { get: {} } },
+    }
+    expect(collectionsFromOpenApi(spec).map(c => c.path)).toEqual(['/widgets'])
+  })
+  it('handles Swagger 2.0 with no basePath', () => {
+    const spec = { swagger: '2.0', paths: { '/things': { get: {} } } }
+    expect(collectionsFromOpenApi(spec).map(c => c.path)).toEqual(['/things'])
+  })
+})
+
 describe('diagnoseSapActivation', () => {
   it('flags a 404 Gateway "not found for the segment" as not-activated', () => {
     const body = { error: { code: '/IWFND/CM_RMM', message: { value: "Resource not found for the segment 'ZFOO_SRV'" } } }

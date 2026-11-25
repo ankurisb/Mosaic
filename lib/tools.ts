@@ -4019,6 +4019,10 @@ export interface ChartArtifact {
   spec: ChartSpec
 }
 
+// Always-on visualisation backstop (pure, dependency-free) lives in its own
+// module so it can be unit-tested without loading tools.ts's heavy driver graph.
+export { extractMarkdownTables } from '@/lib/md-table'
+
 // -- Prism IoT query -------------------------------------------
 
 export async function queryPrism(input: Record<string, unknown>): Promise<unknown> {

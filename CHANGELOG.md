@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.71] - 2026-11-25
+### Fixed
+- **Always-on visualisation: a raw markdown table can no longer reach a chat answer.** The model
+  is instructed to render tabular data with `render_chart` (type `table`) and never as a markdown
+  table, but that was only a prompt rule — when the model slipped, the UI showed raw `|` pipes. Two
+  deterministic backstops now make this structural, not advisory:
+  - **Server-side (the real fix):** the chat route's response finaliser detects any GitHub-flavoured
+    markdown table left in the final assistant text, converts each one into a `render_chart` table
+    artifact, and strips it from the persisted message — so the stored transcript never contains a
+    pipe-table regardless of model behaviour (`lib/md-table.ts`, applied in `app/api/chat/route.ts`).
+  - **Renderer safety net:** the chat message renderer and the markdown file preview now load
+    `remark-gfm` and style `table/thead/tbody/tr/th/td`, so any table that is still in live-streamed
+    text renders as a real table instead of raw pipes (`components/ChatPage.tsx`).
+- **API builder can now auto-discover drf-yasg / content-negotiated specs (e.g. FactoryOS).** The
+  spec probe gained `/api/?format=openapi`, `/api/`, `/swagger/?format=openapi`, `/api/schema/`,
+  `/schema/`, `/api/swagger.json`, `/api/openapi.json`, and also parses the base root as a spec
+  before the SAP-activation check. Swagger 2.0 docs now have their `basePath` (e.g. `/api`) prepended
+  to each discovered collection, so the generated endpoints are actually callable
+  (`lib/api-discover.ts`).
+### Changed
+- **End-of-investigation synthesis nudges now repeat the no-markdown-tables rule**, so the forced
+  final/`buildOnly` turns are reminded to use `render_chart` for tabular data (`app/api/chat/route.ts`).
+
 ## [1.6.70] - 2026-11-23
 ### Fixed
 - **AI Provider: selecting a provider no longer silently switches the live backend.** Clicking a
