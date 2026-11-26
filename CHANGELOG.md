@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.74] - 2026-11-26
+### Fixed
+- **Dashboard panels can now use API data sources.** Two structural Mosaic bugs stopped any
+  REST/OData API source from working in a dashboard panel; both are general (not source-specific).
+  - **Panel source picker stored the wrong id** (`components/dashboards/PanelBuilder.tsx`): the API
+    dropdown listed **services** and saved the service id, but the panel data route fetches with
+    `source_id` as a **connection** id (the connection carries the `base_path` `call_api` needs). The
+    result was "API connection not found" for every API panel. The picker now lists **connections**,
+    labelled "Service / Connection", and stores the connection id.
+  - **Record extractor only looked at the top level** (`lib/api-dictionary.ts`): `extractApiRecords`
+    grabbed the first top-level array it found, so a response that nests its real rows one level deeper
+    (e.g. `{companies:[…], summaries:{results:[…]}}`) returned the wrong, shorter array — showing
+    "1 row" instead of the data. It now prefers a nested paginated envelope
+    (`<key>.{results|value|data|items|records|rows}`) over a sibling decoy array, so nested-envelope
+    APIs extract correctly without a hand-configured data path. Regression test added.
+
 ## [1.6.73] - 2026-11-26
 ### Fixed
 - **The visualisation backstop now covers agent and digest reports too, not just chat.** A table

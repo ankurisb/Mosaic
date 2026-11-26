@@ -74,7 +74,18 @@ export default function PanelBuilder({
 
   useEffect(() => {
     fetch('/api/connections').then(r => r.json()).then(d => setDbs(d.connections || []))
-    fetch('/api/services').then(r => r.json()).then(d => setApis(d.services || []))
+    // API sources: list CONNECTIONS, not services. The panel data route fetches with
+    // source_id as the connection id (call_api needs a connection, which carries the
+    // base_path); storing a service id here yields "API connection not found". Label
+    // each as "Service / Connection" so the picker stays readable when a service has
+    // many connection groups.
+    fetch('/api/services').then(r => r.json()).then(d => {
+      const svcLabel: Record<string, string> = {}
+      for (const s of (d.services || []) as Array<{ id: string; label: string }>) svcLabel[s.id] = s.label
+      const conns = ((d.connections || []) as Array<{ id: string; service_id: string; label: string }>)
+        .map(c => ({ id: c.id, label: (svcLabel[c.service_id] ? svcLabel[c.service_id] + ' / ' : '') + c.label }))
+      setApis(conns)
+    })
     fetch('/api/file-servers').then(r => r.json()).then(d => setFiles(d.file_servers || []))
   }, [])
 

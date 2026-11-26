@@ -51,6 +51,23 @@ describe('extractApiRecords — envelope variety', () => {
   it('array of scalars is not records', () => {
     expect(extractApiRecords([1, 2, 3])).toEqual([])
   })
+  it('prefers a nested paginated envelope over a sibling decoy array', () => {
+    // FactoryOS-shape: the real rows are under summaries.results, alongside
+    // top-level companies/plants lists. The old greedy auto-detect grabbed
+    // `companies` (first top-level array). Must now return summaries.results.
+    const body = {
+      companies: [{ id: 1, name: 'ACME' }],
+      plants: [{ id: 7, name: 'Plant 1' }],
+      summaries: {
+        count: 3, next: null,
+        results: [{ machine: 'M1', oee: 72 }, { machine: 'M2', oee: 81 }, { machine: 'M3', oee: 65 }],
+      },
+      show_production_values: true,
+    }
+    const recs = extractApiRecords(body)
+    expect(recs).toHaveLength(3)
+    expect(recs[0]).toEqual({ machine: 'M1', oee: 72 })
+  })
 })
 
 describe('isApiMetaField', () => {

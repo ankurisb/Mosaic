@@ -56,6 +56,24 @@ export function extractApiRecords(data: unknown, depth = 0): Record<string, unkn
   for (const key of ['value', 'data', 'results', 'items', 'records', 'rows']) {
     if (Array.isArray(obj[key])) return onlyObjects(obj[key] as unknown[])
   }
+  // Prefer a nested paginated envelope — e.g. {summaries:{results:[...]}} — over a
+  // sibling "decoy" top-level array (e.g. a companies/plants list alongside the real
+  // rows). A results/value/data array nested under an object-valued key is a strong
+  // signal of the real records, so check it BEFORE falling back to the first
+  // top-level array we happen to find. This makes nested-envelope APIs work without
+  // needing a hand-configured data path.
+  for (const key of Object.keys(obj)) {
+    const v = obj[key]
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const rk of ['results', 'value', 'data', 'items', 'records', 'rows']) {
+        const inner = (v as Record<string, unknown>)[rk]
+        if (Array.isArray(inner)) {
+          const recs = onlyObjects(inner as unknown[])
+          if (recs.length) return recs
+        }
+      }
+    }
+  }
   const arrKey = Object.keys(obj).find(k => Array.isArray(obj[k]) && (obj[k] as unknown[]).some(x => x && typeof x === 'object'))
   if (arrKey) return onlyObjects(obj[arrKey] as unknown[])
   // Envelope: records are nested one level down under a payload key. Only recurse
