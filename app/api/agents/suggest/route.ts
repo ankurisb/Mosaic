@@ -14,9 +14,12 @@ import { TOOLS as ALL_TOOLS } from '@/lib/tools'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-// Safe, read-only tools the AI may propose. Deliberately excludes writes and side-effect
-// tools (call_api/run_code/fetch_url/create_alert/…) — those stay explicit opt-ins.
-const SUGGESTABLE = new Set(['check_data_sources', 'query_database', 'run_statistical_analysis', 'render_chart', 'combine_sources', 'deep_diagnose', 'web_search'])
+// Safe, read-only tools the AI may propose. Includes the read-data tools for every source
+// type (SQL, Prism, REST/OData API, Airbyte, MCP). Deliberately excludes write tools
+// (create_alert/build_dashboard/save_memory) and genuine side-effect tools (run_code/fetch_url) —
+// those stay explicit opt-ins. call_api is a read (GET against a configured connection) and
+// belongs here so a goal that names an API source gets the tool it needs.
+const SUGGESTABLE = new Set(['check_data_sources', 'query_database', 'query_prism', 'call_api', 'diagnose_api_connection', 'query_airbyte', 'query_mcp', 'run_statistical_analysis', 'render_chart', 'combine_sources', 'deep_diagnose', 'web_search'])
 // Hard ceiling the AI's guardrails are clamped to.
 const CEILING = { max_steps: 40, max_tool_calls: 60, max_minutes: 15, max_cost_usd: 2.0 }
 const FLOOR = { max_steps: 3, max_tool_calls: 3, max_minutes: 1, max_cost_usd: 0.1 }

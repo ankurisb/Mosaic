@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.72] - 2026-11-26
+### Fixed
+- **Agents can now use REST/OData API sources, not just databases/Prism/MCP.** The agent runtime always
+  carried `call_api`, but the builder never exposed it and agents couldn't discover which connection to
+  call. Four changes close the gap:
+  - **Builder:** `call_api` and `diagnose_api_connection` are now selectable tool chips, and the
+    **read-data tools for every source type** (`query_database`, `query_prism`, `call_api`,
+    `diagnose_api_connection`, `query_airbyte`, `query_mcp`, `combine_sources`) are **on by default**.
+    Write tools (`build_dashboard`, `create_alert`, `save_memory`) and genuine side-effect tools
+    (`run_code`, `fetch_url`, `web_search`) stay opt-in, gated by the Approve-writes guardrail
+    (`components/agents/AgentsPage.tsx`, `lib/agent-runner.ts`, `app/api/agents/suggest/route.ts`).
+  - **Discovery:** `check_data_sources` now returns each API source's **connections** (id, label,
+    base_path, capped per service), so an agent can find the connection id + endpoint `call_api` needs
+    (`lib/tools.ts`).
+  - **Scope:** the agent **Data Source Scope** selector now lists API services, so an agent can be pinned
+    to a tenant; source-scope enforcement permits a connection whose parent service is in scope
+    (`components/agents/AgentsPage.tsx`, `lib/tools.ts`).
+  - **Prompt:** the agent system prompt now explains the API pattern (discover connection id via
+    `check_data_sources`, pass the **connection** id to `call_api`, use `diagnose_api_connection` for an
+    unknown sub-path, never invent numbers) (`lib/agent-runner.ts`).
+
 ## [1.6.71] - 2026-11-25
 ### Fixed
 - **Always-on visualisation: a raw markdown table can no longer reach a chat answer.** The model

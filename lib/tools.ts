@@ -535,7 +535,19 @@ export async function runTool(
       // Only enforce when the tool actually names a source. (query_airbyte/prism
       // without an explicit id fall through — they resolve their own target and
       // are covered by the connection-level access rules below.)
-      if (targetId && !guardrailCtx.allowedSources.includes(targetId)) {
+      let inAllowed = !targetId || guardrailCtx.allowedSources.includes(targetId)
+      // API scoping is by SERVICE: call_api/diagnose target a CONNECTION id, so when the
+      // connection itself isn't listed, allow it if its parent service is in scope. This
+      // lets an agent be pinned to a whole API source (e.g. one tenant) without listing
+      // every one of its connections.
+      if (!inAllowed && (name === 'call_api' || name === 'diagnose_api_connection')) {
+        try {
+          const svcRows = await getDb()`SELECT service_id FROM api_connections WHERE id=${targetId} LIMIT 1`
+          const svcId = svcRows.length ? String((svcRows[0] as Record<string, unknown>).service_id) : ''
+          if (svcId && guardrailCtx.allowedSources.includes(svcId)) inAllowed = true
+        } catch { /* fall through to the block below */ }
+      }
+      if (targetId && !inAllowed) {
         return {
           error: `That data source is outside the sources you selected for this chat. To use it, add it to the selected sources (the + menu) or clear the selection to allow all sources.`,
           blocked: true,
@@ -3037,7 +3049,7 @@ async function parseFileContent(
 // backstop, then returns a structured per-source status — one shared login per
 // service (single-flight), not one per connection.
 type SourceStatus = 'ok' | 'auth_failed' | 'degraded' | 'down' | 'unknown'
-interface SourceHealth { id: string; label: string; type: 'database' | 'api' | 'prism' | 'mcp' | 'file_server'; status: SourceStatus; latencyMs?: number; detail?: string }
+interface SourceHealth { id: string; label: string; type: 'database' | 'api' | 'prism' | 'mcp' | 'file_server'; status: SourceStatus; latencyMs?: number; detail?: string; connections?: { id: string; label: string; base_path: string }[] }
 
 // Connection-level failure keywords → the source is unreachable/broken. Anything
 // else (e.g. a SQL syntax error from a health ping) means we DID reach it.
@@ -3059,15 +3071,16 @@ export async function checkDataSources(guardrailCtx: { allowedSources?: string[]
   const allow = guardrailCtx.allowedSources
   const inScope = (id: string) => !allow || allow.length === 0 || allow.includes(id)
 
-  const [dbConns, apiSvcs, prisms, fileSrvs, mcps] = await Promise.all([
+  const [dbConns, apiSvcs, apiConnsAll, prisms, fileSrvs, mcps] = await Promise.all([
     db`SELECT id, label, dialect FROM db_connections`.catch(() => []),
     db`SELECT s.id, s.label, s.base_url, s.auth_type, s.auth_config, s.request_timeout_ms,
             (SELECT COUNT(*) FROM api_connections c WHERE c.service_id = s.id) AS conns
          FROM api_services s WHERE COALESCE(s.status,'published') = 'published'`.catch(() => []),
+    db`SELECT id, service_id, label, base_path FROM api_connections ORDER BY service_id, created_at ASC`.catch(() => []),
     db`SELECT id, label, base_url, username, password_enc FROM prism_instances WHERE active = true`.catch(() => []),
     db`SELECT id, label, transport FROM file_servers`.catch(() => []),
     db`SELECT id, label, endpoint_url, transport, token_enc FROM mcp_connections WHERE enabled = true`.catch(() => []),
-  ]) as [Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[]]
+  ]) as [Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[], Record<string, unknown>[]]
 
   // One probe task per source, each resolving to a SourceHealth (never throws).
   type Task = () => Promise<SourceHealth>
@@ -3090,7 +3103,18 @@ export async function checkDataSources(guardrailCtx: { allowedSources?: string[]
     return raceProbe(probe, PROBE_CAP_MS, { id: String(c.id), label: String(c.label), type: 'database', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
   })
 
+  // Per-service connection catalog: the agent/chat needs these ids + base_paths to call
+  // call_api. Cap per service so a tenant with hundreds of groups can't flood the result.
+  const CONN_CAP_PER_SVC = 40
+  const connsBySvc = new Map<string, { id: string; label: string; base_path: string }[]>()
+  for (const c of apiConnsAll) {
+    const sid = String(c.service_id)
+    const arr = connsBySvc.get(sid) || []
+    if (arr.length < CONN_CAP_PER_SVC) arr.push({ id: String(c.id), label: String(c.label || ''), base_path: String(c.base_path || '') })
+    connsBySvc.set(sid, arr)
+  }
   for (const s of apiSvcs) if (inScope(String(s.id))) tasks.push(async () => {
+    const conns = connsBySvc.get(String(s.id)) || []
     const probe = (async (): Promise<SourceHealth> => {
       const label = `${s.label}${Number(s.conns) ? ` (${s.conns} connection${Number(s.conns) === 1 ? '' : 's'})` : ''}`
       try {
@@ -3099,12 +3123,12 @@ export async function checkDataSources(guardrailCtx: { allowedSources?: string[]
           : r.status === 0 ? (isConnFailure(r.error || '') ? 'down' : 'auth_failed')
           : (r.status === 401 || r.status === 403) ? 'auth_failed'
           : r.status >= 500 ? 'degraded' : 'ok'
-        return { id: String(s.id), label, type: 'api', status, latencyMs: r.latencyMs, detail: r.error || `HTTP ${r.status}` }
+        return { id: String(s.id), label, type: 'api', status, latencyMs: r.latencyMs, detail: r.error || `HTTP ${r.status}`, connections: conns }
       } catch (e) {
-        return { id: String(s.id), label, type: 'api', status: 'down', detail: e instanceof Error ? e.message : 'failed' }
+        return { id: String(s.id), label, type: 'api', status: 'down', detail: e instanceof Error ? e.message : 'failed', connections: conns }
       }
     })()
-    return raceProbe(probe, PROBE_CAP_MS, { id: String(s.id), label: String(s.label), type: 'api', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out' })
+    return raceProbe(probe, PROBE_CAP_MS, { id: String(s.id), label: String(s.label), type: 'api', status: 'down', latencyMs: PROBE_CAP_MS, detail: 'probe timed out', connections: conns })
   })
 
   for (const p of prisms) if (inScope(String(p.id))) tasks.push(async () => {

@@ -65,11 +65,16 @@ export function clampGuardrails(input: unknown): Guardrails {
   }
 }
 
-// Goal-only default toolset: a tight, read-only data set so a plain-English goal "just
-// works" — the agent discovers its own source via check_data_sources and queries it. Used
-// when an agent/preview is created with no explicit tools. Deliberately excludes write and
-// side-effect tools (call_api/run_code/fetch_url); those are opt-in.
-export const DEFAULT_AGENT_TOOLS = ['check_data_sources', 'query_database', 'run_statistical_analysis', 'render_chart']
+// Goal-only default toolset: the read-only data + analysis tools, so a plain-English goal
+// "just works" against ANY configured source type — SQL (query_database), Prism (query_prism),
+// REST/OData API (call_api + diagnose_api_connection), Airbyte (query_airbyte), MCP (query_mcp),
+// plus combine_sources for cross-source joins. The agent discovers its own source via
+// check_data_sources and queries it. Used when an agent/preview is created with no explicit tools.
+// Deliberately EXCLUDES write tools (build_dashboard/create_alert/save_memory) and genuine
+// side-effect tools (run_code/fetch_url/web_search); those stay opt-in and are gated by
+// the approve_writes guardrail. call_api is a read here (GET against a configured connection),
+// so it belongs with the data tools, not the side-effect tools.
+export const DEFAULT_AGENT_TOOLS = ['check_data_sources', 'query_database', 'query_prism', 'call_api', 'diagnose_api_connection', 'query_airbyte', 'query_mcp', 'combine_sources', 'run_statistical_analysis', 'render_chart']
 
 // Orchestration (execution:'orchestrated') — the agent acts as a LEAD that decomposes its
 // goal into independent sub-tasks, runs them in parallel as read-only sub-agents, and
@@ -148,6 +153,11 @@ function systemFor(agent: AgentDef): string {
     `Your task:\n${agent.goal}\n${learningsBlock}\n` +
     `Work in steps: use the available tools to gather what you need against the live data layer, reason over the results, then produce a concise final answer. ` +
     `Use ONLY the tools provided. When a data tool needs a source, target an explicit configured source. ` +
+    `To discover sources, call check_data_sources — it returns every configured source with its id and status. ` +
+    `For a REST/OData API source, that result also lists the source's connections, each with its own id and base_path; ` +
+    `call_api takes a connection id (NOT the service id) plus a path, and reaches "base_url + base_path + your path". ` +
+    `If you don't know the exact sub-path under a connection, call diagnose_api_connection to find a working endpoint, then call_api it. ` +
+    `Never pass a service id to call_api, and never invent numbers — if you cannot reach the data, say so. ` +
     `Do not speculate beyond the evidence. When you have the answer, state it plainly and stop — do not keep calling tools once you can conclude.`
 }
 

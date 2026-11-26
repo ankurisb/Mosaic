@@ -56,13 +56,18 @@ function describeCron(c: string): string {
 // Catalog shown in the builder. w = write/side-effect tool (extra confirmation).
 const CATALOG: { id: string; g: string; w?: boolean; se?: boolean }[] = [
   { id: 'check_data_sources', g: 'Data' }, { id: 'query_database', g: 'Data' }, { id: 'query_prism', g: 'Data' },
+  { id: 'call_api', g: 'Data' }, { id: 'diagnose_api_connection', g: 'Data' },
   { id: 'query_airbyte', g: 'Data' }, { id: 'query_mcp', g: 'Data' }, { id: 'combine_sources', g: 'Data' },
   { id: 'web_search', g: 'Data', se: true }, { id: 'fetch_url', g: 'Data', se: true },
   { id: 'run_statistical_analysis', g: 'Analysis' }, { id: 'render_chart', g: 'Analysis' }, { id: 'deep_diagnose', g: 'Analysis' },
   { id: 'run_code', g: 'Analysis', se: true },
   { id: 'build_dashboard', g: 'Actions', w: true }, { id: 'create_alert', g: 'Actions', w: true }, { id: 'save_memory', g: 'Actions', w: true },
 ]
-const DEFAULT_TOOLS = ['check_data_sources', 'query_database', 'run_statistical_analysis', 'render_chart']
+// Read-only data + analysis tools are on by default so an agent can reach ANY configured
+// source type (SQL, Prism, REST/OData API, Airbyte, MCP) without hunting for a toggle.
+// Write and genuine side-effect tools (build_dashboard, create_alert, save_memory, run_code,
+// fetch_url, web_search) stay opt-in — enable them per-agent, gated by the Approve-writes guardrail.
+const DEFAULT_TOOLS = ['check_data_sources', 'query_database', 'query_prism', 'call_api', 'diagnose_api_connection', 'query_airbyte', 'query_mcp', 'combine_sources', 'run_statistical_analysis', 'render_chart']
 const DEFAULT_GUARDRAILS: Guardrails = { max_steps: 20, max_tool_calls: 40, max_minutes: 10, max_cost_usd: 1.0, read_only: true, approve_writes: true, no_progress: true }
 const PAGE = 8
 
@@ -129,6 +134,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [conns, setConns] = useState<Conn[]>([])
+  const [apiSvcs, setApiSvcs] = useState<{ id: string; label: string }[]>([])
   const [customTools, setCustomTools] = useState<CTool[]>([])
   const [ctForm, setCtForm] = useState<{ open: boolean; name: string; description: string; url_template: string; method: 'GET' | 'POST'; read_only: boolean; inputs: string }>({ open: false, name: '', description: '', url_template: '', method: 'GET', read_only: true, inputs: '' })
   const [ctMsg, setCtMsg] = useState('')
@@ -168,6 +174,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { fetch('/api/connections').then(r => r.json()).then(d => setConns(d.connections || [])).catch(() => {}) }, [])
+  useEffect(() => { fetch('/api/services').then(r => r.json()).then(d => setApiSvcs((d.services || []).filter((s: { status?: string }) => (s.status || 'published') === 'published').map((s: { id: string; label: string }) => ({ id: s.id, label: s.label })))).catch(() => {}) }, [])
   useEffect(() => { loadCustomTools() }, [])
   async function loadCustomTools() { try { const d = await (await fetch('/api/custom-tools')).json(); setCustomTools(d.tools || []) } catch { setCustomTools([]) } }
   async function createCustomTool() {
@@ -449,7 +456,7 @@ export default function AgentsPage({ user }: { user: SessionUser }) {
             <div>
               <label style={lbl}>Data source scope <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--text3)' }}>— optional; empty = auto-discover</span></label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                {conns.length === 0 ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No data sources configured.</span> : conns.map(c => {
+                {conns.length === 0 && apiSvcs.length === 0 ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No data sources configured.</span> : [...conns.map(c => ({ id: c.id, label: c.label })), ...apiSvcs].map(c => {
                   const on = draft.sources.includes(c.id)
                   return <button key={c.id} onClick={() => setDraft({ ...draft, sources: on ? draft.sources.filter(x => x !== c.id) : [...draft.sources, c.id] })} style={{ border: '1px solid ' + (on ? 'transparent' : 'var(--border2)'), background: on ? 'var(--accent-bg,#2f6df6)' : 'var(--surface)', color: on ? 'var(--accent-fg,#fff)' : 'var(--text2)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, cursor: 'pointer' }}>{on ? '📌 ' : ''}{c.label}</button>
                 })}
