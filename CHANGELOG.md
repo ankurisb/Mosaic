@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.73] - 2026-11-26
+### Fixed
+- **The visualisation backstop now covers agent and digest reports too, not just chat.** A table
+  written into an agent's final answer or a digest's AI narrative used to surface as raw `|` pipes.
+  - **Agent reports** (`components/agents/AgentsPage.tsx`): the result renderer (`ResultBlock`, used
+    for runs and previews) now has the same styled `table/thead/tbody/tr/th/td` components as chat, so
+    any GFM table renders as a real table.
+  - **Digest PDFs** (`lib/report-runner.ts`): `renderNarrativeHtml` now detects a GFM markdown table in
+    the narrative and renders it inline as an HTML `<table>` (preserving order, inheriting the report's
+    table styling) instead of dropping raw pipes into the PDF.
+
 ## [1.6.72] - 2026-11-26
 ### Fixed
 - **Agents can now use REST/OData API sources, not just databases/Prism/MCP.** The agent runtime always

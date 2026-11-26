@@ -175,9 +175,50 @@ function renderChart(section: ReportSection, rows: Row[]): string {
     <div style="font-size:10px;color:#888;margin-top:8px">${valueCol.replace(/_/g, ' ')} by ${labelCol.replace(/_/g, ' ')}</div>`
 }
 
+// Render an AI narrative to PDF HTML. The model is told to write plain prose, but if it
+// slips a GitHub-flavoured markdown table in anyway, convert it to a real <table> inline
+// (preserving order) rather than letting raw "|" pipes land in the PDF — the server-side
+// half of the visualisation backstop, mirrored for digests. Tables inherit the shell's
+// existing table styling (same markup renderTable emits).
 function renderNarrativeHtml(text: string): string {
-  return text.split('\n\n').filter(Boolean)
-    .map(p => `<p style="margin:0 0 10px 0;line-height:1.65">${p}</p>`).join('')
+  const lines = (text || '').split('\n')
+  const isRow = (l: string) => l.includes('|') && l.trim() !== ''
+  const isDelim = (l: string) => /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(l)
+  const splitCells = (l: string) => {
+    let s = l.trim()
+    if (s.startsWith('|')) s = s.slice(1)
+    if (s.endsWith('|')) s = s.slice(0, -1)
+    return s.split(/(?<!\\)\|/).map(c => c.trim().replace(/<br\s*\/?>/gi, ' ').replace(/\\\|/g, '|'))
+  }
+  const out: string[] = []
+  let para: string[] = []
+  const flushPara = () => {
+    const p = para.join(' ').trim()
+    if (p) out.push(`<p style="margin:0 0 10px 0;line-height:1.65">${p}</p>`)
+    para = []
+  }
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    // A GFM table: header row, delimiter row, then >=1 body rows.
+    if (i + 1 < lines.length && isRow(line) && isDelim(lines[i + 1])) {
+      flushPara()
+      const header = splitCells(line)
+      let j = i + 2
+      const body: string[][] = []
+      while (j < lines.length && isRow(lines[j]) && !isDelim(lines[j])) { body.push(splitCells(lines[j])); j++ }
+      const thead = `<tr>${header.map(h => `<th>${h || ''}</th>`).join('')}</tr>`
+      const tbody = body.map(cells => `<tr>${header.map((_, ci) => `<td>${cells[ci] ?? ''}</td>`).join('')}</tr>`).join('')
+      out.push(`<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`)
+      i = j
+      continue
+    }
+    if (line.trim() === '') flushPara()
+    else para.push(line)
+    i++
+  }
+  flushPara()
+  return out.join('')
 }
 
 // The data the AI summary is based on — shown compactly beneath the narrative so the

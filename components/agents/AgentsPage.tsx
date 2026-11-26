@@ -92,9 +92,21 @@ const IconIdea = () => (
 const withIcon = (icon: React.ReactNode, text: string) => (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{text}</span>)
 
 // Render an agent's final answer as proper markdown (same style as chat), not a text dump.
+// Styled table components (same as chat) so any table the agent writes renders as a real
+// table, never raw pipes — the renderer half of the visualisation backstop.
 const ResultBlock = ({ text }: { text: string }) => (
   <div className="prose-mosaic" style={{ padding: 18, fontSize: 14, lineHeight: 1.7, color: 'var(--text)', overflowWrap: 'anywhere' }}>
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ''}</ReactMarkdown>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        table: ({children}) => <div style={{ overflowX: 'auto', margin: '10px 0' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table></div>,
+        thead: ({children}) => <thead>{children}</thead>,
+        tbody: ({children}) => <tbody>{children}</tbody>,
+        tr: ({children}) => <tr style={{ borderBottom: '1px solid var(--border)' }}>{children}</tr>,
+        th: ({children}) => <th style={{ textAlign: 'left', padding: '7px 12px', fontWeight: 600, color: 'var(--text2)', background: 'var(--bg3)', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>{children}</th>,
+        td: ({children}) => <td style={{ padding: '7px 12px', color: 'var(--text)', verticalAlign: 'top' }}>{children}</td>,
+      }}
+    >{text || ''}</ReactMarkdown>
   </div>
 )
 
