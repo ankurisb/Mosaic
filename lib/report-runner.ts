@@ -72,7 +72,7 @@ async function executeSection(section: ReportSection): Promise<{ rows: Row[]; er
         method: 'GET',
         path: (section.query || '').trim(),
       })
-      return { rows: extractRows(data, conn.pagination_data_path || undefined).slice(0, 200) }
+      return { rows: extractRows(data, conn.pagination_data_path || undefined, true).slice(0, 200) }
     }
   } catch (e) {
     return { rows: [], error: (e as Error).message }

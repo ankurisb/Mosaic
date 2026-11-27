@@ -28,7 +28,7 @@ const WRAPPER_KEYS = ['rows', 'data', 'results', 'value', 'items', 'records', 'd
  *      reach an array or a plain object, so the common shapes work without config.
  * Always returns an array (possibly of one object, possibly empty).
  */
-export function extractRows(data: unknown, dataPath?: string): Record<string, unknown>[] {
+export function extractRows(data: unknown, dataPath?: string, apiEnvelope = false): Record<string, unknown>[] {
   let node: unknown = data
 
   // Tier 1: explicit configured path.
@@ -47,6 +47,30 @@ export function extractRows(data: unknown, dataPath?: string): Record<string, un
         if (wrapper) { node = obj[wrapper]; continue }
       }
       break
+    }
+    // Tier 2b (API responses only): the real rows can sit under a NON-standard wrapper
+    // key one level down — e.g. FactoryOS's {companies:[…], summaries:{results:[…]}}.
+    // The peel loop above only knows the standard wrapper keys, so it stops at the
+    // envelope and we'd otherwise return the whole envelope as a single junk row. For
+    // API sources, before that fallback, look one level into each object-valued key for
+    // a nested data array (results/value/data/…) and use the first non-empty one.
+    //
+    // Gated to apiEnvelope: database (returns {rows:[…]} or a flat array), file-server
+    // and MCP results are passed WITHOUT the flag, so this step never runs for them and
+    // their behaviour is byte-for-byte unchanged — a single DB row that happens to carry
+    // an array-valued column is still returned as one row, as before.
+    if (apiEnvelope && node && typeof node === 'object' && !Array.isArray(node)) {
+      const obj = node as Record<string, unknown>
+      for (const k of Object.keys(obj)) {
+        const v = obj[k]
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          const innerKey = WRAPPER_KEYS.find(wk => Array.isArray((v as Record<string, unknown>)[wk]))
+          if (innerKey) {
+            const arr = (v as Record<string, unknown>)[innerKey] as unknown[]
+            if (arr.some(r => r && typeof r === 'object' && !Array.isArray(r))) { node = arr; break }
+          }
+        }
+      }
     }
   }
 

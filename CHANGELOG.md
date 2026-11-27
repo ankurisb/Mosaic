@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.75] - 2026-11-27
+### Fixed
+- **Rules and digests now read nested-envelope API responses correctly.** The threshold-rule
+  evaluator and the digest report-runner share `extractRows` (`lib/condition-eval.ts`), which only
+  peeled a fixed set of top-level wrapper keys (`rows/data/results/value/items/records/d`). An API
+  whose real rows sit under a **non-standard** key one level down — e.g. FactoryOS's
+  `{companies:[…], summaries:{results:[…]}}` — was not unwrapped, so `extractRows` returned the whole
+  envelope as a single junk row: a rule threshold read the wrong value (never firing meaningfully) and
+  a digest table showed one garbage row. Added a Tier-2b step that, for API sources, looks one level
+  into each object-valued key for a nested data array and uses the first non-empty one. Same class of
+  bug as the dashboard nested-array fix in 1.6.74, in a different (shared rules/digests) extractor.
+  - **Scoped to API sources only.** The new step is gated behind a new `apiEnvelope` flag that only the
+    three API call sites pass (`app/api/integrations/scheduler/route.ts` ×2, `lib/report-runner.ts`).
+    Database (`query_database`, returns `{rows:[…]}` or a flat array), file-server (`read_file_server`)
+    and MCP results are passed WITHOUT the flag, so their extraction is byte-for-byte unchanged — a
+    single DB row that carries an array-valued column is still returned as one row. Covered by new
+    tests in `lib/condition-eval.test.ts`, including the flag-off safety guarantee.
+
 ## [1.6.74] - 2026-11-26
 ### Fixed
 - **Dashboard panels can now use API data sources.** Two structural Mosaic bugs stopped any

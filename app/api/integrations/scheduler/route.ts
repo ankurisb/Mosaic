@@ -115,7 +115,7 @@ export async function POST(req: Request) {
             const acRow = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${srcId} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
             apiPath = acRow[0]?.pagination_data_path || undefined
           }
-          const rows = extractRows(data, apiPath)
+          const rows = extractRows(data, apiPath, srcType === 'api')
           const mode = (condition.match_mode as string) === 'any' ? 'any' : 'first'
           const op  = condition.operator as string || '<'
           const thr = Number(condition.value)
@@ -360,7 +360,7 @@ export async function POST(req: Request) {
               const acRow = await sql`SELECT pagination_data_path FROM api_connections WHERE id = ${srcId} LIMIT 1` as unknown as { pagination_data_path: string | null }[]
               apiDataPath = acRow[0]?.pagination_data_path || undefined
             }
-            const rows = extractRows(data, apiDataPath)
+            const rows = extractRows(data, apiDataPath, srcType === 'api')
             const matchMode = (cond.match_mode as string) === 'any' ? 'any' : 'first'
             const evalRes = evaluateCondition(rows, field, op as CompareOp, thr, matchMode)
             const rawValue = evalRes.matchedValue
